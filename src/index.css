@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Vazirmatn', 'Tahoma', 'IRANSans', system-ui, -apple-system, sans-serif;
+
+    /* پالت مرکزی برند BeautyHub — مرحله ۲.۵ */
+    --color-canvas: #FAF9FC;
+    --color-canvas-subtle: #F3F1F8;
+    --color-surface: #FFFFFF;
+    --color-surface-elevated: #FFFFFF;
+    --color-surface-muted: #F4F3F8;
+
+    --color-primary: #2A0F54;
+    --color-primary-hover: #1D093B;
+    --color-primary-soft: #F3EEFA;
+
+    --color-accent: #9D174D;
+    --color-accent-hover: #831843;
+    --color-accent-soft: #FDF2F7;
+
+    --color-text-main: #120F1D;
+    --color-text-secondary: #4A4458;
+    --color-text-muted: #756F86;
+
+    --color-border: #E6E3EE;
+    --color-border-strong: #D0CADF;
+
+    --color-success: #15803D;
+    --color-warning: #B45309;
+    --color-danger: #B91C1C;
+    --color-info: #1D4ED8;
+
+    --radius-sm: 0.5rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
+    --radius-xl: 1.25rem;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    direction: rtl;
+    text-align: right;
+    color: var(--color-text-main);
+    background-color: var(--color-canvas);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-canvas);
+    color: var(--color-text-main);
+    margin: 0;
+    overflow-x: hidden;
+    line-height: 1.65;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

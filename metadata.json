@@ -1,0 +1,6 @@
+{
+  "name": "BeautyHub — پلتفرم مدیریت و رزرو خدمات زیبایی",
+  "description": "پلتفرم جامع جست‌وجو، رزرو آنلاین نوبت و مدیریت سالن‌های زیبایی زنانه، آرایشگاه‌های مردانه و متخصصان مستقل در ایران.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
