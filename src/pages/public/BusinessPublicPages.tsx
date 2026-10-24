@@ -10,6 +10,7 @@ import {
   Clock,
   CheckCircle2,
   ArrowLeft,
+  Instagram,
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import {
@@ -27,6 +28,7 @@ import {
   ServiceCard,
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
+import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 
 export const BusinessPublicProfileView: React.FC<{
   mode: 'salon' | 'pro';
@@ -214,12 +216,29 @@ export const BusinessPublicProfileView: React.FC<{
             <div className="pt-3.5 border-t border-[#E6E3EE] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-[#4A4458]">
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-[#2A0F54] shrink-0" />
-                <span>{business.address}</span>
+                <span>
+                  {business.city}، {business.neighborhood} — {business.address}
+                </span>
               </span>
-              <span className="inline-flex items-center gap-1.5 tabular-nums font-semibold text-[#120F1D] shrink-0">
-                <Phone className="w-3.5 h-3.5 text-[#2A0F54]" />
-                <span>{business.phoneDisplay}</span>
-              </span>
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                {business.instagramHandle ? (
+                  <span
+                    dir="ltr"
+                    className="inline-flex items-center gap-1.5 font-mono font-bold text-[#9D174D] bg-pink-50 px-2.5 py-1 rounded-lg border border-pink-200"
+                  >
+                    <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
+                    <span>
+                      {business.instagramHandle.startsWith('@')
+                        ? business.instagramHandle
+                        : `@${business.instagramHandle}`}
+                    </span>
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1.5 tabular-nums font-semibold text-[#120F1D]">
+                  <Phone className="w-3.5 h-3.5 text-[#2A0F54]" />
+                  <span>{business.phoneDisplay}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -469,6 +488,17 @@ export const BusinessPublicProfileView: React.FC<{
                 </div>
               ))}
             </div>
+          </Card>
+
+          <Card padding="sm" className="space-y-2.5">
+            <LocationMapPicker
+              city={business.city}
+              neighborhood={business.neighborhood}
+              address={business.address}
+              lat={business.mapLat}
+              lng={business.mapLng}
+              readOnly
+            />
           </Card>
         </div>
       </div>

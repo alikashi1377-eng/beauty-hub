@@ -12,6 +12,7 @@ import {
   Check,
   Building2,
   ExternalLink,
+  Instagram,
 } from 'lucide-react';
 import { IRAN_CITIES } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
@@ -32,6 +33,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { IncompleteFormState } from '../../components/ui/StateViews';
 import { VisualMediaIllustration } from '../../components/ui/VisualMediaIllustration';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 
 /** نوار پیشرفت ۵ مرحله‌ای هدایت‌شده برای راه‌اندازی کسب‌وکار */
 const OnboardingProgressHeader: React.FC<{ currentStep: number }> = ({
@@ -324,7 +326,7 @@ export const BusinessRegisterPage: React.FC = () => {
                   </FormField>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <FormField
                     id="reg-owner-name"
                     label="نام و نام خانوادگی مدیر / متخصص مسئول"
@@ -357,13 +359,32 @@ export const BusinessRegisterPage: React.FC = () => {
                       }
                     />
                   </FormField>
+
+                  <FormField
+                    id="reg-instagram"
+                    label="آدرس یا شناسه اینستاگرام"
+                    optionalLabel="اختیاری"
+                    hint="نمایش در پروفایل عمومی و پنل"
+                  >
+                    <Input
+                      id="reg-instagram"
+                      dir="ltr"
+                      placeholder="@royalgolzar.salon"
+                      value={onboardingDraft.instagramHandle ?? ''}
+                      onChange={(e) =>
+                        updateOnboardingDraft({
+                          instagramHandle: e.target.value,
+                        })
+                      }
+                    />
+                  </FormField>
                 </div>
               </div>
 
               {/* موقعیت مکانی و پیوند اختصاصی */}
               <div className="pt-4 border-t border-[#E6E3EE] space-y-4">
                 <h2 className="text-sm font-extrabold text-[#171226]">
-                  ۳. نشانی و پیوند اختصاصی پروفایل
+                  ۳. نشانی، موقعیت روی نقشه و پیوند اختصاصی پروفایل
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <FormField
@@ -415,6 +436,34 @@ export const BusinessRegisterPage: React.FC = () => {
                   </FormField>
                 </div>
 
+                {/* انتخاب موقعیت روی نقشه */}
+                <LocationMapPicker
+                  city={onboardingDraft.city}
+                  neighborhood={onboardingDraft.neighborhood}
+                  address={onboardingDraft.address}
+                  lat={onboardingDraft.mapLat ?? 35.8058}
+                  lng={onboardingDraft.mapLng ?? 51.4018}
+                  onSelectLocation={({
+                    lat,
+                    lng,
+                    neighborhood,
+                    suggestedAddress,
+                  }) => {
+                    updateOnboardingDraft({
+                      mapLat: lat,
+                      mapLng: lng,
+                      ...(neighborhood ? { neighborhood } : {}),
+                      ...(suggestedAddress
+                        ? { address: suggestedAddress }
+                        : {}),
+                    });
+                    showToast(
+                      'موقعیت مکانی روی نقشه ثبت شد و در پیش‌نویس پروفایل قرار گرفت.',
+                      'info'
+                    );
+                  }}
+                />
+
                 <FormField id="reg-address" label="نشانی کامل پستی" required>
                   <Input
                     id="reg-address"
@@ -457,7 +506,7 @@ export const BusinessRegisterPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="نام تجاری و شناسه پیوند (Slug) مستقیماً در آدرس اینترنتی اختصاصی سالن شما قرار می‌گیرد. انتخاب محله دقیق به مشتریان کمک می‌کند سریع‌تر شما را در نتایج شهر پیدا کنند." />
+          <OnboardingDraftSummarySidebar stepHint="نام تجاری، آدرس اینستاگرام، نشانی پستی و موقعیت پین‌شده روی نقشه مستقیماً در ویترین عمومی و پنل مدیریت کسب‌وکار شما نمایش داده می‌شوند." />
         </div>
       </div>
     </div>
@@ -534,6 +583,17 @@ export const BusinessOnboardingStepPage: React.FC = () => {
   const handleToggleDay = (index: number) => {
     const updated = onboardingDraft.workingHours.map((wh, idx) =>
       idx === index ? { ...wh, isOpen: !wh.isOpen } : wh
+    );
+    updateOnboardingDraft({ workingHours: updated });
+  };
+
+  const handleTimeChange = (
+    index: number,
+    field: 'openTime' | 'closeTime',
+    val: string
+  ) => {
+    const updated = onboardingDraft.workingHours.map((wh, idx) =>
+      idx === index ? { ...wh, [field]: val } : wh
     );
     updateOnboardingDraft({ workingHours: updated });
   };
@@ -739,16 +799,31 @@ export const BusinessOnboardingStepPage: React.FC = () => {
             </div>
           </Card>
 
-          {/* ج) ساعات کاری */}
+          {/* ج) ساعات کاری با قابلیت ویرایش ساعت شروع و پایان */}
           <Card className="space-y-4">
-            <h2 className="text-base font-extrabold text-[#171226] border-b border-[#E6E3EE] pb-3.5">
-              ۳. روزها و ساعات کاری هفتگی
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E3EE] pb-3.5">
+              <div>
+                <h2 className="text-base font-extrabold text-[#171226]">
+                  ۳. روزها و ساعات کاری هفتگی (قابل ویرایش)
+                </h2>
+                <p className="text-xs text-[#787189] mt-0.5">
+                  روزهای باز بودن سالن و ساعت شروع و پایان پذیرش را برای هر روز
+                  تنظیم کنید
+                </p>
+              </div>
+              <StatusBadge
+                label={`${toPersianDigits(
+                  onboardingDraft.workingHours.filter((w) => w.isOpen).length
+                )} روز فعال`}
+                tone="success"
+              />
+            </div>
+
             <div className="divide-y divide-[#E6E3EE]">
               {onboardingDraft.workingHours.map((wh, index) => (
                 <div
                   key={wh.dayName}
-                  className="py-3 flex items-center justify-between gap-3 text-xs sm:text-sm"
+                  className="py-3.5 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm"
                 >
                   <label className="inline-flex items-center gap-2.5 font-bold text-[#171226] cursor-pointer">
                     <input
@@ -760,9 +835,28 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                     <span>{wh.dayName}</span>
                   </label>
                   {wh.isOpen ? (
-                    <span className="tabular-nums text-[#2A0F54] font-bold bg-[#F3E8FF]/60 px-2.5 py-1 rounded-lg text-xs">
-                      {wh.openTime} تا {wh.closeTime}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-[#787189]">از ساعت</span>
+                      <input
+                        type="text"
+                        value={wh.openTime}
+                        onChange={(e) =>
+                          handleTimeChange(index, 'openTime', e.target.value)
+                        }
+                        aria-label={`ساعت شروع ${wh.dayName}`}
+                        className="w-20 rounded-xl border border-[#D0CADF] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#2A0F54] text-center tabular-nums focus:outline-none focus:border-[#2A0F54]"
+                      />
+                      <span className="text-xs text-[#787189]">تا</span>
+                      <input
+                        type="text"
+                        value={wh.closeTime}
+                        onChange={(e) =>
+                          handleTimeChange(index, 'closeTime', e.target.value)
+                        }
+                        aria-label={`ساعت پایان ${wh.dayName}`}
+                        className="w-20 rounded-xl border border-[#D0CADF] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#2A0F54] text-center tabular-nums focus:outline-none focus:border-[#2A0F54]"
+                      />
+                    </div>
                   ) : (
                     <StatusBadge label="تعطیل" tone="neutral" />
                   )}
@@ -788,7 +882,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="شفافیت در درج تعرفه و مدت زمان هر خدمت، نرخ تبدیل بازدیدکننده به رزرو قطعی را تا ۳ برابر افزایش می‌دهد. در هر زمان پس از راه‌اندازی نیز می‌توانید خدمات را از پیشخوان ویرایش کنید." />
+          <OnboardingDraftSummarySidebar stepHint="ساعات کاری که در این بخش ویرایش می‌کنید، مستقیماً در پیش‌نمایش پروفایل عمومی و بخش «ساعات کاری هفتگی» پنل کسب‌وکار (/app/working-hours) ثبت می‌شوند." />
         </div>
       </div>
     </div>
@@ -828,11 +922,10 @@ export const BusinessPreviewStepPage: React.FC = () => {
                   }
                   title={onboardingDraft.businessName}
                   city={onboardingDraft.city}
-                  aspect="aspect-[16/10]"
                 />
               </div>
               <div className="sm:col-span-7 space-y-2.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge label="پیش‌نمایش زنده ویترین" tone="primary" />
                   <span
                     dir="ltr"
@@ -840,6 +933,15 @@ export const BusinessPreviewStepPage: React.FC = () => {
                   >
                     /{isPro ? 'pro' : 'salon'}/{onboardingDraft.slug}
                   </span>
+                  {onboardingDraft.instagramHandle?.trim() ? (
+                    <span
+                      dir="ltr"
+                      className="inline-flex items-center gap-1 text-xs font-mono font-bold text-[#9D174D] bg-[#FCE7F3] px-2.5 py-0.5 rounded-lg"
+                    >
+                      <Instagram className="w-3.5 h-3.5" />
+                      {onboardingDraft.instagramHandle}
+                    </span>
+                  ) : null}
                 </div>
                 <h2 className="text-xl font-extrabold text-[#171226]">
                   {onboardingDraft.businessName}
@@ -856,6 +958,16 @@ export const BusinessPreviewStepPage: React.FC = () => {
                 </p>
               </div>
             </div>
+
+            {/* نمایش نقشه موقعیت انتخاب‌شده در پیش‌نمایش */}
+            <LocationMapPicker
+              city={onboardingDraft.city}
+              neighborhood={onboardingDraft.neighborhood}
+              address={onboardingDraft.address}
+              lat={onboardingDraft.mapLat ?? 35.8058}
+              lng={onboardingDraft.mapLng ?? 51.4018}
+              readOnly
+            />
 
             <div className="pt-5 border-t border-[#E6E3EE] space-y-3">
               <h3 className="text-sm font-extrabold text-[#171226]">

@@ -9,7 +9,14 @@ import {
 
 export interface StatusBadgeProps {
   label: string;
-  tone?: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
+  tone?:
+    | 'success'
+    | 'warning'
+    | 'danger'
+    | 'info'
+    | 'neutral'
+    | 'primary'
+    | 'accent';
 }
 
 /**
@@ -24,6 +31,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     warning: 'text-amber-800',
     danger: 'text-red-700',
     info: 'text-[#2A0F54]',
+    primary: 'text-[#2A0F54]',
+    accent: 'text-[#9D174D]',
     neutral: 'text-[#756F86]',
   };
 
@@ -32,6 +41,8 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     warning: <Clock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
     danger: <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
     info: <Info className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
+    primary: <Info className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
+    accent: <Info className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
     neutral: <MinusCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />,
   };
 

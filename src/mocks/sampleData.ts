@@ -116,6 +116,9 @@ export const SAMPLE_BUSINESSES: BusinessItem[] = [
     subscriptionStatus: SubscriptionStatus.Active,
     visualTheme: 'rose',
     featured: true,
+    instagramHandle: '@royalgolzar.salon',
+    mapLat: 35.7982,
+    mapLng: 51.4673,
     workingHours: [
       { dayName: 'شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
       { dayName: 'یکشنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
@@ -150,6 +153,9 @@ export const SAMPLE_BUSINESSES: BusinessItem[] = [
     subscriptionStatus: SubscriptionStatus.Active,
     visualTheme: 'slate',
     featured: true,
+    instagramHandle: '@parseh.barbershop',
+    mapLat: 35.7815,
+    mapLng: 51.3752,
     workingHours: [
       { dayName: 'شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۱:۰۰' },
       { dayName: 'یکشنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۱:۰۰' },
@@ -184,6 +190,9 @@ export const SAMPLE_BUSINESSES: BusinessItem[] = [
     subscriptionStatus: SubscriptionStatus.Trial,
     visualTheme: 'emerald',
     featured: true,
+    instagramHandle: '@sararad.skincare',
+    mapLat: 29.6694,
+    mapLng: 52.4731,
     workingHours: [
       { dayName: 'شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۱۸:۰۰' },
       { dayName: 'یکشنبه', isOpen: true, openTime: '۱۲:۰۰', closeTime: '۱۹:۰۰' },

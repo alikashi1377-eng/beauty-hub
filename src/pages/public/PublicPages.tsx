@@ -524,7 +524,7 @@ export const HomePage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   fullWidth
-                  className="bg-transparent text-white border-white/25 hover:bg-white/10"
+                  className="!bg-white/10 !text-white !border-white/30 hover:!bg-white/20"
                 >
                   تعرفه پلن‌ها
                 </Button>
@@ -534,7 +534,7 @@ export const HomePage: React.FC = () => {
                   variant="outline"
                   size="sm"
                   fullWidth
-                  className="bg-transparent text-white border-white/25 hover:bg-white/10"
+                  className="!bg-white/10 !text-white !border-white/30 hover:!bg-white/20"
                 >
                   مشاهده دمو پنل
                 </Button>

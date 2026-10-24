@@ -93,9 +93,12 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   slug: 'orkideh-salon',
   ownerName: 'مریم فرهادی',
   phone: '09123456789',
+  instagramHandle: '@orkideh.beauty',
   city: 'تهران',
   neighborhood: 'ولنجک',
   address: 'تهران، ولنجک، خیابان سیزدهم، پلاک ۲۴، طبقه دوم (آدرس آزمایشی)',
+  mapLat: 35.8058,
+  mapLng: 51.4018,
   shortDescription:
     'مرکز تخصصی رنگ و مش، احیای مو و طراحی ناخن با کادر مجرب و نوبت‌دهی آنلاین.',
   services: [

@@ -16,6 +16,8 @@ import {
   Check,
   Megaphone,
   ShieldCheck,
+  Instagram,
+  MapPin,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -48,10 +50,13 @@ import {
   ConfirmationDialog,
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
+import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 
 /** ۱. پیشخوان کسب‌وکار (/app) */
 export const BusinessDashboardPage: React.FC = () => {
-  const { appointments, services, specialists, customers } = usePrototypeData();
+  const { businesses, appointments, services, specialists, customers } =
+    usePrototypeData();
+  const currentBiz = businesses[0];
 
   const weeklyActivity = [
     { day: 'شنبه', count: 14, heightPct: 70 },
@@ -251,7 +256,7 @@ export const BusinessDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-1.5 text-xs">
+          <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-extrabold text-[#2A0F54]">
                 وضعیت ویترین عمومی
@@ -259,15 +264,48 @@ export const BusinessDashboardPage: React.FC = () => {
               <StatusBadge label="منتشرشده" tone="success" />
             </div>
             <p className="text-[#4E4760] leading-relaxed">
-              صفحه اختصاصی سالن شما در بازارچه فعال است.
+              صفحه اختصاصی «{currentBiz.name}» در بازارچه فعال است.
             </p>
-            <Link
-              to="/salon/royal-golzar"
-              className="inline-flex items-center gap-1 font-bold text-[#2A0F54] hover:underline pt-0.5"
-            >
-              <span>مشاهده ویترین سالن</span>
-              <ExternalLink className="w-3 h-3" />
-            </Link>
+            <div className="pt-1.5 border-t border-[#E6E3EE] space-y-1.5 text-[11px] text-[#4E4760]">
+              <div className="flex items-start gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
+                <span>
+                  {currentBiz.city}، {currentBiz.neighborhood} —{' '}
+                  {currentBiz.address}
+                </span>
+              </div>
+              {currentBiz.instagramHandle ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 text-[#787189]">
+                    <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
+                    <span>اینستاگرام ثبت‌شده:</span>
+                  </span>
+                  <span
+                    dir="ltr"
+                    className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
+                  >
+                    {currentBiz.instagramHandle.startsWith('@')
+                      ? currentBiz.instagramHandle
+                      : `@${currentBiz.instagramHandle}`}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <Link
+                to={`/salon/${currentBiz.slug}`}
+                className="inline-flex items-center gap-1 font-bold text-[#2A0F54] hover:underline"
+              >
+                <span>مشاهده ویترین سالن</span>
+                <ExternalLink className="w-3 h-3" />
+              </Link>
+              <Link
+                to="/app/profile"
+                className="text-[11px] font-bold text-[#787189] hover:text-[#2A0F54]"
+              >
+                ویرایش نشانی و اینستاگرام
+              </Link>
+            </div>
           </div>
         </Card>
       </div>
@@ -1722,22 +1760,43 @@ export const BusinessGalleryPage: React.FC = () => {
 
 /** ۸. پروفایل عمومی سالن (/app/profile) */
 export const BusinessProfileEditPage: React.FC = () => {
-  const { businesses, updateBusinessProfile } = usePrototypeData();
+  const { businesses, updateBusinessProfile, updateOnboardingDraft } =
+    usePrototypeData();
   const currentBiz = businesses[0];
 
   const [name, setName] = useState(currentBiz.name);
+  const [instagramHandle, setInstagramHandle] = useState(
+    currentBiz.instagramHandle ?? ''
+  );
   const [address, setAddress] = useState(currentBiz.address);
+  const [mapLat, setMapLat] = useState<number>(currentBiz.mapLat ?? 35.7596);
+  const [mapLng, setMapLng] = useState<number>(currentBiz.mapLng ?? 51.4072);
   const [shortDesc, setShortDesc] = useState(currentBiz.shortDescription);
   const [aboutText, setAboutText] = useState(currentBiz.aboutText);
+  const [savedNotice, setSavedNotice] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanedInsta = instagramHandle.trim();
     updateBusinessProfile(currentBiz.id, {
       name,
+      instagramHandle: cleanedInsta,
       address,
+      mapLat,
+      mapLng,
       shortDescription: shortDesc,
       aboutText,
     });
+    updateOnboardingDraft({
+      businessName: name,
+      instagramHandle: cleanedInsta,
+      address,
+      mapLat,
+      mapLng,
+      shortDescription: shortDesc,
+    });
+    setSavedNotice(true);
+    setTimeout(() => setSavedNotice(false), 3000);
   };
 
   return (
@@ -1745,7 +1804,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       <PageHeader
         kicker="ویترین و رشد کسب‌وکار · تنظیمات ویترین"
         title="ویرایش پروفایل عمومی کسب‌وکار"
-        subtitle="تغییرات شما بلافاصله در صفحه عمومی /salon/royal-golzar اعمال و نمایش داده می‌شود."
+        subtitle="تغییرات نشانی، موقعیت نقشه و آدرس اینستاگرام بلافاصله در صفحه عمومی /salon/royal-golzar نمایش داده می‌شود."
         routePattern="/app/profile"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1764,13 +1823,29 @@ export const BusinessProfileEditPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <Card padding="lg" className="lg:col-span-7">
           <form onSubmit={handleSave} className="space-y-4">
-            <FormField id="prof-name" label="نام سالن یا مرکز زیبایی" required>
-              <Input
-                id="prof-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </FormField>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField id="prof-name" label="نام سالن یا مرکز زیبایی" required>
+                <Input
+                  id="prof-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </FormField>
+              <FormField
+                id="prof-instagram"
+                label="آدرس صفحه اینستاگرام (اختیاری)"
+                hint="نمایش در پروفایل عمومی سالن"
+              >
+                <Input
+                  id="prof-instagram"
+                  dir="ltr"
+                  value={instagramHandle}
+                  onChange={(e) => setInstagramHandle(e.target.value)}
+                  placeholder="@royal_golzar_beauty"
+                />
+              </FormField>
+            </div>
+
             <FormField id="prof-address" label="نشانی کامل پستی" required>
               <Input
                 id="prof-address"
@@ -1778,6 +1853,22 @@ export const BusinessProfileEditPage: React.FC = () => {
                 onChange={(e) => setAddress(e.target.value)}
               />
             </FormField>
+
+            <LocationMapPicker
+              city={currentBiz.city}
+              neighborhood={currentBiz.neighborhood}
+              address={address}
+              lat={mapLat}
+              lng={mapLng}
+              onSelectLocation={(coords) => {
+                setMapLat(coords.lat);
+                setMapLng(coords.lng);
+                if (!address.trim() && coords.suggestedAddress) {
+                  setAddress(coords.suggestedAddress);
+                }
+              }}
+            />
+
             <FormField
               id="prof-short"
               label="خلاصه یک‌خطی (نمایش در کارت جست‌وجو)"
@@ -1796,10 +1887,15 @@ export const BusinessProfileEditPage: React.FC = () => {
                 onChange={(e) => setAboutText(e.target.value)}
               />
             </FormField>
-            <div className="pt-2">
+            <div className="pt-2 flex items-center gap-3">
               <Button type="submit" variant="primary">
                 ذخیره تغییرات پروفایل (دمو)
               </Button>
+              {savedNotice ? (
+                <span className="text-xs font-bold text-emerald-700">
+                  تغییرات با موفقیت در پروفایل و ویترین عمومی ذخیره شد.
+                </span>
+              ) : null}
             </div>
           </form>
         </Card>
@@ -1807,7 +1903,7 @@ export const BusinessProfileEditPage: React.FC = () => {
         <Card variant="muted" className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-extrabold text-[#2A0F54]">
-              پیش‌نمایش کارت در نتایج جست‌وجو
+              پیش‌نمایش کارت و موقعیت در ویترین عمومی
             </span>
             <StatusBadge label="زنده" tone="primary" />
           </div>
@@ -1817,12 +1913,41 @@ export const BusinessProfileEditPage: React.FC = () => {
             title={name}
             city={currentBiz.city}
           />
-          <div className="space-y-1">
+          <div className="space-y-2">
             <h3 className="text-sm font-extrabold text-[#171226]">{name}</h3>
             <p className="text-xs text-[#4E4760] leading-relaxed">
               {shortDesc}
             </p>
-            <p className="text-[11px] text-[#787189] pt-1">{address}</p>
+            <div className="pt-2 border-t border-[#E6E3EE] space-y-1.5 text-xs">
+              <p className="text-[#4E4760] flex items-start gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
+                <span>{address}</span>
+              </p>
+              {instagramHandle.trim() ? (
+                <p className="flex items-center justify-between gap-2 pt-0.5">
+                  <span className="inline-flex items-center gap-1 text-[#787189]">
+                    <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
+                    <span>صفحه اینستاگرام:</span>
+                  </span>
+                  <span
+                    dir="ltr"
+                    className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
+                  >
+                    {instagramHandle.trim().startsWith('@')
+                      ? instagramHandle.trim()
+                      : `@${instagramHandle.trim()}`}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+            <LocationMapPicker
+              city={currentBiz.city}
+              neighborhood={currentBiz.neighborhood}
+              address={address}
+              lat={mapLat}
+              lng={mapLng}
+              readOnly
+            />
           </div>
         </Card>
       </div>

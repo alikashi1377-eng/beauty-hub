@@ -712,7 +712,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
               <h2 className="text-base font-extrabold text-[#171226]">
                 {plan.name}
               </h2>
-              {plan.recommended ? (
+              {plan.isRecommended ? (
                 <StatusBadge label="پرفروش" tone="accent" />
               ) : null}
             </div>

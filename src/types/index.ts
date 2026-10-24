@@ -124,6 +124,9 @@ export interface BusinessItem {
   workingHours: WorkingHourItem[];
   visualTheme: 'rose' | 'slate' | 'emerald' | 'violet';
   featured?: boolean;
+  instagramHandle?: string;
+  mapLat?: number;
+  mapLng?: number;
 }
 
 export interface AppointmentItem {
@@ -202,9 +205,12 @@ export interface OnboardingDraft {
   slug: string;
   ownerName: string;
   phone: string;
+  instagramHandle?: string;
   city: string;
   neighborhood: string;
   address: string;
+  mapLat?: number;
+  mapLng?: number;
   shortDescription: string;
   services: Array<{
     id: string;
