@@ -134,11 +134,30 @@ EXECUTE FUNCTION set_updated_at_timestamp();
 -- ۶. جدول پرداخت‌های حق اشتراک کسب‌وکارها در نسخه اول (/admin/payments)
 -- توجه:
 --   الف) در نسخه اول فقط پرداخت اشتراک سالن‌ها پیاده‌سازی می‌شود.
---   ب) تبدیل تومان به ریال در لایه سرور انجام می‌شود و با قید CHECK از سرریز عددی (Overflow)
---      و هرگونه اختلاف بین amount_toman و amount_rial جلوگیری می‌گردد.
+--   ب) تبدیل تومان به ریال با کنترل صریح محدوده و جلوگیری قطعی از سرریز عددی (Overflow) انجام می‌شود.
 --      سقف مجاز هر صورتحساب: 100,000,000,000 تومان (معادل 1,000,000,000,000 ریال) که
---      بسیار پایین‌تر از سقف BIGINT (9.22e18) است و امکان سرریز در ضرب در 10 را به صفر می‌رساند.
---   ج) تغییر وضعیت به VERIFIED بدون ثبت server_verified_at و gateway_ref_id در سطح دیتابیس غیرممکن است.
+--      بسیار پایین‌تر از سقف BIGINT (9.22e18) است.
+--   ج) در قید CHECK، از ساختار CASE WHEN استفاده شده تا ارزیابی ترتیب شروط در PostgreSQL تضمین شود
+--      و پیش از ضرب amount_toman * 10، قرار داشتن مقدار در بازه [0, 100,000,000,000] بررسی گردد.
+--   د) تغییر وضعیت به VERIFIED بدون ثبت server_verified_at و gateway_ref_id در سطح دیتابیس غیرممکن است.
+
+-- تابع کمکی IMMUTABLE برای تبدیل امن و کنترل‌شده مبلغ تومان به ریال
+CREATE OR REPLACE FUNCTION convert_toman_to_rial_strict(p_amount_toman BIGINT)
+RETURNS BIGINT
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+AS $$
+BEGIN
+  IF p_amount_toman < 0 OR p_amount_toman > 100000000000 THEN
+    RAISE EXCEPTION 'PAYMENT_AMOUNT_OUT_OF_RANGE: مبلغ تومان (%) خارج از بازه مجاز [0 .. 100,000,000,000] است.', p_amount_toman
+      USING ERRCODE = '22003';
+  END IF;
+
+  RETURN p_amount_toman * 10;
+END;
+$$;
+
 CREATE TABLE payments (
   id                 UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   legacy_demo_id     VARCHAR(64)  NULL UNIQUE,
@@ -161,13 +180,16 @@ CREATE TABLE payments (
   CONSTRAINT chk_payments_status_valid CHECK (
     status IN ('PENDING', 'INITIATED', 'VERIFIED', 'FAILED', 'EXPIRED', 'REFUNDED')
   ),
-  -- جلوگیری قطعی از سرریز عددی و تضمین برابری دقیق مبلغ ریال با ۱۰ برابر مبلغ تومان
+  -- جلوگیری قطعی از سرریز عددی با تضمین ترتیب ارزیابی (CASE WHEN) و برابری دقیق ریال با ۱۰ برابر تومان
   CONSTRAINT chk_payments_amount_overflow_safe_and_exact CHECK (
-    amount_toman >= 0
-    AND amount_toman <= 100000000000
-    AND amount_rial >= 0
-    AND amount_rial <= 1000000000000
-    AND amount_rial = amount_toman * 10
+    CASE
+      WHEN amount_toman >= 0
+       AND amount_toman <= 100000000000
+       AND amount_rial >= 0
+       AND amount_rial <= 1000000000000
+      THEN amount_rial = amount_toman * 10
+      ELSE FALSE
+    END
   ),
   -- پذیرش وضعیت VERIFIED صرفاً پس از اعتبارسنجی سمت سرور درگاه
   CONSTRAINT chk_payments_verified_requires_server_proof CHECK (

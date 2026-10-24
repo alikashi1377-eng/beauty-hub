@@ -32,11 +32,30 @@ export interface MigrationClientLike {
   ): Promise<{ rows: R[]; rowCount?: number | null }>;
 }
 
+export interface MigrationPoolClientLike extends MigrationClientLike {
+  release(err?: Error | boolean): void;
+}
+
+export interface MigrationPoolLike {
+  connect(): Promise<MigrationPoolClientLike>;
+}
+
 export interface MigrationRunSummary {
   totalFiles: number;
   alreadyAppliedCount: number;
   newlyAppliedVersions: string[];
   skippedVersions: string[];
+}
+
+/**
+ * استخراج امن کد استاندارد ५ کاراکتری SQLSTATE بدون افشای پیام خطا یا اطلاعات اتصال
+ */
+export function extractSafeSqlState(err: unknown): string | null {
+  if (!err || typeof err !== 'object' || !('code' in err)) {
+    return null;
+  }
+  const rawCode = String((err as { code?: unknown }).code ?? '').trim();
+  return /^[0-9A-Z]{5}$/.test(rawCode) ? rawCode : null;
 }
 
 /**
@@ -124,8 +143,8 @@ export function loadAndValidateMigrationFiles(
 }
 
 /**
- * اجرای امن و تراکنش‌پذیر Migrationها روی یک کلاینت دیتابیس (pg.PoolClient یا کلاینت سازگار)
- * توجه: این تابع تنها زمانی که صراحتاً فراخوانی شود اجرا می‌گردد و در این فاز به دیتابیس متصل نمی‌شود.
+ * اجرای امن و تراکنش‌پذیر Migrationها روی یک کلاینت اختصاصی دیتابیس (pg.PoolClient)
+ * تمام مراحل اخذ قفل، بررسی جدول schema_migrations و تراکنش‌های BEGIN/COMMIT روی همین اتصال واحد اجرا می‌شوند.
  */
 export async function runMigrationsWithClient(
   client: MigrationClientLike,
@@ -133,7 +152,7 @@ export async function runMigrationsWithClient(
 ): Promise<MigrationRunSummary> {
   const migrationFiles = loadAndValidateMigrationFiles(migrationsDir);
 
-  // ۱. اخذ قفل انحصاری در سطح دیتابیس برای جلوگیری از اجرای هم‌زمان Migrationها
+  // ۱. اخذ قفل انحصاری در سطح نشست (Session-level Advisory Lock) روی همین اتصال
   await client.query('SELECT pg_advisory_lock($1)', [
     MIGRATION_ADVISORY_LOCK_KEY,
   ]);
@@ -175,7 +194,7 @@ export async function runMigrationsWithClient(
         continue;
       }
 
-      // ۴. اجرای هر Migration جدید در یک تراکنش مستقل اتمیک
+      // ۴. اجرای هر Migration جدید در یک تراکنش مستقل اتمیک روی همان اتصال اختصاصی
       const startMs = Date.now();
       await client.query('BEGIN');
       try {
@@ -193,24 +212,23 @@ export async function runMigrationsWithClient(
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
 
-        const errCode =
-          err && typeof err === 'object' && 'code' in err
-            ? String((err as { code?: unknown }).code)
-            : '';
+        const sqlState = extractSafeSqlState(err);
         const errMsg =
           err instanceof Error ? err.message : 'خطای نامشخص در اجرای Migration';
 
         if (
-          errCode === '42501' ||
+          sqlState === '42501' ||
           errMsg.includes('MIGRATION_005_BTREE_GIST')
         ) {
+          const stateSuffix = sqlState ? ` [SQLSTATE=${sqlState}]` : '';
           throw new Error(
-            `MIGRATION_BTREE_GIST_REQUIRED_ERROR: اجرای ${migration.fileName} متوقف شد زیرا افزونه الزامی btree_gist فعال نیست و کاربر دیتابیس مجوز ایجاد آن را ندارد. هیچ راهکار جایگزینی به صورت خودکار فعال نشد.`
+            `MIGRATION_BTREE_GIST_REQUIRED_ERROR${stateSuffix}: اجرای ${migration.fileName} متوقف شد زیرا افزونه الزامی btree_gist فعال نیست و کاربر دیتابیس مجوز ایجاد آن را ندارد. هیچ راهکار جایگزینی به صورت خودکار فعال نشد.`
           );
         }
 
+        const stateSuffix = sqlState ? ` [SQLSTATE=${sqlState}]` : '';
         throw new Error(
-          `MIGRATION_EXECUTION_FAILED (${migration.fileName}): اجرای فایل متوقف و تغییرات آن Rollback شد.`
+          `MIGRATION_EXECUTION_FAILED (${migration.fileName})${stateSuffix}: اجرای فایل متوقف و تغییرات آن Rollback شد.`
         );
       }
     }
@@ -227,3 +245,24 @@ export async function runMigrationsWithClient(
       .catch(() => {});
   }
 }
+
+/**
+ * اجرای Migrationها با دریافت یک PoolClient اختصاصی از Pool.
+ * تضمین می‌کند که pg_advisory_lock، تراکنش‌ها و pg_advisory_unlock همگی روی یک نشست واحد
+ * اجرا شوند و در پایان ابتدا قفل آزاد شده و سپس اتصال با client.release() به Pool بازگردانده شود.
+ */
+export async function runMigrationsOnPool(
+  pool: MigrationPoolLike,
+  migrationsDir: string = DEFAULT_MIGRATIONS_DIR
+): Promise<MigrationRunSummary> {
+  // پیش از دریافت اتصال از Pool، صحت فایل‌ها را بررسی می‌کنیم تا در صورت خطای ایستا اتصال بیهوده اشغال نشود
+  loadAndValidateMigrationFiles(migrationsDir);
+
+  const client = await pool.connect();
+  try {
+    return await runMigrationsWithClient(client, migrationsDir);
+  } finally {
+    client.release();
+  }
+}
+

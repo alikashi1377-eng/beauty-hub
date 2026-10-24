@@ -7,6 +7,11 @@
 -- =============================================================================
 
 -- ۱. جدول خدمات هر کسب‌وکار (ServiceItem)
+-- سیاست حذف خدمت (Soft Delete):
+-- برای حفظ کامل یکپارچگی رزروهای تاریخی و کلید خارجی ترکیبی جدول appointments (ON DELETE RESTRICT)،
+-- حذف خدمت از پنل کسب‌وکار (/app/services) در لایه API الزاماً به صورت Soft Delete
+-- (UPDATE services SET is_active = FALSE, updated_at = NOW()) انجام می‌شود تا رزروهای قبلی و
+-- Snapshotهای ثبت‌شده دست‌نخورده باقی بمانند.
 CREATE TABLE services (
   id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   legacy_demo_id   VARCHAR(64)  NULL UNIQUE,

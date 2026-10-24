@@ -96,18 +96,26 @@ CREATE TABLE appointments (
   CONSTRAINT chk_appointments_buffer_snapshot_bounds CHECK (
     buffer_minutes_snapshot >= 0 AND buffer_minutes_snapshot <= 120
   ),
-  -- تضمین برابری دقیق ریاضی پایان خدمت با شروع + مدت خدمت
+  -- تضمین برابری دقیق ریاضی پایان خدمت با شروع + مدت خدمت (بر حسب دقیقه خالص)
+  -- نکته زمانی PostgreSQL: جمع TIMESTAMPTZ با مضرب دقیقی از INTERVAL '1 minute' یک جابه‌جایی
+  -- دقیق بر پایه ثانیه/میکروثانیه در مقیاس UTC است و برخلاف واحدهای تقویمی (day/month) مستقل از
+  -- تنظیمات TimeZone نشست یا تغییر ساعت فصلی (DST) عمل می‌کند.
   CONSTRAINT chk_appointments_service_ends_exact CHECK (
-    service_ends_at = service_starts_at + make_interval(mins => duration_minutes_snapshot)
+    service_ends_at > service_starts_at
+    AND service_ends_at = service_starts_at + (duration_minutes_snapshot * INTERVAL '1 minute')
   ),
   -- تضمین برابری دقیق ریاضی پایان اشغال متخصص با پایان خدمت + فاصله استراحت Snapshot شده
   CONSTRAINT chk_appointments_occupied_until_exact CHECK (
-    occupied_until_at = service_ends_at + make_interval(mins => buffer_minutes_snapshot)
+    occupied_until_at >= service_ends_at
+    AND occupied_until_at = service_ends_at + (buffer_minutes_snapshot * INTERVAL '1 minute')
   ),
-  -- سازگاری وضعیت لغو با زمان لغو
+  -- سازگاری دوطرفه وضعیت لغو با زمان و علت لغو:
+  -- ۱. رزرو لغوشده (CANCELLED) الزاماً باید دارای cancelled_at باشد.
+  -- ۲. رزرو غیرلغوشده (PENDING, CONFIRMED, COMPLETED, NO_SHOW) الزاماً باید cancelled_at IS NULL
+  --    و cancelled_reason IS NULL داشته باشد تا در صورت بازگردانی وضعیت به فعال، داده لغو قدیمی باقی نماند.
   CONSTRAINT chk_appointments_cancellation_consistency CHECK (
     (status = 'CANCELLED' AND cancelled_at IS NOT NULL)
-    OR (status <> 'CANCELLED')
+    OR (status <> 'CANCELLED' AND cancelled_at IS NULL AND cancelled_reason IS NULL)
   ),
 
   -- قید انحصاری سطح دیتابیس برای جلوگیری قطعی از هم‌پوشانی زمان خدمت + استراحت یک متخصص

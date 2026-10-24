@@ -93,6 +93,9 @@ ON businesses (city, type, approval_status);
 CREATE INDEX idx_businesses_category
 ON businesses (primary_category_id);
 
+CREATE INDEX idx_businesses_owner_user_id
+ON businesses (owner_user_id);
+
 CREATE TRIGGER trg_businesses_updated_at
 BEFORE UPDATE ON businesses
 FOR EACH ROW
@@ -124,6 +127,40 @@ CREATE TRIGGER trg_business_members_updated_at
 BEFORE UPDATE ON business_members
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
+
+-- تضمین اتمیک ثبت مالک کسب‌وکار (owner_user_id) در جدول business_members با نقش OWNER
+-- استفاده از ON CONFLICT (business_id, user_id) DO UPDATE مانع از هرگونه تداخل یا خطای تکرار
+-- در حالتی می‌شود که لایه API نیز به صورت دستی عضویت مالک را درج یا به‌روزرسانی کند.
+CREATE OR REPLACE FUNCTION ensure_business_owner_membership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO business_members (
+    business_id,
+    user_id,
+    member_role,
+    is_active
+  )
+  VALUES (
+    NEW.id,
+    NEW.owner_user_id,
+    'OWNER',
+    TRUE
+  )
+  ON CONFLICT (business_id, user_id) DO UPDATE
+    SET member_role = 'OWNER',
+        is_active   = TRUE,
+        updated_at  = NOW();
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_businesses_ensure_owner_member
+AFTER INSERT OR UPDATE OF owner_user_id ON businesses
+FOR EACH ROW
+EXECUTE FUNCTION ensure_business_owner_membership();
 
 -- ۴. جدول تنظیمات عملیاتی هر سالن (/app/settings)
 CREATE TABLE business_settings (

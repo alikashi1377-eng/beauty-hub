@@ -175,6 +175,11 @@ CREATE TABLE auth_otp_challenges (
     AND max_attempts <= 10
     AND attempts_count <= max_attempts
   ),
+  -- رکوردی که هنوز در وضعیت PENDING است حتماً باید حداقل یک تلاش باقی‌مانده داشته باشد؛
+  -- با رسیدن attempts_count به max_attempts وضعیت رکورد الزاماً باید به LOCKED تغییر یابد.
+  CONSTRAINT chk_otp_pending_has_remaining_attempts CHECK (
+    status <> 'PENDING' OR attempts_count < max_attempts
+  ),
   CONSTRAINT chk_otp_expires_after_created CHECK (expires_at > created_at),
   CONSTRAINT chk_otp_consumed_consistency CHECK (
     (status = 'CONSUMED' AND consumed_at IS NOT NULL)
@@ -205,7 +210,7 @@ AS $$
 DECLARE
   v_new_id UUID;
 BEGIN
-  -- سریال کردن درخواست‌های هم‌زمان صدور OTP برای یک شماره موبایل مشخص
+  -- سریال کردن درخواست‌های هم‌زمان صدور و بررسی OTP برای یک شماره موبایل مشخص
   PERFORM pg_advisory_xact_lock(hashtext('otp_issue'), hashtext(p_phone));
 
   -- ابطال هرگونه کد PENDING قبلی برای همین شماره پیش از درج کد جدید
@@ -235,6 +240,113 @@ BEGIN
   RETURNING id INTO v_new_id;
 
   RETURN v_new_id;
+END;
+$$;
+
+-- تابع اتمیک بررسی و مصرف یک‌باره چالش OTP (verify_otp_challenge_atomic)
+-- نکات معماری و امنیتی بسیار مهم:
+-- ۱. این تابع دیتابیس صرفاً چرخه حیات رکورد چالش (انقضا، شمارش تلاش ناموفق، قفل کردن پس از سقف مجاز،
+--    و مصرف یک‌باره کد صحیح با وضعیت CONSUMED) را به صورت اتمیک و با قفل انحصاری مدیریت می‌کند و نتیجه
+--    اعتبارسنجی را به لایه سرور برمی‌گرداند.
+-- ۲. ساخت یا بازیابی حساب کاربری (users)، تولید توکن نشست، هش کردن توکن و درج در جدول user_sessions
+--    الزاماً باید در سمت سرور (Application Layer) انجام شود.
+-- ۳. لایه سرور باید فراخوانی این تابع را در تراکنش مدیریت‌شده اجرا کند:
+--    - اگر نتیجه اعتبارسنجی ناموفق بود (INVALID_CODE / OTP_LOCKED / OTP_EXPIRED)، تراکنش باید COMMIT شود
+--      تا افزایش attempts_count یا تغییر وضعیت به LOCKED/EXPIRED در دیتابیس ماندگار گردد.
+--    - اگر نتیجه VERIFIED بود، ساخت نشست کاربری در همان تراکنش انجام و COMMIT می‌شود؛ در صورت بروز خطا
+--      پیش از ارسال پاسخ موفق به کلاینت، با توجه به قفل pg_advisory_xact_lock و FOR UPDATE، هیچ درخواست
+--      هم‌زمان دیگری نمی‌تواند همان کد را به صورت موازی مصرف کند.
+CREATE OR REPLACE FUNCTION verify_otp_challenge_atomic(
+  p_phone          VARCHAR(15),
+  p_candidate_hmac CHAR(64)
+)
+RETURNS TABLE (
+  verified           BOOLEAN,
+  challenge_id       UUID,
+  remaining_attempts SMALLINT,
+  outcome_code       VARCHAR(40)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_now           TIMESTAMPTZ := NOW();
+  v_row           auth_otp_challenges%ROWTYPE;
+  v_next_attempts SMALLINT;
+BEGIN
+  -- ۱. سریال‌سازی کامل درخواست‌های هم‌زمان Verify و Issue روی یک شماره موبایل
+  PERFORM pg_advisory_xact_lock(hashtext('otp_issue'), hashtext(p_phone));
+
+  -- ۲. قفل کردن رکورد چالش فعال (PENDING) برای این شماره موبایل
+  SELECT * INTO v_row
+  FROM auth_otp_challenges
+  WHERE phone = p_phone
+    AND status = 'PENDING'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, NULL::UUID, 0::SMALLINT, 'NO_ACTIVE_CHALLENGE'::VARCHAR(40);
+    RETURN;
+  END IF;
+
+  -- ۳. بررسی انقضای زمانی کد پیش از بررسی مقدار هش
+  IF v_row.expires_at <= v_now THEN
+    UPDATE auth_otp_challenges
+    SET status          = 'EXPIRED',
+        last_attempt_at = v_now
+    WHERE id = v_row.id;
+
+    RETURN QUERY SELECT FALSE, v_row.id, 0::SMALLINT, 'OTP_EXPIRED'::VARCHAR(40);
+    RETURN;
+  END IF;
+
+  -- ۴. بررسی دفاعی سقف تلاش‌ها
+  IF v_row.attempts_count >= v_row.max_attempts THEN
+    UPDATE auth_otp_challenges
+    SET status          = 'LOCKED',
+        last_attempt_at = v_now
+    WHERE id = v_row.id;
+
+    RETURN QUERY SELECT FALSE, v_row.id, 0::SMALLINT, 'OTP_LOCKED'::VARCHAR(40);
+    RETURN;
+  END IF;
+
+  -- ۵. مقایسه هش HMAC کد ارسالی؛ در صورت عدم تطابق، افزایش تلاش ناموفق و قفل کردن در صورت رسیدن به سقف
+  IF v_row.code_hmac <> p_candidate_hmac THEN
+    v_next_attempts := v_row.attempts_count + 1;
+
+    UPDATE auth_otp_challenges
+    SET attempts_count  = v_next_attempts,
+        last_attempt_at = v_now,
+        status          = CASE
+                            WHEN v_next_attempts >= v_row.max_attempts THEN 'LOCKED'
+                            ELSE 'PENDING'
+                          END
+    WHERE id = v_row.id;
+
+    IF v_next_attempts >= v_row.max_attempts THEN
+      RETURN QUERY SELECT FALSE, v_row.id, 0::SMALLINT, 'OTP_LOCKED'::VARCHAR(40);
+    ELSE
+      RETURN QUERY SELECT
+        FALSE,
+        v_row.id,
+        (v_row.max_attempts - v_next_attempts)::SMALLINT,
+        'INVALID_CODE'::VARCHAR(40);
+    END IF;
+    RETURN;
+  END IF;
+
+  -- ۶. تطابق کامل: مصرف یک‌باره کد (CONSUMED)؛ پس از این لحظه کد دیگر قابل استفاده مجدد نیست
+  UPDATE auth_otp_challenges
+  SET status          = 'CONSUMED',
+      consumed_at     = v_now,
+      last_attempt_at = v_now
+  WHERE id = v_row.id;
+
+  RETURN QUERY SELECT
+    TRUE,
+    v_row.id,
+    (v_row.max_attempts - v_row.attempts_count)::SMALLINT,
+    'VERIFIED'::VARCHAR(40);
 END;
 $$;
 
