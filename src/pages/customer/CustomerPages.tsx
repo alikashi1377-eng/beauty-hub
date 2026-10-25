@@ -16,12 +16,17 @@ import {
   UserCheck,
   MapPin,
 } from 'lucide-react';
-import { AppointmentItem, AppointmentStatus } from '../../types';
+import {
+  AppointmentItem,
+  AppointmentStatus,
+  TimeSlotAvailabilityItem,
+} from '../../types';
 import {
   formatDurationMinutes,
   formatPriceToman,
   toPersianDigits,
 } from '../../utils/formatters';
+import { realApiClient } from '../../services/apiClient';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -83,62 +88,210 @@ const BookingFlowStepIndicator: React.FC<{ currentStep: 1 | 2 | 3 }> = ({
 /** ۱. صفحه ورود مشتری / کاربر (/login) */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { showToast } = usePrototypeData();
+  const {
+    dataMode,
+    authUser,
+    requestOtpLogin,
+    verifyOtpLogin,
+    logoutUser,
+    showToast,
+  } = usePrototypeData();
   const [phone, setPhone] = useState('09123456789');
+  const [otpCode, setOtpCode] = useState('');
+  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSimulatedLogin = (e: React.FormEvent) => {
+  const handleRequestOtpOrSimulatedLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^09\d{9}$/.test(phone.trim())) {
+    const normalizedPhone = phone.trim();
+    if (!/^09\d{9}$/.test(normalizedPhone)) {
       setError('شماره موبایل واردشده معتبر نیست (مثال: 09123456789).');
       return;
     }
     setError('');
-    showToast('ورود آزمایشی (حالت دمو بدون ارسال پیامک) انجام شد.');
-    navigate('/me');
+
+    if (dataMode === 'mock') {
+      showToast('ورود آزمایشی (حالت دمو بدون ارسال پیامک) انجام شد.');
+      navigate('/me');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await requestOtpLogin(normalizedPhone);
+      setStep('otp');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'خطا در ارسال کد تایید یک‌بارمصرف.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedCode = otpCode.trim();
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setError('کد تایید باید یک عدد ۶ رقمی معتبر باشد.');
+      return;
+    }
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const user = await verifyOtpLogin(phone.trim(), trimmedCode);
+      if (user.roles.includes('PLATFORM_ADMIN')) {
+        navigate('/admin');
+      } else if (user.roles.includes('BUSINESS_OWNER')) {
+        navigate('/app');
+      } else {
+        navigate('/me');
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'کد واردشده معتبر نیست.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="max-w-lg mx-auto my-6">
       <PageHeader
-        kicker="حساب کاربری · حالت نمایشی"
+        kicker={
+          dataMode === 'real'
+            ? 'حساب کاربری · احراز هویت امن OTP'
+            : 'حساب کاربری · حالت نمایشی'
+        }
         title="ورود به حساب کاربری"
-        subtitle="در این مرحله احراز هویت واقعی و ارسال پیامک (OTP) غیرفعال است و می‌توانید مستقیماً وارد محیط‌های دمو شوید."
+        subtitle={
+          dataMode === 'real'
+            ? 'برای ورود امن به حساب کاربری، شماره همراه خود را وارد کرده و کد تایید ۶ رقمی را ثبت نمایید.'
+            : 'در این مرحله احراز هویت واقعی و ارسال پیامک (OTP) غیرفعال است و می‌توانید مستقیماً وارد محیط‌های دمو شوید.'
+        }
         routePattern="/login"
-        breadcrumbs={[{ label: 'صفحه اصلی', href: '/' }, { label: 'ورود دمو' }]}
+        breadcrumbs={[{ label: 'صفحه اصلی', href: '/' }, { label: 'ورود' }]}
       />
 
       <Card padding="lg" className="space-y-6">
-        <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-950">
-          <ShieldAlert className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
-          <span className="leading-relaxed">
-            حالت نمایشی (Demo Mode): هیچ پیامکی ارسال نمی‌شود و این فرم صرفاً
-            برای بررسی جریان ورود مشتری به ناحیه کاربری طراحی شده است.
-          </span>
-        </div>
+        {authUser ? (
+          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 text-xs text-emerald-950">
+            <div>
+              <p className="font-extrabold">
+                نشست فعال: {authUser.fullName} ({authUser.phone})
+              </p>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                نقش‌های فعال: {authUser.roles.join('، ')}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void logoutUser()}
+            >
+              خروج از حساب
+            </Button>
+          </div>
+        ) : null}
 
-        <form onSubmit={handleSimulatedLogin} className="space-y-4" noValidate>
-          <FormField
-            id="login-phone"
-            label="شماره تلفن همراه (آزمایشی)"
-            hint="شماره ۱۱ رقمی با پیش‌شماره ۰۹"
-            error={error}
-            required
+        {dataMode === 'mock' ? (
+          <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-950">
+            <ShieldAlert className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">
+              حالت نمایشی (Demo Mode): هیچ پیامکی ارسال نمی‌شود و این فرم صرفاً
+              برای بررسی جریان ورود مشتری به ناحیه کاربری طراحی شده است.
+            </span>
+          </div>
+        ) : null}
+
+        {step === 'phone' || dataMode === 'mock' ? (
+          <form
+            onSubmit={handleRequestOtpOrSimulatedLogin}
+            className="space-y-4"
+            noValidate
           >
-            <Input
+            <FormField
               id="login-phone"
-              dir="ltr"
-              value={phone}
-              hasError={Boolean(error)}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </FormField>
+              label="شماره تلفن همراه"
+              hint="شماره ۱۱ رقمی با پیش‌شماره ۰۹"
+              error={error}
+              required
+            >
+              <Input
+                id="login-phone"
+                dir="ltr"
+                value={phone}
+                hasError={Boolean(error)}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+            </FormField>
 
-          <Button type="submit" variant="primary" size="lg" fullWidth>
-            <span>ورود آزمایشی به حساب مشتری (/me)</span>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        </form>
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              fullWidth
+              disabled={isSubmitting}
+            >
+              <span>
+                {dataMode === 'real'
+                  ? 'دریافت کد تایید یک‌بارمصرف (OTP)'
+                  : 'ورود آزمایشی به حساب مشتری (/me)'}
+              </span>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifyOtp} className="space-y-4" noValidate>
+            <FormField
+              id="login-otp-code"
+              label={`کد تایید ۶ رقمی ارسال‌شده به ${phone}`}
+              hint="کد ۶ رقمی یک‌بارمصرف را وارد کنید"
+              error={error}
+              required
+            >
+              <Input
+                id="login-otp-code"
+                dir="ltr"
+                maxLength={6}
+                value={otpCode}
+                hasError={Boolean(error)}
+                onChange={(e) => setOtpCode(e.target.value)}
+                placeholder="123456"
+              />
+            </FormField>
+
+            <div className="flex items-center gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={() => {
+                  setStep('phone');
+                  setOtpCode('');
+                  setError('');
+                }}
+              >
+                ویرایش شماره
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
+                disabled={isSubmitting}
+              >
+                <span>تایید کد و ورود به حساب</span>
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </div>
+          </form>
+        )}
 
         <div className="pt-5 border-t border-[#E6E3EE] space-y-3">
           <p className="text-xs font-extrabold text-[#171226]">
@@ -168,6 +321,7 @@ export const BookingStepPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const {
+    dataMode,
     businesses,
     services,
     specialists,
@@ -176,36 +330,111 @@ export const BookingStepPage: React.FC = () => {
   } = usePrototypeData();
 
   const business =
-    businesses.find((b) => b.slug === businessSlug) ?? businesses[0];
-  const bizServices = services.filter((s) => s.businessId === business.id);
-  const bizSpecialists = specialists.filter(
-    (sp) => sp.businessId === business.id
+    businesses.find((b) => b.slug === businessSlug || b.id === businessSlug) ??
+    (dataMode === 'mock' ? businesses[0] : undefined);
+
+  const bizServices = business
+    ? services.filter(
+        (s) => s.businessId === business.id && s.isActive !== false
+      )
+    : [];
+  const bizSpecialists = business
+    ? specialists.filter(
+        (sp) => sp.businessId === business.id && sp.isActive !== false
+      )
+    : [];
+
+  const [realSlots, setRealSlots] = useState<TimeSlotAvailabilityItem[] | null>(
+    null
   );
+  const [isLoadingSlots, setIsLoadingSlots] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!business) return;
     const srvParam = searchParams.get('service');
     const spcParam = searchParams.get('specialist');
     const defaultSrv =
       srvParam && bizServices.some((s) => s.id === srvParam)
         ? srvParam
-        : (bizServices[0]?.id ?? 'srv-101');
+        : (bizServices[0]?.id ?? '');
     const defaultSpc =
       spcParam && bizSpecialists.some((sp) => sp.id === spcParam)
         ? spcParam
-        : (bizSpecialists[0]?.id ?? 'spc-1');
+        : (bizSpecialists[0]?.id ?? '');
 
     updateBookingDraft({
       businessSlug: business.slug,
       serviceId: defaultSrv,
       specialistId: defaultSpc,
     });
-  }, [business.slug]);
+  }, [business?.slug, bizServices.length, bizSpecialists.length]);
 
   const selectedService =
     bizServices.find((s) => s.id === bookingDraft.serviceId) ?? bizServices[0];
   const selectedSpecialist =
     bizSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
     bizSpecialists[0];
+
+  useEffect(() => {
+    if (dataMode !== 'real' || !business) {
+      setRealSlots(null);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingSlots(true);
+    void realApiClient
+      .fetchBusinessAvailability(business.slug, {
+        dateJalali: bookingDraft.dateJalali,
+        serviceId: selectedService?.id,
+        specialistId: selectedSpecialist?.id,
+      })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.data?.slots) {
+          setRealSlots(res.data.slots);
+          const currentSelected = res.data.slots.find(
+            (s) => s.time === bookingDraft.timeSlot && s.available
+          );
+          if (!currentSelected) {
+            const firstAvailable = res.data.slots.find((s) => s.available);
+            if (firstAvailable) {
+              updateBookingDraft({ timeSlot: firstAvailable.time });
+            }
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRealSlots([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingSlots(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dataMode,
+    business?.slug,
+    bookingDraft.dateJalali,
+    selectedService?.id,
+    selectedSpecialist?.id,
+  ]);
+
+  if (!business) {
+    return (
+      <div className="my-8">
+        <EmptyState
+          title="مرکز زیبایی مورد نظر یافت نشد"
+          description="ممکن است این مرکز هنوز تایید نشده باشد یا آدرس واردشده معتبر نباشد."
+        />
+      </div>
+    );
+  }
 
   const availableDates = [
     { date: '۱۴۰۵/۰۸/۰۳', label: 'یکشنبه ۳ آبان', tag: 'پیشنهاد امروز' },
@@ -214,7 +443,7 @@ export const BookingStepPage: React.FC = () => {
     { date: '۱۴۰۵/۰۸/۰۶', label: 'چهارشنبه ۶ آبان', tag: 'آخر هفته' },
   ];
 
-  const timeSlotOptions = [
+  const mockTimeSlotOptions: TimeSlotAvailabilityItem[] = [
     { time: '۰۹:۳۰', available: true },
     { time: '۱۰:۳۰', available: false, reason: 'تکمیل ظرفیت' },
     { time: '۱۱:۰۰', available: true },
@@ -223,6 +452,9 @@ export const BookingStepPage: React.FC = () => {
     { time: '۱۵:۳۰', available: true },
     { time: '۱۷:۰۰', available: true },
   ];
+
+  const timeSlotOptions: TimeSlotAvailabilityItem[] =
+    dataMode === 'real' ? (realSlots ?? []) : mockTimeSlotOptions;
 
   return (
     <div>
@@ -506,30 +738,51 @@ export const BookingStepPage: React.FC = () => {
 export const BookingConfirmPage: React.FC = () => {
   const navigate = useNavigate();
   const {
+    dataMode,
+    authUser,
     businesses,
     services,
     specialists,
     bookingDraft,
     updateBookingDraft,
-    completeSimulatedBooking,
+    submitBooking,
   } = usePrototypeData();
 
   const [formError, setFormError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
-    businesses[0];
+    (dataMode === 'mock' ? businesses[0] : undefined);
   const service =
-    services.find((s) => s.id === bookingDraft.serviceId) ?? services[0];
+    services.find((s) => s.id === bookingDraft.serviceId) ??
+    (dataMode === 'mock' ? services[0] : undefined);
   const specialist =
     specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
-    specialists[0];
+    (dataMode === 'mock' ? specialists[0] : undefined);
 
-  const handleConfirmBooking = (e: React.FormEvent) => {
+  if (!business || !service || !specialist) {
+    return (
+      <div className="my-8">
+        <EmptyState
+          title="اطلاعات نوبت انتخابی کامل نیست"
+          description="لطفاً ابتدا از صفحه سالن، خدمت و متخصص مورد نظر خود را انتخاب کنید."
+        />
+      </div>
+    );
+  }
+
+  const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dataMode === 'real' && !authUser) {
+      setFormError(
+        'برای ثبت نهایی نوبت در پایگاه داده، لطفاً ابتدا وارد حساب کاربری خود شوید.'
+      );
+      return;
+    }
     if (
       !bookingDraft.customerName.trim() ||
-      bookingDraft.customerName.trim().length < 3
+      bookingDraft.customerName.trim().length < 2
     ) {
       setFormError('لطفاً نام و نام خانوادگی مراجع را به طور کامل وارد کنید.');
       return;
@@ -539,8 +792,19 @@ export const BookingConfirmPage: React.FC = () => {
       return;
     }
     setFormError('');
-    completeSimulatedBooking();
-    navigate('/booking/result');
+    setIsSubmitting(true);
+    try {
+      await submitBooking();
+      navigate('/booking/result');
+    } catch (err) {
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : 'خطا در ثبت نوبت. لطفاً ساعت یا متخصص دیگری را بررسی کنید.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -548,7 +812,7 @@ export const BookingConfirmPage: React.FC = () => {
       <PageHeader
         kicker="رزرو آنلاین نوبت · گام ۲ از ۳"
         title="بازبینی نهایی و مشخصات مراجع"
-        subtitle="اطلاعات نوبت انتخابی و مشخصات تماس آزمایشی را پیش از ثبت نهایی بررسی نمایید."
+        subtitle="اطلاعات نوبت انتخابی و مشخصات تماس را پیش از ثبت نهایی بررسی نمایید."
         routePattern="/booking/confirm"
         breadcrumbs={[
           {
@@ -562,6 +826,19 @@ export const BookingConfirmPage: React.FC = () => {
       <BookingFlowStepIndicator currentStep={2} />
 
       <div className="max-w-3xl mx-auto space-y-6">
+        {dataMode === 'real' && !authUser ? (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-950">
+            <span className="font-bold">
+              برای ثبت قطعی نوبت در سامانه، ورود با شماره موبایل (OTP) الزامی است.
+            </span>
+            <Link to="/login">
+              <Button variant="primary" size="sm">
+                ورود / ثبت‌نام سریع
+              </Button>
+            </Link>
+          </div>
+        ) : null}
+
         <Card className="space-y-4">
           <div className="flex items-center justify-between border-b border-[#E6E3EE] pb-3">
             <h2 className="text-base font-extrabold text-[#171226]">
@@ -616,7 +893,7 @@ export const BookingConfirmPage: React.FC = () => {
             noValidate
           >
             <h2 className="text-base font-extrabold text-[#171226] border-b border-[#E6E3EE] pb-3">
-              ۲. مشخصات مراجع (اطلاعات آزمایشی)
+              ۲. مشخصات مراجع
             </h2>
 
             {formError ? (
@@ -645,7 +922,7 @@ export const BookingConfirmPage: React.FC = () => {
 
               <FormField
                 id="bk-cust-phone"
-                label="شماره همراه جهت هماهنگی (دمو)"
+                label="شماره همراه جهت هماهنگی"
                 required
               >
                 <Input
@@ -676,9 +953,9 @@ export const BookingConfirmPage: React.FC = () => {
             </FormField>
 
             <div className="p-3.5 rounded-xl bg-[#F4F3F8] text-xs text-[#4E4760] leading-relaxed">
-              توجه: با کلیک روی دکمه زیر، این نوبت شبیه‌سازی‌شده در حافظه مرورگر
-              شما ثبت می‌شود و بلافاصله در بخش «نوبت‌های من» و همچنین تقویم پنل
-              کسب‌وکار قابل مشاهده خواهد بود.
+              {dataMode === 'real'
+                ? 'با کلیک روی دکمه زیر، نوبت شما پس از بررسی ساعات کاری و عدم تداخل زمانی در پایگاه داده PostgreSQL ثبت می‌شود.'
+                : 'توجه: با کلیک روی دکمه زیر، این نوبت شبیه‌سازی‌شده در حافظه مرورگر شما ثبت می‌شود و بلافاصله در بخش «نوبت‌های من» و همچنین تقویم پنل کسب‌وکار قابل مشاهده خواهد بود.'}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
@@ -688,8 +965,19 @@ export const BookingConfirmPage: React.FC = () => {
                   <span>تغییر خدمت یا ساعت</span>
                 </Button>
               </Link>
-              <Button type="submit" variant="primary" size="lg">
-                <span>ثبت رزرو شبیه‌سازی‌شده</span>
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                disabled={isSubmitting}
+              >
+                <span>
+                  {isSubmitting
+                    ? 'در حال ثبت نوبت...'
+                    : dataMode === 'real'
+                      ? 'ثبت نهایی نوبت'
+                      : 'ثبت رزرو شبیه‌سازی‌شده'}
+                </span>
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </div>
@@ -700,9 +988,9 @@ export const BookingConfirmPage: React.FC = () => {
   );
 };
 
-/** ۴. نتیجه رزرو شبیه‌سازی‌شده (/booking/result) */
+/** ۴. نتیجه رزرو (/booking/result) */
 export const BookingResultPage: React.FC = () => {
-  const { bookingDraft, businesses, services, specialists } =
+  const { dataMode, bookingDraft, businesses, services, specialists } =
     usePrototypeData();
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
@@ -717,12 +1005,20 @@ export const BookingResultPage: React.FC = () => {
     <div>
       <PageHeader
         kicker="رزرو آنلاین نوبت · گام پایانی"
-        title="رسید رزرو شبیه‌سازی‌شده (Simulated Booking)"
-        subtitle="نوبت آزمایشی شما در وضعیت فرانت‌اند ثبت شد و آماده بررسی در پورتال مشتری است."
+        title={
+          dataMode === 'real'
+            ? 'رسید ثبت قطعی نوبت'
+            : 'رسید رزرو شبیه‌سازی‌شده (Simulated Booking)'
+        }
+        subtitle={
+          dataMode === 'real'
+            ? 'نوبت شما با موفقیت در پایگاه داده ثبت شد و در پنل سالن و حساب کاربری شما فعال است.'
+            : 'نوبت آزمایشی شما در وضعیت فرانت‌اند ثبت شد و آماده بررسی در پورتال مشتری است.'
+        }
         routePattern="/booking/result"
         breadcrumbs={[
           { label: 'بازبینی نوبت', href: '/booking/confirm' },
-          { label: 'رسید شبیه‌سازی رزرو' },
+          { label: 'رسید رزرو' },
         ]}
       />
 
@@ -735,12 +1031,16 @@ export const BookingResultPage: React.FC = () => {
           </div>
           <div>
             <StatusBadge
-              label="رزرو شبیه‌سازی‌شده (نسخه نمایشی بدون پرداخت واقعی)"
-              tone="warning"
+              label={
+                dataMode === 'real'
+                  ? 'رزرو قطعی و ثبت‌شده در پایگاه داده'
+                  : 'رزرو شبیه‌سازی‌شده (نسخه نمایشی بدون پرداخت واقعی)'
+              }
+              tone={dataMode === 'real' ? 'success' : 'warning'}
             />
           </div>
           <h2 className="text-xl font-extrabold text-[#171226] pt-1">
-            نوبت آزمایشی شما با کد رهگیری{' '}
+            نوبت شما با کد رهگیری{' '}
             <span className="font-mono text-[#2A0F54] bg-[#F3E8FF] px-2.5 py-0.5 rounded-lg">
               {bookingDraft.lastReferenceCode ?? 'BH-403990'}
             </span>{' '}
@@ -752,13 +1052,13 @@ export const BookingResultPage: React.FC = () => {
           <div className="flex justify-between py-1 border-b border-[#E6E3EE]">
             <span className="text-[#787189]">مرکز زیبایی:</span>
             <span className="font-extrabold text-[#171226]">
-              {business.name} ({business.city})
+              {business ? `${business.name} (${business.city})` : bookingDraft.businessSlug}
             </span>
           </div>
           <div className="flex justify-between py-1 border-b border-[#E6E3EE]">
             <span className="text-[#787189]">خدمت و متخصص:</span>
             <span className="font-bold text-[#171226]">
-              {service.title} · {specialist.fullName}
+              {service?.title ?? '—'} · {specialist?.fullName ?? '—'}
             </span>
           </div>
           <div className="flex justify-between py-1 border-b border-[#E6E3EE]">
@@ -776,7 +1076,7 @@ export const BookingResultPage: React.FC = () => {
           <div className="flex justify-between pt-1">
             <span className="text-[#787189]">مبلغ خدمت:</span>
             <span className="font-extrabold text-[#2A0F54] tabular-nums">
-              {formatPriceToman(service.priceToman)}
+              {formatPriceToman(service?.priceToman ?? 0)}
             </span>
           </div>
         </div>
@@ -801,17 +1101,29 @@ export const BookingResultPage: React.FC = () => {
 
 /** ۵. خلاصه حساب مشتری (/me) */
 export const CustomerOverviewPage: React.FC = () => {
-  const { appointments, favoriteBusinessIds } = usePrototypeData();
+  const { dataMode, authUser, appointments, favoriteBusinessIds } =
+    usePrototypeData();
   const upcomingCount = appointments.filter(
     (a) =>
       a.status === AppointmentStatus.Confirmed ||
       a.status === AppointmentStatus.Pending
   ).length;
 
+  const displayName =
+    dataMode === 'real'
+      ? (authUser?.fullName ?? 'کاربر مهمان (وارد نشده)')
+      : (authUser?.fullName ?? 'المیرا شمس (کاربر آزمایشی)');
+  const displayPhoneCity =
+    dataMode === 'real'
+      ? authUser
+        ? `شماره همراه: ${toPersianDigits(authUser.phone)} · ${authUser.defaultCity || 'تهران'}`
+        : 'برای مشاهده نوبت‌ها ابتدا وارد شوید'
+      : 'شماره همراه: ۰۹۱۲***۴۵۸۱ · تهران';
+
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="پورتال مشتری · المیرا شمس"
+        kicker={`پورتال مشتری · ${displayName}`}
         title="پیشخوان حساب کاربری من"
         subtitle="خلاصه وضعیت نوبت‌های پیش‌رو، سالن‌های نشان‌شده و دسترسی سریع به تنظیمات کاربری"
         routePattern="/me"
@@ -828,6 +1140,24 @@ export const CustomerOverviewPage: React.FC = () => {
           </Link>
         }
       />
+
+      {dataMode === 'real' && !authUser ? (
+        <Card className="flex flex-wrap items-center justify-between gap-4 bg-amber-50/80 border-amber-200">
+          <div className="space-y-1">
+            <p className="text-sm font-extrabold text-amber-950">
+              شما هنوز وارد حساب کاربری خود نشده‌اید
+            </p>
+            <p className="text-xs text-amber-900">
+              برای مشاهده نوبت‌های ثبت‌شده، علاقه‌مندی‌ها و مدیریت پروفایل، با شماره موبایل خود وارد شوید.
+            </p>
+          </div>
+          <Link to="/login">
+            <Button variant="primary" size="sm">
+              ورود به حساب کاربری (/login)
+            </Button>
+          </Link>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2.5">
@@ -870,10 +1200,10 @@ export const CustomerOverviewPage: React.FC = () => {
             <UserCheck className="w-4 h-4 text-[#2A0F54]" />
           </div>
           <p className="text-sm font-extrabold text-[#171226]">
-            المیرا شمس (کاربر آزمایشی)
+            {displayName}
           </p>
           <p className="text-xs text-[#4E4760] tabular-nums">
-            شماره همراه: ۰۹۱۲***۴۵۸۱ · تهران
+            {displayPhoneCity}
           </p>
           <Link
             to="/me/profile"
@@ -897,11 +1227,18 @@ export const CustomerOverviewPage: React.FC = () => {
             مشاهده همه نوبت‌ها ←
           </Link>
         </div>
-        <div className="space-y-3">
-          {appointments.slice(0, 3).map((apt) => (
-            <AppointmentCard key={apt.id} appointment={apt} />
-          ))}
-        </div>
+        {appointments.length === 0 ? (
+          <EmptyState
+            title="هنوز نوبتی برای شما ثبت نشده است"
+            description="از بخش جست‌وجوی سالن‌ها می‌توانید اولین نوبت خود را به صورت آنلاین رزرو کنید."
+          />
+        ) : (
+          <div className="space-y-3">
+            {appointments.slice(0, 3).map((apt) => (
+              <AppointmentCard key={apt.id} appointment={apt} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1086,15 +1423,36 @@ export const CustomerFavoritesPage: React.FC = () => {
 
 /** ۸. ویرایش پروفایل مشتری (/me/profile) */
 export const CustomerProfilePage: React.FC = () => {
-  const { showToast } = usePrototypeData();
-  const [name, setName] = useState('المیرا شمس');
-  const [phone, setPhone] = useState('09123456789');
-  const [city, setCity] = useState('تهران');
+  const { dataMode, authUser, updateCustomerProfile } = usePrototypeData();
+  const [name, setName] = useState(
+    authUser?.fullName ?? (dataMode === 'mock' ? 'المیرا شمس' : '')
+  );
+  const [phone, setPhone] = useState(
+    authUser?.phone ?? (dataMode === 'mock' ? '09123456789' : '')
+  );
+  const [city, setCity] = useState(authUser?.defaultCity ?? 'تهران');
   const [smsReminder, setSmsReminder] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (authUser) {
+      setName(authUser.fullName);
+      setPhone(authUser.phone);
+      setCity(authUser.defaultCity || 'تهران');
+    }
+  }, [authUser]);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('اطلاعات پروفایل مشتری در حالت دمو بروزرسانی شد.');
+    setIsSaving(true);
+    try {
+      await updateCustomerProfile({
+        fullName: name.trim(),
+        defaultCity: city.trim(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -1102,7 +1460,7 @@ export const CustomerProfilePage: React.FC = () => {
       <PageHeader
         kicker="پورتال مشتری · تنظیمات حساب"
         title="ویرایش مشخصات کاربری مشتری"
-        subtitle="مدیریت نام، شهر پیش‌فرض جست‌وجو و ترجیحات دریافت یادآور نوبت (فرم آزمایشی)"
+        subtitle="مدیریت نام، شهر پیش‌فرض جست‌وجو و ترجیحات دریافت یادآور نوبت"
         routePattern="/me/profile"
         breadcrumbs={[
           { label: 'حساب کاربری من', href: '/me' },
@@ -1120,11 +1478,12 @@ export const CustomerProfilePage: React.FC = () => {
                 onChange={(e) => setName(e.target.value)}
               />
             </FormField>
-            <FormField id="cust-phone" label="شماره همراه (دمو)">
+            <FormField id="cust-phone" label="شماره همراه (احرازهویت‌شده)">
               <Input
                 id="cust-phone"
                 dir="ltr"
                 value={phone}
+                disabled={dataMode === 'real'}
                 onChange={(e) => setPhone(e.target.value)}
               />
             </FormField>
@@ -1149,8 +1508,12 @@ export const CustomerProfilePage: React.FC = () => {
             </div>
 
             <div className="pt-2">
-              <Button type="submit" variant="primary">
-                ذخیره تغییرات پروفایل (دمو)
+              <Button type="submit" variant="primary" disabled={isSaving}>
+                {isSaving
+                  ? 'در حال ذخیره...'
+                  : dataMode === 'real'
+                    ? 'ذخیره تغییرات پروفایل'
+                    : 'ذخیره تغییرات پروفایل (دمو)'}
               </Button>
             </div>
           </form>
@@ -1158,10 +1521,10 @@ export const CustomerProfilePage: React.FC = () => {
 
         <Card variant="muted" className="lg:col-span-5 space-y-3">
           <div className="flex items-center gap-3">
-            <Avatar name={name} size="lg" tone="rose" />
+            <Avatar name={name || 'کاربر'} size="lg" tone="rose" />
             <div>
               <h2 className="text-base font-extrabold text-[#171226]">
-                {name}
+                {name || 'کاربر BeautyHub'}
               </h2>
               <p className="text-xs text-[#4E4760] flex items-center gap-1 mt-0.5">
                 <MapPin className="w-3.5 h-3.5 text-[#9D174D]" />

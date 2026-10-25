@@ -251,7 +251,7 @@ export const VisualMediaIllustration: React.FC<VisualMediaIllustrationProps> = (
       {/* ردیف پایین تصویر: عنوان مرکز یا سرویس */}
       <div className="relative z-10 pt-6 max-w-[78%]">
         <p
-          className={`text-sm sm:text-base font-extrabold leading-snug ${palette.titleColor} line-clamp-1`}
+          className={`text-sm sm:text-base font-bold leading-snug ${palette.titleColor} line-clamp-1`}
         >
           {title}
         </p>

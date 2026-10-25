@@ -31,10 +31,19 @@ import {
 
 /** ۱. داشبورد مدیریت پلتفرم (/admin) */
 export const AdminDashboardPage: React.FC = () => {
-  const { businesses, categories, updateBusinessApproval } = usePrototypeData();
+  const { dataMode, businesses, categories, updateBusinessApproval } =
+    usePrototypeData();
   const pendingCount = businesses.filter(
     (b) => b.approvalStatus === 'PENDING_REVIEW'
   ).length;
+  const activeSubscriptionsCount =
+    dataMode === 'real'
+      ? businesses.filter(
+          (b) =>
+            b.subscriptionStatus === 'ACTIVE' ||
+            b.subscriptionStatus === 'TRIAL'
+        ).length
+      : 4;
 
   return (
     <div className="space-y-6">
@@ -55,7 +64,8 @@ export const AdminDashboardPage: React.FC = () => {
             <Building2 className="w-4 h-4 text-[#2A0F54]" />
           </div>
           <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(businesses.length)} مرکز نمونه
+            {toPersianDigits(businesses.length)}{' '}
+            {dataMode === 'real' ? 'مرکز ثبت‌شده' : 'مرکز نمونه'}
           </p>
           <p className="text-[11px] text-amber-800 font-bold tabular-nums">
             {toPersianDigits(pendingCount)} مورد در صف بررسی مدارک
@@ -70,9 +80,13 @@ export const AdminDashboardPage: React.FC = () => {
             <CreditCard className="w-4 h-4 text-[#2A0F54]" />
           </div>
           <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(4)} اشتراک تجاری
+            {toPersianDigits(activeSubscriptionsCount)} اشتراک تجاری
           </p>
-          <p className="text-[11px] text-[#4E4760]">+ ۱ دوره آزمایشی ۱۴ روزه</p>
+          <p className="text-[11px] text-[#4E4760]">
+            {dataMode === 'real'
+              ? 'بر اساس وضعیت اشتراک کسب‌وکارها'
+              : '+ ۱ دوره آزمایشی ۱۴ روزه'}
+          </p>
         </Card>
 
         <Card padding="sm" className="space-y-2">
@@ -112,7 +126,9 @@ export const AdminDashboardPage: React.FC = () => {
             صف بررسی و وضعیت کسب‌وکارهای عضو
           </h2>
           <span className="text-xs text-[#787189]">
-            تایید یا رد سریع در وضعیت دمو
+            {dataMode === 'real'
+              ? 'تایید یا رد مستقیم در پایگاه داده PostgreSQL'
+              : 'تایید یا رد سریع در وضعیت دمو'}
           </span>
         </div>
 
@@ -400,6 +416,7 @@ export const AdminBusinessesPage: React.FC = () => {
 
 /** ۳. مدیریت کاربران (/admin/users) */
 export const AdminUsersPage: React.FC = () => {
+  const { dataMode, adminUsers } = usePrototypeData();
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [page, setPage] = useState(1);
 
@@ -446,10 +463,22 @@ export const AdminUsersPage: React.FC = () => {
     },
   ];
 
+  const sourceUsers =
+    dataMode === 'real'
+      ? adminUsers.map((u) => ({
+          id: u.id,
+          name: u.fullName,
+          role: u.roleLabel,
+          phone: u.phoneMasked,
+          city: u.city,
+          status: u.isActive ? 'فعال' : 'غیرفعال',
+        }))
+      : sampleUsers;
+
   const filtered =
     roleFilter === 'ALL'
-      ? sampleUsers
-      : sampleUsers.filter((u) => u.role === roleFilter);
+      ? sourceUsers
+      : sourceUsers.filter((u) => u.role.includes(roleFilter));
 
   return (
     <div>
@@ -473,7 +502,8 @@ export const AdminUsersPage: React.FC = () => {
             options={[
               { value: 'ALL', label: 'همه نقش‌ها' },
               { value: 'مشتری', label: 'مشتری' },
-              { value: 'مدیر سالن', label: 'مدیر سالن' },
+              { value: 'کسب‌وکار', label: 'مالک / عضو کسب‌وکار' },
+              { value: 'مدیر', label: 'مدیر کل / مدیر سالن' },
               { value: 'متخصص مستقل', label: 'متخصص مستقل' },
             ]}
           />
@@ -763,6 +793,8 @@ export const AdminSubscriptionsPage: React.FC = () => {
 
 /** ۶. تراکنش‌های حق اشتراک (/admin/payments) */
 export const AdminPaymentsPage: React.FC = () => {
+  const { dataMode } = usePrototypeData();
+
   const sampleInvoices = [
     {
       id: 'INV-901',
@@ -798,12 +830,18 @@ export const AdminPaymentsPage: React.FC = () => {
     },
   ];
 
+  const invoices = dataMode === 'real' ? [] : sampleInvoices;
+
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         kicker="مالی و صورتحساب · تراکنش‌های اشتراک"
         title="صورتحساب‌ها و تراکنش‌های اشتراک"
-        subtitle="گزارش صورتحساب‌های آزمایشی حق اشتراک ماهانه کسب‌وکارها"
+        subtitle={
+          dataMode === 'real'
+            ? 'فهرست تراکنش‌های تاییدشده درگاه پرداخت (ثبت وضعیت VERIFIED منوط به تایید سمت سرور درگاه است)'
+            : 'گزارش صورتحساب‌های آزمایشی حق اشتراک ماهانه کسب‌وکارها'
+        }
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -811,53 +849,75 @@ export const AdminPaymentsPage: React.FC = () => {
         ]}
       />
 
-      <ResponsiveTable
-        keyExtractor={(i) => i.id}
-        data={sampleInvoices}
-        columns={[
-          {
-            key: 'id',
-            header: 'شماره صورتحساب',
-            render: (i) => (
-              <span className="font-mono text-xs font-bold text-[#2A0F54] bg-[#F4F3F8] px-2 py-0.5 rounded">
-                {i.id}
-              </span>
-            ),
-          },
-          {
-            key: 'biz',
-            header: 'کسب‌وکار',
-            render: (i) => (
-              <span className="font-extrabold text-[#171226]">{i.business}</span>
-            ),
-          },
-          {
-            key: 'plan',
-            header: 'پلن اشتراک',
-            render: (i) => <span>{i.plan}</span>,
-          },
-          {
-            key: 'date',
-            header: 'تاریخ ثبت',
-            render: (i) => <span className="tabular-nums">{i.date}</span>,
-          },
-          {
-            key: 'amount',
-            header: 'مبلغ (تومان)',
-            align: 'left',
-            render: (i) => (
-              <span className="tabular-nums font-extrabold text-[#2A0F54]">
-                {formatPriceToman(i.amount)}
-              </span>
-            ),
-          },
-          {
-            key: 'status',
-            header: 'وضعیت',
-            render: (i) => <StatusBadge label={i.status} tone="success" />,
-          },
-        ]}
-      />
+      {dataMode === 'real' ? (
+        <Card className="p-5 space-y-2 border border-[#E6E3EE] bg-[#FAF9FC]">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-[#2A0F54]">
+              وضعیت درگاه پرداخت آنلاین: غیرفعال (رزرو بدون پیش‌پرداخت فعال است)
+            </p>
+            <StatusBadge label="بدون درگاه بانکی فعال" tone="warning" />
+          </div>
+          <p className="text-xs text-[#4E4760] leading-relaxed">
+            در نسخه فعلی، ثبت نوبت مشتریان بدون اجبار به پرداخت آنلاین (تسویه در محل سالن) انجام می‌شود و هیچ تراکنش موفقی بدون تاییدیه معتبر سمت سرور درگاه بانکی (`server_verified_at` و `gateway_ref_id`) در جدول `payments` ثبت نمی‌گردد.
+          </p>
+        </Card>
+      ) : null}
+
+      {invoices.length === 0 ? (
+        <Card className="p-8 text-center">
+          <p className="text-sm font-bold text-[#171226]">
+            هیچ تراکنش بانکی تاییدشده‌ای در پایگاه داده ثبت نشده است.
+          </p>
+        </Card>
+      ) : (
+        <ResponsiveTable
+          keyExtractor={(i) => i.id}
+          data={invoices}
+          columns={[
+            {
+              key: 'id',
+              header: 'شماره صورتحساب',
+              render: (i) => (
+                <span className="font-mono text-xs font-bold text-[#2A0F54] bg-[#F4F3F8] px-2 py-0.5 rounded">
+                  {i.id}
+                </span>
+              ),
+            },
+            {
+              key: 'biz',
+              header: 'کسب‌وکار',
+              render: (i) => (
+                <span className="font-extrabold text-[#171226]">{i.business}</span>
+              ),
+            },
+            {
+              key: 'plan',
+              header: 'پلن اشتراک',
+              render: (i) => <span>{i.plan}</span>,
+            },
+            {
+              key: 'date',
+              header: 'تاریخ ثبت',
+              render: (i) => <span className="tabular-nums">{i.date}</span>,
+            },
+            {
+              key: 'amount',
+              header: 'مبلغ (تومان)',
+              align: 'left',
+              render: (i) => (
+                <span className="tabular-nums font-extrabold text-[#2A0F54]">
+                  {formatPriceToman(i.amount)}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'وضعیت',
+              render: (i) => <StatusBadge label={i.status} tone="success" />,
+            },
+          ]}
+        />
+      )}
     </div>
   );
 };

@@ -29,7 +29,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             <p className="text-xs font-semibold text-[#9D174D]">{kicker}</p>
           ) : null}
           <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-xl sm:text-2xl font-extrabold text-[#120F1D] tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-bold text-[#120F1D] tracking-tight">
               {title}
             </h1>
             {routePattern ? (
@@ -42,7 +42,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             ) : null}
           </div>
           {subtitle ? (
-            <p className="text-xs sm:text-sm text-[#4A4458] max-w-3xl leading-relaxed">
+            <p className="text-xs sm:text-sm font-normal text-[#4A4458] max-w-3xl leading-relaxed">
               {subtitle}
             </p>
           ) : null}

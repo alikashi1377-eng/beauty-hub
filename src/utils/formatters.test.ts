@@ -82,3 +82,55 @@ test('validateBusinessRegistrationDraft and validateServiceForm validate require
   });
   assert.equal(validService.isValid, true);
 });
+
+test('Estedad and Plus Jakarta Sans local variable fonts and design tokens are configured accurately', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { DESIGN_TOKENS } = await import('../config/designTokens');
+
+  assert.equal(DESIGN_TOKENS.typography.fontFamily.includes('Estedad'), true);
+  assert.equal(
+    DESIGN_TOKENS.typography.fontFamily.includes('Plus Jakarta Sans'),
+    true
+  );
+  assert.equal(DESIGN_TOKENS.typography.weights.regular, 400);
+  assert.equal(DESIGN_TOKENS.typography.weights.medium, 500);
+  assert.equal(DESIGN_TOKENS.typography.weights.semibold, 600);
+  assert.equal(DESIGN_TOKENS.typography.weights.bold, 700);
+
+  const requiredFontFiles = [
+    'public/fonts/Estedad-Variable.woff2',
+    'public/fonts/Estedad-Regular.woff2',
+    'public/fonts/Estedad-Medium.woff2',
+    'public/fonts/Estedad-SemiBold.woff2',
+    'public/fonts/Estedad-Bold.woff2',
+    'public/fonts/PlusJakartaSans-Variable.woff2',
+  ];
+
+  for (const relPath of requiredFontFiles) {
+    const fullPath = path.join(process.cwd(), relPath);
+    assert.equal(fs.existsSync(fullPath), true, `Missing font file: ${relPath}`);
+    const buf = fs.readFileSync(fullPath);
+    assert.equal(
+      buf.subarray(0, 4).toString('ascii'),
+      'wOF2',
+      `Invalid wOF2 header in ${relPath}`
+    );
+  }
+
+  const indexCss = fs.readFileSync(
+    path.join(process.cwd(), 'src/index.css'),
+    'utf8'
+  );
+  assert.equal(indexCss.includes("font-family: 'Estedad'"), true);
+  assert.equal(indexCss.includes("font-family: 'Plus Jakarta Sans'"), true);
+  assert.equal(indexCss.includes('Vazirmatn'), false);
+
+  const indexHtml = fs.readFileSync(
+    path.join(process.cwd(), 'index.html'),
+    'utf8'
+  );
+  assert.equal(indexHtml.includes('/fonts/Estedad-Variable.woff2'), true);
+  assert.equal(indexHtml.includes('Vazirmatn'), false);
+});
+

@@ -23,10 +23,26 @@ async function startServer() {
     const distPath = path.resolve(__dirname, 'dist');
     const indexHtmlPath = path.join(distPath, 'index.html');
 
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
+    if (fs.existsSync(distPath) && fs.existsSync(indexHtmlPath)) {
+      app.use(
+        express.static(distPath, {
+          index: false,
+          maxAge: '1h',
+        })
+      );
+
+      // پشتیبانی کامل از مسیرهای React Router هنگام Refresh مستقیم صفحه در Production
       app.get('*', (_req, res) => {
         res.sendFile(indexHtmlPath);
+      });
+    } else {
+      console.error(
+        '[BeautyHub Server] پوشه dist یافت نشد. پیش از اجرای سرور در حالت Production، دستور npm run build را اجرا کنید.'
+      );
+      app.get('*', (_req, res) => {
+        res.status(503).send(
+          'Frontend build artifacts (dist/) not found. Please run "npm run build" before starting in production.'
+        );
       });
     }
   }
@@ -39,6 +55,10 @@ async function startServer() {
 }
 
 startServer().catch((err) => {
-  console.error('[BeautyHub Server] Failed to start server:', err instanceof Error ? err.message : 'Unknown error');
+  console.error(
+    '[BeautyHub Server] Failed to start server:',
+    err instanceof Error ? err.message : 'Unknown error'
+  );
   process.exit(1);
 });
+

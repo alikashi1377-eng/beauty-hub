@@ -19,6 +19,9 @@ import {
 } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { FormField } from '../../components/ui/FormField';
+import { Textarea } from '../../components/ui/Input';
+import { Select } from '../../components/ui/Select';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { VisualMediaIllustration } from '../../components/ui/VisualMediaIllustration';
 import { EmptyState } from '../../components/ui/StateViews';
@@ -35,10 +38,13 @@ export const BusinessPublicProfileView: React.FC<{
 }> = ({ mode }) => {
   const { slug } = useParams<{ slug: string }>();
   const {
+    dataMode,
+    authUser,
     businesses,
     services,
     specialists,
     reviews,
+    addReview,
     gallery,
     favoriteBusinessIds,
     toggleFavoriteBusiness,
@@ -47,16 +53,32 @@ export const BusinessPublicProfileView: React.FC<{
   const [activeTab, setActiveTab] = useState<string>('services');
   const [selectedServiceCategory, setSelectedServiceCategory] =
     useState<string>('ALL');
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewServiceTitle, setReviewServiceTitle] = useState<string>('');
+  const [reviewComment, setReviewComment] = useState<string>('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
 
   const matchedSpecialist = specialists.find((sp) => sp.slug === slug);
   const fallbackSlug = mode === 'pro' ? 'sara-rad' : 'royal-golzar';
   const business =
-    businesses.find((b) => b.slug === slug) ??
+    businesses.find((b) => b.slug === slug || b.id === slug) ??
     (matchedSpecialist
       ? businesses.find((b) => b.id === matchedSpecialist.businessId)
       : undefined) ??
-    businesses.find((b) => b.slug === fallbackSlug) ??
-    businesses[0];
+    (dataMode === 'mock'
+      ? (businesses.find((b) => b.slug === fallbackSlug) ?? businesses[0])
+      : undefined);
+
+  if (!business) {
+    return (
+      <div className="my-8">
+        <EmptyState
+          title="پروفایل مرکز زیبایی یا متخصص یافت نشد"
+          description="ممکن است این مرکز در پایگاه داده وجود نداشته باشد یا هنوز در صف بررسی و تایید قرار داشته باشد."
+        />
+      </div>
+    );
+  }
 
   const bizServices = services.filter(
     (s) => s.businessId === business.id && s.isActive !== false
@@ -128,26 +150,27 @@ export const BusinessPublicProfileView: React.FC<{
         }
       />
 
-      {/* نوار تغییر سریع پروفایل‌های نمونه */}
-      <div className="flex flex-wrap items-center gap-2 text-xs bg-[#F4F3F8] p-2.5 rounded-2xl border border-[#E6E3EE]">
-        <span className="text-[#4A4458] font-bold pr-1">
-          جابه‌جایی سریع بین پروفایل‌های نمونه:
-        </span>
-        {[
-          { to: '/salon/royal-golzar', label: 'سالن رویال گلزار (زنانه)' },
-          { to: '/salon/parseh-barber', label: 'آرایشگاه پارسه استایل (مردانه)' },
-          { to: '/pro/sara-rad', label: 'سارا راد (متخصص مستقل)' },
-          { to: '/pro/mahsa-kiani', label: 'مهسا کیانی (متخصص مو)' },
-        ].map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            className="px-3 py-1.5 rounded-xl bg-white border border-[#D0CADF] hover:border-[#2A0F54] text-[#120F1D] font-semibold transition-colors"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </div>
+      {dataMode === 'mock' ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs bg-[#F4F3F8] p-2.5 rounded-2xl border border-[#E6E3EE]">
+          <span className="text-[#4A4458] font-bold pr-1">
+            جابه‌جایی سریع بین پروفایل‌های نمونه:
+          </span>
+          {[
+            { to: '/salon/royal-golzar', label: 'سالن رویال گلزار (زنانه)' },
+            { to: '/salon/parseh-barber', label: 'آرایشگاه پارسه استایل (مردانه)' },
+            { to: '/pro/sara-rad', label: 'سارا راد (متخصص مستقل)' },
+            { to: '/pro/mahsa-kiani', label: 'مهسا کیانی (متخصص مو)' },
+          ].map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="px-3 py-1.5 rounded-xl bg-white border border-[#D0CADF] hover:border-[#2A0F54] text-[#120F1D] font-semibold transition-colors"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       {/* کارت هویت بصری و اطلاعات کلیدی مرکز */}
       <Card className="p-5 sm:p-7">
@@ -392,6 +415,100 @@ export const BusinessPublicProfileView: React.FC<{
                     </div>
                   ))}
                 </div>
+              </Card>
+
+              {/* فرم ثبت دیدگاه جدید */}
+              <Card className="space-y-4">
+                <h3 className="text-sm font-extrabold text-[#120F1D] border-b border-[#E6E3EE] pb-2.5">
+                  ثبت دیدگاه و تجربه مراجعه
+                </h3>
+                {dataMode === 'real' && !authUser ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#4A4458]">
+                    <span>برای ثبت دیدگاه درباره این مرکز، لطفاً وارد حساب کاربری خود شوید.</span>
+                    <Link to="/login">
+                      <Button variant="outline" size="sm">
+                        ورود به حساب
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!reviewComment.trim() || reviewComment.trim().length < 3) return;
+                      setIsSubmittingReview(true);
+                      try {
+                        const ok = await addReview({
+                          businessId: business.id,
+                          specialistSlug: matchedSpecialist?.slug,
+                          serviceTitle:
+                            reviewServiceTitle ||
+                            bizServices[0]?.title ||
+                            'خدمات زیبایی',
+                          rating: reviewRating,
+                          comment: reviewComment.trim(),
+                        });
+                        if (ok) {
+                          setReviewComment('');
+                        }
+                      } finally {
+                        setIsSubmittingReview(false);
+                      }
+                    }}
+                    className="space-y-3"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <FormField id="rev-service" label="خدمت دریافت‌شده">
+                        <Select
+                          id="rev-service"
+                          value={reviewServiceTitle || bizServices[0]?.title || 'خدمات زیبایی'}
+                          onChange={(e) => setReviewServiceTitle(e.target.value)}
+                          options={
+                            bizServices.length > 0
+                              ? bizServices.map((s) => ({
+                                  value: s.title,
+                                  label: s.title,
+                                }))
+                              : [{ value: 'خدمات زیبایی', label: 'خدمات زیبایی' }]
+                          }
+                        />
+                      </FormField>
+                      <FormField id="rev-rating" label="امتیاز شما (از ۱ تا ۵)">
+                        <Select
+                          id="rev-rating"
+                          value={String(reviewRating)}
+                          onChange={(e) => setReviewRating(Number(e.target.value))}
+                          options={[
+                            { value: '5', label: '۵ ستاره (عالی)' },
+                            { value: '4', label: '۴ ستاره (خوب)' },
+                            { value: '3', label: '۳ ستاره (متوسط)' },
+                            { value: '2', label: '۲ ستاره (ضعیف)' },
+                            { value: '1', label: '۱ ستاره (بسیار ضعیف)' },
+                          ]}
+                        />
+                      </FormField>
+                    </div>
+                    <FormField id="rev-comment" label="متن دیدگاه شما" required>
+                      <Textarea
+                        id="rev-comment"
+                        rows={2}
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="تجربه خود از کیفیت خدمات، نظم نوبت‌دهی و برخورد پرسنل را بنویسید..."
+                      />
+                    </FormField>
+                    <div className="flex justify-end">
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        size="sm"
+                        disabled={isSubmittingReview || reviewComment.trim().length < 3}
+                      >
+                        {isSubmittingReview ? 'در حال ثبت...' : 'ثبت دیدگاه'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </Card>
 
               {bizReviews.length === 0 ? (

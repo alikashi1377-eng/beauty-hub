@@ -47,8 +47,12 @@ export interface MigrationRunSummary {
   skippedVersions: string[];
 }
 
+interface InternalClientSessionHealth {
+  shouldDestroyConnection?: boolean;
+}
+
 /**
- * استخراج امن کد استاندارد ५ کاراکتری SQLSTATE بدون افشای پیام خطا یا اطلاعات اتصال
+ * استخراج امن کد استاندارد ۵ کاراکتری SQLSTATE بدون افشای پیام خطا یا اطلاعات اتصال
  */
 export function extractSafeSqlState(err: unknown): string | null {
   if (!err || typeof err !== 'object' || !('code' in err)) {
@@ -147,7 +151,7 @@ export function loadAndValidateMigrationFiles(
  * تمام مراحل اخذ قفل، بررسی جدول schema_migrations و تراکنش‌های BEGIN/COMMIT روی همین اتصال واحد اجرا می‌شوند.
  */
 export async function runMigrationsWithClient(
-  client: MigrationClientLike,
+  client: MigrationClientLike & InternalClientSessionHealth,
   migrationsDir: string = DEFAULT_MIGRATIONS_DIR
 ): Promise<MigrationRunSummary> {
   const migrationFiles = loadAndValidateMigrationFiles(migrationsDir);
@@ -210,7 +214,9 @@ export async function runMigrationsWithClient(
         await client.query('COMMIT');
         newlyAppliedVersions.push(migration.version);
       } catch (err) {
-        await client.query('ROLLBACK').catch(() => {});
+        await client.query('ROLLBACK').catch(() => {
+          client.shouldDestroyConnection = true;
+        });
 
         const sqlState = extractSafeSqlState(err);
         const errMsg =
@@ -242,7 +248,9 @@ export async function runMigrationsWithClient(
   } finally {
     await client
       .query('SELECT pg_advisory_unlock($1)', [MIGRATION_ADVISORY_LOCK_KEY])
-      .catch(() => {});
+      .catch(() => {
+        client.shouldDestroyConnection = true;
+      });
   }
 }
 
@@ -250,6 +258,7 @@ export async function runMigrationsWithClient(
  * اجرای Migrationها با دریافت یک PoolClient اختصاصی از Pool.
  * تضمین می‌کند که pg_advisory_lock، تراکنش‌ها و pg_advisory_unlock همگی روی یک نشست واحد
  * اجرا شوند و در پایان ابتدا قفل آزاد شده و سپس اتصال با client.release() به Pool بازگردانده شود.
+ * اگر ROLLBACK یا pg_advisory_unlock با خطا مواجه شده باشد، اتصال با client.release(true) تخریب می‌شود.
  */
 export async function runMigrationsOnPool(
   pool: MigrationPoolLike,
@@ -258,11 +267,16 @@ export async function runMigrationsOnPool(
   // پیش از دریافت اتصال از Pool، صحت فایل‌ها را بررسی می‌کنیم تا در صورت خطای ایستا اتصال بیهوده اشغال نشود
   loadAndValidateMigrationFiles(migrationsDir);
 
-  const client = await pool.connect();
+  const client = (await pool.connect()) as MigrationPoolClientLike &
+    InternalClientSessionHealth;
   try {
     return await runMigrationsWithClient(client, migrationsDir);
   } finally {
-    client.release();
+    if (client.shouldDestroyConnection) {
+      client.release(true);
+    } else {
+      client.release();
+    }
   }
 }
 

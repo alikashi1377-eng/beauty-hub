@@ -53,8 +53,8 @@ export const EmptyState: React.FC<StateBlockProps> = ({
       <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#F3EEFA] text-[#2A0F54]">
         <Inbox className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-extrabold text-[#120F1D]">{title}</h3>
-      <p className="text-xs sm:text-sm text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
+      <p className="text-xs sm:text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -83,8 +83,8 @@ export const ErrorState: React.FC<StateBlockProps> = ({
       <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-red-100 text-red-800">
         <AlertTriangle className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-bold text-[#120F1D]">{title}</h3>
-      <p className="text-sm text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
+      <p className="text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -113,8 +113,8 @@ export const SuccessState: React.FC<StateBlockProps> = ({
       <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-800">
         <CheckCircle2 className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-bold text-[#120F1D]">{title}</h3>
-      <p className="text-sm text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
+      <p className="text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -174,10 +174,10 @@ export const NotFoundState: React.FC<{ attemptedPath?: string }> = ({
       <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#F3EEFA] text-[#2A0F54]">
         <Compass className="w-6 h-6" />
       </div>
-      <h1 className="text-xl font-extrabold text-[#120F1D]">
+      <h1 className="text-xl font-bold text-[#120F1D]">
         صفحه مورد نظر یافت نشد (۴۰۴)
       </h1>
-      <p className="text-sm text-[#4A4458] leading-relaxed">
+      <p className="text-sm font-normal text-[#4A4458] leading-relaxed">
         مسیر واردشده در ساختار مسیریابی BeautyHub وجود ندارد یا آدرس آن تغییر کرده است.
       </p>
       {attemptedPath ? (

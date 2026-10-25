@@ -59,7 +59,7 @@ export const Avatar: React.FC<{
 
   return (
     <div
-      className={`rounded-2xl border font-extrabold inline-flex items-center justify-center shrink-0 select-none ${sizeMap[size]} ${toneMap[tone]}`}
+      className={`rounded-2xl border font-bold inline-flex items-center justify-center shrink-0 select-none ${sizeMap[size]} ${toneMap[tone]}`}
       aria-hidden="true"
     >
       {initials}
@@ -89,7 +89,7 @@ export const Tabs: React.FC<{
             onClick={() => onChange(tab.id)}
             className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap cursor-pointer ${
               isActive
-                ? 'bg-[#2A0F54] text-white font-bold shadow-xs'
+                ? 'bg-[#2A0F54] text-white font-semibold shadow-xs'
                 : 'text-[#4A4458] hover:bg-white/70 hover:text-[#120F1D]'
             }`}
           >
@@ -237,7 +237,7 @@ export const BusinessCard: React.FC<{
             ) : null}
           </div>
 
-          <h3 className="text-base font-extrabold text-[#120F1D] leading-snug">
+          <h3 className="text-base font-semibold text-[#120F1D] leading-snug">
             <Link
               to={profileLink}
               className="group-hover:text-[#2A0F54] transition-colors"
@@ -246,14 +246,14 @@ export const BusinessCard: React.FC<{
             </Link>
           </h3>
 
-          <p className="text-xs text-[#4A4458] leading-relaxed line-clamp-2">
+          <p className="text-xs font-normal text-[#4A4458] leading-relaxed line-clamp-2">
             {business.shortDescription}
           </p>
         </div>
 
         <div className="pt-3.5 border-t border-[#E6E3EE] space-y-3.5">
           <div className="flex items-center justify-between text-xs">
-            <div className="inline-flex items-center gap-1 text-[#120F1D] font-bold tabular-nums">
+            <div className="inline-flex items-center gap-1 text-[#120F1D] font-semibold tabular-nums">
               <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
               <span>{toPersianDigits(business.rating)}</span>
               <span className="text-[#756F86] font-normal">
@@ -262,7 +262,7 @@ export const BusinessCard: React.FC<{
             </div>
             <div className="text-[#4A4458] tabular-nums">
               شروع از{' '}
-              <span className="font-extrabold text-[#120F1D]">
+              <span className="font-bold text-[#120F1D]">
                 {formatPriceToman(business.startingPriceToman)}
               </span>
             </div>
@@ -307,17 +307,17 @@ export const ProfessionalCard: React.FC<{
         />
         <div className="space-y-1 min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-extrabold text-[#120F1D] truncate">
+            <h3 className="text-sm font-semibold text-[#120F1D] truncate">
               <Link to={targetUrl} className="hover:text-[#2A0F54]">
                 {specialist.fullName}
               </Link>
             </h3>
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-[#120F1D] tabular-nums shrink-0">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#120F1D] tabular-nums shrink-0">
               <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
               {toPersianDigits(specialist.rating)}
             </span>
           </div>
-          <p className="text-xs text-[#2A0F54] font-semibold">
+          <p className="text-xs text-[#2A0F54] font-medium">
             {specialist.roleTitle}
           </p>
           <p className="text-xs text-[#756F86] tabular-nums">
@@ -376,20 +376,20 @@ export const ServiceCard: React.FC<{
           {service.isPopular ? (
             <>
               <span aria-hidden="true">·</span>
-              <span className="text-[#9D174D] font-bold">پیشنهاد سالن</span>
+              <span className="text-[#9D174D] font-medium">پیشنهاد سالن</span>
             </>
           ) : null}
         </div>
-        <h3 className="text-sm font-extrabold text-[#120F1D]">
+        <h3 className="text-sm font-semibold text-[#120F1D]">
           {service.title}
         </h3>
-        <p className="text-xs text-[#4A4458] leading-relaxed">
+        <p className="text-xs font-normal text-[#4A4458] leading-relaxed">
           {service.description}
         </p>
       </div>
 
       <div className="flex sm:flex-col items-center sm:items-end justify-between gap-2.5 shrink-0">
-        <span className="text-sm font-extrabold text-[#120F1D] tabular-nums">
+        <span className="text-sm font-bold text-[#120F1D] tabular-nums">
           {formatPriceToman(service.priceToman)}
         </span>
         {bookingHref ? (
@@ -423,7 +423,7 @@ export const AppointmentCard: React.FC<{
     <Card className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2 text-xs text-[#756F86]">
-          <span className="font-mono text-[#2A0F54] font-semibold">
+          <span dir="ltr" className="font-mono text-[#2A0F54] font-semibold">
             {appointment.referenceCode}
           </span>
           <span aria-hidden="true">·</span>
@@ -433,16 +433,16 @@ export const AppointmentCard: React.FC<{
           <span aria-hidden="true">·</span>
           <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
         </div>
-        <h3 className="text-sm font-extrabold text-[#120F1D]">
+        <h3 className="text-sm font-semibold text-[#120F1D]">
           {appointment.serviceTitle} — {appointment.businessName}
         </h3>
-        <p className="text-xs text-[#4A4458]">
+        <p className="text-xs font-normal text-[#4A4458]">
           متخصص: {appointment.specialistName} · مراجع: {appointment.customerName}
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 shrink-0">
-        <span className="text-sm font-extrabold text-[#120F1D] tabular-nums ml-2">
+        <span className="text-sm font-bold text-[#120F1D] tabular-nums ml-2">
           {formatPriceToman(appointment.priceToman)}
         </span>
         {onViewDetails ? (

@@ -1,11 +1,48 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
-import { loadServerEnv, ServerEnvConfig } from './config/env';
+import {
+  assertProductionSecurityEnv,
+  loadServerEnv,
+  ServerEnvConfig,
+} from './config/env';
 import { checkDatabaseHealth } from './db/pool';
+import { createApiV1Router } from './routes/apiV1';
 
-export function createApiApp(customEnv?: ServerEnvConfig): Express {
+export function createApiApp(
+  customEnv?: ServerEnvConfig,
+  customPool?: import('pg').Pool
+): Express {
+  const initialConfig = customEnv ?? loadServerEnv();
+  assertProductionSecurityEnv(initialConfig);
+
   const app = express();
 
   app.disable('x-powered-by');
+  app.set('trust proxy', 1);
+
+  /** هدرهای امنیتی استاندارد و سیاست سخت‌گیرانه CORS برای درخواست‌های API */
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+    const origin = req.headers.origin;
+    if (origin) {
+      const host = req.headers.host || '';
+      try {
+        const originUrl = new URL(origin);
+        if (originUrl.host === host) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+          res.setHeader('Vary', 'Origin');
+        }
+      } catch {
+        // نادیده گرفتن Origin نامعتبر بدون باز کردن دسترسی Cross-Origin
+      }
+    }
+
+    next();
+  });
+
   app.use(express.json({ limit: '1mb' }));
 
   /**
@@ -23,6 +60,13 @@ export function createApiApp(customEnv?: ServerEnvConfig): Express {
 
     const statusCode = isHealthy ? 200 : 503;
 
+    const smsConfigured =
+      config.nodeEnv === 'production'
+        ? config.sms.provider !== 'disabled' &&
+          config.sms.provider !== 'console' &&
+          Boolean(config.sms.apiKey)
+        : config.sms.provider !== 'disabled';
+
     res.status(statusCode).json({
       ok: isHealthy,
       service: 'beautyhub-api',
@@ -36,6 +80,14 @@ export function createApiApp(customEnv?: ServerEnvConfig): Express {
         latencyMs: dbHealth.latencyMs,
         ...(dbHealth.errorCode ? { errorCode: dbHealth.errorCode } : {}),
         message: dbHealth.message,
+      },
+      smsGateway: {
+        provider: config.sms.provider,
+        configured: smsConfigured,
+      },
+      paymentGateway: {
+        provider: config.paymentGatewayProvider,
+        onlinePaymentRequiredForBooking: false,
       },
       timestamp: new Date().toISOString(),
     });
@@ -70,23 +122,28 @@ export function createApiApp(customEnv?: ServerEnvConfig): Express {
         return;
       }
 
-      const dbHealth = await checkDatabaseHealth(config);
-      if (!dbHealth.connected) {
-        res.status(503).json({
-          ok: false,
-          mode: 'real',
-          errorCode: dbHealth.errorCode ?? 'REAL_MODE_DATABASE_UNAVAILABLE',
-          message:
-            'ارتباط با دیتابیس PostgreSQL برقرار نیست؛ عملیات ثبت داده واقعی انجام نشد و به حالت آزمایشی منتقل نمی‌شود.',
-        });
-        return;
+      if (!customPool) {
+        const dbHealth = await checkDatabaseHealth(config);
+        if (!dbHealth.connected) {
+          res.status(503).json({
+            ok: false,
+            mode: 'real',
+            errorCode: dbHealth.errorCode ?? 'REAL_MODE_DATABASE_UNAVAILABLE',
+            message:
+              'ارتباط با دیتابیس PostgreSQL برقرار نیست؛ عملیات ثبت داده واقعی انجام نشد و به حالت آزمایشی منتقل نمی‌شود.',
+          });
+          return;
+        }
       }
 
       next();
     }
   );
 
-  /** پاسخ استاندارد 404 برای مسیرهای API که هنوز پیاده‌سازی نشده‌اند */
+  /** مسیریاب اصلی API نسخه ۱ متصل به PostgreSQL */
+  app.use('/api/v1', createApiV1Router(customEnv, customPool));
+
+  /** پاسخ استاندارد 404 برای مسیرهای API که تعریف نشده‌اند */
   app.use('/api', (_req: Request, res: Response) => {
     res.status(404).json({
       ok: false,
@@ -94,6 +151,29 @@ export function createApiApp(customEnv?: ServerEnvConfig): Express {
       message: 'مسیر API درخواستی در این فاز تعریف نشده است.',
     });
   });
+
+  /** مدیریت متمرکز خطا بدون افشای Stack Trace یا جزئیات داخلی سرور */
+  app.use(
+    (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+      const isJsonSyntaxError =
+        err instanceof SyntaxError && 'status' in err && (err as { status?: number }).status === 400;
+
+      if (isJsonSyntaxError) {
+        res.status(400).json({
+          ok: false,
+          errorCode: 'INVALID_JSON_PAYLOAD',
+          message: 'فرمت JSON ارسالی معتبر نیست.',
+        });
+        return;
+      }
+
+      res.status(500).json({
+        ok: false,
+        errorCode: 'INTERNAL_SERVER_ERROR',
+        message: 'خطای داخلی سرور رخ داد.',
+      });
+    }
+  );
 
   return app;
 }

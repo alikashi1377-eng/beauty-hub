@@ -22,7 +22,8 @@ export const PublicHeader: React.FC = () => {
         {/* Zone 1: تک‌المان برند */}
         <Link
           to="/"
-          className="text-xl font-extrabold tracking-tight text-[#2A0F54] whitespace-nowrap shrink-0"
+          dir="ltr"
+          className="text-xl font-bold tracking-tight text-[#2A0F54] whitespace-nowrap shrink-0"
         >
           BeautyHub
         </Link>
@@ -39,7 +40,7 @@ export const PublicHeader: React.FC = () => {
               className={({ isActive }) =>
                 `transition-colors whitespace-nowrap shrink-0 py-1 border-b-2 ${
                   isActive
-                    ? 'text-[#2A0F54] border-[#2A0F54] font-bold'
+                    ? 'text-[#2A0F54] border-[#2A0F54] font-semibold'
                     : 'border-transparent hover:text-[#120F1D] hover:border-[#D0CADF]'
                 }`
               }
@@ -51,6 +52,7 @@ export const PublicHeader: React.FC = () => {
 
         {/* Zone 3: ورود و فراخوان اصلی ثبت کسب‌وکار */}
         <div className="flex items-center gap-2.5 shrink-0">
+
           <Link
             to="/login"
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#4A4458] hover:text-[#120F1D] hover:bg-[#F4F3F8] rounded-xl transition-colors whitespace-nowrap shrink-0"
@@ -61,7 +63,7 @@ export const PublicHeader: React.FC = () => {
 
           <Link
             to="/business/register"
-            className="px-4 py-2 text-xs sm:text-sm font-bold text-white bg-[#2A0F54] rounded-xl hover:bg-[#1D093B] transition-colors whitespace-nowrap shrink-0"
+            className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-[#2A0F54] rounded-xl hover:bg-[#1D093B] transition-colors whitespace-nowrap shrink-0"
           >
             ثبت رایگان کسب‌وکار
           </Link>
@@ -126,28 +128,28 @@ export const PublicHeader: React.FC = () => {
               onClick={() => setMobileMenuOpen(false)}
               className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
             >
-              ورود مشتری (/login)
+              ورود / ثبت‌نام
             </Link>
             <Link
               to="/me"
               onClick={() => setMobileMenuOpen(false)}
               className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
             >
-              حساب مشتری (/me)
+              حساب کاربری من
+            </Link>
+            <Link
+              to="/business/register"
+              onClick={() => setMobileMenuOpen(false)}
+              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
+            >
+              ثبت رایگان سالن
             </Link>
             <Link
               to="/app"
               onClick={() => setMobileMenuOpen(false)}
               className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
             >
-              پنل کسب‌وکار (/app)
-            </Link>
-            <Link
-              to="/admin"
-              onClick={() => setMobileMenuOpen(false)}
-              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
-            >
-              پنل مدیریت (/admin)
+              پنل مدیریت سالن
             </Link>
           </div>
         </nav>

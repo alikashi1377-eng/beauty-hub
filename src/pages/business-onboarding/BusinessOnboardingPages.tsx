@@ -1022,7 +1022,8 @@ export const BusinessPreviewStepPage: React.FC = () => {
 
 /** ۴. اطلاعات احراز هویت و مجوز صنفی در حالت دمو (/business/verification) */
 export const BusinessVerificationStepPage: React.FC = () => {
-  const { onboardingDraft, updateOnboardingDraft } = usePrototypeData();
+  const { onboardingDraft, updateOnboardingDraft, submitBusinessOnboarding } =
+    usePrototypeData();
 
   return (
     <div>
@@ -1093,9 +1094,14 @@ export const BusinessVerificationStepPage: React.FC = () => {
                   <span>بازگشت به پیش‌نمایش</span>
                 </Button>
               </Link>
-              <Link to="/business/ready">
+              <Link
+                to="/business/ready"
+                onClick={() => {
+                  void submitBusinessOnboarding();
+                }}
+              >
                 <Button variant="primary" size="lg">
-                  <span>تکمیل فرآیند راه‌اندازی دمو</span>
+                  <span>تکمیل فرآیند راه‌اندازی</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>

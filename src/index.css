@@ -1,8 +1,85 @@
 @import "tailwindcss";
 
+/* ۱. بارگذاری محلی فونت رسمی Estedad (نسخه Variable + وزن‌های استاندارد بهینه) */
+@font-face {
+  font-family: 'Estedad';
+  src:
+    url('/fonts/Estedad-Variable.woff2') format('woff2-variations'),
+    url('/fonts/Estedad-Variable.woff2') format('woff2'),
+    url('/fonts/Estedad-Regular.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Estedad-Static';
+  src: url('/fonts/Estedad-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Estedad-Static';
+  src: url('/fonts/Estedad-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Estedad-Static';
+  src: url('/fonts/Estedad-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Estedad-Static';
+  src: url('/fonts/Estedad-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ۲. بارگذاری محلی فونت هماهنگ Plus Jakarta Sans برای حروف لاتین و متون انگلیسی */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src:
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations'),
+    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0041-005A, U+0061-007A, U+00C0-00FF;
+}
+
+/* ۳. تنظیم متغیرهای مرکزی Tailwind CSS v4 برای فونت و مقیاس وزن‌ها */
+@theme {
+  --font-sans: 'Estedad', 'Estedad-Static', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-latin: 'Plus Jakarta Sans', 'Estedad', 'Estedad-Static', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 700;
+}
+
 @layer base {
   :root {
-    --font-sans: 'Vazirmatn', 'Tahoma', 'IRANSans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Estedad', 'Estedad-Static', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-latin: 'Plus Jakarta Sans', 'Estedad', 'Estedad-Static', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* مقیاس منظم وزن‌های تایپوگرافی پروژه */
+    --font-weight-regular: 400;   /* متن معمولی */
+    --font-weight-medium: 500;    /* متن تأکیدی */
+    --font-weight-semibold: 600;  /* دکمه‌ها و تیترهای فرعی */
+    --font-weight-bold: 700;      /* تیترهای اصلی */
 
     /* پالت مرکزی برند BeautyHub — مرحله ۲.۵ */
     --color-canvas: #FAF9FC;
@@ -39,20 +116,80 @@
 
   html {
     font-family: var(--font-sans);
+    font-weight: var(--font-weight-regular);
     direction: rtl;
     text-align: right;
     color: var(--color-text-main);
     background-color: var(--color-canvas);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   }
 
   body {
     font-family: var(--font-sans);
+    font-weight: var(--font-weight-regular);
     background-color: var(--color-canvas);
     color: var(--color-text-main);
     margin: 0;
     overflow-x: hidden;
     line-height: 1.65;
+  }
+
+  /* تضمین اعمال فونت Estedad روی تمامی کنترل‌های فرم، دکمه‌ها، فیلدهای ورودی و منوهای انتخابی */
+  button,
+  input,
+  select,
+  textarea,
+  optgroup,
+  option {
+    font-family: var(--font-sans);
+  }
+
+  input,
+  select,
+  textarea {
+    font-weight: var(--font-weight-regular);
+  }
+
+  button {
+    font-weight: var(--font-weight-semibold);
+  }
+
+  /* سلسله‌مراتب استاندارد وزن‌های تایپوگرافی:
+     - تیترهای اصلی (h1, h2): 700
+     - تیترهای فرعی (h3, h4, h5, h6): 600
+     - متن تأکیدی (strong, b): 500
+     - متن معمولی (p, li): 400
+  */
+  h1,
+  h2 {
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: -0.01em;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  strong,
+  b {
+    font-weight: var(--font-weight-medium);
+  }
+
+  /* سازگاری جهت و فونت برای متون انگلیسی و شناسه‌های لاتین */
+  [dir="ltr"],
+  [lang="en"],
+  .font-latin {
+    font-family: var(--font-latin);
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 
   *:focus-visible {

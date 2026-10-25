@@ -118,16 +118,16 @@ export const BusinessSidebar: React.FC = () => {
   return (
     <aside
       aria-label="منوی پنل کسب‌وکار"
-      className="hidden lg:flex lg:flex-col w-[272px] shrink-0 bg-white border-l border-[#E6E3EE] min-h-[calc(100vh-44px)]"
+      className="hidden lg:flex lg:flex-col w-[272px] shrink-0 bg-white border-l border-[#E6E3EE] min-h-screen"
     >
       <div className="p-5 border-b border-[#E6E3EE] bg-[#FAF9FC]">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-[#9D174D]">
+          <span className="text-xs font-semibold text-[#9D174D]">
             پنل مدیریت سالن
           </span>
           <span className="text-[11px] text-[#756F86]">پلن حرفه‌ای</span>
         </div>
-        <p className="text-sm font-extrabold text-[#120F1D] mt-1 truncate">
+        <p className="text-sm font-bold text-[#120F1D] mt-1 truncate">
           سالن زیبایی رویال گلزار
         </p>
         <Link
@@ -146,7 +146,7 @@ export const BusinessSidebar: React.FC = () => {
           );
           return (
             <div key={groupName} className="space-y-1">
-              <p className="px-3 text-[11px] font-bold text-[#756F86]">
+              <p className="px-3 text-[11px] font-semibold text-[#756F86]">
                 {groupName}
               </p>
               {groupItems.map((item) => (
@@ -157,7 +157,7 @@ export const BusinessSidebar: React.FC = () => {
                   className={({ isActive }) =>
                     `flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
                       isActive
-                        ? 'bg-[#2A0F54] text-white font-bold shadow-xs'
+                        ? 'bg-[#2A0F54] text-white font-semibold shadow-xs'
                         : 'text-[#4A4458] hover:bg-[#F4F3F8] hover:text-[#120F1D]'
                     }`
                   }

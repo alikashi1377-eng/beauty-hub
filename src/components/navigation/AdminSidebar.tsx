@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import {
   ShieldCheck,
   Building2,
@@ -71,7 +71,7 @@ export const AdminSidebar: React.FC = () => {
     <>
       {/* نوار موبایل پنل ادمین */}
       <div className="lg:hidden bg-[#170B2B] text-white px-4 py-3 flex items-center justify-between border-b border-[#2D1950]">
-        <span className="text-xs font-extrabold">
+        <span className="text-xs font-bold">
           کنسول مدیریت کلان BeautyHub
         </span>
         <button
@@ -111,16 +111,22 @@ export const AdminSidebar: React.FC = () => {
       {/* سایدبار دسکتاپ پنل مدیریت */}
       <aside
         aria-label="منوی پنل مدیریت پلتفرم"
-        className="hidden lg:flex lg:flex-col w-[272px] shrink-0 bg-[#170B2B] text-slate-100 border-l border-[#2D1950] min-h-[calc(100vh-44px)]"
+        className="hidden lg:flex lg:flex-col w-[272px] shrink-0 bg-[#170B2B] text-slate-100 border-l border-[#2D1950] min-h-screen"
       >
         <div className="p-5 border-b border-[#2D1950]">
-          <p className="text-xs font-bold text-pink-300">کنسول راهبری پلتفرم</p>
-          <p className="text-base font-extrabold text-white mt-0.5">
+          <p className="text-xs font-semibold text-pink-300">کنسول راهبری پلتفرم</p>
+          <p dir="ltr" className="text-base font-bold text-white mt-0.5 text-right">
             BeautyHub Admin
           </p>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs font-normal text-slate-400 mt-1">
             نظارت بر کسب‌وکارها، اشتراک‌ها و دسته‌بندی‌ها
           </p>
+          <Link
+            to="/"
+            className="mt-2.5 inline-block text-xs font-semibold text-pink-300 hover:text-white transition-colors"
+          >
+            ← بازگشت به صفحه اصلی سایت
+          </Link>
         </div>
 
         <nav className="flex-1 p-3.5 space-y-1">
@@ -149,8 +155,7 @@ export const AdminSidebar: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-[#2D1950] text-[11px] text-slate-400 leading-relaxed">
-          وضعیت امنیتی: نمای آزمایشی بدون کنترل دسترسی سمت سرور (RBAC در مرحله
-          بک‌اند پیاده‌سازی می‌شود).
+          کنسول مدیریت یکپارچه BeautyHub
         </div>
       </aside>
     </>

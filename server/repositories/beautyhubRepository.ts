@@ -1,0 +1,3649 @@
+import crypto from 'node:crypto';
+import { Pool, PoolClient } from 'pg';
+import { resolveOtpHmacSecret, resolveSessionSecret } from '../config/env';
+import {
+  AuthenticatedUser,
+  BusinessMemberRole,
+  hashSessionSecretPart,
+  loadUserPermissionsByUserId,
+  signSessionToken,
+} from '../auth/session';
+import {
+  resolveSmsConfig,
+  sendOtpSmsViaGateway,
+  SmsConfig,
+  SmsSenderFn,
+} from '../services/smsGateway';
+import {
+  AdminUserRecord,
+  AppointmentItem,
+  AppointmentStatus,
+  ApprovalStatus,
+  BusinessItem,
+  BusinessType,
+  CategoryItem,
+  CustomerRecord,
+  GalleryItem,
+  MarketingCampaignItem,
+  OnboardingDraft,
+  ReviewItem,
+  ServiceItem,
+  SpecialistItem,
+  SubscriptionPlanItem,
+  SubscriptionStatus,
+  TimeSlotAvailabilityItem,
+  WorkingHourItem,
+} from '../../src/types';
+
+export type VisualTheme = 'rose' | 'slate' | 'emerald' | 'violet';
+
+export interface BootstrapPayload {
+  categories: CategoryItem[];
+  businesses: BusinessItem[];
+  services: ServiceItem[];
+  specialists: SpecialistItem[];
+  reviews: ReviewItem[];
+  gallery: GalleryItem[];
+  plans: SubscriptionPlanItem[];
+}
+
+export interface CustomerPrivatePayload {
+  appointments: AppointmentItem[];
+  favoriteBusinessIds: string[];
+}
+
+export interface BusinessWorkspacePayload {
+  business: BusinessItem | null;
+  memberRole: BusinessMemberRole | null;
+  services: ServiceItem[];
+  specialists: SpecialistItem[];
+  appointments: AppointmentItem[];
+  customers: CustomerRecord[];
+  gallery: GalleryItem[];
+  campaigns: MarketingCampaignItem[];
+}
+
+export interface AdminOverviewPayload {
+  businesses: BusinessItem[];
+  categories: CategoryItem[];
+  plans: SubscriptionPlanItem[];
+  users: AdminUserRecord[];
+  appointments: AppointmentItem[];
+}
+
+export interface BusinessAvailabilityPayload {
+  businessId: string;
+  businessSlug: string;
+  dateJalali: string;
+  dayOfWeek: number;
+  dayName: string;
+  isOpen: boolean;
+  openTime: string;
+  closeTime: string;
+  durationMinutes: number;
+  bufferMinutes: number;
+  slots: TimeSlotAvailabilityItem[];
+}
+
+/**
+ * تبدیل ارقام فارسی و عربی به انگلیسی
+ */
+export function toEnglishDigits(input: string): string {
+  return input
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+/**
+ * تبدیل ارقام انگلیسی به فارسی برای نمایش در فرانت‌اند
+ */
+export function toPersianDigitsServer(input: string | number): string {
+  return String(input).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+}
+
+/**
+ * ماسک کردن شماره موبایل (مثال: 09123456789 -> ۰۹۱۲***۶۷۸۹)
+ */
+export function maskPhoneDisplay(phone: string): string {
+  const clean = toEnglishDigits(phone).replace(/\D/g, '');
+  if (clean.length === 11 && clean.startsWith('09')) {
+    return toPersianDigitsServer(`${clean.slice(0, 4)}***${clean.slice(7)}`);
+  }
+  return toPersianDigitsServer(phone);
+}
+
+/**
+ * نرمال‌سازی اسلاگ مطابق قید دیتابیس: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+ */
+export function normalizeValidSlug(raw: string, fallbackPrefix = 'item'): string {
+  const cleaned = toEnglishDigits(raw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  if (cleaned && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(cleaned)) {
+    return cleaned.slice(0, 80);
+  }
+  const randomSuffix = crypto.randomBytes(3).toString('hex');
+  return `${fallbackPrefix}-${randomSuffix}`;
+}
+
+/**
+ * تبدیل تاریخ شمسی نمایشی (مثلاً ۱۴۰۵/۰۸/۰۳) و ساعت (مثلاً ۱۰:۳۰) به TIMESTAMPTZ معتبر
+ * برای ذخیره‌سازی دقیق در PostgreSQL
+ */
+export function jalaliSlotToTimestamptz(
+  dateJalali: string,
+  timeSlotLabel: string
+): Date {
+  const normalizedDate = toEnglishDigits(dateJalali).trim();
+  const normalizedTime = toEnglishDigits(timeSlotLabel).trim();
+
+  const dateMatch = normalizedDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  const timeMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})/);
+
+  const hour = timeMatch ? Math.min(23, Math.max(0, Number(timeMatch[1]))) : 10;
+  const minute = timeMatch
+    ? Math.min(59, Math.max(0, Number(timeMatch[2])))
+    : 0;
+
+  if (dateMatch) {
+    const jy = Number(dateMatch[1]);
+    const jm = Number(dateMatch[2]);
+    const jd = Number(dateMatch[3]);
+    const gy = jy + 621;
+    const dayOfYear = (jm - 1) * 30 + jd + 79;
+    const baseUtc = Date.UTC(gy, 0, 1, hour - 3, minute - 30, 0, 0);
+    return new Date(baseUtc + dayOfYear * 86400 * 1000);
+  }
+
+  const now = new Date();
+  now.setUTCHours(hour, minute, 0, 0);
+  return now;
+}
+
+/**
+ * نرمال‌سازی ساعت شروع و پایان کاری برای ستون TIME در PostgreSQL
+ */
+export function normalizeWorkingTimePair(
+  openRaw: string,
+  closeRaw: string
+): { openTimeSql: string; closeTimeSql: string } {
+  const openEng = toEnglishDigits(openRaw || '09:30').trim();
+  const closeEng = toEnglishDigits(closeRaw || '19:30').trim();
+  const oMatch = openEng.match(/^(\d{1,2}):(\d{2})/);
+  const cMatch = closeEng.match(/^(\d{1,2}):(\d{2})/);
+
+  if (oMatch && cMatch) {
+    const oH = Math.min(23, Math.max(0, Number(oMatch[1])));
+    const oM = Math.min(59, Math.max(0, Number(oMatch[2])));
+    const cH = Math.min(23, Math.max(0, Number(cMatch[1])));
+    const cM = Math.min(59, Math.max(0, Number(cMatch[2])));
+    if (cH * 60 + cM > oH * 60 + oM) {
+      return {
+        openTimeSql: `${String(oH).padStart(2, '0')}:${String(oM).padStart(2, '0')}:00`,
+        closeTimeSql: `${String(cH).padStart(2, '0')}:${String(cM).padStart(2, '0')}:00`,
+      };
+    }
+  }
+  return { openTimeSql: '09:30:00', closeTimeSql: '19:30:00' };
+}
+
+export function parseTimeLabelToMinutes(raw: string): number | null {
+  const clean = toEnglishDigits(raw || '').trim();
+  const match = clean.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+const IRAN_DAY_NAMES = [
+  'شنبه',
+  'یکشنبه',
+  'دوشنبه',
+  'سه‌شنبه',
+  'چهارشنبه',
+  'پنج‌شنبه',
+  'جمعه',
+];
+
+export function jalaliDateToIranDayOfWeek(dateJalali: string): {
+  dayOfWeek: number;
+  dayName: string;
+} {
+  const dt = jalaliSlotToTimestamptz(dateJalali, '12:00');
+  const dayOfWeek = (dt.getUTCDay() + 1) % 7;
+  return {
+    dayOfWeek,
+    dayName: IRAN_DAY_NAMES[dayOfWeek] ?? 'شنبه',
+  };
+}
+
+/**
+ * دریافت داده‌های عمومی بازارچه از PostgreSQL برای مسیر عمومی /api/v1/bootstrap
+ * هیچ‌گونه اطلاعات خصوصی مشتریان (appointments, business_customers, customer_favorites)
+ * یا کمپین‌های داخلی (marketing_campaigns) یا کسب‌وکارهای تاییدنشده در این خروجی قرار نمی‌گیرد.
+ */
+export async function getBootstrapPayload(
+  pool: Pool
+): Promise<BootstrapPayload> {
+  const client = await pool.connect();
+  try {
+    const [
+      catRes,
+      bizRes,
+      whRes,
+      srvRes,
+      spcRes,
+      revRes,
+      galRes,
+      planRes,
+    ] = await Promise.all([
+      client.query(`
+        SELECT
+          COALESCE(legacy_demo_id, id::text) AS external_id,
+          slug,
+          title,
+          subtitle,
+          target_audience,
+          icon_name,
+          service_count
+        FROM categories
+        WHERE is_active = TRUE
+        ORDER BY sort_order ASC, created_at ASC
+      `),
+      client.query(`
+        SELECT
+          b.id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
+          b.slug,
+          b.name,
+          b.type,
+          b.type_label,
+          b.city,
+          b.neighborhood,
+          b.address,
+          b.map_lat,
+          b.map_lng,
+          b.phone_display,
+          b.instagram_handle,
+          b.short_description,
+          b.about_text,
+          b.visual_theme,
+          b.rating_avg,
+          b.review_count,
+          b.starting_price_toman,
+          b.verified_badge,
+          b.approval_status,
+          b.subscription_plan,
+          b.subscription_status,
+          b.is_featured,
+          c.slug AS primary_category_slug
+        FROM businesses b
+        JOIN categories c ON c.id = b.primary_category_id
+        WHERE b.approval_status = 'APPROVED'
+        ORDER BY b.is_featured DESC, b.created_at ASC
+      `),
+      client.query(`
+        SELECT
+          bwh.business_id,
+          bwh.day_of_week,
+          bwh.day_name,
+          bwh.is_open,
+          to_char(bwh.open_time, 'HH24:MI') AS open_str,
+          to_char(bwh.close_time, 'HH24:MI') AS close_str
+        FROM business_working_hours bwh
+        JOIN businesses b ON b.id = bwh.business_id
+        WHERE b.approval_status = 'APPROVED'
+        ORDER BY bwh.business_id, bwh.day_of_week ASC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(s.legacy_demo_id, s.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          s.category_slug,
+          s.category_label,
+          s.title,
+          s.description,
+          s.duration_minutes,
+          s.price_toman,
+          s.is_popular,
+          s.is_active
+        FROM services s
+        JOIN businesses b ON b.id = s.business_id
+        WHERE s.is_active = TRUE AND b.approval_status = 'APPROVED'
+        ORDER BY s.is_popular DESC, s.created_at ASC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(sp.legacy_demo_id, sp.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          sp.slug,
+          sp.full_name,
+          sp.role_title,
+          sp.experience_years,
+          sp.rating_avg,
+          sp.review_count,
+          sp.specialties,
+          sp.bio,
+          sp.is_independent,
+          sp.is_active,
+          COALESCE(sp.city, b.city) AS city,
+          sp.starting_price_toman
+        FROM specialists sp
+        JOIN businesses b ON b.id = sp.business_id
+        WHERE sp.is_active = TRUE AND b.approval_status = 'APPROVED'
+        ORDER BY sp.rating_avg DESC, sp.created_at ASC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(r.legacy_demo_id, r.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          r.specialist_slug,
+          r.author_name,
+          r.service_title,
+          r.rating,
+          r.date_jalali,
+          r.comment
+        FROM reviews r
+        JOIN businesses b ON b.id = r.business_id
+        WHERE r.is_published = TRUE AND b.approval_status = 'APPROVED'
+        ORDER BY r.created_at DESC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(g.legacy_demo_id, g.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          g.title,
+          g.category_label,
+          g.theme
+        FROM gallery_items g
+        JOIN businesses b ON b.id = g.business_id
+        WHERE b.approval_status = 'APPROVED'
+        ORDER BY g.sort_order ASC, g.created_at DESC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(legacy_demo_id, code, id::text) AS external_id,
+          name,
+          audience,
+          monthly_price_toman,
+          staff_limit_label,
+          sms_quota_monthly,
+          features,
+          is_recommended,
+          comparison_meta
+        FROM subscription_plans
+        WHERE is_active = TRUE
+        ORDER BY sort_order ASC, monthly_price_toman ASC
+      `),
+    ]);
+
+    const whByBusinessId = new Map<string, WorkingHourItem[]>();
+    for (const row of whRes.rows) {
+      const bizUuid = String(row.business_id);
+      const list = whByBusinessId.get(bizUuid) ?? [];
+      list.push({
+        dayName: String(row.day_name),
+        isOpen: Boolean(row.is_open),
+        openTime: toPersianDigitsServer(String(row.open_str || '09:30')),
+        closeTime: toPersianDigitsServer(String(row.close_str || '19:30')),
+      });
+      whByBusinessId.set(bizUuid, list);
+    }
+
+    const categories: CategoryItem[] = catRes.rows.map((r) => ({
+      id: String(r.external_id),
+      slug: String(r.slug),
+      title: String(r.title),
+      subtitle: String(r.subtitle),
+      targetAudience: String(r.target_audience),
+      iconName: String(r.icon_name),
+      serviceCount: Number(r.service_count),
+    }));
+
+    const businesses: BusinessItem[] = bizRes.rows.map((r) => ({
+      id: String(r.external_id),
+      slug: String(r.slug),
+      name: String(r.name),
+      type: r.type as BusinessType,
+      typeLabel: String(r.type_label),
+      categorySlug: String(r.primary_category_slug),
+      city: String(r.city),
+      neighborhood: String(r.neighborhood),
+      address: String(r.address),
+      mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+      mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+      rating: Number(r.rating_avg),
+      reviewCount: Number(r.review_count),
+      startingPriceToman: Number(r.starting_price_toman),
+      verifiedBadge: Boolean(r.verified_badge),
+      shortDescription: String(r.short_description),
+      aboutText: String(r.about_text),
+      phoneDisplay: String(r.phone_display),
+      instagramHandle: r.instagram_handle
+        ? String(r.instagram_handle)
+        : undefined,
+      workingHours: whByBusinessId.get(String(r.id)) ?? [],
+      visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+      approvalStatus: r.approval_status as ApprovalStatus,
+      subscriptionPlan: String(r.subscription_plan),
+      subscriptionStatus: r.subscription_status as SubscriptionStatus,
+      featured: Boolean(r.is_featured),
+    }));
+
+    const services: ServiceItem[] = srvRes.rows.map((r) => ({
+      id: String(r.external_id),
+      businessId: String(r.business_external_id),
+      title: String(r.title),
+      categorySlug: String(r.category_slug),
+      category: String(r.category_label),
+      durationMinutes: Number(r.duration_minutes),
+      priceToman: Number(r.price_toman),
+      description: String(r.description),
+      isPopular: Boolean(r.is_popular),
+      isActive: Boolean(r.is_active),
+    }));
+
+    const specialists: SpecialistItem[] = spcRes.rows.map((r) => ({
+      id: String(r.external_id),
+      slug: String(r.slug),
+      fullName: String(r.full_name),
+      roleTitle: String(r.role_title),
+      businessId: String(r.business_external_id),
+      experienceYears: Number(r.experience_years),
+      rating: Number(r.rating_avg),
+      reviewCount: Number(r.review_count),
+      specialties: Array.isArray(r.specialties)
+        ? r.specialties.map(String)
+        : [],
+      bio: String(r.bio),
+      isIndependent: Boolean(r.is_independent),
+      isActive: Boolean(r.is_active),
+      city: String(r.city),
+      startingPriceToman: Number(r.starting_price_toman),
+    }));
+
+    const reviews: ReviewItem[] = revRes.rows.map((r) => ({
+      id: String(r.external_id),
+      businessId: String(r.business_external_id),
+      specialistSlug: r.specialist_slug ? String(r.specialist_slug) : undefined,
+      authorName: String(r.author_name),
+      serviceTitle: String(r.service_title),
+      rating: Number(r.rating),
+      dateJalali: String(r.date_jalali),
+      comment: String(r.comment),
+    }));
+
+    const gallery: GalleryItem[] = galRes.rows.map((r) => ({
+      id: String(r.external_id),
+      businessId: String(r.business_external_id),
+      title: String(r.title),
+      categoryLabel: String(r.category_label),
+      theme: (r.theme as VisualTheme) || 'violet',
+    }));
+
+    const plans: SubscriptionPlanItem[] = planRes.rows.map((r) => {
+      const comp =
+        r.comparison_meta && typeof r.comparison_meta === 'object'
+          ? (r.comparison_meta as Record<string, unknown>)
+          : {};
+      return {
+        id: String(r.external_id),
+        name: String(r.name),
+        audience: String(r.audience),
+        monthlyPriceToman: Number(r.monthly_price_toman),
+        staffLimit: String(r.staff_limit_label),
+        smsQuotaMonthly: Number(r.sms_quota_monthly),
+        features: Array.isArray(r.features) ? r.features.map(String) : [],
+        isRecommended: Boolean(r.is_recommended),
+        comparison: {
+          onlineBooking: String(comp.onlineBooking ?? 'نامحدود'),
+          smsReminders: String(comp.smsReminders ?? 'فعال'),
+          analyticsLevel: String(comp.analyticsLevel ?? 'پایه'),
+          supportType: String(comp.supportType ?? 'تیکت پشتیبانی'),
+        },
+      };
+    });
+
+    return {
+      categories,
+      businesses,
+      services,
+      specialists,
+      reviews,
+      gallery,
+      plans,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+async function resolveBusinessUuid(
+  client: PoolClient,
+  idOrSlugOrLegacy?: string
+): Promise<{
+  id: string;
+  externalId: string;
+  slug: string;
+  name: string;
+  city: string;
+  approvalStatus: ApprovalStatus;
+}> {
+  const cleaned = (idOrSlugOrLegacy ?? '').trim();
+  if (!cleaned) {
+    throw new Error('BUSINESS_ID_REQUIRED');
+  }
+
+  const res = await client.query(
+    `
+    SELECT
+      id,
+      COALESCE(legacy_demo_id, id::text) AS external_id,
+      slug,
+      name,
+      city,
+      approval_status
+    FROM businesses
+    WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
+    LIMIT 1
+    `,
+    [cleaned]
+  );
+  if (!res.rowCount || !res.rows[0]) {
+    throw new Error('BUSINESS_NOT_FOUND');
+  }
+
+  return {
+    id: String(res.rows[0].id),
+    externalId: String(res.rows[0].external_id),
+    slug: String(res.rows[0].slug),
+    name: String(res.rows[0].name),
+    city: String(res.rows[0].city),
+    approvalStatus: String(res.rows[0].approval_status) as ApprovalStatus,
+  };
+}
+
+/**
+ * بررسی عضویت و نقش کاربر در کسب‌وکار مستقیماً از جدول business_members در سمت سرور
+ */
+export async function assertUserHasBusinessAccess(
+  client: PoolClient,
+  actorUser: AuthenticatedUser,
+  businessUuid: string,
+  allowedRoles: BusinessMemberRole[] = ['OWNER', 'MANAGER']
+): Promise<BusinessMemberRole> {
+  const res = await client.query(
+    `
+    SELECT member_role
+    FROM business_members
+    WHERE business_id = $1
+      AND user_id = $2
+      AND is_active = TRUE
+    LIMIT 1
+    `,
+    [businessUuid, actorUser.userId]
+  );
+
+  if (!res.rowCount || !res.rows[0]) {
+    throw new Error('BUSINESS_ACCESS_DENIED');
+  }
+
+  const role = String(res.rows[0].member_role) as BusinessMemberRole;
+  if (!allowedRoles.includes(role)) {
+    throw new Error('BUSINESS_ACCESS_DENIED');
+  }
+
+  return role;
+}
+
+async function resolveCategoryBySlug(
+  client: PoolClient,
+  categorySlug?: string,
+  categoryLabel?: string
+): Promise<{ id: string; slug: string; title: string }> {
+  if (categorySlug) {
+    const res = await client.query(
+      `SELECT id, slug, title FROM categories WHERE slug = $1 OR id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+      [categorySlug]
+    );
+    if (res.rowCount && res.rows[0]) {
+      return {
+        id: String(res.rows[0].id),
+        slug: String(res.rows[0].slug),
+        title: categoryLabel || String(res.rows[0].title),
+      };
+    }
+  }
+
+  const fallback = await client.query(
+    `SELECT id, slug, title FROM categories ORDER BY sort_order ASC, created_at ASC LIMIT 1`
+  );
+  if (fallback.rowCount && fallback.rows[0]) {
+    return {
+      id: String(fallback.rows[0].id),
+      slug: categorySlug || String(fallback.rows[0].slug),
+      title: categoryLabel || String(fallback.rows[0].title),
+    };
+  }
+
+  const inserted = await client.query(
+    `
+    INSERT INTO categories (slug, title, subtitle, target_audience, icon_name)
+    VALUES ('hair-color', 'مو، رنگ و استایلینگ', 'خدمات تخصصی مو', 'سالن‌های زیبایی', 'Sparkles')
+    RETURNING id, slug, title
+    `
+  );
+  return {
+    id: String(inserted.rows[0].id),
+    slug: String(inserted.rows[0].slug),
+    title: categoryLabel || String(inserted.rows[0].title),
+  };
+}
+
+/**
+ * ایجاد خدمت جدید در جدول services (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function createServiceInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: Omit<ServiceItem, 'id'>
+): Promise<ServiceItem> {
+  const title = (input.title ?? '').trim();
+  if (!title) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, input.businessId);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    const cat = await resolveCategoryBySlug(
+      client,
+      input.categorySlug,
+      input.category
+    );
+
+    const res = await client.query(
+      `
+      INSERT INTO services (
+        business_id,
+        category_id,
+        category_slug,
+        category_label,
+        title,
+        description,
+        duration_minutes,
+        price_toman,
+        is_popular,
+        is_active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        category_slug,
+        category_label,
+        title,
+        description,
+        duration_minutes,
+        price_toman,
+        is_popular,
+        is_active
+      `,
+      [
+        biz.id,
+        cat.id,
+        cat.slug,
+        input.category || cat.title,
+        title,
+        (input.description || '').trim(),
+        Math.max(5, Math.min(600, Number(input.durationMinutes) || 45)),
+        Math.max(0, Math.min(100000000000, Number(input.priceToman) || 0)),
+        Boolean(input.isPopular),
+      ]
+    );
+
+    const row = res.rows[0];
+    return {
+      id: String(row.external_id),
+      businessId: biz.externalId,
+      title: String(row.title),
+      categorySlug: String(row.category_slug),
+      category: String(row.category_label),
+      durationMinutes: Number(row.duration_minutes),
+      priceToman: Number(row.price_toman),
+      description: String(row.description),
+      isPopular: Boolean(row.is_popular),
+      isActive: Boolean(row.is_active),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ویرایش خدمت موجود در جدول services (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function updateServiceInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  serviceIdOrLegacy: string,
+  input: Partial<Omit<ServiceItem, 'id'>>
+): Promise<ServiceItem> {
+  const client = await pool.connect();
+  try {
+    const existingRes = await client.query(
+      `
+      SELECT s.*, COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id
+      FROM services s
+      JOIN businesses b ON b.id = s.business_id
+      WHERE s.id::text = $1 OR s.legacy_demo_id = $1
+      LIMIT 1
+      `,
+      [serviceIdOrLegacy]
+    );
+
+    if (!existingRes.rowCount || !existingRes.rows[0]) {
+      throw new Error('SERVICE_NOT_FOUND');
+    }
+
+    const current = existingRes.rows[0];
+    await assertUserHasBusinessAccess(
+      client,
+      actorUser,
+      String(current.business_id),
+      ['OWNER', 'MANAGER']
+    );
+
+    const cat = await resolveCategoryBySlug(
+      client,
+      input.categorySlug ?? String(current.category_slug),
+      input.category ?? String(current.category_label)
+    );
+
+    const updatedRes = await client.query(
+      `
+      UPDATE services
+      SET
+        category_id = $2,
+        category_slug = $3,
+        category_label = $4,
+        title = $5,
+        description = $6,
+        duration_minutes = $7,
+        price_toman = $8,
+        is_popular = $9
+      WHERE id = $1
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        category_slug,
+        category_label,
+        title,
+        description,
+        duration_minutes,
+        price_toman,
+        is_popular,
+        is_active
+      `,
+      [
+        current.id,
+        cat.id,
+        input.categorySlug ?? String(current.category_slug),
+        input.category ?? String(current.category_label),
+        (input.title ?? String(current.title)).trim(),
+        (input.description ?? String(current.description)).trim(),
+        Math.max(
+          5,
+          Math.min(
+            600,
+            Number(input.durationMinutes ?? current.duration_minutes) || 45
+          )
+        ),
+        Math.max(
+          0,
+          Math.min(
+            100000000000,
+            Number(input.priceToman ?? current.price_toman) || 0
+          )
+        ),
+        input.isPopular !== undefined
+          ? Boolean(input.isPopular)
+          : Boolean(current.is_popular),
+      ]
+    );
+
+    const row = updatedRes.rows[0];
+    return {
+      id: String(row.external_id),
+      businessId: String(current.business_external_id),
+      title: String(row.title),
+      categorySlug: String(row.category_slug),
+      category: String(row.category_label),
+      durationMinutes: Number(row.duration_minutes),
+      priceToman: Number(row.price_toman),
+      description: String(row.description),
+      isPopular: Boolean(row.is_popular),
+      isActive: Boolean(row.is_active),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * حذف منطقی خدمت (Soft Delete: is_active = FALSE) فقط برای OWNER یا MANAGER همان کسب‌وکار
+ */
+export async function softDeleteServiceInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  serviceIdOrLegacy: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const existingRes = await client.query(
+      `SELECT id, business_id FROM services WHERE id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+      [serviceIdOrLegacy]
+    );
+    if (!existingRes.rowCount || !existingRes.rows[0]) {
+      throw new Error('SERVICE_NOT_FOUND');
+    }
+
+    const row = existingRes.rows[0];
+    await assertUserHasBusinessAccess(
+      client,
+      actorUser,
+      String(row.business_id),
+      ['OWNER', 'MANAGER']
+    );
+
+    await client.query(
+      `UPDATE services SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+      [row.id]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * افزودن متخصص جدید به کسب‌وکار (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function createSpecialistInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: Omit<SpecialistItem, 'id'>
+): Promise<SpecialistItem> {
+  const fullName = (input.fullName ?? '').trim();
+  const roleTitle = (input.roleTitle ?? '').trim();
+  if (!fullName || !roleTitle) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, input.businessId);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    const uniqueSlug = `${normalizeValidSlug(input.slug || fullName, 'spc')}-${crypto.randomBytes(2).toString('hex')}`;
+
+    const res = await client.query(
+      `
+      INSERT INTO specialists (
+        business_id,
+        slug,
+        full_name,
+        role_title,
+        experience_years,
+        rating_avg,
+        review_count,
+        specialties,
+        bio,
+        is_independent,
+        is_active,
+        city,
+        starting_price_toman
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11, $12)
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        slug,
+        full_name,
+        role_title,
+        experience_years,
+        rating_avg,
+        review_count,
+        specialties,
+        bio,
+        is_independent,
+        is_active,
+        city,
+        starting_price_toman
+      `,
+      [
+        biz.id,
+        uniqueSlug,
+        fullName,
+        roleTitle,
+        Math.max(0, Math.min(80, Number(input.experienceYears) || 1)),
+        Math.max(0, Math.min(5, Number(input.rating) || 4.9)),
+        Math.max(0, Number(input.reviewCount) || 0),
+        Array.isArray(input.specialties) ? input.specialties : [],
+        (input.bio || '').trim(),
+        Boolean(input.isIndependent),
+        input.city || biz.city,
+        Math.max(0, Number(input.startingPriceToman) || 350000),
+      ]
+    );
+
+    const row = res.rows[0];
+    return {
+      id: String(row.external_id),
+      slug: String(row.slug),
+      fullName: String(row.full_name),
+      roleTitle: String(row.role_title),
+      businessId: biz.externalId,
+      experienceYears: Number(row.experience_years),
+      rating: Number(row.rating_avg),
+      reviewCount: Number(row.review_count),
+      specialties: Array.isArray(row.specialties)
+        ? row.specialties.map(String)
+        : [],
+      bio: String(row.bio),
+      isIndependent: Boolean(row.is_independent),
+      isActive: Boolean(row.is_active),
+      city: String(row.city || biz.city),
+      startingPriceToman: Number(row.starting_price_toman),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ویرایش اطلاعات متخصص (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function updateSpecialistInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  specialistIdOrLegacy: string,
+  patch: Partial<SpecialistItem>
+): Promise<SpecialistItem> {
+  const client = await pool.connect();
+  try {
+    const existingRes = await client.query(
+      `
+      SELECT sp.*, COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id, b.city AS business_city
+      FROM specialists sp
+      JOIN businesses b ON b.id = sp.business_id
+      WHERE sp.id::text = $1 OR sp.legacy_demo_id = $1
+      LIMIT 1
+      `,
+      [specialistIdOrLegacy]
+    );
+    if (!existingRes.rowCount || !existingRes.rows[0]) {
+      throw new Error('SPECIALIST_NOT_FOUND');
+    }
+
+    const current = existingRes.rows[0];
+    await assertUserHasBusinessAccess(
+      client,
+      actorUser,
+      String(current.business_id),
+      ['OWNER', 'MANAGER']
+    );
+
+    const updatedRes = await client.query(
+      `
+      UPDATE specialists
+      SET
+        full_name = $2,
+        role_title = $3,
+        experience_years = $4,
+        specialties = $5,
+        bio = $6,
+        starting_price_toman = $7,
+        is_active = $8
+      WHERE id = $1
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        slug,
+        full_name,
+        role_title,
+        experience_years,
+        rating_avg,
+        review_count,
+        specialties,
+        bio,
+        is_independent,
+        is_active,
+        city,
+        starting_price_toman
+      `,
+      [
+        current.id,
+        (patch.fullName ?? String(current.full_name)).trim(),
+        (patch.roleTitle ?? String(current.role_title)).trim(),
+        Math.max(
+          0,
+          Math.min(
+            80,
+            Number(patch.experienceYears ?? current.experience_years) || 1
+          )
+        ),
+        Array.isArray(patch.specialties)
+          ? patch.specialties
+          : current.specialties,
+        (patch.bio ?? String(current.bio)).trim(),
+        Math.max(
+          0,
+          Number(patch.startingPriceToman ?? current.starting_price_toman) || 0
+        ),
+        patch.isActive !== undefined
+          ? Boolean(patch.isActive)
+          : Boolean(current.is_active),
+      ]
+    );
+
+    const row = updatedRes.rows[0];
+    return {
+      id: String(row.external_id),
+      slug: String(row.slug),
+      fullName: String(row.full_name),
+      roleTitle: String(row.role_title),
+      businessId: String(current.business_external_id),
+      experienceYears: Number(row.experience_years),
+      rating: Number(row.rating_avg),
+      reviewCount: Number(row.review_count),
+      specialties: Array.isArray(row.specialties)
+        ? row.specialties.map(String)
+        : [],
+      bio: String(row.bio),
+      isIndependent: Boolean(row.is_independent),
+      isActive: Boolean(row.is_active),
+      city: String(row.city || current.business_city),
+      startingPriceToman: Number(row.starting_price_toman),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * بروزرسانی مشخصات پروفایل کسب‌وکار و مختصات نقشه (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function updateBusinessProfileInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  businessIdOrLegacy: string,
+  patch: Partial<BusinessItem>
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, businessIdOrLegacy);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    const currentRes = await client.query(
+      `SELECT * FROM businesses WHERE id = $1`,
+      [biz.id]
+    );
+    const current = currentRes.rows[0];
+
+    const nextLat =
+      patch.mapLat !== undefined
+        ? patch.mapLat
+        : current.map_lat !== null
+          ? Number(current.map_lat)
+          : null;
+    const nextLng =
+      patch.mapLng !== undefined
+        ? patch.mapLng
+        : current.map_lng !== null
+          ? Number(current.map_lng)
+          : null;
+
+    const validCoords =
+      nextLat !== null &&
+      nextLng !== null &&
+      nextLat >= -90 &&
+      nextLat <= 90 &&
+      nextLng >= -180 &&
+      nextLng <= 180;
+
+    await client.query(
+      `
+      UPDATE businesses
+      SET
+        name = $2,
+        city = $3,
+        neighborhood = $4,
+        address = $5,
+        phone_display = $6,
+        instagram_handle = $7,
+        short_description = $8,
+        about_text = $9,
+        map_lat = $10,
+        map_lng = $11,
+        subscription_plan = $12,
+        subscription_status = $13
+      WHERE id = $1
+      `,
+      [
+        biz.id,
+        (patch.name ?? String(current.name)).trim(),
+        (patch.city ?? String(current.city)).trim(),
+        (patch.neighborhood ?? String(current.neighborhood)).trim(),
+        (patch.address ?? String(current.address)).trim(),
+        (patch.phoneDisplay ?? String(current.phone_display)).trim(),
+        patch.instagramHandle !== undefined
+          ? patch.instagramHandle
+          : current.instagram_handle,
+        (patch.shortDescription ?? String(current.short_description)).trim(),
+        (patch.aboutText ?? String(current.about_text)).trim(),
+        validCoords ? nextLat : null,
+        validCoords ? nextLng : null,
+        patch.subscriptionPlan ?? String(current.subscription_plan),
+        patch.subscriptionStatus ?? String(current.subscription_status),
+      ]
+    );
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * بروزرسانی ساعات کاری هفتگی کسب‌وکار (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function updateBusinessWorkingHoursInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  businessIdOrLegacy: string,
+  workingHours: WorkingHourItem[]
+): Promise<WorkingHourItem[]> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const biz = await resolveBusinessUuid(client, businessIdOrLegacy);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    for (let idx = 0; idx < Math.min(7, workingHours.length); idx++) {
+      const item = workingHours[idx];
+      const { openTimeSql, closeTimeSql } = normalizeWorkingTimePair(
+        item.openTime,
+        item.closeTime
+      );
+      await client.query(
+        `
+        INSERT INTO business_working_hours (
+          business_id,
+          day_of_week,
+          day_name,
+          is_open,
+          open_time,
+          close_time
+        )
+        VALUES ($1, $2, $3, $4, $5::time, $6::time)
+        ON CONFLICT (business_id, day_of_week) DO UPDATE
+        SET
+          day_name = EXCLUDED.day_name,
+          is_open = EXCLUDED.is_open,
+          open_time = EXCLUDED.open_time,
+          close_time = EXCLUDED.close_time,
+          updated_at = NOW()
+        `,
+        [
+          biz.id,
+          idx,
+          item.dayName,
+          Boolean(item.isOpen),
+          openTimeSql,
+          closeTimeSql,
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return workingHours;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * تغییر وضعیت تایید کسب‌وکار توسط ادمین پلتفرم
+ */
+export async function updateBusinessApprovalInDb(
+  pool: Pool,
+  businessIdOrLegacy: string,
+  status: ApprovalStatus
+): Promise<void> {
+  if (!['APPROVED', 'PENDING_REVIEW', 'REJECTED'].includes(status)) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const res = await pool.query(
+    `
+    UPDATE businesses
+    SET
+      approval_status = $2,
+      verified_badge = ($2 = 'APPROVED'),
+      updated_at = NOW()
+    WHERE id::text = $1 OR legacy_demo_id = $1
+    RETURNING id
+    `,
+    [businessIdOrLegacy, status]
+  );
+  if (!res.rowCount) {
+    throw new Error('BUSINESS_NOT_FOUND');
+  }
+}
+
+/**
+ * ثبت نوبت جدید در PostgreSQL برای کاربر احرازهویت‌شده با رعایت کامل:
+ * - عدم بازگشت به اولین کسب‌وکار، اولین خدمت یا اولین متخصص در صورت نامعتبر بودن ورودی‌ها
+ * - عدم استفاده از شماره تلفن یا نام پیش‌فرض ساختگی
+ * - Snapshot نام خدمت، قیمت، مدت و فاصله استراحت (buffer_minutes_snapshot)
+ * - محاسبه دقیق ریاضی service_ends_at و occupied_until_at در موتور SQL
+ * - بررسی خودکار قید EXCLUDE USING gist (کد خطای 23P01 در صورت تداخل زمانی متخصص)
+ */
+export async function createAppointmentInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: {
+    businessSlug?: string;
+    businessId?: string;
+    serviceId: string;
+    specialistId: string;
+    dateJalali: string;
+    timeSlot: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerNotes?: string;
+    serviceStartsAtIso?: string;
+  }
+): Promise<AppointmentItem> {
+  const serviceIdRaw = (input.serviceId ?? '').trim();
+  const specialistIdRaw = (input.specialistId ?? '').trim();
+  const dateJalaliRaw = (input.dateJalali ?? '').trim();
+  const timeSlotRaw = (input.timeSlot ?? '').trim();
+
+  if (!serviceIdRaw || !specialistIdRaw || !dateJalaliRaw || !timeSlotRaw) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const customerName = (input.customerName ?? actorUser.fullName ?? '').trim();
+  if (customerName.length < 2) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const rawPhoneCandidate = input.customerPhone?.trim()
+    ? toEnglishDigits(input.customerPhone).replace(/\D/g, '')
+    : actorUser.phone;
+  if (!/^09\d{9}$/.test(rawPhoneCandidate)) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+  const normalizedPhone = rawPhoneCandidate;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const biz = await resolveBusinessUuid(
+      client,
+      input.businessSlug || input.businessId
+    );
+
+    if (biz.approvalStatus !== 'APPROVED') {
+      throw new Error('BUSINESS_NOT_APPROVED');
+    }
+
+    const srvRes = await client.query(
+      `
+      SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, title, duration_minutes, price_toman
+      FROM services
+      WHERE business_id = $1
+        AND is_active = TRUE
+        AND (id::text = $2 OR legacy_demo_id = $2)
+      LIMIT 1
+      `,
+      [biz.id, serviceIdRaw]
+    );
+    if (!srvRes.rowCount || !srvRes.rows[0]) {
+      throw new Error('SERVICE_NOT_FOUND_FOR_BUSINESS');
+    }
+    const srv = srvRes.rows[0];
+
+    const spcRes = await client.query(
+      `
+      SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, full_name
+      FROM specialists
+      WHERE business_id = $1
+        AND is_active = TRUE
+        AND (id::text = $2 OR legacy_demo_id = $2 OR slug = $2)
+      LIMIT 1
+      `,
+      [biz.id, specialistIdRaw]
+    );
+    if (!spcRes.rowCount || !spcRes.rows[0]) {
+      throw new Error('SPECIALIST_NOT_FOUND_FOR_BUSINESS');
+    }
+    const spc = spcRes.rows[0];
+
+    // بررسی تخصیص خدمت به متخصص در جدول specialist_services (در صورتی که برای این متخصص محدودیت خدمات تعریف شده باشد)
+    const spcSrvCountRes = await client.query(
+      `SELECT COUNT(*)::int AS cnt FROM specialist_services WHERE specialist_id = $1 AND business_id = $2`,
+      [spc.id, biz.id]
+    );
+    if (Number(spcSrvCountRes.rows[0]?.cnt ?? 0) > 0) {
+      const spcSrvMatchRes = await client.query(
+        `SELECT 1 FROM specialist_services WHERE specialist_id = $1 AND service_id = $2 AND business_id = $3 LIMIT 1`,
+        [spc.id, srv.id, biz.id]
+      );
+      if (!spcSrvMatchRes.rowCount) {
+        throw new Error('SPECIALIST_NOT_ASSIGNED_TO_SERVICE');
+      }
+    }
+
+    const durationMinutes = Number(srv.duration_minutes);
+    const priceToman = Number(srv.price_toman);
+
+    // بررسی ساعات کاری کسب‌وکار در روز انتخابی (در صورتی که ساعات کاری برای آن روز ثبت شده باشد)
+    const slotStartMinutes = parseTimeLabelToMinutes(timeSlotRaw);
+    if (slotStartMinutes === null) {
+      throw new Error('INVALID_INPUT_PAYLOAD');
+    }
+    const { dayOfWeek, dayName } = jalaliDateToIranDayOfWeek(dateJalaliRaw);
+    const whRes = await client.query(
+      `
+      SELECT
+        is_open,
+        to_char(open_time, 'HH24:MI') AS open_str,
+        to_char(close_time, 'HH24:MI') AS close_str
+      FROM business_working_hours
+      WHERE business_id = $1 AND (day_of_week = $2 OR day_name = $3)
+      ORDER BY (day_of_week = $2) DESC
+      LIMIT 1
+      `,
+      [biz.id, dayOfWeek, dayName]
+    );
+    if (whRes.rowCount && whRes.rows[0]) {
+      const whRow = whRes.rows[0];
+      if (!whRow.is_open) {
+        throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
+      }
+      const openMins = parseTimeLabelToMinutes(String(whRow.open_str || '09:30')) ?? 570;
+      const closeMins = parseTimeLabelToMinutes(String(whRow.close_str || '19:30')) ?? 1170;
+      if (
+        slotStartMinutes < openMins ||
+        slotStartMinutes + durationMinutes > closeMins
+      ) {
+        throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
+      }
+    }
+
+    const settingsRes = await client.query(
+      `SELECT buffer_minutes FROM business_settings WHERE business_id = $1`,
+      [biz.id]
+    );
+    const bufferMinutes =
+      settingsRes.rowCount && settingsRes.rows[0]
+        ? Number(settingsRes.rows[0].buffer_minutes)
+        : 15;
+
+    const startsAtDate = input.serviceStartsAtIso
+      ? new Date(input.serviceStartsAtIso)
+      : jalaliSlotToTimestamptz(dateJalaliRaw, timeSlotRaw);
+
+    const maskedPhone = maskPhoneDisplay(normalizedPhone);
+    const referenceCode = `BH-${Math.floor(100000 + Math.random() * 899999)}`;
+
+    const insertRes = await client.query(
+      `
+      INSERT INTO appointments (
+        reference_code,
+        business_id,
+        customer_user_id,
+        service_id,
+        specialist_id,
+        service_title_snapshot,
+        service_price_toman_snapshot,
+        duration_minutes_snapshot,
+        buffer_minutes_snapshot,
+        specialist_name_snapshot,
+        customer_name,
+        customer_phone,
+        customer_phone_masked,
+        date_jalali,
+        time_slot_label,
+        service_starts_at,
+        service_ends_at,
+        occupied_until_at,
+        status,
+        notes
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8::smallint,
+        $9::smallint,
+        $10,
+        $11,
+        $12,
+        $13,
+        $14,
+        $15,
+        $16::timestamptz,
+        $16::timestamptz + ($8::smallint * INTERVAL '1 minute'),
+        $16::timestamptz + (($8::smallint + $9::smallint) * INTERVAL '1 minute'),
+        'CONFIRMED',
+        $17
+      )
+      RETURNING
+        id,
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        reference_code,
+        date_jalali,
+        time_slot_label,
+        status,
+        notes
+      `,
+      [
+        referenceCode,
+        biz.id,
+        actorUser.userId,
+        srv.id,
+        spc.id,
+        String(srv.title),
+        priceToman,
+        durationMinutes,
+        bufferMinutes,
+        String(spc.full_name),
+        customerName,
+        normalizedPhone,
+        maskedPhone,
+        dateJalaliRaw,
+        timeSlotRaw,
+        startsAtDate.toISOString(),
+        input.customerNotes?.trim() || null,
+      ]
+    );
+
+    const aptRow = insertRes.rows[0];
+
+    await client.query(
+      `
+      INSERT INTO appointment_status_logs (
+        appointment_id,
+        previous_status,
+        new_status,
+        changed_by_user_id,
+        note
+      )
+      VALUES ($1, NULL, 'CONFIRMED', $2, 'ثبت رزرو آنلاین توسط مشتری')
+      `,
+      [aptRow.id, actorUser.userId]
+    );
+
+    await client.query(
+      `
+      INSERT INTO business_customers (
+        business_id,
+        user_id,
+        full_name,
+        phone,
+        phone_masked,
+        city,
+        total_visits,
+        last_visit_jalali,
+        total_spent_toman,
+        favorite_service_title,
+        notes
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10)
+      ON CONFLICT (business_id, phone) DO UPDATE
+      SET
+        user_id = COALESCE(business_customers.user_id, EXCLUDED.user_id),
+        full_name = EXCLUDED.full_name,
+        total_visits = business_customers.total_visits + 1,
+        last_visit_jalali = EXCLUDED.last_visit_jalali,
+        total_spent_toman = business_customers.total_spent_toman + EXCLUDED.total_spent_toman,
+        favorite_service_title = EXCLUDED.favorite_service_title,
+        updated_at = NOW()
+      `,
+      [
+        biz.id,
+        actorUser.userId,
+        customerName,
+        normalizedPhone,
+        maskedPhone,
+        biz.city,
+        dateJalaliRaw,
+        priceToman,
+        String(srv.title),
+        input.customerNotes?.trim() || '',
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      id: String(aptRow.external_id),
+      referenceCode: String(aptRow.reference_code),
+      businessId: biz.externalId,
+      businessSlug: biz.slug,
+      businessName: biz.name,
+      serviceId: String(srv.external_id),
+      serviceTitle: String(srv.title),
+      specialistId: String(spc.external_id),
+      specialistName: String(spc.full_name),
+      customerName,
+      customerPhoneMasked: maskedPhone,
+      dateJalali: String(aptRow.date_jalali),
+      timeSlot: String(aptRow.time_slot_label),
+      durationMinutes,
+      priceToman,
+      status: aptRow.status as AppointmentStatus,
+      notes: aptRow.notes ? String(aptRow.notes) : undefined,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * تغییر وضعیت نوبت با بررسی دقیق مجوز کاربر:
+ * - اعضای فعال کسب‌وکار (OWNER, MANAGER, STAFF) می‌توانند وضعیت نوبت‌های همان کسب‌وکار را تغییر دهند.
+ * - مشتری صاحب نوبت فقط مجاز به لغو (CANCELLED) نوبت فعال خود است.
+ */
+export async function updateAppointmentStatusInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  appointmentIdOrLegacy: string,
+  newStatus: AppointmentStatus,
+  cancelledReason?: string
+): Promise<void> {
+  const validStatuses: string[] = [
+    AppointmentStatus.Pending,
+    AppointmentStatus.Confirmed,
+    AppointmentStatus.Completed,
+    AppointmentStatus.Cancelled,
+    AppointmentStatus.NoShow,
+  ];
+  if (!validStatuses.includes(newStatus)) {
+    throw new Error('INVALID_APPOINTMENT_STATUS');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const curRes = await client.query(
+      `
+      SELECT id, business_id, customer_user_id, customer_phone, status
+      FROM appointments
+      WHERE id::text = $1 OR legacy_demo_id = $1
+      FOR UPDATE
+      `,
+      [appointmentIdOrLegacy]
+    );
+
+    if (!curRes.rowCount || !curRes.rows[0]) {
+      throw new Error('APPOINTMENT_NOT_FOUND');
+    }
+
+    const row = curRes.rows[0];
+    const aptId = String(row.id);
+    const businessUuid = String(row.business_id);
+    const prevStatus = String(row.status);
+    const customerUserId = row.customer_user_id
+      ? String(row.customer_user_id)
+      : null;
+    const customerPhone = String(row.customer_phone || '');
+
+    // بررسی عضویت در کسب‌وکار
+    const memberRes = await client.query(
+      `
+      SELECT member_role
+      FROM business_members
+      WHERE business_id = $1 AND user_id = $2 AND is_active = TRUE
+      LIMIT 1
+      `,
+      [businessUuid, actorUser.userId]
+    );
+    const isBusinessMember = Boolean(memberRes.rowCount && memberRes.rows[0]);
+
+    const isAppointmentCustomer =
+      customerUserId === actorUser.userId ||
+      (customerPhone && customerPhone === actorUser.phone);
+
+    if (!isBusinessMember && !isAppointmentCustomer) {
+      throw new Error('APPOINTMENT_ACCESS_DENIED');
+    }
+
+    if (!isBusinessMember && isAppointmentCustomer) {
+      if (newStatus !== AppointmentStatus.Cancelled) {
+        throw new Error('CUSTOMER_CAN_ONLY_CANCEL_OWN_APPOINTMENT');
+      }
+      if (prevStatus !== 'PENDING' && prevStatus !== 'CONFIRMED') {
+        throw new Error('CUSTOMER_CAN_ONLY_CANCEL_OWN_APPOINTMENT');
+      }
+    }
+
+    await client.query(
+      `
+      UPDATE appointments
+      SET
+        status = $2::varchar,
+        cancelled_at = CASE WHEN $2::varchar = 'CANCELLED' THEN NOW() ELSE NULL END,
+        cancelled_reason = CASE WHEN $2::varchar = 'CANCELLED' THEN COALESCE($3, 'لغو توسط کاربر یا مدیر سالن') ELSE NULL END,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [aptId, newStatus, cancelledReason || null]
+    );
+
+    await client.query(
+      `
+      INSERT INTO appointment_status_logs (
+        appointment_id,
+        previous_status,
+        new_status,
+        changed_by_user_id,
+        note
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      `,
+      [
+        aptId,
+        prevStatus,
+        newStatus,
+        actorUser.userId,
+        cancelledReason || `تغییر وضعیت از ${prevStatus} به ${newStatus}`,
+      ]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ایجاد یا ویرایش دسته‌بندی خدمات توسط ادمین
+ */
+export async function createCategoryInDb(
+  pool: Pool,
+  input: Omit<CategoryItem, 'id'>
+): Promise<CategoryItem> {
+  const title = (input.title ?? '').trim();
+  if (!title) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+  const validSlug = normalizeValidSlug(input.slug || title, 'cat');
+  const res = await pool.query(
+    `
+    INSERT INTO categories (
+      slug,
+      title,
+      subtitle,
+      target_audience,
+      icon_name,
+      service_count,
+      is_active
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+    RETURNING
+      COALESCE(legacy_demo_id, id::text) AS external_id,
+      slug,
+      title,
+      subtitle,
+      target_audience,
+      icon_name,
+      service_count
+    `,
+    [
+      validSlug,
+      title,
+      (input.subtitle || '').trim(),
+      (input.targetAudience || '').trim(),
+      input.iconName || 'Sparkles',
+      Math.max(0, Number(input.serviceCount) || 0),
+    ]
+  );
+  const r = res.rows[0];
+  return {
+    id: String(r.external_id),
+    slug: String(r.slug),
+    title: String(r.title),
+    subtitle: String(r.subtitle),
+    targetAudience: String(r.target_audience),
+    iconName: String(r.icon_name),
+    serviceCount: Number(r.service_count),
+  };
+}
+
+export async function updateCategoryInDb(
+  pool: Pool,
+  categoryIdOrLegacy: string,
+  input: Partial<Omit<CategoryItem, 'id'>>
+): Promise<CategoryItem> {
+  const existingRes = await pool.query(
+    `SELECT * FROM categories WHERE id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+    [categoryIdOrLegacy]
+  );
+  if (!existingRes.rowCount || !existingRes.rows[0]) {
+    throw new Error('CATEGORY_NOT_FOUND');
+  }
+  const cur = existingRes.rows[0];
+  const nextSlug = input.slug
+    ? normalizeValidSlug(input.slug, 'cat')
+    : String(cur.slug);
+
+  const res = await pool.query(
+    `
+    UPDATE categories
+    SET
+      slug = $2,
+      title = $3,
+      subtitle = $4,
+      target_audience = $5,
+      icon_name = $6,
+      service_count = $7,
+      updated_at = NOW()
+    WHERE id = $1
+    RETURNING
+      COALESCE(legacy_demo_id, id::text) AS external_id,
+      slug,
+      title,
+      subtitle,
+      target_audience,
+      icon_name,
+      service_count
+    `,
+    [
+      cur.id,
+      nextSlug,
+      (input.title ?? String(cur.title)).trim(),
+      (input.subtitle ?? String(cur.subtitle)).trim(),
+      (input.targetAudience ?? String(cur.target_audience)).trim(),
+      input.iconName ?? String(cur.icon_name),
+      Math.max(0, Number(input.serviceCount ?? cur.service_count) || 0),
+    ]
+  );
+  const r = res.rows[0];
+  return {
+    id: String(r.external_id),
+    slug: String(r.slug),
+    title: String(r.title),
+    subtitle: String(r.subtitle),
+    targetAudience: String(r.target_audience),
+    iconName: String(r.icon_name),
+    serviceCount: Number(r.service_count),
+  };
+}
+
+/**
+ * افزودن و حذف آیتم گالری نمونه کارها (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function createGalleryItemInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: Omit<GalleryItem, 'id'>
+): Promise<GalleryItem> {
+  const title = (input.title ?? '').trim();
+  const categoryLabel = (input.categoryLabel ?? '').trim();
+  if (!title || !categoryLabel) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, input.businessId);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    const validTheme: VisualTheme = ['rose', 'slate', 'emerald', 'violet'].includes(
+      input.theme
+    )
+      ? input.theme
+      : 'violet';
+
+    const res = await client.query(
+      `
+      INSERT INTO gallery_items (business_id, title, category_label, theme)
+      VALUES ($1, $2, $3, $4)
+      RETURNING COALESCE(legacy_demo_id, id::text) AS external_id, title, category_label, theme
+      `,
+      [biz.id, title, categoryLabel, validTheme]
+    );
+    const r = res.rows[0];
+    return {
+      id: String(r.external_id),
+      businessId: biz.externalId,
+      title: String(r.title),
+      categoryLabel: String(r.category_label),
+      theme: r.theme as VisualTheme,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteGalleryItemInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  galleryIdOrLegacy: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const existingRes = await client.query(
+      `SELECT id, business_id FROM gallery_items WHERE id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+      [galleryIdOrLegacy]
+    );
+    if (!existingRes.rowCount || !existingRes.rows[0]) {
+      throw new Error('GALLERY_ITEM_NOT_FOUND');
+    }
+
+    const row = existingRes.rows[0];
+    await assertUserHasBusinessAccess(
+      client,
+      actorUser,
+      String(row.business_id),
+      ['OWNER', 'MANAGER']
+    );
+
+    await client.query(`DELETE FROM gallery_items WHERE id = $1`, [row.id]);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ایجاد کمپین بازاریابی جدید برای سالن (فقط برای OWNER یا MANAGER همان کسب‌وکار)
+ */
+export async function createCampaignInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: Omit<MarketingCampaignItem, 'id'> & { businessId?: string }
+): Promise<MarketingCampaignItem> {
+  const title = (input.title ?? '').trim();
+  const targetSegment = (input.targetSegment ?? '').trim();
+  const channel = (input.channel ?? '').trim();
+  if (!title || !targetSegment || !channel) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, input.businessId);
+    await assertUserHasBusinessAccess(client, actorUser, biz.id, [
+      'OWNER',
+      'MANAGER',
+    ]);
+
+    const res = await client.query(
+      `
+      INSERT INTO marketing_campaigns (
+        business_id,
+        title,
+        target_segment,
+        discount_percent,
+        channel,
+        status_label,
+        created_at_jalali
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        title,
+        target_segment,
+        discount_percent,
+        channel,
+        status_label,
+        created_at_jalali
+      `,
+      [
+        biz.id,
+        title,
+        targetSegment,
+        Math.max(1, Math.min(100, Number(input.discountPercent) || 15)),
+        channel,
+        input.statusLabel || 'زمان‌بندی‌شده',
+        input.createdAtJalali || '۱۴۰۵/۰۸/۰۱',
+      ]
+    );
+    const r = res.rows[0];
+    return {
+      id: String(r.external_id),
+      title: String(r.title),
+      targetSegment: String(r.target_segment),
+      discountPercent: Number(r.discount_percent),
+      channel: String(r.channel),
+      statusLabel: String(r.status_label),
+      createdAtJalali: String(r.created_at_jalali),
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * تغییر وضعیت نشان‌شده (علاقه‌مندی) کسب‌وکار برای کاربر احرازهویت‌شده
+ * هیچ شماره تلفن یا نام ساختگی از سمت کلاینت پذیرفته نمی‌شود.
+ */
+export async function toggleFavoriteBusinessInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  businessIdOrLegacy: string
+): Promise<{ favorited: boolean; favoriteBusinessIds: string[] }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const biz = await resolveBusinessUuid(client, businessIdOrLegacy);
+    const userId = actorUser.userId;
+
+    const existing = await client.query(
+      `SELECT 1 FROM customer_favorites WHERE user_id = $1 AND business_id = $2`,
+      [userId, biz.id]
+    );
+
+    let favorited = false;
+    if (existing.rowCount && existing.rowCount > 0) {
+      await client.query(
+        `DELETE FROM customer_favorites WHERE user_id = $1 AND business_id = $2`,
+        [userId, biz.id]
+      );
+      favorited = false;
+    } else {
+      await client.query(
+        `INSERT INTO customer_favorites (user_id, business_id) VALUES ($1, $2)`,
+        [userId, biz.id]
+      );
+      favorited = true;
+    }
+
+    const favListRes = await client.query(
+      `
+      SELECT COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id
+      FROM customer_favorites cf
+      JOIN businesses b ON b.id = cf.business_id
+      WHERE cf.user_id = $1
+      `,
+      [userId]
+    );
+
+    await client.query('COMMIT');
+    return {
+      favorited,
+      favoriteBusinessIds: favListRes.rows.map((r) =>
+        String(r.business_external_id)
+      ),
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ثبت کامل کسب‌وکار جدید برای کاربر احرازهویت‌شده (مالک کسب‌وکار = actorUser.userId)
+ */
+export async function onboardBusinessInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  draft: OnboardingDraft
+): Promise<{ businessId: string; slug: string }> {
+  const businessName = (draft.businessName ?? '').trim();
+  const city = (draft.city ?? '').trim();
+  const address = (draft.address ?? '').trim();
+  if (!businessName || !city || !address) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const ownerUserId = actorUser.userId;
+    if (draft.ownerName && draft.ownerName.trim().length >= 2) {
+      await client.query(
+        `UPDATE users SET full_name = $2, default_city = COALESCE($3, default_city), updated_at = NOW() WHERE id = $1`,
+        [ownerUserId, draft.ownerName.trim(), city]
+      );
+    }
+
+    const cat = await resolveCategoryBySlug(
+      client,
+      draft.categorySlug || 'hair-color'
+    );
+    const slug = `${normalizeValidSlug(draft.slug || businessName, 'salon')}-${crypto.randomBytes(2).toString('hex')}`;
+
+    const typeLabelMap: Record<BusinessType, string> = {
+      [BusinessType.WomenSalon]: 'سالن زیبایی بانوان',
+      [BusinessType.MenBarbershop]: 'آرایشگاه و پیرایش مردانه',
+      [BusinessType.IndependentSpecialist]: 'متخصص مستقل زیبایی',
+    };
+
+    const startingPrice =
+      Array.isArray(draft.services) && draft.services.length > 0
+        ? Math.min(...draft.services.map((s) => Number(s.priceToman) || 350000))
+        : 350000;
+
+    const nationalIdHash = draft.nationalIdNumber
+      ? crypto
+          .createHash('sha256')
+          .update(draft.nationalIdNumber.trim())
+          .digest('hex')
+      : null;
+
+    const bizRes = await client.query(
+      `
+      INSERT INTO businesses (
+        owner_user_id,
+        primary_category_id,
+        slug,
+        name,
+        type,
+        type_label,
+        city,
+        neighborhood,
+        address,
+        map_lat,
+        map_lng,
+        phone_display,
+        instagram_handle,
+        short_description,
+        about_text,
+        visual_theme,
+        starting_price_toman,
+        verified_badge,
+        approval_status,
+        subscription_plan,
+        subscription_status,
+        license_code,
+        national_id_hash
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, 'rose', $16, FALSE, 'PENDING_REVIEW',
+        'حرفه‌ای (رشد سالن)', 'TRIAL', $17, $18
+      )
+      RETURNING id, slug
+      `,
+      [
+        ownerUserId,
+        cat.id,
+        slug,
+        businessName,
+        draft.businessType || BusinessType.WomenSalon,
+        typeLabelMap[draft.businessType] || 'سالن زیبایی بانوان',
+        city,
+        (draft.neighborhood || '').trim(),
+        address,
+        draft.mapLat ?? null,
+        draft.mapLng ?? null,
+        (draft.phone || actorUser.phone).trim(),
+        draft.instagramHandle || null,
+        (draft.shortDescription || '').trim().slice(0, 290),
+        (draft.shortDescription || '').trim(),
+        startingPrice,
+        draft.licenseCode || null,
+        nationalIdHash,
+      ]
+    );
+
+    const newBizId = String(bizRes.rows[0].id);
+
+    await client.query(
+      `INSERT INTO business_settings (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`,
+      [newBizId]
+    );
+
+    const workingHours = Array.isArray(draft.workingHours)
+      ? draft.workingHours
+      : [];
+    for (let idx = 0; idx < Math.min(7, workingHours.length); idx++) {
+      const wh = workingHours[idx];
+      const { openTimeSql, closeTimeSql } = normalizeWorkingTimePair(
+        wh.openTime,
+        wh.closeTime
+      );
+      await client.query(
+        `
+        INSERT INTO business_working_hours (
+          business_id, day_of_week, day_name, is_open, open_time, close_time
+        )
+        VALUES ($1, $2, $3, $4, $5::time, $6::time)
+        `,
+        [
+          newBizId,
+          idx,
+          wh.dayName,
+          Boolean(wh.isOpen),
+          openTimeSql,
+          closeTimeSql,
+        ]
+      );
+    }
+
+    const services = Array.isArray(draft.services) ? draft.services : [];
+    for (const srv of services) {
+      await client.query(
+        `
+        INSERT INTO services (
+          business_id, category_id, category_slug, category_label,
+          title, description, duration_minutes, price_toman, is_popular, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE)
+        `,
+        [
+          newBizId,
+          cat.id,
+          cat.slug,
+          srv.category || cat.title,
+          srv.title.trim(),
+          srv.title.trim(),
+          Math.max(5, Math.min(600, Number(srv.durationMinutes) || 60)),
+          Math.max(0, Number(srv.priceToman) || 350000),
+        ]
+      );
+    }
+
+    const staff = Array.isArray(draft.staff) ? draft.staff : [];
+    for (const stf of staff) {
+      const spcSlug = `${normalizeValidSlug(stf.fullName, 'spc')}-${crypto.randomBytes(2).toString('hex')}`;
+      await client.query(
+        `
+        INSERT INTO specialists (
+          business_id, slug, full_name, role_title, experience_years,
+          specialties, bio, is_independent, is_active, city, starting_price_toman
+        )
+        VALUES ($1, $2, $3, $4, 3, $5, $6, FALSE, TRUE, $7, $8)
+        `,
+        [
+          newBizId,
+          spcSlug,
+          stf.fullName.trim(),
+          stf.roleTitle.trim(),
+          [stf.roleTitle.trim()],
+          `${stf.roleTitle.trim()} در ${businessName}`,
+          city,
+          startingPrice,
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return {
+      businessId: newBizId,
+      slug: String(bizRes.rows[0].slug),
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * واکشی اطلاعات خصوصی مشتری احرازهویت‌شده (/api/v1/me/bootstrap)
+ * فقط نوبت‌ها و علاقه‌مندی‌های متعلق به همان کاربر برگردانده می‌شوند.
+ */
+export async function getCustomerPrivatePayloadInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser
+): Promise<CustomerPrivatePayload> {
+  const client = await pool.connect();
+  try {
+    const [aptRes, favRes] = await Promise.all([
+      client.query(
+        `
+        SELECT
+          COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+          a.reference_code,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          b.slug AS business_slug,
+          b.name AS business_name,
+          COALESCE(s.legacy_demo_id, s.id::text) AS service_external_id,
+          a.service_title_snapshot,
+          COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
+          a.specialist_name_snapshot,
+          a.customer_name,
+          a.customer_phone_masked,
+          a.date_jalali,
+          a.time_slot_label,
+          a.duration_minutes_snapshot,
+          a.service_price_toman_snapshot,
+          a.status,
+          a.notes
+        FROM appointments a
+        JOIN businesses b ON b.id = a.business_id
+        JOIN services s ON s.id = a.service_id
+        JOIN specialists sp ON sp.id = a.specialist_id
+        WHERE a.customer_user_id = $1
+           OR a.customer_phone = $2
+        ORDER BY a.service_starts_at DESC, a.created_at DESC
+        `,
+        [actorUser.userId, actorUser.phone]
+      ),
+      client.query(
+        `
+        SELECT COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id
+        FROM customer_favorites cf
+        JOIN businesses b ON b.id = cf.business_id
+        WHERE cf.user_id = $1
+        ORDER BY cf.created_at DESC
+        `,
+        [actorUser.userId]
+      ),
+    ]);
+
+    const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
+      id: String(r.external_id),
+      referenceCode: String(r.reference_code),
+      businessId: String(r.business_external_id),
+      businessSlug: String(r.business_slug),
+      businessName: String(r.business_name),
+      serviceId: String(r.service_external_id),
+      serviceTitle: String(r.service_title_snapshot),
+      specialistId: String(r.specialist_external_id),
+      specialistName: String(r.specialist_name_snapshot),
+      customerName: String(r.customer_name),
+      customerPhoneMasked: String(r.customer_phone_masked),
+      dateJalali: String(r.date_jalali),
+      timeSlot: String(r.time_slot_label),
+      durationMinutes: Number(r.duration_minutes_snapshot),
+      priceToman: Number(r.service_price_toman_snapshot),
+      status: r.status as AppointmentStatus,
+      notes: r.notes ? String(r.notes) : undefined,
+    }));
+
+    const favoriteBusinessIds = favRes.rows.map((r) =>
+      String(r.business_external_id)
+    );
+
+    return {
+      appointments,
+      favoriteBusinessIds,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * واکشی فضای کاری پنل کسب‌وکار (/api/v1/app/workspace)
+ * فقط برای اعضای فعال همان کسب‌وکار در جدول business_members مجاز است.
+ */
+export async function getBusinessWorkspacePayloadInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  requestedBusinessIdOrSlug?: string
+): Promise<BusinessWorkspacePayload> {
+  const client = await pool.connect();
+  try {
+    let targetBusinessUuid: string;
+    let memberRole: BusinessMemberRole;
+
+    if (requestedBusinessIdOrSlug && requestedBusinessIdOrSlug.trim()) {
+      const biz = await resolveBusinessUuid(client, requestedBusinessIdOrSlug);
+      memberRole = await assertUserHasBusinessAccess(
+        client,
+        actorUser,
+        biz.id,
+        ['OWNER', 'MANAGER', 'STAFF']
+      );
+      targetBusinessUuid = biz.id;
+    } else {
+      const firstMembership = actorUser.businessMemberships[0];
+      if (!firstMembership) {
+        throw new Error('BUSINESS_ACCESS_DENIED');
+      }
+      memberRole = await assertUserHasBusinessAccess(
+        client,
+        actorUser,
+        firstMembership.businessUuid,
+        ['OWNER', 'MANAGER', 'STAFF']
+      );
+      targetBusinessUuid = firstMembership.businessUuid;
+    }
+
+    const [
+      bizRes,
+      whRes,
+      srvRes,
+      spcRes,
+      aptRes,
+      custRes,
+      galRes,
+      campRes,
+    ] = await Promise.all([
+      client.query(
+        `
+        SELECT
+          b.id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
+          b.slug,
+          b.name,
+          b.type,
+          b.type_label,
+          b.city,
+          b.neighborhood,
+          b.address,
+          b.map_lat,
+          b.map_lng,
+          b.phone_display,
+          b.instagram_handle,
+          b.short_description,
+          b.about_text,
+          b.visual_theme,
+          b.rating_avg,
+          b.review_count,
+          b.starting_price_toman,
+          b.verified_badge,
+          b.approval_status,
+          b.subscription_plan,
+          b.subscription_status,
+          b.is_featured,
+          c.slug AS primary_category_slug
+        FROM businesses b
+        JOIN categories c ON c.id = b.primary_category_id
+        WHERE b.id = $1
+        LIMIT 1
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          day_of_week,
+          day_name,
+          is_open,
+          to_char(open_time, 'HH24:MI') AS open_str,
+          to_char(close_time, 'HH24:MI') AS close_str
+        FROM business_working_hours
+        WHERE business_id = $1
+        ORDER BY day_of_week ASC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(s.legacy_demo_id, s.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          s.category_slug,
+          s.category_label,
+          s.title,
+          s.description,
+          s.duration_minutes,
+          s.price_toman,
+          s.is_popular,
+          s.is_active
+        FROM services s
+        JOIN businesses b ON b.id = s.business_id
+        WHERE s.business_id = $1 AND s.is_active = TRUE
+        ORDER BY s.is_popular DESC, s.created_at ASC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(sp.legacy_demo_id, sp.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          sp.slug,
+          sp.full_name,
+          sp.role_title,
+          sp.experience_years,
+          sp.rating_avg,
+          sp.review_count,
+          sp.specialties,
+          sp.bio,
+          sp.is_independent,
+          sp.is_active,
+          COALESCE(sp.city, b.city) AS city,
+          sp.starting_price_toman
+        FROM specialists sp
+        JOIN businesses b ON b.id = sp.business_id
+        WHERE sp.business_id = $1
+        ORDER BY sp.rating_avg DESC, sp.created_at ASC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+          a.reference_code,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          b.slug AS business_slug,
+          b.name AS business_name,
+          COALESCE(s.legacy_demo_id, s.id::text) AS service_external_id,
+          a.service_title_snapshot,
+          COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
+          a.specialist_name_snapshot,
+          a.customer_name,
+          a.customer_phone_masked,
+          a.date_jalali,
+          a.time_slot_label,
+          a.duration_minutes_snapshot,
+          a.service_price_toman_snapshot,
+          a.status,
+          a.notes
+        FROM appointments a
+        JOIN businesses b ON b.id = a.business_id
+        JOIN services s ON s.id = a.service_id
+        JOIN specialists sp ON sp.id = a.specialist_id
+        WHERE a.business_id = $1
+        ORDER BY a.service_starts_at DESC, a.created_at DESC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(legacy_demo_id, id::text) AS external_id,
+          full_name,
+          phone_masked,
+          city,
+          total_visits,
+          COALESCE(last_visit_jalali, '۱۴۰۵/۰۷/۳۰') AS last_visit_jalali,
+          total_spent_toman,
+          favorite_service_title,
+          notes
+        FROM business_customers
+        WHERE business_id = $1
+        ORDER BY total_visits DESC, created_at DESC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(g.legacy_demo_id, g.id::text) AS external_id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          g.title,
+          g.category_label,
+          g.theme
+        FROM gallery_items g
+        JOIN businesses b ON b.id = g.business_id
+        WHERE g.business_id = $1
+        ORDER BY g.sort_order ASC, g.created_at DESC
+        `,
+        [targetBusinessUuid]
+      ),
+      client.query(
+        `
+        SELECT
+          COALESCE(mc.legacy_demo_id, mc.id::text) AS external_id,
+          mc.title,
+          mc.target_segment,
+          mc.discount_percent,
+          mc.channel,
+          mc.status_label,
+          mc.created_at_jalali
+        FROM marketing_campaigns mc
+        WHERE mc.business_id = $1
+        ORDER BY mc.created_at DESC
+        `,
+        [targetBusinessUuid]
+      ),
+    ]);
+
+    const workingHours: WorkingHourItem[] = whRes.rows.map((row) => ({
+      dayName: String(row.day_name),
+      isOpen: Boolean(row.is_open),
+      openTime: toPersianDigitsServer(String(row.open_str || '09:30')),
+      closeTime: toPersianDigitsServer(String(row.close_str || '19:30')),
+    }));
+
+    const r = bizRes.rows[0];
+    const business: BusinessItem | null = r
+      ? {
+          id: String(r.external_id),
+          slug: String(r.slug),
+          name: String(r.name),
+          type: r.type as BusinessType,
+          typeLabel: String(r.type_label),
+          categorySlug: String(r.primary_category_slug),
+          city: String(r.city),
+          neighborhood: String(r.neighborhood),
+          address: String(r.address),
+          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+          rating: Number(r.rating_avg),
+          reviewCount: Number(r.review_count),
+          startingPriceToman: Number(r.starting_price_toman),
+          verifiedBadge: Boolean(r.verified_badge),
+          shortDescription: String(r.short_description),
+          aboutText: String(r.about_text),
+          phoneDisplay: String(r.phone_display),
+          instagramHandle: r.instagram_handle
+            ? String(r.instagram_handle)
+            : undefined,
+          workingHours,
+          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+          approvalStatus: r.approval_status as ApprovalStatus,
+          subscriptionPlan: String(r.subscription_plan),
+          subscriptionStatus: r.subscription_status as SubscriptionStatus,
+          featured: Boolean(r.is_featured),
+        }
+      : null;
+
+    const services: ServiceItem[] = srvRes.rows.map((row) => ({
+      id: String(row.external_id),
+      businessId: String(row.business_external_id),
+      title: String(row.title),
+      categorySlug: String(row.category_slug),
+      category: String(row.category_label),
+      durationMinutes: Number(row.duration_minutes),
+      priceToman: Number(row.price_toman),
+      description: String(row.description),
+      isPopular: Boolean(row.is_popular),
+      isActive: Boolean(row.is_active),
+    }));
+
+    const specialists: SpecialistItem[] = spcRes.rows.map((row) => ({
+      id: String(row.external_id),
+      slug: String(row.slug),
+      fullName: String(row.full_name),
+      roleTitle: String(row.role_title),
+      businessId: String(row.business_external_id),
+      experienceYears: Number(row.experience_years),
+      rating: Number(row.rating_avg),
+      reviewCount: Number(row.review_count),
+      specialties: Array.isArray(row.specialties)
+        ? row.specialties.map(String)
+        : [],
+      bio: String(row.bio),
+      isIndependent: Boolean(row.is_independent),
+      isActive: Boolean(row.is_active),
+      city: String(row.city),
+      startingPriceToman: Number(row.starting_price_toman),
+    }));
+
+    const appointments: AppointmentItem[] = aptRes.rows.map((row) => ({
+      id: String(row.external_id),
+      referenceCode: String(row.reference_code),
+      businessId: String(row.business_external_id),
+      businessSlug: String(row.business_slug),
+      businessName: String(row.business_name),
+      serviceId: String(row.service_external_id),
+      serviceTitle: String(row.service_title_snapshot),
+      specialistId: String(row.specialist_external_id),
+      specialistName: String(row.specialist_name_snapshot),
+      customerName: String(row.customer_name),
+      customerPhoneMasked: String(row.customer_phone_masked),
+      dateJalali: String(row.date_jalali),
+      timeSlot: String(row.time_slot_label),
+      durationMinutes: Number(row.duration_minutes_snapshot),
+      priceToman: Number(row.service_price_toman_snapshot),
+      status: row.status as AppointmentStatus,
+      notes: row.notes ? String(row.notes) : undefined,
+    }));
+
+    const customers: CustomerRecord[] = custRes.rows.map((row) => ({
+      id: String(row.external_id),
+      fullName: String(row.full_name),
+      phoneMasked: String(row.phone_masked),
+      city: String(row.city),
+      totalVisits: Number(row.total_visits),
+      lastVisitJalali: String(row.last_visit_jalali),
+      totalSpentToman: Number(row.total_spent_toman),
+      favoriteService: String(row.favorite_service_title),
+      notes: String(row.notes),
+    }));
+
+    const gallery: GalleryItem[] = galRes.rows.map((row) => ({
+      id: String(row.external_id),
+      businessId: String(row.business_external_id),
+      title: String(row.title),
+      categoryLabel: String(row.category_label),
+      theme: (row.theme as VisualTheme) || 'violet',
+    }));
+
+    const campaigns: MarketingCampaignItem[] = campRes.rows.map((row) => ({
+      id: String(row.external_id),
+      title: String(row.title),
+      targetSegment: String(row.target_segment),
+      discountPercent: Number(row.discount_percent),
+      channel: String(row.channel),
+      statusLabel: String(row.status_label),
+      createdAtJalali: String(row.created_at_jalali),
+    }));
+
+    return {
+      business,
+      memberRole,
+      services,
+      specialists,
+      appointments,
+      customers,
+      gallery,
+      campaigns,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * واکشی اطلاعات مدیریتی کنسول ادمین پلتفرم (/api/v1/admin/overview)
+ * فقط برای PLATFORM_ADMIN مجاز است و شامل کسب‌وکارهای در انتظار بررسی یا ردشده نیز می‌شود.
+ */
+export async function getAdminOverviewPayloadInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser
+): Promise<AdminOverviewPayload> {
+  if (!actorUser.isPlatformAdmin) {
+    throw new Error('ADMIN_ACCESS_DENIED');
+  }
+
+  const client = await pool.connect();
+  try {
+    const [catRes, bizRes, whRes, planRes, usrRes, aptRes] = await Promise.all([
+      client.query(`
+        SELECT
+          COALESCE(legacy_demo_id, id::text) AS external_id,
+          slug,
+          title,
+          subtitle,
+          target_audience,
+          icon_name,
+          service_count
+        FROM categories
+        ORDER BY sort_order ASC, created_at ASC
+      `),
+      client.query(`
+        SELECT
+          b.id,
+          COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
+          b.slug,
+          b.name,
+          b.type,
+          b.type_label,
+          b.city,
+          b.neighborhood,
+          b.address,
+          b.map_lat,
+          b.map_lng,
+          b.phone_display,
+          b.instagram_handle,
+          b.short_description,
+          b.about_text,
+          b.visual_theme,
+          b.rating_avg,
+          b.review_count,
+          b.starting_price_toman,
+          b.verified_badge,
+          b.approval_status,
+          b.subscription_plan,
+          b.subscription_status,
+          b.is_featured,
+          c.slug AS primary_category_slug
+        FROM businesses b
+        JOIN categories c ON c.id = b.primary_category_id
+        ORDER BY b.created_at DESC
+      `),
+      client.query(`
+        SELECT
+          business_id,
+          day_of_week,
+          day_name,
+          is_open,
+          to_char(open_time, 'HH24:MI') AS open_str,
+          to_char(close_time, 'HH24:MI') AS close_str
+        FROM business_working_hours
+        ORDER BY business_id, day_of_week ASC
+      `),
+      client.query(`
+        SELECT
+          COALESCE(legacy_demo_id, code, id::text) AS external_id,
+          name,
+          audience,
+          monthly_price_toman,
+          staff_limit_label,
+          sms_quota_monthly,
+          features,
+          is_recommended,
+          comparison_meta
+        FROM subscription_plans
+        ORDER BY sort_order ASC, monthly_price_toman ASC
+      `),
+      client.query(`
+        SELECT
+          u.id::text AS id,
+          u.full_name,
+          u.phone,
+          COALESCE(u.default_city, 'تهران') AS city,
+          u.is_active,
+          to_char(u.created_at, 'YYYY/MM/DD') AS created_date,
+          EXISTS (
+            SELECT 1 FROM platform_admins pa
+            WHERE pa.user_id = u.id AND pa.is_active = TRUE
+          ) AS is_admin,
+          EXISTS (
+            SELECT 1 FROM business_members bm
+            WHERE bm.user_id = u.id AND bm.is_active = TRUE
+          ) AS is_business_member
+        FROM users u
+        ORDER BY u.created_at DESC
+        LIMIT 200
+      `),
+      client.query(`
+        SELECT
+          COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+          a.reference_code,
+          COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+          b.slug AS business_slug,
+          b.name AS business_name,
+          COALESCE(s.legacy_demo_id, s.id::text) AS service_external_id,
+          a.service_title_snapshot,
+          COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
+          a.specialist_name_snapshot,
+          a.customer_name,
+          a.customer_phone_masked,
+          a.date_jalali,
+          a.time_slot_label,
+          a.duration_minutes_snapshot,
+          a.service_price_toman_snapshot,
+          a.status,
+          a.notes
+        FROM appointments a
+        JOIN businesses b ON b.id = a.business_id
+        JOIN services s ON s.id = a.service_id
+        JOIN specialists sp ON sp.id = a.specialist_id
+        ORDER BY a.service_starts_at DESC, a.created_at DESC
+        LIMIT 200
+      `),
+    ]);
+
+    const whByBusinessId = new Map<string, WorkingHourItem[]>();
+    for (const row of whRes.rows) {
+      const bizUuid = String(row.business_id);
+      const list = whByBusinessId.get(bizUuid) ?? [];
+      list.push({
+        dayName: String(row.day_name),
+        isOpen: Boolean(row.is_open),
+        openTime: toPersianDigitsServer(String(row.open_str || '09:30')),
+        closeTime: toPersianDigitsServer(String(row.close_str || '19:30')),
+      });
+      whByBusinessId.set(bizUuid, list);
+    }
+
+    const categories: CategoryItem[] = catRes.rows.map((r) => ({
+      id: String(r.external_id),
+      slug: String(r.slug),
+      title: String(r.title),
+      subtitle: String(r.subtitle),
+      targetAudience: String(r.target_audience),
+      iconName: String(r.icon_name),
+      serviceCount: Number(r.service_count),
+    }));
+
+    const businesses: BusinessItem[] = bizRes.rows.map((r) => ({
+      id: String(r.external_id),
+      slug: String(r.slug),
+      name: String(r.name),
+      type: r.type as BusinessType,
+      typeLabel: String(r.type_label),
+      categorySlug: String(r.primary_category_slug),
+      city: String(r.city),
+      neighborhood: String(r.neighborhood),
+      address: String(r.address),
+      mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+      mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+      rating: Number(r.rating_avg),
+      reviewCount: Number(r.review_count),
+      startingPriceToman: Number(r.starting_price_toman),
+      verifiedBadge: Boolean(r.verified_badge),
+      shortDescription: String(r.short_description),
+      aboutText: String(r.about_text),
+      phoneDisplay: String(r.phone_display),
+      instagramHandle: r.instagram_handle
+        ? String(r.instagram_handle)
+        : undefined,
+      workingHours: whByBusinessId.get(String(r.id)) ?? [],
+      visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+      approvalStatus: r.approval_status as ApprovalStatus,
+      subscriptionPlan: String(r.subscription_plan),
+      subscriptionStatus: r.subscription_status as SubscriptionStatus,
+      featured: Boolean(r.is_featured),
+    }));
+
+    const plans: SubscriptionPlanItem[] = planRes.rows.map((r) => {
+      const comp =
+        r.comparison_meta && typeof r.comparison_meta === 'object'
+          ? (r.comparison_meta as Record<string, unknown>)
+          : {};
+      return {
+        id: String(r.external_id),
+        name: String(r.name),
+        audience: String(r.audience),
+        monthlyPriceToman: Number(r.monthly_price_toman),
+        staffLimit: String(r.staff_limit_label),
+        smsQuotaMonthly: Number(r.sms_quota_monthly),
+        features: Array.isArray(r.features) ? r.features.map(String) : [],
+        isRecommended: Boolean(r.is_recommended),
+        comparison: {
+          onlineBooking: String(comp.onlineBooking ?? 'نامحدود'),
+          smsReminders: String(comp.smsReminders ?? 'فعال'),
+          analyticsLevel: String(comp.analyticsLevel ?? 'پایه'),
+          supportType: String(comp.supportType ?? 'تیکت پشتیبانی'),
+        },
+      };
+    });
+
+    const users: AdminUserRecord[] = usrRes.rows.map((r) => ({
+      id: String(r.id),
+      fullName: String(r.full_name || 'کاربر BeautyHub'),
+      phoneMasked: maskPhoneDisplay(String(r.phone || '')),
+      roleLabel: r.is_admin
+        ? 'مدیر کل پلتفرم'
+        : r.is_business_member
+          ? 'مالک / عضو کسب‌وکار'
+          : 'مشتری',
+      city: String(r.city || 'تهران'),
+      joinedJalali: toPersianDigitsServer(String(r.created_date || '1405/08/01')),
+      isActive: Boolean(r.is_active),
+    }));
+
+    const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
+      id: String(r.external_id),
+      referenceCode: String(r.reference_code),
+      businessId: String(r.business_external_id),
+      businessSlug: String(r.business_slug),
+      businessName: String(r.business_name),
+      serviceId: String(r.service_external_id),
+      serviceTitle: String(r.service_title_snapshot),
+      specialistId: String(r.specialist_external_id),
+      specialistName: String(r.specialist_name_snapshot),
+      customerName: String(r.customer_name),
+      customerPhoneMasked: String(r.customer_phone_masked),
+      dateJalali: String(r.date_jalali),
+      timeSlot: String(r.time_slot_label),
+      durationMinutes: Number(r.duration_minutes_snapshot),
+      priceToman: Number(r.service_price_toman_snapshot),
+      status: r.status as AppointmentStatus,
+      notes: r.notes ? String(r.notes) : undefined,
+    }));
+
+    return {
+      businesses,
+      categories,
+      plans,
+      users,
+      appointments,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * محاسبه بازه‌های زمانی آزاد و اشغال‌شده یک کسب‌وکار/متخصص در یک تاریخ مشخص
+ * بر اساس جدول ساعات کاری (business_working_hours) و نوبت‌های فعال (PENDING, CONFIRMED)
+ */
+export async function getBusinessAvailabilityInDb(
+  pool: Pool,
+  businessSlugOrId: string,
+  dateJalaliRaw: string,
+  serviceIdRaw?: string,
+  specialistIdRaw?: string
+): Promise<BusinessAvailabilityPayload> {
+  const dateJalali = (dateJalaliRaw || '۱۴۰۵/۰۸/۰۵').trim();
+  const client = await pool.connect();
+  try {
+    const biz = await resolveBusinessUuid(client, businessSlugOrId);
+    if (biz.approvalStatus !== 'APPROVED') {
+      throw new Error('BUSINESS_NOT_APPROVED');
+    }
+
+    let durationMinutes = 60;
+    if (serviceIdRaw && serviceIdRaw.trim()) {
+      const srvRes = await client.query(
+        `
+        SELECT duration_minutes
+        FROM services
+        WHERE business_id = $1
+          AND is_active = TRUE
+          AND (id::text = $2 OR legacy_demo_id = $2)
+        LIMIT 1
+        `,
+        [biz.id, serviceIdRaw.trim()]
+      );
+      if (srvRes.rowCount && srvRes.rows[0]) {
+        durationMinutes = Number(srvRes.rows[0].duration_minutes);
+      }
+    }
+
+    let targetSpecialistUuid: string | null = null;
+    if (specialistIdRaw && specialistIdRaw.trim()) {
+      const spcRes = await client.query(
+        `
+        SELECT id
+        FROM specialists
+        WHERE business_id = $1
+          AND is_active = TRUE
+          AND (id::text = $2 OR legacy_demo_id = $2 OR slug = $2)
+        LIMIT 1
+        `,
+        [biz.id, specialistIdRaw.trim()]
+      );
+      if (spcRes.rowCount && spcRes.rows[0]) {
+        targetSpecialistUuid = String(spcRes.rows[0].id);
+      }
+    }
+
+    const settingsRes = await client.query(
+      `SELECT buffer_minutes FROM business_settings WHERE business_id = $1`,
+      [biz.id]
+    );
+    const bufferMinutes =
+      settingsRes.rowCount && settingsRes.rows[0]
+        ? Number(settingsRes.rows[0].buffer_minutes)
+        : 15;
+
+    const { dayOfWeek, dayName } = jalaliDateToIranDayOfWeek(dateJalali);
+    const whRes = await client.query(
+      `
+      SELECT
+        is_open,
+        to_char(open_time, 'HH24:MI') AS open_str,
+        to_char(close_time, 'HH24:MI') AS close_str
+      FROM business_working_hours
+      WHERE business_id = $1 AND (day_of_week = $2 OR day_name = $3)
+      ORDER BY (day_of_week = $2) DESC
+      LIMIT 1
+      `,
+      [biz.id, dayOfWeek, dayName]
+    );
+
+    let isOpen = true;
+    let openStr = '09:30';
+    let closeStr = '19:30';
+
+    if (whRes.rowCount && whRes.rows[0]) {
+      isOpen = Boolean(whRes.rows[0].is_open);
+      openStr = String(whRes.rows[0].open_str || '09:30');
+      closeStr = String(whRes.rows[0].close_str || '19:30');
+    }
+
+    const openMins = parseTimeLabelToMinutes(openStr) ?? 570;
+    const closeMins = parseTimeLabelToMinutes(closeStr) ?? 1170;
+
+    // دریافت نوبت‌های فعال در آن تاریخ برای بررسی تداخل زمانی
+    const aptQueryParams: unknown[] = [biz.id];
+    let specialistFilterSql = '';
+    if (targetSpecialistUuid) {
+      aptQueryParams.push(targetSpecialistUuid);
+      specialistFilterSql = `AND specialist_id = $2`;
+    }
+
+    const activeAptsRes = await client.query(
+      `
+      SELECT
+        service_starts_at,
+        occupied_until_at
+      FROM appointments
+      WHERE business_id = $1
+        AND status IN ('PENDING', 'CONFIRMED')
+        ${specialistFilterSql}
+      `,
+      aptQueryParams
+    );
+
+    const occupiedWindows = activeAptsRes.rows.map((r) => ({
+      startMs: new Date(String(r.service_starts_at)).getTime(),
+      endMs: new Date(String(r.occupied_until_at)).getTime(),
+    }));
+
+    const candidateLabels = [
+      '۰۹:۳۰',
+      '۱۰:۳۰',
+      '۱۱:۰۰',
+      '۱۲:۰۰',
+      '۱۳:۳۰',
+      '۱۴:۳۰',
+      '۱۶:۰۰',
+      '۱۷:۳۰',
+      '۱۸:۳۰',
+    ];
+
+    const slots: TimeSlotAvailabilityItem[] = candidateLabels.map((label) => {
+      if (!isOpen) {
+        return {
+          time: label,
+          available: false,
+          reason: 'تعطیل',
+        };
+      }
+
+      const startMins = parseTimeLabelToMinutes(label) ?? 600;
+      if (startMins < openMins || startMins + durationMinutes > closeMins) {
+        return {
+          time: label,
+          available: false,
+          reason: 'خارج از ساعت کاری',
+        };
+      }
+
+      const slotStartMs = jalaliSlotToTimestamptz(dateJalali, label).getTime();
+      const slotOccupiedEndMs =
+        slotStartMs + (durationMinutes + bufferMinutes) * 60 * 1000;
+
+      const hasOverlap = occupiedWindows.some(
+        (w) => slotStartMs < w.endMs && slotOccupiedEndMs > w.startMs
+      );
+
+      if (hasOverlap) {
+        return {
+          time: label,
+          available: false,
+          reason: 'رزروشده',
+        };
+      }
+
+      return {
+        time: label,
+        available: true,
+      };
+    });
+
+    return {
+      businessId: biz.externalId,
+      businessSlug: biz.slug,
+      dateJalali,
+      dayOfWeek,
+      dayName,
+      isOpen,
+      openTime: toPersianDigitsServer(openStr),
+      closeTime: toPersianDigitsServer(closeStr),
+      durationMinutes,
+      bufferMinutes,
+      slots,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * بروزرسانی مشخصات پروفایل مشتری احراز هویت‌شده در جدول users (/me/profile)
+ */
+export async function updateCustomerProfileInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  patch: { fullName?: string; defaultCity?: string }
+): Promise<AuthenticatedUser> {
+  const fullName = (patch.fullName ?? actorUser.fullName ?? '').trim();
+  const defaultCity = (patch.defaultCity ?? actorUser.defaultCity ?? 'تهران').trim();
+  if (fullName.length < 2) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+      UPDATE users
+      SET
+        full_name = $2,
+        default_city = $3,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [actorUser.userId, fullName, defaultCity]
+    );
+
+    const updated = await loadUserPermissionsByUserId(
+      client,
+      actorUser.userId,
+      actorUser.sessionId
+    );
+    if (!updated) {
+      throw new Error('USER_ACCOUNT_DISABLED');
+    }
+    return updated;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ثبت دیدگاه و امتیاز واقعی مراجع احراز هویت‌شده در جدول reviews و بروزرسانی میانگین امتیاز کسب‌وکار
+ */
+export async function createReviewInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: {
+    businessId: string;
+    specialistSlug?: string;
+    serviceTitle: string;
+    rating: number;
+    comment: string;
+    dateJalali?: string;
+  }
+): Promise<ReviewItem> {
+  const comment = (input.comment ?? '').trim();
+  const serviceTitle = (input.serviceTitle ?? 'خدمات زیبایی').trim();
+  const rating = Math.round(Number(input.rating) || 0);
+  if (!comment || comment.length < 3 || rating < 1 || rating > 5) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const biz = await resolveBusinessUuid(client, input.businessId);
+    if (biz.approvalStatus !== 'APPROVED') {
+      throw new Error('BUSINESS_NOT_APPROVED');
+    }
+
+    const authorName = (actorUser.fullName || 'کاربر BeautyHub').trim();
+    const dateJalali = (input.dateJalali || '۱۴۰۵/۰۸/۰۵').trim();
+
+    const insertRes = await client.query(
+      `
+      INSERT INTO reviews (
+        business_id,
+        customer_user_id,
+        specialist_slug,
+        author_name,
+        service_title,
+        rating,
+        date_jalali,
+        comment,
+        is_published
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+      RETURNING
+        COALESCE(legacy_demo_id, id::text) AS external_id,
+        specialist_slug,
+        author_name,
+        service_title,
+        rating,
+        date_jalali,
+        comment
+      `,
+      [
+        biz.id,
+        actorUser.userId,
+        input.specialistSlug?.trim() || null,
+        authorName,
+        serviceTitle,
+        rating,
+        dateJalali,
+        comment,
+      ]
+    );
+
+    await client.query(
+      `
+      UPDATE businesses
+      SET
+        rating_avg = COALESCE((
+          SELECT ROUND(AVG(rating)::numeric, 1)
+          FROM reviews
+          WHERE business_id = $1 AND is_published = TRUE
+        ), 5.0),
+        review_count = (
+          SELECT COUNT(*)::int
+          FROM reviews
+          WHERE business_id = $1 AND is_published = TRUE
+        ),
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [biz.id]
+    );
+
+    await client.query('COMMIT');
+    const row = insertRes.rows[0];
+    return {
+      id: String(row.external_id),
+      businessId: biz.externalId,
+      specialistSlug: row.specialist_slug
+        ? String(row.specialist_slug)
+        : undefined,
+      authorName: String(row.author_name),
+      serviceTitle: String(row.service_title),
+      rating: Number(row.rating),
+      dateJalali: String(row.date_jalali),
+      comment: String(row.comment),
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * صدور اتمیک کد یک‌بارمصرف (OTP) با کنترل نرخ درخواست در سطح شماره موبایل و IP در PostgreSQL
+ * و ارسال واقعی از طریق درگاه پیامک (SMS Gateway).
+ * - هیچ کد OTP ثابت یا آزمایشی در Production وجود ندارد.
+ * - هیچ کد OTP خامی در دیتابیس، پاسخ یا لاگ ثبت نمی‌شود.
+ * - در محیط Production، اگر درگاه پیامک تنظیم نشده باشد یا ارسال را تایید نکند، تراکنش Rollback شده
+ *   و هرگز به کاربر به دروغ اعلام نمی‌شود که پیامک ارسال شده است.
+ */
+export async function requestOtpInDb(
+  pool: Pool,
+  rawPhone: string,
+  requestIp: string,
+  options?: {
+    nodeEnv?: 'development' | 'production' | 'test';
+    smsConfig?: SmsConfig;
+    smsSender?: SmsSenderFn;
+    otpHmacSecret?: string;
+  }
+): Promise<{
+  allowed: boolean;
+  challengeId?: string;
+  retryAfterSec?: number;
+  reasonCode: string;
+  smsDelivered?: boolean;
+  smsProvider?: string;
+}> {
+  const cleanPhone = toEnglishDigits(rawPhone).replace(/\D/g, '');
+  if (!/^09\d{9}$/.test(cleanPhone)) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+
+  const safeIp = (requestIp || '127.0.0.1').trim().slice(0, 45);
+  const otpSecret = options?.otpHmacSecret
+    ? resolveOtpHmacSecret({
+        NODE_ENV: options.nodeEnv ?? process.env.NODE_ENV,
+        OTP_HMAC_SECRET: options.otpHmacSecret,
+      })
+    : resolveOtpHmacSecret();
+
+  const nodeEnv =
+    options?.nodeEnv ??
+    ((process.env.NODE_ENV ?? 'development').trim().toLowerCase() === 'production'
+      ? 'production'
+      : (process.env.NODE_ENV ?? 'development').trim().toLowerCase() === 'test'
+        ? 'test'
+        : 'development');
+  const smsConfig = options?.smsConfig ?? resolveSmsConfig();
+  const smsSender = options?.smsSender ?? sendOtpSmsViaGateway;
+
+  // پیش‌بررسی تنظیم بودن درگاه پیامک در محیط Production قبل از مصرف سهمیه Rate Limit کاربر
+  if (
+    nodeEnv === 'production' &&
+    (smsConfig.provider === 'disabled' ||
+      smsConfig.provider === 'console' ||
+      !smsConfig.apiKey)
+  ) {
+    throw new Error('SMS_GATEWAY_NOT_CONFIGURED');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // ۱. محدودسازی نرخ درخواست بر اساس شماره موبایل (حداکثر ۵ درخواست در ۱۰ دقیقه با فاصله ۶۰ ثانیه)
+    const phoneRlRes = await client.query(
+      `SELECT * FROM check_and_increment_auth_rate_limit($1, 600, 5, 60)`,
+      [`otp_send:${cleanPhone}`]
+    );
+    const phoneRl = phoneRlRes.rows[0];
+    if (!phoneRl.allowed) {
+      await client.query('COMMIT');
+      return {
+        allowed: false,
+        retryAfterSec: Number(phoneRl.retry_after_sec),
+        reasonCode: String(phoneRl.reason_code),
+      };
+    }
+
+    // ۲. محدودسازی نرخ درخواست بر اساس IP برای جلوگیری از بمباران پیامکی شماره‌های مختلف
+    const ipRlRes = await client.query(
+      `SELECT * FROM check_and_increment_auth_rate_limit($1, 600, 15, 0)`,
+      [`otp_send_ip:${safeIp}`]
+    );
+    const ipRl = ipRlRes.rows[0];
+    if (!ipRl.allowed) {
+      await client.query('COMMIT');
+      return {
+        allowed: false,
+        retryAfterSec: Number(ipRl.retry_after_sec),
+        reasonCode: String(ipRl.reason_code),
+      };
+    }
+
+    const generatedCode = String(crypto.randomInt(100000, 1000000));
+    const codeHmac = crypto
+      .createHmac('sha256', otpSecret)
+      .update(`${cleanPhone}:${generatedCode}`)
+      .digest('hex');
+
+    const issueRes = await client.query(
+      `SELECT issue_otp_challenge_atomic($1, $2, $3, 120, 5::smallint) AS challenge_id`,
+      [cleanPhone, codeHmac, safeIp]
+    );
+
+    const delivery = await smsSender(
+      cleanPhone,
+      generatedCode,
+      smsConfig,
+      nodeEnv
+    );
+    if (!delivery.sent) {
+      await client.query('ROLLBACK');
+      throw new Error(delivery.errorCode ?? 'SMS_DELIVERY_FAILED');
+    }
+
+    await client.query('COMMIT');
+    return {
+      allowed: true,
+      challengeId: String(issueRes.rows[0].challenge_id),
+      reasonCode: 'OTP_ISSUED',
+      smsDelivered: true,
+      smsProvider: delivery.provider,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * راه‌اندازی یک‌باره و امن اولین مدیر کل پلتفرم (PLATFORM_ADMIN)
+ * - این تابع با قفل تراکنشی pg_advisory_xact_lock اجرا می‌شود.
+ * - اگر حتی یک رکورد فعال در جدول platform_admins وجود داشته باشد، عملیات با خطای
+ *   PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED متوقف می‌شود و امکان استفاده مجدد ندارد.
+ * - هیچ شماره موبایل یا رمز پیش‌فرضی در کد وجود ندارد.
+ */
+export async function bootstrapInitialPlatformAdminInDb(
+  pool: Pool,
+  input: {
+    phone: string;
+    fullName?: string;
+    defaultCity?: string;
+  }
+): Promise<{
+  userId: string;
+  phone: string;
+  fullName: string;
+}> {
+  const cleanPhone = toEnglishDigits(input.phone || '').replace(/\D/g, '');
+  if (!/^09\d{9}$/.test(cleanPhone)) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+  const fullName = (input.fullName || 'مدیر ارشد پلتفرم').trim();
+  const defaultCity = (input.defaultCity || 'تهران').trim();
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext('bootstrap_platform_admin'))`
+    );
+
+    const existingAdminRes = await client.query(
+      `
+      SELECT COUNT(*)::int AS cnt
+      FROM platform_admins
+      WHERE is_active = TRUE AND revoked_at IS NULL
+      `
+    );
+    const activeAdminCount = Number(existingAdminRes.rows[0]?.cnt ?? 0);
+    if (activeAdminCount > 0) {
+      throw new Error('PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED');
+    }
+
+    const userRes = await client.query(
+      `
+      INSERT INTO users (phone, full_name, default_city, is_active)
+      VALUES ($1, $2, $3, TRUE)
+      ON CONFLICT (phone) DO UPDATE
+      SET
+        full_name = EXCLUDED.full_name,
+        is_active = TRUE,
+        updated_at = NOW()
+      RETURNING id, phone, full_name
+      `,
+      [cleanPhone, fullName, defaultCity]
+    );
+    const userRow = userRes.rows[0];
+    const userId = String(userRow.id);
+
+    const randomSalt = crypto.randomBytes(16).toString('hex');
+    const randomEntropy = crypto.randomBytes(32).toString('hex');
+    const derivedKey = crypto
+      .scryptSync(randomEntropy, randomSalt, 32)
+      .toString('hex');
+    const passwordHash = `scrypt$${randomSalt}$${derivedKey}`;
+
+    await client.query(
+      `
+      INSERT INTO platform_admins (
+        user_id,
+        password_hash,
+        allowed_scopes,
+        is_active,
+        granted_by,
+        granted_at,
+        revoked_at
+      )
+      VALUES ($1, $2, ARRAY['ALL']::TEXT[], TRUE, $1, NOW(), NULL)
+      ON CONFLICT (user_id) DO UPDATE
+      SET
+        is_active = TRUE,
+        revoked_at = NULL,
+        updated_at = NOW()
+      `,
+      [userId, passwordHash]
+    );
+
+    await client.query('COMMIT');
+    return {
+      userId,
+      phone: String(userRow.phone),
+      fullName: String(userRow.full_name),
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * بررسی اتمیک کد OTP و ایجاد نشست کاربری امضاشده در صورت صحت کد
+ * توجه مهم:
+ * - در صورت عدم تطابق کد، تراکنش COMMIT می‌شود تا افزایش شمارنده تلاش‌های ناموفق
+ *   (attempts_count) و تغییر وضعیت به LOCKED در دیتابیس ماندگار شود.
+ * - فقط هش SHA-256 توکن نشست در جدول user_sessions ذخیره می‌شود و توکن امضاشده با SESSION_SECRET برگردانده می‌شود.
+ */
+export async function verifyOtpInDb(
+  pool: Pool,
+  rawPhone: string,
+  rawCode: string,
+  requestIp: string,
+  userAgent: string,
+  customSessionSecret?: string
+): Promise<{
+  verified: boolean;
+  outcomeCode: string;
+  remainingAttempts: number;
+  retryAfterSec?: number;
+  userId?: string;
+  sessionId?: string;
+  sessionToken?: string;
+  expiresAt?: string;
+  user?: AuthenticatedUser;
+}> {
+  const cleanPhone = toEnglishDigits(rawPhone).replace(/\D/g, '');
+  const cleanCode = toEnglishDigits(rawCode).trim();
+  if (!/^09\d{9}$/.test(cleanPhone)) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+  if (!/^\d{6}$/.test(cleanCode)) {
+    throw new Error('INVALID_OTP_CODE_FORMAT');
+  }
+
+  const safeIp = (requestIp || '127.0.0.1').trim().slice(0, 45);
+  const otpSecret = resolveOtpHmacSecret();
+  const sessionSecret = customSessionSecret ?? resolveSessionSecret();
+
+  const candidateHmac = crypto
+    .createHmac('sha256', otpSecret)
+    .update(`${cleanPhone}:${cleanCode}`)
+    .digest('hex');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // محدودسازی نرخ تلاش تایید بر اساس IP برای جلوگیری از Brute-Force توزیع‌شده
+    const ipRlRes = await client.query(
+      `SELECT * FROM check_and_increment_auth_rate_limit($1, 600, 20, 0)`,
+      [`otp_verify_ip:${safeIp}`]
+    );
+    const ipRl = ipRlRes.rows[0];
+    if (!ipRl.allowed) {
+      await client.query('COMMIT');
+      return {
+        verified: false,
+        outcomeCode: 'RATE_LIMIT_BLOCKED',
+        remainingAttempts: 0,
+        retryAfterSec: Number(ipRl.retry_after_sec),
+      };
+    }
+
+    const verifyRes = await client.query(
+      `SELECT * FROM verify_otp_challenge_atomic($1, $2)`,
+      [cleanPhone, candidateHmac]
+    );
+    const row = verifyRes.rows[0];
+
+    if (!row.verified) {
+      // COMMIT الزامی است تا افزایش attempts_count یا وضعیت LOCKED/EXPIRED در دیتابیس ذخیره شود
+      await client.query('COMMIT');
+      return {
+        verified: false,
+        outcomeCode: String(row.outcome_code),
+        remainingAttempts: Number(row.remaining_attempts),
+      };
+    }
+
+    const userRes = await client.query(
+      `
+      INSERT INTO users (phone, full_name, default_city)
+      VALUES ($1, 'کاربر BeautyHub', 'تهران')
+      ON CONFLICT (phone) DO UPDATE SET updated_at = NOW()
+      RETURNING id, is_active
+      `,
+      [cleanPhone]
+    );
+    const userId = String(userRes.rows[0].id);
+    if (!userRes.rows[0].is_active) {
+      await client.query('ROLLBACK');
+      throw new Error('USER_ACCOUNT_DISABLED');
+    }
+
+    const rawSessionSecretPart = crypto.randomBytes(32).toString('hex');
+    const refreshTokenHash = hashSessionSecretPart(rawSessionSecretPart);
+
+    const sessionInsertRes = await client.query(
+      `
+      INSERT INTO user_sessions (
+        user_id,
+        refresh_token_hash,
+        ip_address,
+        user_agent,
+        expires_at
+      )
+      VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')
+      RETURNING id, expires_at
+      `,
+      [
+        userId,
+        refreshTokenHash,
+        safeIp,
+        (userAgent || 'web').slice(0, 500),
+      ]
+    );
+
+    const sessionId = String(sessionInsertRes.rows[0].id);
+    const expiresAt = new Date(
+      String(sessionInsertRes.rows[0].expires_at)
+    ).toISOString();
+
+    const authenticatedUser = await loadUserPermissionsByUserId(
+      client,
+      userId,
+      sessionId
+    );
+    if (!authenticatedUser) {
+      await client.query('ROLLBACK');
+      throw new Error('USER_ACCOUNT_DISABLED');
+    }
+
+    const signedToken = signSessionToken(
+      sessionId,
+      rawSessionSecretPart,
+      sessionSecret
+    );
+
+    await client.query('COMMIT');
+    return {
+      verified: true,
+      outcomeCode: 'VERIFIED',
+      remainingAttempts: Number(row.remaining_attempts),
+      userId,
+      sessionId,
+      sessionToken: signedToken,
+      expiresAt,
+      user: authenticatedUser,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}

@@ -191,10 +191,14 @@ CREATE TABLE payments (
       ELSE FALSE
     END
   ),
-  -- پذیرش وضعیت VERIFIED صرفاً پس از اعتبارسنجی سمت سرور درگاه
+  -- پذیرش وضعیت VERIFIED صرفاً پس از اعتبارسنجی سمت سرور درگاه و ثبت شناسه مرجع غیرخالی
   CONSTRAINT chk_payments_verified_requires_server_proof CHECK (
     status <> 'VERIFIED'
-    OR (server_verified_at IS NOT NULL AND gateway_ref_id IS NOT NULL)
+    OR (
+      server_verified_at IS NOT NULL
+      AND gateway_ref_id IS NOT NULL
+      AND char_length(btrim(gateway_ref_id)) > 0
+    )
   )
 );
 

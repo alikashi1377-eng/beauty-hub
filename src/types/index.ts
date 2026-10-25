@@ -240,3 +240,20 @@ export interface BookingDraft {
   customerNotes: string;
   lastReferenceCode?: string;
 }
+
+export interface TimeSlotAvailabilityItem {
+  time: string;
+  available: boolean;
+  reason?: string;
+}
+
+export interface AdminUserRecord {
+  id: string;
+  fullName: string;
+  phoneMasked: string;
+  roleLabel: string;
+  city: string;
+  joinedJalali: string;
+  isActive: boolean;
+}
+

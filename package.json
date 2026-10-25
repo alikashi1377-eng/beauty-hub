@@ -1,16 +1,22 @@
 {
-  "name": "react-example",
+  "name": "beautyhub",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "NODE_ENV=production tsx server.ts",
+    "db:migrate": "tsx server/db/run-migrations.ts",
+    "db:bootstrap-admin": "tsx server/db/bootstrap-admin.ts",
+    "db:seed": "tsx server/db/seed-initial-data.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/formatters.test.ts server/health.test.ts"
+    "test": "tsx --test src/utils/formatters.test.ts server/health.test.ts server/db/migrate.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -24,6 +30,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.4",
+    "tsx": "^4.21.0",
     "vite": "^8.3.0"
   },
   "devDependencies": {
@@ -35,7 +42,6 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.21.0",
     "typescript": "^7.0.2"
   }
 }

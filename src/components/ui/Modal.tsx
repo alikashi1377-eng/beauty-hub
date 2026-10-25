@@ -43,12 +43,12 @@ export const Modal: React.FC<ModalProps> = ({
           <div>
             <h2
               id="modal-title"
-              className="text-base font-extrabold text-[#120F1D]"
+              className="text-base font-bold text-[#120F1D]"
             >
               {title}
             </h2>
             {description ? (
-              <p className="text-xs text-[#756F86] mt-0.5">{description}</p>
+              <p className="text-xs font-normal text-[#756F86] mt-0.5">{description}</p>
             ) : null}
           </div>
           <Button

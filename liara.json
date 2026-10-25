@@ -1,8 +1,14 @@
 {
-  "app": "beauty-hub",
+  "platform": "node",
   "port": 3000,
-  "build": {
-    "location": "iran"
+  "node": {
+    "version": "22"
   },
-  "disks": []
+  "healthCheck": {
+    "command": "curl --fail http://localhost:3000/api/v1/health || exit 1",
+    "interval": 30,
+    "timeout": 5,
+    "retries": 3,
+    "startPeriod": 15
+  }
 }

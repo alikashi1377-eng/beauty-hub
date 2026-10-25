@@ -54,9 +54,16 @@ import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 
 /** ۱. پیشخوان کسب‌وکار (/app) */
 export const BusinessDashboardPage: React.FC = () => {
-  const { businesses, appointments, services, specialists, customers } =
-    usePrototypeData();
-  const currentBiz = businesses[0];
+  const {
+    dataMode,
+    currentBusiness,
+    businesses,
+    appointments,
+    services,
+    specialists,
+    customers,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
 
   const weeklyActivity = [
     { day: 'شنبه', count: 14, heightPct: 70 },
@@ -71,13 +78,45 @@ export const BusinessDashboardPage: React.FC = () => {
   const pendingAppointments = appointments.filter(
     (a) => a.status === AppointmentStatus.Pending
   );
+  const activeAppointmentsCount =
+    dataMode === 'real'
+      ? appointments.filter(
+          (a) =>
+            a.status === AppointmentStatus.Confirmed ||
+            a.status === AppointmentStatus.Pending
+        ).length
+      : 8;
+
+  const realRevenueToman = appointments
+    .filter(
+      (a) =>
+        a.status === AppointmentStatus.Completed ||
+        a.status === AppointmentStatus.Confirmed
+    )
+    .reduce((sum, a) => sum + (Number(a.priceToman) || 0), 0);
+
+  const displayedRevenue =
+    dataMode === 'real' ? realRevenueToman : 64800000;
+  const displayedCustomersCount =
+    dataMode === 'real' ? customers.length : customers.length + 124;
+
+  const bizServicesCount = currentBiz
+    ? services.filter(
+        (s) => s.businessId === currentBiz.id && s.isActive !== false
+      ).length
+    : services.length;
+  const bizSpecialistsCount = currentBiz
+    ? specialists.filter(
+        (sp) => sp.businessId === currentBiz.id && sp.isActive !== false
+      ).length
+    : specialists.length;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="عملیات روزانه · سالن زیبایی رویال گلزار"
+        kicker={`عملیات روزانه · ${currentBiz?.name ?? 'پنل کسب‌وکار'}`}
         title="پیشخوان مدیریت کسب‌وکار"
-        subtitle="پایش لحظه‌ای نوبت‌های روز، عملکرد هفتگی، شاخص‌های مالی دمو و دسترسی سریع به عملیات سالن"
+        subtitle="پایش لحظه‌ای نوبت‌های روز، عملکرد هفتگی، شاخص‌های مالی و دسترسی سریع به عملیات سالن"
         routePattern="/app"
         breadcrumbs={[{ label: 'پنل کسب‌وکار' }, { label: 'پیشخوان' }]}
         actions={
@@ -102,24 +141,26 @@ export const BusinessDashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card padding="sm" className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">نوبت‌های امروز</p>
+            <p className="text-xs font-bold text-[#787189]">نوبت‌های فعال</p>
             <StatusBadge
               label={`${toPersianDigits(pendingAppointments.length)} در انتظار تایید`}
               tone="warning"
             />
           </div>
           <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(8)} نوبت فعال
+            {toPersianDigits(activeAppointmentsCount)} نوبت فعال
           </p>
           <p className="text-[11px] text-[#4E4760]">
-            اولین مراجعه امروز: ساعت ۱۰:۰۰ صبح
+            {appointments[0]
+              ? `آخرین نوبت: ساعت ${appointments[0].timeSlot}`
+              : 'بدون نوبت ثبت‌شده'}
           </p>
         </Card>
 
         <Card padding="sm" className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-[#787189]">
-              درآمد ماه جاری (نمونه)
+              {dataMode === 'real' ? 'ارزش نوبت‌های ثبت‌شده' : 'درآمد ماه جاری (نمونه)'}
             </p>
             <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md tabular-nums">
               <TrendingUp className="w-3 h-3" />
@@ -127,10 +168,12 @@ export const BusinessDashboardPage: React.FC = () => {
             </span>
           </div>
           <p className="text-xl font-extrabold text-[#2A0F54] tabular-nums">
-            {formatPriceToman(64800000)}
+            {formatPriceToman(displayedRevenue)}
           </p>
           <p className="text-[11px] text-[#4E4760] tabular-nums">
-            از مجموع ۱۰۲ نوبت انجام‌شده در آبان
+            {dataMode === 'real'
+              ? `از مجموع ${toPersianDigits(appointments.length)} نوبت ثبت‌شده`
+              : 'از مجموع ۱۰۲ نوبت انجام‌شده در آبان'}
           </p>
         </Card>
 
@@ -140,11 +183,11 @@ export const BusinessDashboardPage: React.FC = () => {
             <Users className="w-4 h-4 text-[#2A0F54]" />
           </div>
           <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(customers.length + 124)} نفر
+            {toPersianDigits(displayedCustomersCount)} نفر
           </p>
           <p className="text-[11px] text-[#4E4760] tabular-nums">
-            {toPersianDigits(services.length)} خدمت فعال ·{' '}
-            {toPersianDigits(specialists.length)} متخصص
+            {toPersianDigits(bizServicesCount)} خدمت فعال ·{' '}
+            {toPersianDigits(bizSpecialistsCount)} متخصص
           </p>
         </Card>
 
@@ -159,7 +202,7 @@ export const BusinessDashboardPage: React.FC = () => {
             {toPersianDigits(92)}٪
           </p>
           <p className="text-[11px] text-[#4E4760]">
-            میانگین رضایت ثبت‌شده: ★ ۴.۹ از ۵
+            میانگین رضایت ثبت‌شده: ★ {toPersianDigits(currentBiz?.rating ?? 4.9)} از ۵
           </p>
         </Card>
       </div>
@@ -256,57 +299,59 @@ export const BusinessDashboardPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-2 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-extrabold text-[#2A0F54]">
-                وضعیت ویترین عمومی
-              </span>
-              <StatusBadge label="منتشرشده" tone="success" />
-            </div>
-            <p className="text-[#4E4760] leading-relaxed">
-              صفحه اختصاصی «{currentBiz.name}» در بازارچه فعال است.
-            </p>
-            <div className="pt-1.5 border-t border-[#E6E3EE] space-y-1.5 text-[11px] text-[#4E4760]">
-              <div className="flex items-start gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
-                <span>
-                  {currentBiz.city}، {currentBiz.neighborhood} —{' '}
-                  {currentBiz.address}
+          {currentBiz ? (
+            <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-[#2A0F54]">
+                  وضعیت ویترین عمومی
                 </span>
+                <StatusBadge label="منتشرشده" tone="success" />
               </div>
-              {currentBiz.instagramHandle ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 text-[#787189]">
-                    <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
-                    <span>اینستاگرام ثبت‌شده:</span>
-                  </span>
-                  <span
-                    dir="ltr"
-                    className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
-                  >
-                    {currentBiz.instagramHandle.startsWith('@')
-                      ? currentBiz.instagramHandle
-                      : `@${currentBiz.instagramHandle}`}
+              <p className="text-[#4E4760] leading-relaxed">
+                صفحه اختصاصی «{currentBiz.name}» در بازارچه فعال است.
+              </p>
+              <div className="pt-1.5 border-t border-[#E6E3EE] space-y-1.5 text-[11px] text-[#4E4760]">
+                <div className="flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
+                  <span>
+                    {currentBiz.city}، {currentBiz.neighborhood} —{' '}
+                    {currentBiz.address}
                   </span>
                 </div>
-              ) : null}
+                {currentBiz.instagramHandle ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 text-[#787189]">
+                      <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
+                      <span>اینستاگرام ثبت‌شده:</span>
+                    </span>
+                    <span
+                      dir="ltr"
+                      className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
+                    >
+                      {currentBiz.instagramHandle.startsWith('@')
+                        ? currentBiz.instagramHandle
+                        : `@${currentBiz.instagramHandle}`}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <Link
+                  to={`/salon/${currentBiz.slug}`}
+                  className="inline-flex items-center gap-1 font-bold text-[#2A0F54] hover:underline"
+                >
+                  <span>مشاهده ویترین سالن</span>
+                  <ExternalLink className="w-3 h-3" />
+                </Link>
+                <Link
+                  to="/app/profile"
+                  className="text-[11px] font-bold text-[#787189] hover:text-[#2A0F54]"
+                >
+                  ویرایش نشانی و اینستاگرام
+                </Link>
+              </div>
             </div>
-            <div className="flex items-center justify-between pt-1">
-              <Link
-                to={`/salon/${currentBiz.slug}`}
-                className="inline-flex items-center gap-1 font-bold text-[#2A0F54] hover:underline"
-              >
-                <span>مشاهده ویترین سالن</span>
-                <ExternalLink className="w-3 h-3" />
-              </Link>
-              <Link
-                to="/app/profile"
-                className="text-[11px] font-bold text-[#787189] hover:text-[#2A0F54]"
-              >
-                ویرایش نشانی و اینستاگرام
-              </Link>
-            </div>
-          </div>
+          ) : null}
         </Card>
       </div>
 
@@ -990,8 +1035,16 @@ export const BusinessAppointmentsPage: React.FC = () => {
 
 /** ۴. خدمات و تعرفه‌ها (/app/services) */
 export const BusinessServicesPage: React.FC = () => {
-  const { services, categories, addService, updateService, deleteService } =
-    usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    services,
+    categories,
+    addService,
+    updateService,
+    deleteService,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
 
   const [selectedCat, setSelectedCat] = useState<string>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
@@ -1057,14 +1110,15 @@ export const BusinessServicesPage: React.FC = () => {
         description: description.trim() || 'خدمت تخصصی زیبایی',
       });
     } else {
+      const matchedCat = categories.find((c) => c.title === category);
       addService({
-        businessId: 'biz-1',
-        categorySlug: 'hair-color',
+        businessId: currentBiz?.id ?? 'biz-1',
+        categorySlug: matchedCat?.slug ?? 'hair-color',
         title: title.trim(),
         category,
         durationMinutes: Number(durationMinutes),
         priceToman: Number(priceToman),
-        description: description.trim() || 'خدمت تخصصی اضافه‌شده در حالت دمو',
+        description: description.trim() || 'خدمت تخصصی سالن زیبایی',
         isActive: true,
       });
     }
@@ -1318,7 +1372,14 @@ export const BusinessServicesPage: React.FC = () => {
 
 /** ۵. متخصصان و پرسنل (/app/staff) */
 export const BusinessStaffPage: React.FC = () => {
-  const { specialists, addSpecialist, updateSpecialist } = usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    specialists,
+    addSpecialist,
+    updateSpecialist,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<SpecialistItem | null>(null);
   const [fullName, setFullName] = useState('');
@@ -1357,7 +1418,7 @@ export const BusinessStaffPage: React.FC = () => {
       });
     } else {
       addSpecialist({
-        businessId: 'biz-1',
+        businessId: currentBiz?.id ?? 'biz-1',
         slug: `staff-${Date.now()}`,
         fullName: fullName.trim(),
         roleTitle: roleTitle.trim(),
@@ -1365,7 +1426,7 @@ export const BusinessStaffPage: React.FC = () => {
         rating: 4.8,
         reviewCount: 12,
         specialties: specs.length ? specs : ['خدمات تخصصی زیبایی'],
-        bio: 'عضو تیم تخصصی سالن زیبایی (ثبت‌شده در حالت دمو).',
+        bio: 'عضو تیم تخصصی سالن زیبایی.',
         isIndependent: false,
         isActive: true,
       });
@@ -1669,7 +1730,14 @@ export const BusinessCustomersPage: React.FC = () => {
 
 /** ۷. گالری نمونه کارها (/app/gallery) */
 export const BusinessGalleryPage: React.FC = () => {
-  const { gallery, addGalleryItem, removeGalleryItem } = usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    gallery,
+    addGalleryItem,
+    removeGalleryItem,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
   const [title, setTitle] = useState('');
   const [categoryLabel, setCategoryLabel] = useState('مو و رنگ');
 
@@ -1677,7 +1745,7 @@ export const BusinessGalleryPage: React.FC = () => {
     e.preventDefault();
     if (!title.trim()) return;
     addGalleryItem({
-      businessId: 'biz-1',
+      businessId: currentBiz?.id ?? 'biz-1',
       title: title.trim(),
       categoryLabel,
       theme: 'violet',
@@ -1760,20 +1828,34 @@ export const BusinessGalleryPage: React.FC = () => {
 
 /** ۸. پروفایل عمومی سالن (/app/profile) */
 export const BusinessProfileEditPage: React.FC = () => {
-  const { businesses, updateBusinessProfile, updateOnboardingDraft } =
-    usePrototypeData();
-  const currentBiz = businesses[0];
+  const {
+    currentBusiness,
+    businesses,
+    updateBusinessProfile,
+    updateOnboardingDraft,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
 
-  const [name, setName] = useState(currentBiz.name);
+  const [name, setName] = useState(currentBiz?.name ?? '');
   const [instagramHandle, setInstagramHandle] = useState(
-    currentBiz.instagramHandle ?? ''
+    currentBiz?.instagramHandle ?? ''
   );
-  const [address, setAddress] = useState(currentBiz.address);
-  const [mapLat, setMapLat] = useState<number>(currentBiz.mapLat ?? 35.7596);
-  const [mapLng, setMapLng] = useState<number>(currentBiz.mapLng ?? 51.4072);
-  const [shortDesc, setShortDesc] = useState(currentBiz.shortDescription);
-  const [aboutText, setAboutText] = useState(currentBiz.aboutText);
+  const [address, setAddress] = useState(currentBiz?.address ?? '');
+  const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 35.7596);
+  const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.4072);
+  const [shortDesc, setShortDesc] = useState(currentBiz?.shortDescription ?? '');
+  const [aboutText, setAboutText] = useState(currentBiz?.aboutText ?? '');
   const [savedNotice, setSavedNotice] = useState(false);
+
+  if (!currentBiz) {
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-sm font-bold text-[#171226]">
+          کسب‌وکاری برای ویرایش یافت نشد.
+        </p>
+      </Card>
+    );
+  }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1804,7 +1886,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       <PageHeader
         kicker="ویترین و رشد کسب‌وکار · تنظیمات ویترین"
         title="ویرایش پروفایل عمومی کسب‌وکار"
-        subtitle="تغییرات نشانی، موقعیت نقشه و آدرس اینستاگرام بلافاصله در صفحه عمومی /salon/royal-golzar نمایش داده می‌شود."
+        subtitle="تغییرات نشانی، موقعیت نقشه و آدرس اینستاگرام بلافاصله در صفحه عمومی سالن نمایش داده می‌شود."
         routePattern="/app/profile"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1889,7 +1971,7 @@ export const BusinessProfileEditPage: React.FC = () => {
             </FormField>
             <div className="pt-2 flex items-center gap-3">
               <Button type="submit" variant="primary">
-                ذخیره تغییرات پروفایل (دمو)
+                ذخیره تغییرات پروفایل
               </Button>
               {savedNotice ? (
                 <span className="text-xs font-bold text-emerald-700">
@@ -1957,9 +2039,10 @@ export const BusinessProfileEditPage: React.FC = () => {
 
 /** ۹. ساعات کاری هفتگی (/app/working-hours) */
 export const BusinessWorkingHoursPage: React.FC = () => {
-  const { businesses, updateBusinessWorkingHours } = usePrototypeData();
-  const currentBiz = businesses[0];
-  const [hours, setHours] = useState(currentBiz.workingHours);
+  const { currentBusiness, businesses, updateBusinessWorkingHours } =
+    usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
+  const [hours, setHours] = useState(currentBiz?.workingHours ?? []);
 
   const handleToggleDay = (index: number) => {
     setHours((prev) =>
@@ -2046,9 +2129,14 @@ export const BusinessWorkingHoursPage: React.FC = () => {
           <div className="pt-4 border-t border-[#E6E3EE]">
             <Button
               variant="primary"
-              onClick={() => updateBusinessWorkingHours(currentBiz.id, hours)}
+              disabled={!currentBiz}
+              onClick={() => {
+                if (currentBiz) {
+                  updateBusinessWorkingHours(currentBiz.id, hours);
+                }
+              }}
             >
-              ذخیره ساعات کاری (دمو)
+              ذخیره ساعات کاری
             </Button>
           </div>
         </Card>
@@ -2306,17 +2394,21 @@ export const BusinessAnalyticsPage: React.FC = () => {
 
 /** ۱۲. اشتراک و صورتحساب (/app/subscription) */
 export const BusinessSubscriptionPage: React.FC = () => {
-  const { plans, activePlanId, setActivePlanId, showToast } =
+  const { plans, activePlanId, setActivePlanId, showToast, dataMode } =
     usePrototypeData();
   const currentPlan =
-    plans.find((p) => p.id === activePlanId) ?? plans[1];
+    plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
 
   return (
     <div>
       <PageHeader
         kicker="حساب و تنظیمات · اشتراک ماهانه"
         title="مدیریت اشتراک ماهانه کسب‌وکار"
-        subtitle="مشاهده پلن فعال، سهمیه پیامک ماهانه و تغییر آزمایشی پلن (بدون اتصال به درگاه بانکی در این مرحله)"
+        subtitle={
+          dataMode === 'real'
+            ? 'مشاهده پلن اشتراک کسب‌وکار؛ رزرو آنلاین بدون نیاز به پیش‌پرداخت فعال است و درگاه پرداخت آنلاین تا زمان تنظیم درگاه بانکی غیرفعال است.'
+            : 'مشاهده پلن فعال، سهمیه پیامک ماهانه و تغییر آزمایشی پلن (بدون اتصال به درگاه بانکی در این مرحله)'
+        }
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2324,27 +2416,33 @@ export const BusinessSubscriptionPage: React.FC = () => {
         ]}
       />
 
-      <Card variant="dark" className="mb-7 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-1">
-            <span className="text-xs font-bold text-[#F5D0FE]">
-              پلن فعال فعلی شما (حالت دمو):
-            </span>
-            <h2 className="text-xl font-extrabold text-white">
-              {currentPlan.name}
-            </h2>
-            <p className="text-xs text-[#E9D5FF] tabular-nums">
-              ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک ماهانه:{' '}
-              {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
-            </p>
+      {currentPlan ? (
+        <Card variant="dark" className="mb-7 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-[#F5D0FE]">
+                {dataMode === 'real'
+                  ? 'پلن پایه فعال کسب‌وکار:'
+                  : 'پلن فعال فعلی شما (حالت دمو):'}
+              </span>
+              <h2 className="text-xl font-extrabold text-white">
+                {currentPlan.name}
+              </h2>
+              <p className="text-xs text-[#E9D5FF] tabular-nums">
+                ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک ماهانه:{' '}
+                {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
+                {dataMode === 'real'
+                  ? 'رزرو آنلاین بدون پیش‌پرداخت: فعال'
+                  : 'اعتبار آزمایشی: ۲۴ روز باقیمانده'}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
-              اعتبار آزمایشی: ۲۴ روز باقیمانده
-            </span>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {plans.map((plan) => {
@@ -2388,6 +2486,13 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 fullWidth
                 disabled={isCurrent}
                 onClick={() => {
+                  if (dataMode === 'real') {
+                    showToast(
+                      'درگاه پرداخت آنلاین هنوز فعال نشده است؛ ارتقای پلن بدون تأیید پرداخت سمت سرور ثبت نمی‌شود.',
+                      'info'
+                    );
+                    return;
+                  }
                   setActivePlanId(plan.id);
                   showToast(
                     `پلن آزمایشی کسب‌وکار به «${plan.name}» تغییر یافت (بدون پرداخت واقعی).`

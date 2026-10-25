@@ -40,7 +40,7 @@ export const BusinessMobileNavigation: React.FC = () => {
   return (
     <div className="lg:hidden">
       <div className="bg-white border-b border-[#E6E3EE] px-4 py-2.5 flex items-center justify-between">
-        <span className="text-xs font-extrabold text-[#120F1D]">
+        <span className="text-xs font-bold text-[#120F1D]">
           پنل کسب‌وکار · سالن رویال گلزار
         </span>
         <button
@@ -67,7 +67,7 @@ export const BusinessMobileNavigation: React.FC = () => {
             className={({ isActive }) =>
               `flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-medium whitespace-nowrap ${
                 isActive
-                  ? 'bg-[#2A0F54] text-white font-bold'
+                  ? 'bg-[#2A0F54] text-white font-semibold'
                   : 'text-[#4A4458] hover:bg-white'
               }`
             }
@@ -90,7 +90,7 @@ export const BusinessMobileNavigation: React.FC = () => {
                 className={({ isActive }) =>
                   `flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium border ${
                     isActive
-                      ? 'bg-[#2A0F54] text-white border-[#2A0F54] font-bold'
+                      ? 'bg-[#2A0F54] text-white border-[#2A0F54] font-semibold'
                       : 'bg-[#FAF9FC] text-[#4A4458] border-[#E6E3EE] hover:bg-[#F4F3F8]'
                   }`
                 }

@@ -1,7 +1,9 @@
 import 'dotenv/config';
+import { resolveSmsConfig, SmsConfig } from '../services/smsGateway';
 
 export type DataMode = 'mock' | 'real';
 export type SslMode = 'disable' | 'no-verify' | 'require';
+export type PaymentGatewayProvider = 'disabled' | 'zarinpal';
 
 export interface ServerEnvConfig {
   nodeEnv: 'development' | 'production' | 'test';
@@ -12,7 +14,26 @@ export interface ServerEnvConfig {
   databaseSslMode: SslMode;
   poolMax: number;
   connectionTimeoutMs: number;
+  otpHmacSecret: string | null;
+  sessionSecret: string | null;
+  sms: SmsConfig;
+  paymentGatewayProvider: PaymentGatewayProvider;
+  paymentMerchantIdConfigured: boolean;
+  initialAdminBootstrapToken: string | null;
+  initialAdminPhone: string | null;
 }
+
+const FORBIDDEN_DEFAULT_SECRETS = new Set([
+  'beautyhub-otp-hmac-key',
+  'changeme',
+  'secret',
+  'default',
+  'password',
+  'admin',
+  '123456',
+]);
+
+const MIN_PRODUCTION_SECRET_LENGTH = 32;
 
 function parsePort(rawPort: string | undefined): number {
   if (!rawPort) return 3000;
@@ -32,6 +53,73 @@ function parsePositiveInt(
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed <= 0) return fallback;
   return Math.min(parsed, maxLimit);
+}
+
+function normalizeSecret(raw: string | undefined): string | null {
+  const trimmed = raw?.trim() ?? '';
+  if (!trimmed) return null;
+  if (FORBIDDEN_DEFAULT_SECRETS.has(trimmed.toLowerCase())) {
+    return null;
+  }
+  return trimmed;
+}
+
+export function isStrongSecret(secret: string | null): boolean {
+  if (!secret) return false;
+  const trimmed = secret.trim();
+  if (trimmed.length < MIN_PRODUCTION_SECRET_LENGTH) return false;
+  if (FORBIDDEN_DEFAULT_SECRETS.has(trimmed.toLowerCase())) return false;
+  return true;
+}
+
+export function assertProductionSecurityEnv(config: ServerEnvConfig): void {
+  if (config.nodeEnv !== 'production') {
+    return;
+  }
+
+  const missingOrWeak: string[] = [];
+  if (!isStrongSecret(config.otpHmacSecret)) {
+    missingOrWeak.push('OTP_HMAC_SECRET');
+  }
+  if (!isStrongSecret(config.sessionSecret)) {
+    missingOrWeak.push('SESSION_SECRET');
+  }
+
+  if (missingOrWeak.length > 0) {
+    throw new Error(
+      `PRODUCTION_SECURITY_CONFIG_ERROR: متغیرهای امنیتی الزامی (${missingOrWeak.join(
+        ', '
+      )}) در محیط Production تنظیم نشده‌اند یا طول آن‌ها کمتر از ${MIN_PRODUCTION_SECRET_LENGTH} کاراکتر است.`
+    );
+  }
+}
+
+export function resolveOtpHmacSecret(
+  envSource: Record<string, string | undefined> = process.env
+): string {
+  const secret = normalizeSecret(envSource.OTP_HMAC_SECRET);
+  if (!secret) {
+    throw new Error('OTP_HMAC_SECRET_NOT_CONFIGURED');
+  }
+  const rawNodeEnv = (envSource.NODE_ENV ?? 'development').trim().toLowerCase();
+  if (rawNodeEnv === 'production' && !isStrongSecret(secret)) {
+    throw new Error('OTP_HMAC_SECRET_NOT_CONFIGURED');
+  }
+  return secret;
+}
+
+export function resolveSessionSecret(
+  envSource: Record<string, string | undefined> = process.env
+): string {
+  const secret = normalizeSecret(envSource.SESSION_SECRET);
+  if (!secret) {
+    throw new Error('SESSION_SECRET_NOT_CONFIGURED');
+  }
+  const rawNodeEnv = (envSource.NODE_ENV ?? 'development').trim().toLowerCase();
+  if (rawNodeEnv === 'production' && !isStrongSecret(secret)) {
+    throw new Error('SESSION_SECRET_NOT_CONFIGURED');
+  }
+  return secret;
 }
 
 export function validateDatabaseUrlFormat(url: string | null): boolean {
@@ -123,7 +211,36 @@ export function loadServerEnv(
     30000
   );
 
-  return {
+  const otpHmacSecret = normalizeSecret(envSource.OTP_HMAC_SECRET);
+  const sessionSecret = normalizeSecret(envSource.SESSION_SECRET);
+
+  const sms = resolveSmsConfig(envSource);
+  const rawPaymentProvider = (
+    envSource.PAYMENT_GATEWAY_PROVIDER ?? 'disabled'
+  )
+    .trim()
+    .toLowerCase();
+  const paymentMerchantId = envSource.PAYMENT_MERCHANT_ID?.trim() || '';
+  const paymentMerchantIdConfigured = paymentMerchantId.length >= 16;
+  const paymentGatewayProvider: PaymentGatewayProvider =
+    rawPaymentProvider === 'zarinpal' && paymentMerchantIdConfigured
+      ? 'zarinpal'
+      : 'disabled';
+
+  const rawBootstrapToken = normalizeSecret(
+    envSource.INITIAL_ADMIN_BOOTSTRAP_TOKEN
+  );
+  const initialAdminBootstrapToken = isStrongSecret(rawBootstrapToken)
+    ? rawBootstrapToken
+    : null;
+  const rawAdminPhone = (envSource.INITIAL_ADMIN_PHONE ?? '')
+    .trim()
+    .replace(/\D/g, '');
+  const initialAdminPhone = /^09\d{9}$/.test(rawAdminPhone)
+    ? rawAdminPhone
+    : null;
+
+  const config: ServerEnvConfig = {
     nodeEnv,
     port,
     dataMode,
@@ -132,5 +249,17 @@ export function loadServerEnv(
     databaseSslMode,
     poolMax,
     connectionTimeoutMs,
+    otpHmacSecret,
+    sessionSecret,
+    sms,
+    paymentGatewayProvider,
+    paymentMerchantIdConfigured,
+    initialAdminBootstrapToken,
+    initialAdminPhone,
   };
+
+  assertProductionSecurityEnv(config);
+
+  return config;
 }
+

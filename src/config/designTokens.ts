@@ -26,7 +26,16 @@ export const DESIGN_TOKENS = {
     },
   },
   typography: {
-    fontFamily: "'Vazirmatn', 'Tahoma', system-ui, sans-serif",
+    fontFamily:
+      "'Estedad', 'Estedad-Static', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+    fontFamilyLatin:
+      "'Plus Jakarta Sans', 'Estedad', 'Estedad-Static', system-ui, -apple-system, sans-serif",
+    weights: {
+      regular: 400,
+      medium: 500,
+      semibold: 600,
+      bold: 700,
+    },
     sizes: {
       display: 'clamp(2rem, 3.5vw, 3rem)',
       hero: 'clamp(1.85rem, 3.2vw, 2.75rem)',

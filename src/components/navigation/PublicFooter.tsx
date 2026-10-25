@@ -9,21 +9,22 @@ export const PublicFooter: React.FC = () => {
           <div className="lg:col-span-4 space-y-3">
             <Link
               to="/"
-              className="text-lg font-extrabold tracking-tight text-[#2A0F54]"
+              dir="ltr"
+              className="text-lg font-bold tracking-tight text-[#2A0F54]"
             >
               BeautyHub
             </Link>
-            <p className="text-xs sm:text-sm text-[#4A4458] leading-relaxed max-w-sm">
+            <p className="text-xs sm:text-sm font-normal text-[#4A4458] leading-relaxed max-w-sm">
               بازارچه تخصصی رزرو آنلاین خدمات زیبایی و نرم‌افزار یکپارچه مدیریت
               سالن‌های زیبایی زنانه، آرایشگاه‌های مردانه و متخصصان مستقل در ایران.
             </p>
             <p className="text-xs text-[#756F86]">
-              پروتوتایپ تعاملی رابط کاربری — داده‌های نمونه بدون اتصال به درگاه پرداخت
+              پلتفرم یکپارچه نوبت‌دهی آنلاین و مدیریت سالن‌های زیبایی
             </p>
           </div>
 
           <div className="lg:col-span-3 space-y-2.5">
-            <h3 className="text-xs font-extrabold text-[#120F1D]">
+            <h3 className="text-xs font-semibold text-[#120F1D]">
               بازارچه و کشف خدمات
             </h3>
             <ul className="space-y-2 text-xs text-[#4A4458]">
@@ -60,7 +61,7 @@ export const PublicFooter: React.FC = () => {
           </div>
 
           <div className="lg:col-span-3 space-y-2.5">
-            <h3 className="text-xs font-extrabold text-[#120F1D]">
+            <h3 className="text-xs font-semibold text-[#120F1D]">
               مشتریان و نوبت‌دهی
             </h3>
             <ul className="space-y-2 text-xs text-[#4A4458]">
@@ -69,7 +70,7 @@ export const PublicFooter: React.FC = () => {
                   to="/booking/royal-golzar"
                   className="hover:text-[#2A0F54] transition-colors"
                 >
-                  شبیه‌ساز رزرو آنلاین نوبت
+                  رزرو آنلاین نوبت
                 </Link>
               </li>
               <li>
@@ -94,7 +95,7 @@ export const PublicFooter: React.FC = () => {
           </div>
 
           <div className="lg:col-span-2 space-y-2.5">
-            <h3 className="text-xs font-extrabold text-[#120F1D]">
+            <h3 className="text-xs font-semibold text-[#120F1D]">
               کسب‌وکارها و مدیریت
             </h3>
             <ul className="space-y-2 text-xs text-[#4A4458]">
@@ -127,15 +128,14 @@ export const PublicFooter: React.FC = () => {
 
         <div className="pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#756F86]">
           <p>
-            © ۱۴۰۵ BeautyHub — تمامی اطلاعات، قیمت‌ها و نوبت‌های این نسخه صرفاً جهت
-            نمایش تجربه کاربری شبیه‌سازی شده‌اند.
+            © ۱۴۰۵ BeautyHub — کلیه حقوق این سامانه محفوظ است.
           </p>
           <div className="flex items-center gap-4">
             <Link to="/about" className="hover:text-[#120F1D]">
               درباره BeautyHub
             </Link>
             <Link to="/help" className="hover:text-[#120F1D]">
-              پشتیبانی آزمایشی
+              پشتیبانی و راهنما
             </Link>
           </div>
         </div>

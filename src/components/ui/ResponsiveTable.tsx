@@ -30,7 +30,7 @@ export function ResponsiveTable<T>({
         <table className="w-full text-sm text-right border-collapse">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead>
-            <tr className="border-b border-[#E6E3EE] bg-[#F4F3F8]/80 text-[#4A4458] text-xs font-bold">
+            <tr className="border-b border-[#E6E3EE] bg-[#F4F3F8]/80 text-[#4A4458] text-xs font-semibold">
               {columns.map((col) => (
                 <th
                   key={col.key}
