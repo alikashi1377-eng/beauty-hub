@@ -196,7 +196,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [dataMode, setDataMode] = useState<'mock' | 'real'>('mock');
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isLoadingInitialData, setIsLoadingInitialData] =
-    useState<boolean>(false);
+    useState<boolean>(true);
   const [authUser, setAuthUser] = useState<AuthenticatedSessionUser | null>(
     null
   );
@@ -390,6 +390,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } else if (response.mode === 'mock') {
         setDataMode('mock');
         setDatabaseError(null);
+        setAuthUser(null);
       } else {
         setDataMode('real');
         setDatabaseError('پاسخ سرور نامعتبر است؛ به داده‌های آزمایشی بازگشت داده نمی‌شود.');

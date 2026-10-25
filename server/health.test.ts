@@ -15,6 +15,7 @@ import {
   validateDatabaseUrlFormat,
 } from './config/env';
 import {
+  bootstrapInitialPlatformAdminInDb,
   getBootstrapPayload,
   requestOtpInDb,
   verifyOtpInDb,
@@ -1940,7 +1941,7 @@ test('Production SMS Enforcement: POST /api/v1/auth/otp/request in production re
   }
 });
 
-test('One-Time Initial Admin Bootstrap: POST /api/v1/admin/bootstrap promotes the first authenticated user with valid token and blocks any subsequent attempt with 409', async () => {
+test('One-Time Initial Admin Bootstrap via CLI/DB: bootstrapInitialPlatformAdminInDb promotes the first admin in PostgreSQL and blocks any subsequent attempt with PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED', async () => {
   const state: MockDbState = {
     sessions: new Map(),
     users: new Map([
@@ -1963,9 +1964,73 @@ test('One-Time Initial Admin Bootstrap: POST /api/v1/admin/bootstrap promotes th
   };
   const pool = createSecurityTestPool(state);
 
-  const validBootstrapToken =
-    'initial_admin_bootstrap_secret_token_32_chars_minimum!';
+  // ۱. اجرای اول از طریق لایه دیتابیس/CLI باید موفق شود و نقش PLATFORM_ADMIN را ثبت کند
+  const created = await bootstrapInitialPlatformAdminInDb(pool, {
+    phone: '09120000001',
+    fullName: 'مدیر ارشد اول',
+  });
+  assert.equal(created.userId, 'user-customer-1');
+  assert.equal(created.phone, '09120000001');
+  assert.equal(created.fullName, 'مدیر ارشد اول');
 
+  // ۲. تلاش مجدد پس از وجود ادمین فعال باید با خطای PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED رد شود
+  await assert.rejects(
+    async () => {
+      await bootstrapInitialPlatformAdminInDb(pool, {
+        phone: '09120000002',
+        fullName: 'تلاش دوم غیرمجاز',
+      });
+    },
+    (err: unknown) =>
+      err instanceof Error &&
+      err.message === 'PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED'
+  );
+});
+
+test('Admin Panel Security (/admin & /api/v1/admin/*): Blocks anonymous browser access (302 -> /login), blocks forged cookies (401/302), blocks non-admin users (403), and allows verified PLATFORM_ADMIN via HttpOnly cookie', async () => {
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map([
+      [
+        'user-regular',
+        {
+          id: 'user-regular',
+          phone: '09120000011',
+          full_name: 'کاربر عادی',
+          default_city: 'تهران',
+          is_active: true,
+        },
+      ],
+      [
+        'user-real-admin',
+        {
+          id: 'user-real-admin',
+          phone: '09120000099',
+          full_name: 'مدیر کل تاییدشده',
+          default_city: 'تهران',
+          is_active: true,
+        },
+      ],
+    ]),
+    admins: new Map([
+      ['user-real-admin', { is_active: true, revoked_at: null }],
+    ]),
+    memberships: [],
+    businesses: new Map(),
+    services: new Map(),
+    appointments: new Map(),
+  };
+
+  const regularUserToken = issueTestSession(state, {
+    sessionId: '55555555-5555-4555-8555-555555555511',
+    userId: 'user-regular',
+  });
+  const adminUserToken = issueTestSession(state, {
+    sessionId: '55555555-5555-4555-8555-555555555599',
+    userId: 'user-real-admin',
+  });
+
+  const pool = createSecurityTestPool(state);
   const srv = await startEphemeralServer(
     {
       NODE_ENV: 'production',
@@ -1973,89 +2038,91 @@ test('One-Time Initial Admin Bootstrap: POST /api/v1/admin/bootstrap promotes th
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
       SESSION_SECRET: TEST_SESSION_SECRET,
       OTP_HMAC_SECRET: TEST_OTP_SECRET,
-      INITIAL_ADMIN_BOOTSTRAP_TOKEN: validBootstrapToken,
+      SMS_PROVIDER: 'melipayamak',
+      SMS_API_KEY: 'test-api-key',
+      SMS_OTP_TEMPLATE: '12345',
     },
     pool
   );
 
   try {
-    const candidateToken = issueTestSession(state, {
-      sessionId: '44444444-4444-4444-8444-444444444477',
-      userId: 'user-customer-1',
+    // ۱. دسترسی ناشناس (پنجره Incognito بدون کوکی) به مسیر /admin و /admin/businesses باید 302 Redirect به /login برگرداند
+    for (const adminPath of ['/admin', '/admin/businesses', '/admin/settings']) {
+      const anonPageRes = await fetch(`${srv.baseUrl}${adminPath}`, {
+        headers: { Accept: 'text/html' },
+        redirect: 'manual',
+      });
+      assert.equal(anonPageRes.status, 302);
+      const locationHeader = anonPageRes.headers.get('location') || '';
+      assert.equal(
+        locationHeader,
+        `/login?redirect=${encodeURIComponent(adminPath)}`
+      );
+    }
+
+    // ۲. دسترسی با کوکی دستکاری‌شده (Forged Cookie) به /admin باید کوکی را باطل کرده و 302 به /login بدهد
+    const forgedCookieRes = await fetch(`${srv.baseUrl}/admin`, {
+      headers: {
+        Accept: 'text/html',
+        Cookie: 'bh_session=v1.55555555-5555-4555-8555-555555555599.deadbeef.forged',
+      },
+      redirect: 'manual',
     });
+    assert.equal(forgedCookieRes.status, 302);
+    const setCookieHeader = forgedCookieRes.headers.get('set-cookie') || '';
+    assert.equal(setCookieHeader.includes('Max-Age=0'), true);
+    assert.equal(setCookieHeader.includes('HttpOnly'), true);
 
-    // ۱. ارسال توکن اشتباه باید با 403 INVALID_BOOTSTRAP_TOKEN رد شود
-    const wrongTokenRes = await fetch(
-      `${srv.baseUrl}/api/v1/admin/bootstrap`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${candidateToken}`,
-        },
-        body: JSON.stringify({
-          bootstrapToken: 'wrong_token_value',
-          fullName: 'مدیر ارشد اول',
-        }),
-      }
-    );
-    assert.equal(wrongTokenRes.status, 403);
-    const wrongTokenBody = (await wrongTokenRes.json()) as {
+    // ۳. دسترسی ناشناس به تمام APIهای مدیریتی (/api/v1/admin/*) باید با 401 AUTHENTICATION_REQUIRED رد شود
+    const anonApiRes = await fetch(`${srv.baseUrl}/api/v1/admin/overview`);
+    assert.equal(anonApiRes.status, 401);
+    const anonApiBody = (await anonApiRes.json()) as { errorCode: string };
+    assert.equal(anonApiBody.errorCode, 'AUTHENTICATION_REQUIRED');
+
+    // ۴. دسترسی کاربر احراز هویت‌شده غیر ادمین (CUSTOMER) به صفحه /admin و /admin/users باید 403 Forbidden دریافت کند
+    const nonAdminPageRes = await fetch(`${srv.baseUrl}/admin`, {
+      headers: {
+        Accept: 'text/html',
+        Cookie: `bh_session=${encodeURIComponent(regularUserToken)}`,
+      },
+      redirect: 'manual',
+    });
+    assert.equal(nonAdminPageRes.status, 403);
+    const nonAdminHtml = await nonAdminPageRes.text();
+    assert.equal(nonAdminHtml.includes('۴۰۳'), true);
+
+    // ۵. دسترسی کاربر احراز هویت‌شده غیر ادمین به API مدیریتی (/api/v1/admin/overview) باید 403 ADMIN_ACCESS_DENIED دریافت کند
+    const nonAdminApiRes = await fetch(`${srv.baseUrl}/api/v1/admin/overview`, {
+      headers: {
+        Cookie: `bh_session=${encodeURIComponent(regularUserToken)}`,
+      },
+    });
+    assert.equal(nonAdminApiRes.status, 403);
+    const nonAdminApiBody = (await nonAdminApiRes.json()) as {
       errorCode: string;
     };
-    assert.equal(wrongTokenBody.errorCode, 'INVALID_BOOTSTRAP_TOKEN');
+    assert.equal(nonAdminApiBody.errorCode, 'ADMIN_ACCESS_DENIED');
 
-    // ۲. ارسال توکن معتبر برای اولین بار باید با 201 موفق شود و نقش PLATFORM_ADMIN را ثبت کند
-    const firstBootstrapRes = await fetch(
-      `${srv.baseUrl}/api/v1/admin/bootstrap`,
+    // ۶. دسترسی ادمین معتبر (تاییدشده در جدول platform_admins دیتابیس) با کوکی HttpOnly به /api/v1/admin/overview باید 200 OK باشد
+    const validAdminApiRes = await fetch(
+      `${srv.baseUrl}/api/v1/admin/overview`,
       {
-        method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${candidateToken}`,
+          Cookie: `bh_session=${encodeURIComponent(adminUserToken)}`,
         },
-        body: JSON.stringify({
-          bootstrapToken: validBootstrapToken,
-          fullName: 'مدیر ارشد اول',
-        }),
       }
     );
-    assert.equal(firstBootstrapRes.status, 201);
-    const firstBootstrapBody = (await firstBootstrapRes.json()) as {
+    assert.equal(validAdminApiRes.status, 200);
+    const validAdminApiBody = (await validAdminApiRes.json()) as {
       ok: boolean;
-      admin: { userId: string; phone: string; fullName: string };
+      mode: string;
     };
-    assert.equal(firstBootstrapBody.ok, true);
-    assert.equal(firstBootstrapBody.admin.userId, 'user-customer-1');
-    assert.equal(firstBootstrapBody.admin.phone, '09120000001');
-    assert.equal(firstBootstrapBody.admin.fullName, 'مدیر ارشد اول');
-
-    // ۳. تلاش مجدد برای Bootstrap پس از وجود ادمین فعال باید با 409 PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED مسدود شود
-    const secondBootstrapRes = await fetch(
-      `${srv.baseUrl}/api/v1/admin/bootstrap`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${candidateToken}`,
-        },
-        body: JSON.stringify({
-          bootstrapToken: validBootstrapToken,
-          fullName: 'تلاش دوم',
-        }),
-      }
-    );
-    assert.equal(secondBootstrapRes.status, 409);
-    const secondBootstrapBody = (await secondBootstrapRes.json()) as {
-      errorCode: string;
-    };
-    assert.equal(
-      secondBootstrapBody.errorCode,
-      'PLATFORM_ADMIN_ALREADY_BOOTSTRAPPED'
-    );
+    assert.equal(validAdminApiBody.ok, true);
+    assert.equal(validAdminApiBody.mode, 'real');
   } finally {
     await srv.close();
   }
 });
+
 
 

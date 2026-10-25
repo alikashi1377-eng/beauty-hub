@@ -4,8 +4,19 @@
  */
 
 import React from 'react';
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { PrototypeDataProvider } from './context/PrototypeDataContext';
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom';
+import { ShieldAlert } from 'lucide-react';
+import {
+  PrototypeDataProvider,
+  usePrototypeData,
+} from './context/PrototypeDataContext';
 import { AppLayout } from './layouts/AppLayout';
 import {
   AboutPage,
@@ -63,6 +74,77 @@ import { NotFoundState } from './components/ui/StateViews';
 const NotFoundRouteWrapper: React.FC = () => {
   const location = useLocation();
   return <NotFoundState attemptedPath={location.pathname} />;
+};
+
+/**
+ * گارد محافظت از مسیرهای کنسول مدیریت کلان (/admin و /admin/*)
+ * - تا پیش از تکمیل بررسی نشست سمت سرور هیچ داده‌ای از پنل ادمین رندر نمی‌شود.
+ * - اگر کاربر احراز هویت نشده باشد به صفحه ورود (/login?redirect=...) هدایت می‌شود.
+ * - اگر کاربر وارد شده باشد اما نقش PLATFORM_ADMIN او از دیتابیس تایید نشده باشد، پاسخ صریح ۴۰۳ نمایش داده می‌شود.
+ */
+const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const location = useLocation();
+  const { authUser, dataMode, isLoadingInitialData } = usePrototypeData();
+
+  if (isLoadingInitialData) {
+    return (
+      <div
+        role="status"
+        className="max-w-md mx-auto my-16 p-8 rounded-2xl bg-white border border-[#E6E3EE] text-center space-y-3"
+      >
+        <p className="text-sm font-bold text-[#120F1D]">
+          در حال بررسی اعتبار نشست و مجوز دسترسی مدیریت...
+        </p>
+        <p className="text-xs text-[#756F86]">
+          لطفاً چند لحظه صبر کنید.
+        </p>
+      </div>
+    );
+  }
+
+  if (dataMode !== 'real' || !authUser) {
+    return (
+      <Navigate
+        to={`/login?redirect=${encodeURIComponent(location.pathname)}`}
+        replace
+      />
+    );
+  }
+
+  if (
+    !authUser.isPlatformAdmin ||
+    !authUser.roles.includes('PLATFORM_ADMIN')
+  ) {
+    return (
+      <div
+        role="alert"
+        className="max-w-lg mx-auto my-12 p-8 rounded-2xl bg-white border border-[#E6E3EE] text-center space-y-4 shadow-2xs"
+      >
+        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-[#9D174D] mx-auto flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h1 className="text-lg font-extrabold text-[#120F1D]">
+          ۴۰۳ — عدم مجوز دسترسی (Forbidden)
+        </h1>
+        <p className="text-xs sm:text-sm text-[#4A4458] leading-relaxed">
+          حساب کاربری شما دارای نقش مدیر کل سامانه (PLATFORM_ADMIN) نیست و مجوز
+          دسترسی به کنسول مدیریت کلان را ندارد.
+        </p>
+        <div className="pt-2">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#2A0F54] text-white text-xs font-semibold hover:bg-[#1D093B] transition-colors"
+          >
+            بازگشت به صفحه اصلی
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 };
 
 export default function App() {
@@ -145,18 +227,71 @@ export default function App() {
             <Route path="/me/favorites" element={<CustomerFavoritesPage />} />
             <Route path="/me/profile" element={<CustomerProfilePage />} />
 
-            {/* ۶. پنل مدیریت پلتفرم */}
-            <Route path="/admin" element={<AdminDashboardPage />} />
-            <Route path="/admin/businesses" element={<AdminBusinessesPage />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/categories" element={<AdminCategoriesPage />} />
+            {/* ۶. پنل مدیریت پلتفرم — محافظت‌شده با نشست سرور و نقش PLATFORM_ADMIN */}
+            <Route
+              path="/admin"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminDashboardPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/businesses"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminBusinessesPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminUsersPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/categories"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminCategoriesPage />
+                </RequirePlatformAdmin>
+              }
+            />
             <Route
               path="/admin/subscriptions"
-              element={<AdminSubscriptionsPage />}
+              element={
+                <RequirePlatformAdmin>
+                  <AdminSubscriptionsPage />
+                </RequirePlatformAdmin>
+              }
             />
-            <Route path="/admin/payments" element={<AdminPaymentsPage />} />
-            <Route path="/admin/reports" element={<AdminReportsPage />} />
-            <Route path="/admin/settings" element={<AdminSettingsPage />} />
+            <Route
+              path="/admin/payments"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminPaymentsPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/reports"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminReportsPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminSettingsPage />
+                </RequirePlatformAdmin>
+              }
+            />
 
             {/* صفحه ۴۰۴ یافت نشد */}
             <Route path="*" element={<NotFoundRouteWrapper />} />

@@ -17,7 +17,6 @@ import {
   sanitizeDatabaseError,
 } from '../db/pool';
 import {
-  bootstrapInitialPlatformAdminInDb,
   createAppointmentInDb,
   createCampaignInDb,
   createCategoryInDb,
@@ -412,6 +411,12 @@ export function createApiV1Router(
       }
     }
   );
+
+  /**
+   * گارد متمرکز امنیتی روی تمام مسیرهای مدیریتی (/api/v1/admin/*)
+   * هیچ زیرمسیری در /admin بدون نشست معتبر سمت سرور (401) و تایید نقش PLATFORM_ADMIN از دیتابیس (403) قابل دسترس نیست.
+   */
+  router.use('/admin', requireAuth, requireRole('PLATFORM_ADMIN'));
 
   /**
    * ۱-ج. دریافت داده‌های کلان پنل مدیریت پلتفرم (صرفاً برای PLATFORM_ADMIN)
@@ -1076,69 +1081,6 @@ export function createApiV1Router(
           ok: true,
           mode: 'real',
           item,
-        });
-      } catch (err) {
-        handleRealModeRouteError(res, err);
-      }
-    }
-  );
-
-  /**
-   * ۱۳-الف. راه‌اندازی یک‌باره و امن اولین مدیر کل سامانه (PLATFORM_ADMIN)
-   * POST /api/v1/admin/bootstrap
-   * نیازمند:
-   * ۱. نشست احراز هویت‌شده معتبر (requireAuth)
-   * ۲. تنظیم بودن INITIAL_ADMIN_BOOTSTRAP_TOKEN (حداقل ۳۲ کاراکتر) در سرور و تطابق زمان‌ثابت آن
-   * ۳. نبودن هیچ ادمین فعالی در جدول platform_admins (صرفاً یک‌بارمصرف)
-   */
-  router.post(
-    '/admin/bootstrap',
-    requireAuth,
-    async (req: Request, res: Response) => {
-      const { pool } = await resolvePoolOrFail(res);
-      if (!pool) return;
-
-      try {
-        const config = customEnv ?? loadServerEnv();
-        const expectedToken = config.initialAdminBootstrapToken;
-        if (!expectedToken) {
-          throw new Error('ADMIN_BOOTSTRAP_DISABLED');
-        }
-
-        const candidateToken = String(req.body?.bootstrapToken || '').trim();
-        const expectedBuf = Buffer.from(expectedToken, 'utf8');
-        const candidateBuf = Buffer.from(candidateToken, 'utf8');
-        if (
-          expectedBuf.length !== candidateBuf.length ||
-          !crypto.timingSafeEqual(expectedBuf, candidateBuf)
-        ) {
-          throw new Error('INVALID_BOOTSTRAP_TOKEN');
-        }
-
-        if (
-          config.initialAdminPhone &&
-          req.authUser!.phone !== config.initialAdminPhone
-        ) {
-          throw new Error('BOOTSTRAP_ADMIN_PHONE_MISMATCH');
-        }
-
-        const fullName =
-          typeof req.body?.fullName === 'string' && req.body.fullName.trim()
-            ? req.body.fullName.trim()
-            : req.authUser!.fullName;
-
-        const admin = await bootstrapInitialPlatformAdminInDb(pool, {
-          phone: req.authUser!.phone,
-          fullName,
-          defaultCity: req.authUser!.defaultCity ?? undefined,
-        });
-
-        res.status(201).json({
-          ok: true,
-          mode: 'real',
-          admin,
-          message:
-            'اولین حساب مدیر کل سامانه (PLATFORM_ADMIN) با موفقیت فعال شد.',
         });
       } catch (err) {
         handleRealModeRouteError(res, err);

@@ -88,6 +88,7 @@ const BookingFlowStepIndicator: React.FC<{ currentStep: 1 | 2 | 3 }> = ({
 /** ۱. صفحه ورود مشتری / کاربر (/login) */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const {
     dataMode,
     authUser,
@@ -96,11 +97,17 @@ export const CustomerLoginPage: React.FC = () => {
     logoutUser,
     showToast,
   } = usePrototypeData();
-  const [phone, setPhone] = useState('09123456789');
+  const [phone, setPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const rawRedirect = searchParams.get('redirect') || '';
+  const safeRedirectPath =
+    rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+      ? rawRedirect
+      : '';
 
   const handleRequestOtpOrSimulatedLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,12 +150,14 @@ export const CustomerLoginPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       const user = await verifyOtpLogin(phone.trim(), trimmedCode);
-      if (user.roles.includes('PLATFORM_ADMIN')) {
-        navigate('/admin');
+      if (safeRedirectPath) {
+        navigate(safeRedirectPath, { replace: true });
+      } else if (user.isPlatformAdmin && user.roles.includes('PLATFORM_ADMIN')) {
+        navigate('/admin', { replace: true });
       } else if (user.roles.includes('BUSINESS_OWNER')) {
-        navigate('/app');
+        navigate('/app', { replace: true });
       } else {
-        navigate('/me');
+        navigate('/me', { replace: true });
       }
     } catch (err) {
       setError(

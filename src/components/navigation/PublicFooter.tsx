@@ -1,7 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { usePrototypeData } from '../../context/PrototypeDataContext';
 
 export const PublicFooter: React.FC = () => {
+  const { authUser, dataMode } = usePrototypeData();
+  const isPlatformAdmin =
+    dataMode === 'real' &&
+    Boolean(
+      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
+    );
+
   return (
     <footer className="bg-white border-t border-[#E6E3EE] mt-20">
       <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-12">
@@ -117,11 +125,16 @@ export const PublicFooter: React.FC = () => {
                   پنل مدیریت کسب‌وکار
                 </Link>
               </li>
-              <li>
-                <Link to="/admin" className="hover:text-[#2A0F54] transition-colors">
-                  کنسول مدیریت پلتفرم
-                </Link>
-              </li>
+              {isPlatformAdmin ? (
+                <li>
+                  <Link
+                    to="/admin"
+                    className="hover:text-[#2A0F54] transition-colors"
+                  >
+                    کنسول مدیریت پلتفرم
+                  </Link>
+                </li>
+              ) : null}
             </ul>
           </div>
         </div>

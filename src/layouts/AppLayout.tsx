@@ -22,6 +22,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const {
     dataMode,
+    authUser,
+    isLoadingInitialData,
     currentBusiness,
     appointments,
     toast,
@@ -32,6 +34,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
   const isAdminPanel = pathname === '/admin' || pathname.startsWith('/admin/');
+  const isAuthorizedPlatformAdmin =
+    !isLoadingInitialData &&
+    dataMode === 'real' &&
+    Boolean(
+      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
+    );
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
 
@@ -102,7 +110,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
           </div>
         </div>
-      ) : isAdminPanel ? (
+      ) : isAdminPanel && isAuthorizedPlatformAdmin ? (
         <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
           <AdminSidebar />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
