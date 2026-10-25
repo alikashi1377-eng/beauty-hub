@@ -20,6 +20,11 @@ import {
   requestOtpInDb,
   verifyOtpInDb,
 } from './repositories/beautyhubRepository';
+import {
+  classifyMelipayamakFailure,
+  resolveSmsConfig,
+  sendOtpSmsViaGateway,
+} from './services/smsGateway';
 
 async function startEphemeralServer(
   envOverrides: Record<string, string | undefined>,
@@ -2123,6 +2128,118 @@ test('Admin Panel Security (/admin & /api/v1/admin/*): Blocks anonymous browser 
     await srv.close();
   }
 });
+
+test('MelliPayamak Adapter Diagnostics: Normalizes full console URL in SMS_API_KEY, Persian digits in SMS_OTP_TEMPLATE, validates recId & status, and classifies errors accurately', async () => {
+  // ۱. بررسی نرمال‌سازی در صورتی که کل URL کنسول ملی‌پیامک در SMS_API_KEY قرار گرفته باشد یا ارقام فارسی در SMS_OTP_TEMPLATE باشد
+  const cfg = resolveSmsConfig({
+    NODE_ENV: 'production',
+    SMS_PROVIDER: '"melipayamak"',
+    SMS_API_KEY:
+      '"https://console.melipayamak.com/api/send/shared/a1b2c3d4e5f6g7h8"',
+    SMS_OTP_TEMPLATE: '"۱۲۳۴۵"',
+  });
+  assert.equal(cfg.provider, 'melipayamak');
+  assert.equal(cfg.apiKey, 'a1b2c3d4e5f6g7h8');
+  assert.equal(cfg.template, '12345');
+  assert.equal(
+    cfg.apiUrl,
+    'https://console.melipayamak.com/api/send/shared/a1b2c3d4e5f6g7h8'
+  );
+
+  // ۲. بررسی دسته‌بندی خطاهای ملی‌پیامک بر اساس HTTP Status و متن status
+  assert.equal(
+    classifyMelipayamakFailure(404, 'Not Found', undefined),
+    'SMS_INVALID_API_KEY'
+  );
+  assert.equal(
+    classifyMelipayamakFailure(200, 'متن الگو تایید نشده است', undefined),
+    'SMS_TEMPLATE_INVALID_OR_UNAPPROVED'
+  );
+  assert.equal(
+    classifyMelipayamakFailure(
+      200,
+      'تعداد پارامترهای ارسالی با متن الگو همخوانی ندارد',
+      undefined
+    ),
+    'SMS_ARGS_MISMATCH'
+  );
+  assert.equal(
+    classifyMelipayamakFailure(200, 'اعتبار شما کافی نمی باشد', undefined),
+    'SMS_INSUFFICIENT_CREDIT'
+  );
+
+  // ۳. شبیه‌سازی سرور ملی‌پیامک برای بررسی ساختار دقیق JSON ارسالی (bodyId عددی، to و args) و نیاز به recId معتبر
+  let capturedBody: Record<string, unknown> | null = null;
+  let mockResponseStatus = 200;
+  let mockResponseJson: Record<string, unknown> = {
+    recId: 889977665544,
+    status: 'ارسال موفق بود',
+  };
+
+  const mockSmsServer = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += String(chunk);
+    });
+    req.on('end', () => {
+      capturedBody = JSON.parse(raw) as Record<string, unknown>;
+      res.writeHead(mockResponseStatus, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(mockResponseJson));
+    });
+  });
+
+  await new Promise<void>((resolve) => {
+    mockSmsServer.listen(0, '127.0.0.1', () => resolve());
+  });
+  const addr = mockSmsServer.address();
+  const smsPort = typeof addr === 'object' && addr ? addr.port : 0;
+  const mockSmsEndpoint = `http://127.0.0.1:${smsPort}/api/send/shared/test-key`;
+
+  try {
+    // ۳-الف: ارسال موفق با HTTP 200 و recId معتبر
+    const okResult = await sendOtpSmsViaGateway(
+      '09123456789',
+      '654321',
+      {
+        provider: 'melipayamak',
+        apiKey: 'test-key',
+        sender: null,
+        template: '25480',
+        apiUrl: mockSmsEndpoint,
+      },
+      'production'
+    );
+    assert.equal(okResult.sent, true);
+    assert.equal(okResult.providerMessageId, '889977665544');
+    assert.deepEqual(capturedBody, {
+      bodyId: 25480,
+      to: '09123456789',
+      args: ['654321'],
+    });
+
+    // ۳-ب: پاسخ HTTP 200 ولی بدون recId به دلیل عدم تطابق متغیرهای الگو -> باید sent: false و SMS_ARGS_MISMATCH برگرداند
+    mockResponseJson = {
+      status: 'تعداد پارامترهای ارسالی با متن الگو همخوانی ندارد',
+    };
+    const mismatchResult = await sendOtpSmsViaGateway(
+      '09123456789',
+      '654321',
+      {
+        provider: 'melipayamak',
+        apiKey: 'test-key',
+        sender: null,
+        template: '25480',
+        apiUrl: mockSmsEndpoint,
+      },
+      'production'
+    );
+    assert.equal(mismatchResult.sent, false);
+    assert.equal(mismatchResult.errorCode, 'SMS_ARGS_MISMATCH');
+  } finally {
+    await new Promise<void>((resolve) => mockSmsServer.close(() => resolve()));
+  }
+});
+
 
 
 

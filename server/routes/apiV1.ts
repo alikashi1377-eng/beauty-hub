@@ -181,7 +181,73 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
       mode: 'real',
       errorCode: errMsg,
       message:
-        'درگاه ارسال پیامک (SMS Gateway) در محیط Production تنظیم نشده است؛ پیامک کد تایید ارسال نشد.',
+        'درگاه ارسال پیامک (SMS Gateway) در محیط Production تنظیم نشده است؛ متغیرهای SMS_PROVIDER، SMS_API_KEY و SMS_OTP_TEMPLATE را بررسی کنید.',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_INVALID_API_KEY') {
+    res.status(502).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'کلید وب‌سرویس پیامک (SMS_API_KEY) در پنل ملی‌پیامک نامعتبر است یا دسترسی وب‌سرویس خدماتی فعال نیست.',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_TEMPLATE_INVALID_OR_UNAPPROVED') {
+    res.status(502).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'شناسه الگوی پیامک (SMS_OTP_TEMPLATE / bodyId) نامعتبر است یا الگوی خدماتی در پنل ملی‌پیامک یافت نشد.',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_ARGS_MISMATCH') {
+    res.status(502).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'تعداد متغیرهای الگوی پیامک در پنل ملی‌پیامک با کد ارسالی همخوانی ندارد (متن الگو باید فقط شامل یک متغیر {0} باشد).',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_INSUFFICIENT_CREDIT') {
+    res.status(502).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'اعتبار حساب در پنل ملی‌پیامک برای ارسال پیامک کد تایید کافی نیست.',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_INVALID_RECIPIENT') {
+    res.status(400).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'شماره موبایل گیرنده توسط سرویس‌دهنده پیامک نامعتبر یا مسدود اعلام شد.',
+    });
+    return;
+  }
+
+  if (errMsg === 'SMS_NETWORK_OR_TIMEOUT_ERROR') {
+    res.status(502).json({
+      ok: false,
+      mode: 'real',
+      errorCode: errMsg,
+      message:
+        'خطای ارتباط شبکه یا Timeout در اتصال سرور به وب‌سرویس ملی‌پیامک (console.melipayamak.com) رخ داد.',
     });
     return;
   }
@@ -195,7 +261,7 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
       mode: 'real',
       errorCode: errMsg,
       message:
-        'ارسال پیامک از طریق سرویس‌دهنده پیامکی تایید نشد؛ لطفاً دقایقی دیگر تلاش کنید.',
+        'ارسال پیامک از طریق سرویس‌دهنده پیامکی تایید نشد؛ لطفاً لاگ کنسول سرور (BeautyHub SMS Gateway) و تنظیمات پنل پیامک را بررسی کنید.',
     });
     return;
   }
