@@ -18,7 +18,7 @@ const CITY_PRESETS: Record<string, LocationPreset[]> = {
       lat: 35.8058,
       lng: 51.4018,
       sampleAddress:
-        'تهران، ولنجک، خیابان سیزدهم، پلاک ۲۴، طبقه دوم (مکان انتخاب‌شده روی نقشه)',
+        'تهران، ولنجک، خیابان سیزدهم، پلاک ۲۴، طبقه دوم',
     },
     {
       label: 'فرمانیه · چهارراه کامرانیه',
@@ -37,7 +37,7 @@ const CITY_PRESETS: Record<string, LocationPreset[]> = {
         'تهران، سعادت‌آباد، میدان کاج، ابتدای سرو شرقی، ساختمان پارسه، طبقه اول',
     },
     {
-      label: 'جردن (نلسون ماندلا) · بلوار صبا',
+      label: 'جردن · بلوار صبا',
       neighborhood: 'جردن',
       lat: 35.7691,
       lng: 51.4154,
@@ -121,7 +121,6 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
 }) => {
   const presets = CITY_PRESETS[city] ?? CITY_PRESETS['تهران'];
 
-  // تبدیل مختصات جغرافیایی به موقعیت نسبی پین روی بوم نقشه (۲۰٪ تا ۸۰٪)
   const normX = Math.max(
     16,
     Math.min(84, Math.round(((lng * 1000) % 100 + 100) % 100))
@@ -152,25 +151,24 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
   };
 
   return (
-    <div className="rounded-2xl border border-[#D0CADF] bg-[#FAF9FC] p-3.5 space-y-3">
+    <div className="rounded-3xl border border-[#E6E0F5] bg-[#FAF8FF] p-3.5 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-1.5 font-extrabold text-[#171226]">
-          <MapPin className="w-4 h-4 text-[#9D174D]" />
+        <div className="flex items-center gap-1.5 font-bold text-[#1E1B2E]">
+          <MapPin className="w-4 h-4 text-[#8B5CF6]" />
           <span>
             {readOnly
-              ? 'موقعیت ثبت‌شده کسب‌وکار روی نقشه'
-              : 'تعیین موقعیت دقیق روی نقشه (با کلیک روی نقشه یا انتخاب محدوده)'}
+              ? 'موقعیت مکانی روی نقشه'
+              : 'تعیین موقعیت روی نقشه (با کلیک روی نقشه یا انتخاب محله)'}
           </span>
         </div>
         <span
           dir="ltr"
-          className="text-[11px] font-mono font-bold text-[#2A0F54] bg-white px-2.5 py-0.5 rounded-lg border border-[#E6E3EE]"
+          className="text-[11px] font-mono font-semibold text-[#7C3AED] bg-white px-2.5 py-0.5 rounded-full border border-[#E6E0F5]"
         >
           {lat.toFixed(4)}, {lng.toFixed(4)}
         </span>
       </div>
 
-      {/* بوم نقشه تعاملی */}
       <div
         role={readOnly ? 'img' : 'button'}
         tabIndex={readOnly ? -1 : 0}
@@ -192,35 +190,27 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
             });
           }
         }}
-        className={`relative w-full h-44 sm:h-48 rounded-xl overflow-hidden border border-[#D0CADF] bg-[#EFECE6] select-none ${
+        className={`relative w-full h-44 sm:h-48 rounded-2xl overflow-hidden border border-[#E6E0F5] bg-[#F3EEFF] select-none ${
           readOnly ? 'cursor-default' : 'cursor-crosshair group'
         }`}
       >
-        {/* شبکه خیابان‌ها و بلوک‌های شهری */}
         <svg
           viewBox="0 0 600 240"
           className="w-full h-full object-cover"
           preserveAspectRatio="none"
           aria-hidden="true"
         >
-          <rect width="600" height="240" fill="#F2EFE9" />
-          {/* پارک‌ها و فضای سبز */}
-          <rect x="40" y="25" width="120" height="70" rx="10" fill="#DCFCE7" />
-          <rect x="420" y="135" width="135" height="75" rx="12" fill="#DCFCE7" />
-          {/* بلوک‌های شهری */}
-          <rect x="180" y="25" width="140" height="65" rx="6" fill="#E6E2DA" />
-          <rect x="340" y="25" width="210" height="65" rx="6" fill="#E6E2DA" />
-          <rect x="40" y="120" width="190" height="90" rx="6" fill="#E6E2DA" />
-          <rect x="250" y="120" width="150" height="90" rx="6" fill="#E6E2DA" />
-          {/* بزرگراه‌ها و خیابان‌های اصلی */}
+          <rect width="600" height="240" fill="#F3EEFF" />
+          <rect x="40" y="25" width="120" height="70" rx="10" fill="#D1FAE5" />
+          <rect x="420" y="135" width="135" height="75" rx="12" fill="#D1FAE5" />
+          <rect x="180" y="25" width="140" height="65" rx="6" fill="#E6E0F5" />
+          <rect x="340" y="25" width="210" height="65" rx="6" fill="#E6E0F5" />
+          <rect x="40" y="120" width="190" height="90" rx="6" fill="#E6E0F5" />
+          <rect x="250" y="120" width="150" height="90" rx="6" fill="#E6E0F5" />
+          <path d="M 0 105 L 600 105" stroke="#FFFFFF" strokeWidth="14" />
           <path
             d="M 0 105 L 600 105"
-            stroke="#FFFFFF"
-            strokeWidth="14"
-          />
-          <path
-            d="M 0 105 L 600 105"
-            stroke="#F59E0B"
+            stroke="#8B5CF6"
             strokeWidth="2"
             strokeDasharray="8 8"
           />
@@ -230,25 +220,23 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
           <path d="M 0 175 L 600 175" stroke="#FFFFFF" strokeWidth="7" />
         </svg>
 
-        {/* برچسب شهر روی نقشه */}
-        <div className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-white/90 backdrop-blur-xs border border-[#E6E3EE] text-[11px] font-bold text-[#171226] inline-flex items-center gap-1 shadow-2xs">
-          <Compass className="w-3.5 h-3.5 text-[#2A0F54]" />
+        <div className="absolute top-2.5 right-2.5 px-3 py-1 rounded-full bg-white/95 backdrop-blur-xs border border-[#E6E0F5] text-[11px] font-bold text-[#1E1B2E] inline-flex items-center gap-1 shadow-2xs">
+          <Compass className="w-3.5 h-3.5 text-[#8B5CF6]" />
           <span>
-            نقشه محدوده {city}
+            {city}
             {neighborhood ? ` · ${neighborhood}` : ''}
           </span>
         </div>
 
-        {/* پین موقعیت انتخاب‌شده */}
         <div
           className="absolute -translate-x-1/2 -translate-y-full transition-all duration-200 pointer-events-none"
           style={{ left: `${normX}%`, top: `${normY}%` }}
         >
           <div className="flex flex-col items-center">
-            <div className="px-2.5 py-1 rounded-lg bg-[#2A0F54] text-white text-[10px] font-extrabold shadow-md whitespace-nowrap mb-1">
+            <div className="px-2.5 py-1 rounded-full bg-[#1E1B2E] text-white text-[10px] font-bold shadow-md whitespace-nowrap mb-1">
               {neighborhood || city}
             </div>
-            <div className="w-7 h-7 rounded-full bg-[#9D174D] text-white border-2 border-white shadow-md flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full bg-[#8B5CF6] text-white border-2 border-white shadow-md flex items-center justify-center">
               <MapPin className="w-4 h-4" />
             </div>
             <div className="w-2.5 h-1 rounded-full bg-black/30 mt-0.5" />
@@ -256,17 +244,16 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
         </div>
 
         {!readOnly ? (
-          <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-lg bg-[#171226]/80 text-white text-[10px] font-medium">
+          <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full bg-[#1E1B2E]/85 text-white text-[10px] font-medium">
             برای جابه‌جایی پین روی نقشه کلیک کنید
           </div>
         ) : null}
       </div>
 
-      {/* دکمه‌های انتخاب سریع محدوده در حالت قابل ویرایش */}
       {!readOnly && onSelectLocation ? (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-bold text-[#4E4760]">
-            یا یکی از نقاط پیشنهادی شهر {city} را روی نقشه انتخاب کنید:
+          <p className="text-[11px] font-semibold text-[#6B6480]">
+            انتخاب سریع محله‌های پرتردد {city}:
           </p>
           <div className="flex flex-wrap gap-1.5">
             {presets.map((p) => {
@@ -284,10 +271,10 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
                       suggestedAddress: p.sampleAddress,
                     })
                   }
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer inline-flex items-center gap-1 ${
                     isSelected
-                      ? 'bg-[#2A0F54] text-white'
-                      : 'bg-white border border-[#D0CADF] text-[#171226] hover:border-[#2A0F54]'
+                      ? 'bg-[#8B5CF6] text-white'
+                      : 'bg-white border border-[#E6E0F5] text-[#1E1B2E] hover:border-[#8B5CF6]'
                   }`}
                 >
                   <Navigation className="w-3 h-3" />
@@ -299,14 +286,13 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
         </div>
       ) : null}
 
-      {/* نمایش آدرس ثبت‌شده در زیر نقشه */}
       {address ? (
-        <div className="pt-2 border-t border-[#E6E3EE] flex items-start justify-between gap-2 text-xs text-[#4E4760]">
+        <div className="pt-2 border-t border-[#E6E0F5] flex items-start justify-between gap-2 text-xs text-[#6B6480]">
           <span>
-            <strong className="text-[#171226]">نشانی ثبت‌شده:</strong> {address}
+            <strong className="text-[#1E1B2E]">نشانی:</strong> {address}
           </span>
-          <span className="text-[11px] text-[#787189] shrink-0 tabular-nums">
-            پین‌شده ({toPersianDigits(lat.toFixed(2))}°N)
+          <span className="text-[11px] text-[#6B6480] shrink-0 tabular-nums">
+            ({toPersianDigits(lat.toFixed(2))}°N)
           </span>
         </div>
       ) : null}

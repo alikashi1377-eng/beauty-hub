@@ -15,10 +15,10 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <select
         ref={ref}
-        className={`w-full font-sans font-normal rounded-xl border px-3.5 py-2 text-sm text-[#120F1D] bg-white transition-colors focus:outline-none focus:ring-2 min-h-[42px] cursor-pointer ${
+        className={`w-full font-sans font-normal rounded-2xl border px-4 py-2.5 text-sm text-[#1E1B2E] bg-white transition-all focus:outline-none focus:ring-2 min-h-[44px] cursor-pointer ${
           hasError
-            ? 'border-red-600 focus:border-red-600 focus:ring-red-600/20'
-            : 'border-[#D0CADF] hover:border-[#2A0F54]/40 focus:border-[#2A0F54] focus:ring-[#2A0F54]/15'
+            ? 'border-[#EF4444] focus:border-[#EF4444] focus:ring-[#EF4444]/15'
+            : 'border-[#E6E0F5] hover:border-[#A78BFA] focus:border-[#8B5CF6] focus:ring-[#8B5CF6]/18'
         } ${className}`}
         {...props}
       >

@@ -16,7 +16,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items }) => {
 
   return (
     <nav aria-label="مسیر صفحه" className="mb-2.5">
-      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-[#756F86]">
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-[#6B6480]">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           return (
@@ -27,7 +27,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items }) => {
               {item.href && !isLast ? (
                 <Link
                   to={item.href}
-                  className="hover:text-[#2A0F54] transition-colors whitespace-nowrap"
+                  className="hover:text-[#8B5CF6] transition-colors whitespace-nowrap"
                 >
                   {item.label}
                 </Link>
@@ -35,7 +35,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items }) => {
                 <span
                   className={
                     isLast
-                      ? 'font-semibold text-[#120F1D] whitespace-nowrap'
+                      ? 'font-semibold text-[#1E1B2E] whitespace-nowrap'
                       : 'whitespace-nowrap'
                   }
                   aria-current={isLast ? 'page' : undefined}
@@ -45,7 +45,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items }) => {
               )}
               {!isLast ? (
                 <ChevronLeft
-                  className="w-3.5 h-3.5 text-[#756F86]/70 shrink-0"
+                  className="w-3.5 h-3.5 text-[#6B6480]/70 shrink-0"
                   aria-hidden="true"
                 />
               ) : null}

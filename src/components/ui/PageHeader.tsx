@@ -16,33 +16,22 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   kicker,
   breadcrumbs,
   actions,
-  routePattern,
 }) => {
   return (
-    <div className="pb-5 mb-7 border-b border-[#E6E3EE]">
+    <div className="pb-4 mb-5 border-b border-[#CBD5E1]">
       {breadcrumbs && breadcrumbs.length > 0 ? (
         <Breadcrumbs items={breadcrumbs} />
       ) : null}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div className="space-y-1.5">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div className="space-y-1">
           {kicker ? (
-            <p className="text-xs font-semibold text-[#9D174D]">{kicker}</p>
+            <p className="text-xs font-extrabold text-[#0057FF]">{kicker}</p>
           ) : null}
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-xl sm:text-2xl font-bold text-[#120F1D] tracking-tight">
-              {title}
-            </h1>
-            {routePattern ? (
-              <span
-                dir="ltr"
-                className="text-xs font-mono text-[#756F86] select-all"
-              >
-                {routePattern}
-              </span>
-            ) : null}
-          </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#061138] tracking-tight">
+            {title}
+          </h1>
           {subtitle ? (
-            <p className="text-xs sm:text-sm font-normal text-[#4A4458] max-w-3xl leading-relaxed">
+            <p className="text-xs sm:text-sm font-medium text-[#334155] max-w-3xl leading-relaxed">
               {subtitle}
             </p>
           ) : null}

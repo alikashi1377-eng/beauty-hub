@@ -1,77 +1,97 @@
 import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Menu, User, X } from 'lucide-react';
-import { IRAN_CITIES } from '../../mocks/sampleData';
+import { CalendarCheck, Menu, Search, Store, User, X } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
+import { TimetoLogo } from '../ui/TimetoLogo';
+import { PWAInstallButton } from '../ui/PWAInstallPrompt';
 
 export const PublicHeader: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { selectedCity, setSelectedCity } = usePrototypeData();
+  const { authUser } = usePrototypeData();
 
   const navItems = [
-    { to: '/search', label: 'جست‌وجوی سالن' },
-    { to: '/categories', label: 'دسته‌بندی‌ها' },
+    { to: '/search', label: 'جست‌وجوی سالن‌ها' },
+    { to: '/categories', label: 'دسته‌بندی خدمات' },
     { to: '/pricing', label: 'تعرفه کسب‌وکارها' },
-    { to: '/about', label: 'درباره ما' },
+    { to: '/about', label: 'درباره تایم تو' },
     { to: '/help', label: 'راهنما' },
   ];
 
   return (
-    <header className="bg-white/95 backdrop-blur-xs border-b border-[#E6E3EE] sticky top-0 z-30">
-      <div className="max-w-[1240px] mx-auto flex items-center justify-between gap-8 px-4 sm:px-6 py-3.5">
-        {/* Zone 1: تک‌المان برند */}
-        <Link
-          to="/"
-          dir="ltr"
-          className="text-xl font-bold tracking-tight text-[#2A0F54] whitespace-nowrap shrink-0"
-        >
-          BeautyHub
-        </Link>
+    <header className="bg-[#061138] text-white border-b border-[#1E293B] sticky top-0 z-30 shadow-[0_4px_20px_-6px_rgba(6,17,56,0.45)]">
+      <div className="max-w-[1240px] mx-auto flex items-center justify-between gap-4 px-4 sm:px-6 py-3">
+        {/* برند و هویت بصری Timeto */}
+        <div className="flex items-center gap-6">
+          <Link to="/" className="inline-flex items-center shrink-0">
+            <TimetoLogo size="md" theme="dark" subtitle="تایم تو · رزرو آنلاین زیبایی" />
+          </Link>
 
-        {/* Zone 2: ۵ لینک ناوبری تک‌خطی */}
-        <nav
-          aria-label="ناوبری اصلی عمومی"
-          className="hidden lg:flex items-center gap-7 text-sm font-medium text-[#4A4458]"
-        >
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `transition-colors whitespace-nowrap shrink-0 py-1 border-b-2 ${
-                  isActive
-                    ? 'text-[#2A0F54] border-[#2A0F54] font-semibold'
-                    : 'border-transparent hover:text-[#120F1D] hover:border-[#D0CADF]'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+          {/* ناوبری اصلی دسکتاپ */}
+          <nav
+            aria-label="ناوبری اصلی عمومی"
+            className="hidden lg:flex items-center gap-1.5 text-xs sm:text-sm font-semibold"
+          >
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `px-3.5 py-2 rounded-full transition-all whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? 'bg-[#0057FF] text-white font-extrabold shadow-[0_4px_14px_rgba(0,87,255,0.45)]'
+                      : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                  }`
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
 
-        {/* Zone 3: ورود و فراخوان اصلی ثبت کسب‌وکار */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* دکمه‌های کاربری، نصب اپ و ثبت کسب‌وکار */}
+        <div className="flex items-center gap-2 shrink-0">
+          <PWAInstallButton compact />
 
           <Link
-            to="/login"
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#4A4458] hover:text-[#120F1D] hover:bg-[#F4F3F8] rounded-xl transition-colors whitespace-nowrap shrink-0"
+            to="/search"
+            aria-label="جست‌وجوی سریع سالن و خدمات"
+            className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-full transition-colors"
           >
-            <User className="w-3.5 h-3.5" />
-            <span>ورود / حساب من</span>
+            <Search className="w-3.5 h-3.5 text-[#00E5FF]" />
+            <span>جست‌وجو</span>
           </Link>
+
+          {authUser ? (
+            <Link
+              to="/me"
+              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-white/12 hover:bg-white/20 border border-white/20 rounded-full transition-colors whitespace-nowrap shrink-0"
+            >
+              <CalendarCheck className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <span>{authUser.fullName || 'نوبت‌های من'}</span>
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-full transition-colors whitespace-nowrap shrink-0"
+            >
+              <User className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <span>ورود / عضویت</span>
+            </Link>
+          )}
 
           <Link
             to="/business/register"
-            className="px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-[#2A0F54] rounded-xl hover:bg-[#1D093B] transition-colors whitespace-nowrap shrink-0"
+            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 shadow-[0_6px_16px_-4px_rgba(0,163,255,0.45)]"
           >
-            ثبت رایگان کسب‌وکار
+            <Store className="w-3.5 h-3.5" />
+            <span>ثبت کسب‌وکار</span>
           </Link>
 
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="lg:hidden p-2 rounded-xl text-[#120F1D] hover:bg-[#F4F3F8] cursor-pointer"
+            className="lg:hidden p-2 rounded-full text-white hover:bg-white/10 cursor-pointer"
             aria-expanded={mobileMenuOpen}
             aria-label={mobileMenuOpen ? 'بستن منوی اصلی' : 'باز کردن منوی اصلی'}
           >
@@ -80,29 +100,12 @@ export const PublicHeader: React.FC = () => {
         </div>
       </div>
 
-      {/* منوی کشویی موبایل و تبلت */}
+      {/* منوی موبایل */}
       {mobileMenuOpen ? (
         <nav
           aria-label="منوی موبایل عمومی"
-          className="lg:hidden border-t border-[#E6E3EE] bg-white px-4 py-3.5 space-y-3"
+          className="lg:hidden border-t border-white/15 bg-[#091642] px-4 py-4 space-y-3 shadow-2xl"
         >
-          <div className="flex items-center justify-between bg-[#F4F3F8] p-2.5 rounded-xl text-xs">
-            <span className="font-semibold text-[#4A4458]">شهر پیش‌فرض جست‌وجو:</span>
-            <select
-              aria-label="انتخاب شهر در موبایل"
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="bg-white border border-[#D0CADF] rounded-lg px-2.5 py-1 font-semibold text-[#120F1D]"
-            >
-              <option value="ALL">همه شهرها</option>
-              {IRAN_CITIES.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div className="space-y-1">
             {navItems.map((item) => (
               <NavLink
@@ -110,10 +113,10 @@ export const PublicHeader: React.FC = () => {
                 to={item.to}
                 onClick={() => setMobileMenuOpen(false)}
                 className={({ isActive }) =>
-                  `block px-3.5 py-2.5 rounded-xl text-sm font-medium ${
+                  `block px-4 py-2.5 rounded-2xl text-sm font-bold ${
                     isActive
-                      ? 'bg-[#F3EEFA] text-[#2A0F54] font-bold'
-                      : 'text-[#4A4458] hover:bg-[#F4F3F8]'
+                      ? 'bg-[#0057FF] text-white'
+                      : 'text-slate-200 hover:bg-white/10'
                   }`
                 }
               >
@@ -122,32 +125,32 @@ export const PublicHeader: React.FC = () => {
             ))}
           </div>
 
-          <div className="pt-2.5 border-t border-[#E6E3EE] grid grid-cols-2 gap-2">
+          <div className="pt-3 border-t border-white/15 grid grid-cols-2 gap-2">
             <Link
               to="/login"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
+              className="text-xs font-bold text-center text-white px-3 py-2.5 rounded-full bg-white/10 border border-white/15"
             >
-              ورود / ثبت‌نام
+              ورود با موبایل
             </Link>
             <Link
               to="/me"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
+              className="text-xs font-bold text-center text-white px-3 py-2.5 rounded-full bg-white/10 border border-white/15"
             >
-              حساب کاربری من
+              نوبت‌های من
             </Link>
             <Link
               to="/business/register"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
+              className="text-xs font-extrabold text-center text-white px-3 py-2.5 rounded-full bg-[#0057FF]"
             >
               ثبت رایگان سالن
             </Link>
             <Link
               to="/app"
               onClick={() => setMobileMenuOpen(false)}
-              className="text-xs font-semibold text-center text-[#120F1D] px-3 py-2 rounded-xl bg-[#F4F3F8]"
+              className="text-xs font-extrabold text-center text-[#061138] px-3 py-2.5 rounded-full bg-[#00E5FF]"
             >
               پنل مدیریت سالن
             </Link>

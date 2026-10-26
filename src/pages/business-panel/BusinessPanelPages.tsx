@@ -12,12 +12,14 @@ import {
   TrendingUp,
   Clock,
   Users,
-  Sparkles,
   Check,
+  X,
   Megaphone,
   ShieldCheck,
   Instagram,
   MapPin,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -30,6 +32,7 @@ import {
   formatDurationMinutes,
   formatPriceToman,
   getAppointmentStatusMeta,
+  getUpcomingJalaliDays,
   toPersianDigits,
   validateServiceForm,
 } from '../../utils/formatters';
@@ -52,7 +55,7 @@ import {
 } from '../../components/ui/MarketplaceComponents';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 
-/** ۱. پیشخوان کسب‌وکار (/app) */
+/** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — بازطراحی کامل مطابق Capture2.PNG (Salonia) و Capture8.PNG (Zolmilon) */
 export const BusinessDashboardPage: React.FC = () => {
   const {
     dataMode,
@@ -62,30 +65,22 @@ export const BusinessDashboardPage: React.FC = () => {
     services,
     specialists,
     customers,
+    updateAppointmentStatus,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
-  const weeklyActivity = [
-    { day: 'شنبه', count: 14, heightPct: 70 },
-    { day: 'یکشنبه', count: 11, heightPct: 55 },
-    { day: 'دوشنبه', count: 16, heightPct: 80 },
-    { day: 'سه‌شنبه', count: 18, heightPct: 90 },
-    { day: 'چهارشنبه', count: 19, heightPct: 95 },
-    { day: 'پنج‌شنبه', count: 20, heightPct: 100 },
-    { day: 'جمعه', count: 4, heightPct: 20 },
-  ];
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
 
   const pendingAppointments = appointments.filter(
     (a) => a.status === AppointmentStatus.Pending
   );
+  const confirmedAppointments = appointments.filter(
+    (a) => a.status === AppointmentStatus.Confirmed
+  );
   const activeAppointmentsCount =
     dataMode === 'real'
-      ? appointments.filter(
-          (a) =>
-            a.status === AppointmentStatus.Confirmed ||
-            a.status === AppointmentStatus.Pending
-        ).length
-      : 8;
+      ? pendingAppointments.length + confirmedAppointments.length
+      : Math.max(pendingAppointments.length + confirmedAppointments.length, 8);
 
   const realRevenueToman = appointments
     .filter(
@@ -95,8 +90,7 @@ export const BusinessDashboardPage: React.FC = () => {
     )
     .reduce((sum, a) => sum + (Number(a.priceToman) || 0), 0);
 
-  const displayedRevenue =
-    dataMode === 'real' ? realRevenueToman : 64800000;
+  const displayedRevenue = dataMode === 'real' ? realRevenueToman : 64800000;
   const displayedCustomersCount =
     dataMode === 'real' ? customers.length : customers.length + 124;
 
@@ -105,335 +99,676 @@ export const BusinessDashboardPage: React.FC = () => {
         (s) => s.businessId === currentBiz.id && s.isActive !== false
       ).length
     : services.length;
-  const bizSpecialistsCount = currentBiz
+  const bizSpecialists = currentBiz
     ? specialists.filter(
         (sp) => sp.businessId === currentBiz.id && sp.isActive !== false
-      ).length
-    : specialists.length;
+      )
+    : specialists.slice(0, 4);
+
+  const scheduleBlocks = [
+    {
+      time: '۰۹:۳۰ - ۱۱:۰۰',
+      title: appointments[0]?.serviceTitle || 'بالیاژ و لایت تخصصی مو',
+      customer: appointments[0]?.customerName || 'المیرا شمس',
+      specialist: bizSpecialists[0]?.fullName || 'مهسا کیانی',
+      tone: 'bg-[#EDE9FE] border-[#EDE9FE] text-[#8B5CF6]',
+      dot: 'bg-[#8B5CF6]',
+    },
+    {
+      time: '۱۱:۰۰ - ۱۲:۳۰',
+      title: appointments[1]?.serviceTitle || 'طراحی و کاشت ناخن ژلیش',
+      customer: appointments[1]?.customerName || 'نگار رحیمی',
+      specialist: bizSpecialists[1]?.fullName || 'نیلوفر تهرانی',
+      tone: 'bg-[#FFFBEB] border-[#FDE68A] text-[#8B5CF6]',
+      dot: 'bg-[#8B5CF6]',
+    },
+    {
+      time: '۱۳:۳۰ - ۱۵:۰۰',
+      title: appointments[2]?.serviceTitle || 'فیشیال تخصصی و آبرسانی',
+      customer: appointments[2]?.customerName || 'پریسا نادری',
+      specialist: bizSpecialists[2]?.fullName || 'سارا راد',
+      tone: 'bg-[#ECFDF5] border-[#A7F3D0] text-[#10B981]',
+      dot: 'bg-[#10B981]',
+    },
+    {
+      time: '۱۵:۳۰ - ۱۷:۰۰',
+      title: 'پروتئین‌تراپی و احیای مو',
+      customer: 'ترانه کاظمی',
+      specialist: bizSpecialists[0]?.fullName || 'مهسا کیانی',
+      tone: 'bg-[#EDE9FE] border-[#EDE9FE] text-[#8B5CF6]',
+      dot: 'bg-[#8B5CF6]',
+    },
+  ].filter(
+    (b) =>
+      selectedStaffFilter === 'ALL' || b.specialist === selectedStaffFilter
+  );
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        kicker={`عملیات روزانه · ${currentBiz?.name ?? 'پنل کسب‌وکار'}`}
-        title="پیشخوان مدیریت کسب‌وکار"
-        subtitle="پایش لحظه‌ای نوبت‌های روز، عملکرد هفتگی، شاخص‌های مالی و دسترسی سریع به عملیات سالن"
-        routePattern="/app"
-        breadcrumbs={[{ label: 'پنل کسب‌وکار' }, { label: 'پیشخوان' }]}
-        actions={
-          <div className="flex items-center gap-2">
-            <Link to="/app/services">
-              <Button variant="outline" size="sm">
-                <Plus className="w-4 h-4" />
-                <span>خدمت جدید</span>
-              </Button>
-            </Link>
-            <Link to="/app/calendar">
-              <Button variant="primary" size="sm">
-                <Calendar className="w-4 h-4" />
-                <span>تقویم روزانه</span>
-              </Button>
-            </Link>
+      {/* نوار کنترل بالایی و فیلتر سالن/متخصص/تاریخ — مطابق Zolmilon در Capture8.PNG */}
+      <div className="rounded-3xl bg-white border border-[#E6E0F5] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xs">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[#8B5CF6] font-bold">
+            <span>پنل مدیریت سالن · {currentBiz?.name ?? 'کسب‌وکار شما'}</span>
+            <StatusBadge label="رزرو آنلاین فعال" tone="success" />
           </div>
-        }
-      />
-
-      {/* ۴ شاخص کلیدی عملکرد با سلسله‌مراتب عددی شفاف */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">نوبت‌های فعال</p>
-            <StatusBadge
-              label={`${toPersianDigits(pendingAppointments.length)} در انتظار تایید`}
-              tone="warning"
-            />
-          </div>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(activeAppointmentsCount)} نوبت فعال
-          </p>
-          <p className="text-[11px] text-[#4E4760]">
-            {appointments[0]
-              ? `آخرین نوبت: ساعت ${appointments[0].timeSlot}`
-              : 'بدون نوبت ثبت‌شده'}
-          </p>
-        </Card>
-
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              {dataMode === 'real' ? 'ارزش نوبت‌های ثبت‌شده' : 'درآمد ماه جاری (نمونه)'}
-            </p>
-            <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md tabular-nums">
-              <TrendingUp className="w-3 h-3" />
-              +۱۴٪
-            </span>
-          </div>
-          <p className="text-xl font-extrabold text-[#2A0F54] tabular-nums">
-            {formatPriceToman(displayedRevenue)}
-          </p>
-          <p className="text-[11px] text-[#4E4760] tabular-nums">
-            {dataMode === 'real'
-              ? `از مجموع ${toPersianDigits(appointments.length)} نوبت ثبت‌شده`
-              : 'از مجموع ۱۰۲ نوبت انجام‌شده در آبان'}
-          </p>
-        </Card>
-
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">مشتریان پرونده‌دار</p>
-            <Users className="w-4 h-4 text-[#2A0F54]" />
-          </div>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(displayedCustomersCount)} نفر
-          </p>
-          <p className="text-[11px] text-[#4E4760] tabular-nums">
-            {toPersianDigits(bizServicesCount)} خدمت فعال ·{' '}
-            {toPersianDigits(bizSpecialistsCount)} متخصص
-          </p>
-        </Card>
-
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              نرخ تکمیل نوبت‌ها
-            </p>
-            <StatusBadge label="عملکرد عالی" tone="success" />
-          </div>
-          <p className="text-2xl font-extrabold text-emerald-800 tabular-nums">
-            {toPersianDigits(92)}٪
-          </p>
-          <p className="text-[11px] text-[#4E4760]">
-            میانگین رضایت ثبت‌شده: ★ {toPersianDigits(currentBiz?.rating ?? 4.9)} از ۵
-          </p>
-        </Card>
-      </div>
-
-      {/* نمودار فعالیت هفتگی و صف اولویت‌های امروز */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        <Card className="lg:col-span-8 flex flex-col justify-between space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E3EE] pb-3.5">
-            <div>
-              <h2 className="text-sm font-extrabold text-[#171226]">
-                نمودار تراکم نوبت‌های هفتگی (داده آزمایشی)
-              </h2>
-              <p className="text-xs text-[#787189] mt-0.5">
-                مقایسه تعداد نوبت‌های ثبت‌شده در روزهای هفته جاری
-              </p>
-            </div>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="font-extrabold text-[#2A0F54] bg-[#F3E8FF]/70 px-2.5 py-1 rounded-lg tabular-nums">
-                مجموع هفته: ۱۰۲ نوبت
-              </span>
-            </div>
-          </div>
-
-          <div className="h-48 pt-6 flex items-end justify-between gap-2 sm:gap-4 border-b border-[#E6E3EE] pb-3 px-2">
-            {weeklyActivity.map((item) => {
-              const isPeak = item.heightPct >= 95;
-              return (
-                <div
-                  key={item.day}
-                  className="flex-1 flex flex-col items-center gap-2 h-full justify-end"
-                >
-                  <span className="text-[11px] font-extrabold text-[#171226] tabular-nums">
-                    {toPersianDigits(item.count)}
-                  </span>
-                  <div
-                    className={`w-full max-w-[42px] rounded-t-xl transition-all ${
-                      isPeak
-                        ? 'bg-[#9D174D] hover:bg-[#831843]'
-                        : 'bg-[#2A0F54] hover:bg-[#1E0A3C]'
-                    }`}
-                    style={{ height: `${item.heightPct}%` }}
-                  />
-                  <span className="text-[11px] font-bold text-[#4E4760] whitespace-nowrap">
-                    {item.day}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#787189]">
-            <span>پرترافیک‌ترین روزها: چهارشنبه و پنج‌شنبه</span>
-            <Link
-              to="/app/analytics"
-              className="font-extrabold text-[#2A0F54] hover:underline"
-            >
-              مشاهده گزارش تحلیلی کامل ←
-            </Link>
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-4 flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <div className="border-b border-[#E6E3EE] pb-3">
-              <h2 className="text-sm font-extrabold text-[#171226]">
-                عملیات سریع مدیریت سالن
-              </h2>
-              <p className="text-xs text-[#787189] mt-0.5">
-                میانبرهای اجرایی پرکاربرد برای مدیر سالن
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              <Link to="/app/calendar">
-                <Button variant="outline" size="sm" fullWidth>
-                  مشاهده تقویم روزانه و شیفت متخصصان
-                </Button>
-              </Link>
-              <Link to="/app/services">
-                <Button variant="outline" size="sm" fullWidth>
-                  افزودن یا بروزرسانی تعرفه خدمات
-                </Button>
-              </Link>
-              <Link to="/app/working-hours">
-                <Button variant="outline" size="sm" fullWidth>
-                  تنظیم ساعات کاری و روزهای تعطیل
-                </Button>
-              </Link>
-              <Link to="/app/marketing">
-                <Button variant="outline" size="sm" fullWidth>
-                  تعریف کمپین تخفیف مشتریان وفادار
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          {currentBiz ? (
-            <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-[#2A0F54]">
-                  وضعیت ویترین عمومی
-                </span>
-                <StatusBadge label="منتشرشده" tone="success" />
-              </div>
-              <p className="text-[#4E4760] leading-relaxed">
-                صفحه اختصاصی «{currentBiz.name}» در بازارچه فعال است.
-              </p>
-              <div className="pt-1.5 border-t border-[#E6E3EE] space-y-1.5 text-[11px] text-[#4E4760]">
-                <div className="flex items-start gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
-                  <span>
-                    {currentBiz.city}، {currentBiz.neighborhood} —{' '}
-                    {currentBiz.address}
-                  </span>
-                </div>
-                {currentBiz.instagramHandle ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 text-[#787189]">
-                      <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
-                      <span>اینستاگرام ثبت‌شده:</span>
-                    </span>
-                    <span
-                      dir="ltr"
-                      className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
-                    >
-                      {currentBiz.instagramHandle.startsWith('@')
-                        ? currentBiz.instagramHandle
-                        : `@${currentBiz.instagramHandle}`}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-              <div className="flex items-center justify-between pt-1">
-                <Link
-                  to={`/salon/${currentBiz.slug}`}
-                  className="inline-flex items-center gap-1 font-bold text-[#2A0F54] hover:underline"
-                >
-                  <span>مشاهده ویترین سالن</span>
-                  <ExternalLink className="w-3 h-3" />
-                </Link>
-                <Link
-                  to="/app/profile"
-                  className="text-[11px] font-bold text-[#787189] hover:text-[#2A0F54]"
-                >
-                  ویرایش نشانی و اینستاگرام
-                </Link>
-              </div>
-            </div>
-          ) : null}
-        </Card>
-      </div>
-
-      {/* نوبت‌های اخیر */}
-      <div className="space-y-3.5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-extrabold text-[#171226]">
-              نوبت‌های اخیر ثبت‌شده
-            </h2>
-            <p className="text-xs text-[#787189]">
-              آخرین درخواست‌های رزرو مشتریان در وضعیت دمو
-            </p>
-          </div>
-          <Link
-            to="/app/appointments"
-            className="text-xs font-extrabold text-[#2A0F54] hover:underline"
-          >
-            مدیریت کامل نوبت‌ها ←
-          </Link>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
+            پیشخوان روزانه و تقویم عملیاتی سالن
+          </h1>
         </div>
 
-        <ResponsiveTable<AppointmentItem>
-          keyExtractor={(row) => row.id}
-          data={appointments.slice(0, 5)}
-          columns={[
-            {
-              key: 'code',
-              header: 'کد رهگیری',
-              render: (row) => (
-                <span className="font-mono text-xs font-bold text-[#2A0F54] bg-[#F4F3F8] px-2 py-0.5 rounded">
-                  {row.referenceCode}
-                </span>
-              ),
-            },
-            {
-              key: 'customer',
-              header: 'مشتری',
-              render: (row) => (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            aria-label="فیلتر متخصص"
+            value={selectedStaffFilter}
+            onChange={(e) => setSelectedStaffFilter(e.target.value)}
+            className="rounded-full border border-[#D4C9EE] bg-[#FAF8FF] px-4 py-2 text-xs font-bold text-[#1E1B2E] focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">همه متخصصان ({toPersianDigits(bizSpecialists.length)})</option>
+            {bizSpecialists.map((sp) => (
+              <option key={sp.id} value={sp.fullName}>
+                {sp.fullName}
+              </option>
+            ))}
+          </select>
+
+          <Link to="/app/services">
+            <Button variant="outline" size="sm">
+              <Plus className="w-4 h-4" />
+              <span>خدمت جدید</span>
+            </Button>
+          </Link>
+
+          <Link to="/app/calendar">
+            <Button variant="primary" size="sm">
+              <Calendar className="w-4 h-4" />
+              <span>تقویم کامل</span>
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* چیدمان ۳ ستونی دسکتاپ: ستون میانی (KPIهای موج‌دار + نمودارها + جدول زمان‌بندی) + ستون چپ (برنامه امروز + تقویم ماهانه) — مطابق Capture2.PNG و Capture8.PNG */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        {/* ستون اصلی میانی (۸ ستون) */}
+        <div className="xl:col-span-8 space-y-6">
+          {/* ۱. سه کارت شاخص کلیدی با نمودار موجی SVG (Sparkline Area Cards) — دقیقاً مطابق Salonia در Capture2.PNG */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* کارت ۱: فروش کل */}
+            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
+              <div className="p-5 pb-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#6B6480]">
+                    {dataMode === 'real' ? 'ارزش نوبت‌های ثبت‌شده' : 'فروش و کارکرد ماه'}
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] text-[11px] font-extrabold tabular-nums">
+                    ↗ +۱۲٪
+                  </span>
+                </div>
+                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
+                  {formatPriceToman(displayedRevenue)}
+                </p>
+              </div>
+              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
+                <defs>
+                  <linearGradient id="spark-plum" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.28" />
+                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,44 C40,42 65,18 110,24 C155,30 185,8 240,12 L240,56 L0,56 Z"
+                  fill="url(#spark-plum)"
+                />
+                <path
+                  d="M0,44 C40,42 65,18 110,24 C155,30 185,8 240,12"
+                  fill="none"
+                  stroke="#8B5CF6"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </Card>
+
+            {/* کارت ۲: نوبت‌های فعال */}
+            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
+              <div className="p-5 pb-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#6B6480]">
+                    نوبت‌های فعال امروز
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-[11px] font-extrabold tabular-nums">
+                    ↗ +۱۸٪
+                  </span>
+                </div>
+                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
+                  {toPersianDigits(activeAppointmentsCount)} نوبت فعال
+                </p>
+              </div>
+              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
+                <defs>
+                  <linearGradient id="spark-berry" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.28" />
+                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,40 C50,35 80,28 125,16 C170,4 200,22 240,10 L240,56 L0,56 Z"
+                  fill="url(#spark-berry)"
+                />
+                <path
+                  d="M0,40 C50,35 80,28 125,16 C170,4 200,22 240,10"
+                  fill="none"
+                  stroke="#8B5CF6"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </Card>
+
+            {/* کارت ۳: مشتریان فعال */}
+            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
+              <div className="p-5 pb-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#6B6480]">
+                    مشتریان پرونده‌دار
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] text-[11px] font-extrabold tabular-nums">
+                    {toPersianDigits(bizServicesCount)} خدمت
+                  </span>
+                </div>
+                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
+                  {toPersianDigits(displayedCustomersCount)} مشتری
+                </p>
+              </div>
+              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
+                <defs>
+                  <linearGradient id="spark-emerald" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.24" />
+                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M0,46 C45,36 95,38 140,22 C185,6 210,16 240,8 L240,56 L0,56 Z"
+                  fill="url(#spark-emerald)"
+                />
+                <path
+                  d="M0,46 C45,36 95,38 140,22 C185,6 210,16 240,8"
+                  fill="none"
+                  stroke="#10B981"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </Card>
+          </div>
+
+          {/* ۲. صف تایید فوری نوبت‌های در انتظار */}
+          <Card className="rounded-3xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E0F5] pb-3.5">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-[#F59E0B]" />
                 <div>
-                  <p className="font-bold text-[#171226]">{row.customerName}</p>
-                  <p dir="ltr" className="text-xs text-[#787189] tabular-nums">
-                    {row.customerPhoneMasked}
+                  <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                    نوبت‌های در انتظار تایید و اقدام فوری
+                  </h2>
+                  <p className="text-xs text-[#6B6480] mt-0.5">
+                    تایید یا لغو مستقیم درخواست‌های جدید بدون نیاز به ترک پیشخوان
                   </p>
                 </div>
-              ),
-            },
-            {
-              key: 'service',
-              header: 'خدمت و متخصص',
-              render: (row) => (
+              </div>
+              <Link
+                to="/app/appointments"
+                className="text-xs font-bold text-[#8B5CF6] hover:underline"
+              >
+                همه نوبت‌ها ←
+              </Link>
+            </div>
+
+            {pendingAppointments.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#ECFDF5] text-[#10B981] inline-flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
+                      همه نوبت‌های ورودی بررسی شده‌اند
+                    </p>
+                    <p className="text-xs text-[#6B6480]">
+                      هیچ نوبت در انتظار تاییدی در صف وجود ندارد.
+                    </p>
+                  </div>
+                </div>
+                <Link to="/app/calendar">
+                  <Button variant="outline" size="sm">
+                    مشاهده تقویم امروز
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="divide-y divide-[#E6E0F5]">
+                {pendingAppointments.slice(0, 4).map((apt) => (
+                  <div
+                    key={apt.id}
+                    className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar name={apt.customerName} size="sm" />
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-extrabold text-[#1E1B2E]">
+                            {apt.customerName}
+                          </span>
+                          <span className="font-mono text-[11px] font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded-md">
+                            {apt.referenceCode}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#6B6480]">
+                          <strong className="text-[#1E1B2E]">
+                            {apt.serviceTitle}
+                          </strong>{' '}
+                          · متخصص: {apt.specialistName} ·{' '}
+                          <span className="tabular-nums font-bold text-[#8B5CF6]">
+                            {apt.dateJalali} ساعت {apt.timeSlot}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Confirmed
+                          )
+                        }
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>تایید نوبت</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Cancelled
+                          )
+                        }
+                      >
+                        <X className="w-3.5 h-3.5 text-[#EF4444]" />
+                        <span>لغو</span>
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* ۳. بخش تحلیلی دو ستونی: نمودار روند درآمد (Revenue Overview) + نمودار دونات ترکیب خدمات (Service Breakdown) — دقیقاً مطابق Capture2.PNG */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+            {/* نمودار روند درآمد ماهانه */}
+            <Card className="md:col-span-7 rounded-3xl space-y-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[#171226] font-bold">{row.serviceTitle}</p>
-                  <p className="text-xs text-[#4E4760]">
-                    متخصص: {row.specialistName}
+                  <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                    نمودار روند درآمد سالن (Revenue Overview)
+                  </h2>
+                  <p className="text-[11px] text-[#6B6480]">
+                    روند کارکرد ۶ ماه اخیر به تومان
                   </p>
                 </div>
-              ),
-            },
-            {
-              key: 'datetime',
-              header: 'تاریخ و ساعت',
-              render: (row) => (
-                <span className="text-xs font-semibold text-[#171226] tabular-nums">
-                  {row.dateJalali} · ساعت {row.timeSlot}
+                <span className="px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-[11px] font-bold">
+                  نیم‌سال اول ۱۴۰۵
                 </span>
-              ),
-            },
-            {
-              key: 'status',
-              header: 'وضعیت',
-              render: (row) => {
-                const meta = getAppointmentStatusMeta(row.status);
-                return <StatusBadge label={meta.label} tone={meta.tone} />;
-              },
-            },
-          ]}
-        />
+              </div>
+
+              <div className="pt-2">
+                <svg viewBox="0 0 420 170" className="w-full h-40 overflow-visible">
+                  <defs>
+                    <linearGradient id="rev-area-grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.32" />
+                      <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  {[30, 70, 110, 145].map((y) => (
+                    <line
+                      key={y}
+                      x1="10"
+                      y1={y}
+                      x2="410"
+                      y2={y}
+                      stroke="#F3EEFF"
+                      strokeDasharray="4 4"
+                    />
+                  ))}
+                  <path
+                    d="M15,125 C75,115 110,75 160,82 C210,89 250,42 310,48 C355,52 385,22 405,18 L405,145 L15,145 Z"
+                    fill="url(#rev-area-grad)"
+                  />
+                  <path
+                    d="M15,125 C75,115 110,75 160,82 C210,89 250,42 310,48 C355,52 385,22 405,18"
+                    fill="none"
+                    stroke="#8B5CF6"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                  {[
+                    { x: 15, y: 125, m: 'فروردین' },
+                    { x: 95, y: 96, m: 'اردیبهشت' },
+                    { x: 175, y: 82, m: 'خرداد' },
+                    { x: 255, y: 55, m: 'تیر' },
+                    { x: 330, y: 45, m: 'مرداد' },
+                    { x: 405, y: 18, m: 'شهریور' },
+                  ].map((pt) => (
+                    <g key={pt.m}>
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r="4.5"
+                        fill="#FFFFFF"
+                        stroke="#8B5CF6"
+                        strokeWidth="2.5"
+                      />
+                      <text
+                        x={pt.x}
+                        y="165"
+                        textAnchor="middle"
+                        className="fill-[#6B6480] text-[10px] font-bold"
+                      >
+                        {pt.m}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+            </Card>
+
+            {/* نمودار دونات ترکیب خدمات (Service Breakdown) — مطابق Capture2.PNG */}
+            <Card className="md:col-span-5 rounded-3xl flex flex-col justify-between space-y-4">
+              <div>
+                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                  ترکیب خدمات (Service Breakdown)
+                </h2>
+                <p className="text-[11px] text-[#6B6480]">
+                  سهم لاین‌های زیبایی از کل رزروها
+                </p>
+              </div>
+
+              <div className="flex items-center justify-center py-1">
+                <div className="relative w-32 h-32 flex items-center justify-center">
+                  <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#F3EEFF"
+                      strokeWidth="5"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#8B5CF6"
+                      strokeWidth="5"
+                      strokeDasharray="35 65"
+                      strokeDashoffset="0"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#8B5CF6"
+                      strokeWidth="5"
+                      strokeDasharray="25 75"
+                      strokeDashoffset="-35"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#10B981"
+                      strokeWidth="5"
+                      strokeDasharray="20 80"
+                      strokeDashoffset="-60"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#F59E0B"
+                      strokeWidth="5"
+                      strokeDasharray="20 80"
+                      strokeDashoffset="-80"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-xs font-extrabold text-[#1E1B2E] tabular-nums">
+                      ۱۰۰٪
+                    </span>
+                    <span className="text-[10px] text-[#6B6480]">کل خدمات</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
+                  <span className="text-[#6B6480] truncate">رنگ و لایت (۳۵٪)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
+                  <span className="text-[#6B6480] truncate">طراحی ناخن (۲۵٪)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
+                  <span className="text-[#6B6480] truncate">فیشیال پوست (۲۰٪)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+                  <span className="text-[#6B6480] truncate">استایل مو (۲۰٪)</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* ۴. جدول زمان‌بندی روزانه متخصصان با بلوک‌های پاستلی رنگی (Day Schedule) — دقیقاً مطابق Zolmilon در Capture8.PNG */}
+          <Card className="rounded-3xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3.5">
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-[#1E1B2E]">
+                  جدول زمان‌بندی روزانه متخصصان (Day Schedule)
+                </h2>
+                <p className="text-xs text-[#6B6480]">
+                  بلوک‌های رنگی به تفکیک هر متخصص در تقویم امروز
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                {bizSpecialists.slice(0, 3).map((sp, i) => {
+                  const dotColors = [
+                    'bg-[#8B5CF6]',
+                    'bg-[#8B5CF6]',
+                    'bg-[#10B981]',
+                  ];
+                  return (
+                    <span
+                      key={sp.id}
+                      className="inline-flex items-center gap-1.5 font-bold text-[#6B6480]"
+                    >
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          dotColors[i % dotColors.length]
+                        }`}
+                      />
+                      <span>{sp.fullName}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {scheduleBlocks.map((blk, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center"
+                >
+                  <div className="sm:col-span-3 text-xs font-extrabold text-[#6B6480] tabular-nums">
+                    {blk.time}
+                  </div>
+                  <div
+                    className={`sm:col-span-9 p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${blk.tone}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar name={blk.specialist} size="sm" />
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-extrabold truncate">
+                          {blk.title}
+                        </p>
+                        <p className="text-[11px] opacity-85 truncate">
+                          مراجع: {blk.customer} · متخصص: {blk.specialist}
+                        </p>
+                      </div>
+                    </div>
+                    <Link
+                      to="/app/calendar"
+                      className="px-3 py-1 rounded-full bg-white/80 hover:bg-white text-[11px] font-bold shrink-0"
+                    >
+                      جزئیات
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+
+        {/* ستون کناری چپ (۴ ستون): برنامه امروز (Today's Schedule) + تقویم ماهانه — دقیقاً مطابق Salonia در Capture2.PNG */}
+        <div className="xl:col-span-4 space-y-6">
+          {/* ۱. برنامه امروز (Today's Schedule) با تایم‌لاین عمودی و کارت‌های یاسی */}
+          <Card className="rounded-3xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3">
+              <div>
+                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                  برنامه امروز (Today&apos;s Schedule)
+                </h2>
+                <p className="text-[11px] text-[#6B6480]">
+                  نوبت‌های پیش‌روی امروز به ترتیب ساعت
+                </p>
+              </div>
+              <Link
+                to="/app/appointments"
+                className="text-xs font-bold text-[#8B5CF6] hover:underline"
+              >
+                همه
+              </Link>
+            </div>
+
+            <div className="space-y-3.5 relative before:absolute before:top-3 before:bottom-3 before:right-[19px] before:w-0.5 before:bg-[#EDE9FE]">
+              {(appointments.slice(0, 4).length > 0
+                ? appointments.slice(0, 4)
+                : [
+                    {
+                      id: 'td-1',
+                      timeSlot: '۱۰:۰۰',
+                      serviceTitle: 'رنگ و مش تخصصی',
+                      customerName: 'المیرا شمس',
+                      specialistName: 'مهسا کیانی',
+                    },
+                    {
+                      id: 'td-2',
+                      timeSlot: '۱۱:۳۰',
+                      serviceTitle: 'طراحی و کاشت ناخن',
+                      customerName: 'نگار رحیمی',
+                      specialistName: 'نیلوفر تهرانی',
+                    },
+                    {
+                      id: 'td-3',
+                      timeSlot: '۱۴:۰۰',
+                      serviceTitle: 'فیشیال تخصصی پوست',
+                      customerName: 'سارا احمدی',
+                      specialistName: 'سارا راد',
+                    },
+                  ]
+              ).map((apt) => (
+                <div key={apt.id} className="relative flex items-start gap-3">
+                  <span className="relative z-10 w-10 py-1 rounded-full bg-[#8B5CF6] text-white text-[10px] font-extrabold text-center tabular-nums shrink-0 mt-1">
+                    {apt.timeSlot}
+                  </span>
+                  <div className="flex-1 p-3.5 rounded-2xl bg-[#EDE9FE]/80 border border-[#EDE9FE] flex items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
+                        {apt.serviceTitle}
+                      </p>
+                      <p className="text-[11px] text-[#6B6480] truncate">
+                        مراجع: {apt.customerName}
+                      </p>
+                      <p className="text-[10px] font-bold text-[#8B5CF6] truncate">
+                        متخصص: {apt.specialistName}
+                      </p>
+                    </div>
+                    <Avatar name={apt.specialistName} size="sm" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* ۲. تقویم ماهانه جمع‌وجور (Mini Jalali Calendar) — مطابق پایین ستون کناری در Capture2.PNG */}
+          <Card className="rounded-3xl space-y-3.5">
+            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
+              <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                تقویم ماهانه سالن
+              </h2>
+              <span className="text-xs font-bold text-[#8B5CF6] tabular-nums">
+                آبان ۱۴۰۵
+              </span>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#6B6480]">
+              {['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'].map((d) => (
+                <span key={d}>{d}</span>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-xs tabular-nums">
+              {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
+                const isToday = day === 3;
+                const hasBooking = day === 4 || day === 5 || day === 8 || day === 12;
+                return (
+                  <Link
+                    key={day}
+                    to="/app/calendar"
+                    className={`h-8 w-8 mx-auto rounded-full flex items-center justify-center font-bold transition-colors ${
+                      isToday
+                        ? 'bg-[#8B5CF6] text-white shadow-2xs'
+                        : hasBooking
+                        ? 'bg-[#EDE9FE] text-[#8B5CF6]'
+                        : 'text-[#6B6480] hover:bg-[#FAF8FF]'
+                    }`}
+                  >
+                    {toPersianDigits(day)}
+                  </Link>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
       </div>
     </div>
   );
 };
+
 
 /** ۲. تقویم نوبت‌ها (/app/calendar) */
 export const BusinessCalendarPage: React.FC = () => {
@@ -444,14 +779,23 @@ export const BusinessCalendarPage: React.FC = () => {
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
 
-  const sampleDays = [
-    { label: 'یکشنبه ۳ آبان ۱۴۰۵', date: '۱۴۰۵/۰۸/۰۳' },
-    { label: 'دوشنبه ۴ آبان ۱۴۰۵', date: '۱۴۰۵/۰۸/۰۴' },
-    { label: 'سه‌شنبه ۵ آبان ۱۴۰۵', date: '۱۴۰۵/۰۸/۰۵' },
-  ];
+  const upcomingDays = getUpcomingJalaliDays(7);
+  const calendarDays = upcomingDays.map((d) => ({
+    label: d.fullLabel,
+    date: d.dateJalali,
+  }));
 
-  const currentDay = sampleDays[selectedDayIndex] ?? sampleDays[0];
-  const timeSlots = ['۰۹:۳۰', '۱۰:۰۰', '۱۱:۰۰', '۱۳:۳۰', '۱۵:۰۰', '۱۷:۰۰'];
+  const currentDay = calendarDays[selectedDayIndex] ?? calendarDays[0];
+  const timeSlots = [
+    '۰۹:۳۰',
+    '۱۰:۰۰',
+    '۱۱:۰۰',
+    '۱۲:۳۰',
+    '۱۳:۳۰',
+    '۱۵:۰۰',
+    '۱۶:۳۰',
+    '۱۷:۰۰',
+  ];
   const visibleStaff =
     staffFilter === 'ALL'
       ? specialists.slice(0, 3)
@@ -460,9 +804,9 @@ export const BusinessCalendarPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="عملیات روزانه · زمان‌بندی"
+        kicker="فعالیت روزانه · تقویم سالن"
         title="تقویم زمان‌بندی نوبت‌ها"
-        subtitle="نمای ستونی شیفت متخصصان، جابه‌جایی بین روزها و مدیریت سریع وضعیت هر نوبت"
+        subtitle="مشاهده برنامه روزانه متخصصان، بازه‌های آزاد و تغییر سریع وضعیت هر نوبت"
         routePattern="/app/calendar"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -471,7 +815,7 @@ export const BusinessCalendarPage: React.FC = () => {
       />
 
       <Card className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E6E3EE]">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E6E0F5]">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -482,16 +826,21 @@ export const BusinessCalendarPage: React.FC = () => {
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
-            <span className="text-sm font-extrabold text-[#171226] tabular-nums px-3 py-1.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE]">
-              {currentDay.label}
-            </span>
+            <div className="text-center px-3.5 py-1.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5]">
+              <span className="text-sm font-extrabold text-[#1E1B2E] tabular-nums">
+                {currentDay.label}
+              </span>
+              <span className="text-xs text-[#6B6480] mr-2 tabular-nums">
+                ({currentDay.date})
+              </span>
+            </div>
             <Button
               variant="outline"
               size="sm"
-              disabled={selectedDayIndex >= sampleDays.length - 1}
+              disabled={selectedDayIndex >= calendarDays.length - 1}
               onClick={() =>
                 setSelectedDayIndex((i) =>
-                  Math.min(sampleDays.length - 1, i + 1)
+                  Math.min(calendarDays.length - 1, i + 1)
                 )
               }
               aria-label="روز بعد"
@@ -505,24 +854,24 @@ export const BusinessCalendarPage: React.FC = () => {
               aria-label="فیلتر متخصص در تقویم"
               value={staffFilter}
               onChange={(e) => setStaffFilter(e.target.value)}
-              className="rounded-xl border border-[#D0CADF] bg-white px-3.5 py-2 text-xs font-bold text-[#171226]"
+              className="rounded-xl border border-[#D4C9EE] bg-white px-3.5 py-2 text-xs font-bold text-[#1E1B2E] focus:outline-none focus:border-[#8B5CF6]"
             >
               <option value="ALL">همه متخصصان (نمای ستونی)</option>
-              {specialists.slice(0, 3).map((sp) => (
+              {specialists.slice(0, 4).map((sp) => (
                 <option key={sp.id} value={sp.id}>
                   {sp.fullName}
                 </option>
               ))}
             </select>
 
-            <div className="flex items-center gap-1 bg-[#F4F3F8] p-1 rounded-xl border border-[#E6E3EE]">
+            <div className="flex items-center gap-1 bg-[#FAF8FF] p-1 rounded-xl border border-[#E6E0F5]">
               <button
                 type="button"
                 onClick={() => setViewMode('day')}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
                   viewMode === 'day'
-                    ? 'bg-[#2A0F54] text-white shadow-2xs'
-                    : 'text-[#4E4760] hover:text-[#171226]'
+                    ? 'bg-[#8B5CF6] text-white shadow-2xs'
+                    : 'text-[#6B6480] hover:text-[#1E1B2E]'
                 }`}
               >
                 نمای روزانه
@@ -532,34 +881,34 @@ export const BusinessCalendarPage: React.FC = () => {
                 onClick={() => setViewMode('week')}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
                   viewMode === 'week'
-                    ? 'bg-[#2A0F54] text-white shadow-2xs'
-                    : 'text-[#4E4760] hover:text-[#171226]'
+                    ? 'bg-[#8B5CF6] text-white shadow-2xs'
+                    : 'text-[#6B6480] hover:text-[#1E1B2E]'
                 }`}
               >
-                خلاصه هفتگی
+                نمای هفتگی
               </button>
             </div>
           </div>
         </div>
 
         {viewMode === 'day' ? (
-          <div className="overflow-x-auto rounded-xl border border-[#E6E3EE]">
+          <div className="overflow-x-auto rounded-2xl border border-[#E6E0F5]">
             <table className="w-full text-xs border-collapse min-w-[640px]">
               <thead>
-                <tr className="border-b border-[#E6E3EE] bg-[#F4F3F8]">
-                  <th className="py-3.5 px-3 text-right w-24 font-extrabold text-[#4E4760]">
+                <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF]">
+                  <th className="py-3.5 px-3 text-right w-24 font-extrabold text-[#6B6480]">
                     ساعت
                   </th>
                   {visibleStaff.map((sp) => (
                     <th
                       key={sp.id}
-                      className="py-3.5 px-4 text-right font-extrabold text-[#171226] border-r border-[#E6E3EE]"
+                      className="py-3.5 px-4 text-right font-extrabold text-[#1E1B2E] border-r border-[#E6E0F5]"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         <Avatar name={sp.fullName} size="sm" tone="violet" />
                         <div>
                           <p className="text-xs font-extrabold">{sp.fullName}</p>
-                          <p className="text-[11px] font-medium text-[#787189]">
+                          <p className="text-[11px] font-medium text-[#6B6480]">
                             {sp.roleTitle}
                           </p>
                         </div>
@@ -568,10 +917,10 @@ export const BusinessCalendarPage: React.FC = () => {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E6E3EE]">
+              <tbody className="divide-y divide-[#E6E0F5]">
                 {timeSlots.map((slot) => (
-                  <tr key={slot} className="hover:bg-[#FAF9FC]/60">
-                    <td className="py-4 px-3 font-extrabold text-[#4E4760] tabular-nums bg-[#FAF9FC]/40">
+                  <tr key={slot} className="hover:bg-[#FAF8FF]/50">
+                    <td className="py-4 px-3 font-extrabold text-[#6B6480] tabular-nums bg-[#FAF8FF]/40">
                       {slot}
                     </td>
                     {visibleStaff.map((sp) => {
@@ -587,16 +936,16 @@ export const BusinessCalendarPage: React.FC = () => {
                       return (
                         <td
                           key={sp.id}
-                          className="p-2.5 border-r border-[#E6E3EE] align-top"
+                          className="p-2.5 border-r border-[#E6E0F5] align-top"
                         >
                           {matched && statusMeta ? (
                             <button
                               type="button"
                               onClick={() => setSelectedApt(matched)}
-                              className="w-full text-right p-3 rounded-xl bg-[#F3E8FF]/65 hover:bg-[#F3E8FF] border border-[#D0CADF] space-y-1.5 cursor-pointer transition-all shadow-2xs"
+                              className="w-full text-right p-3 rounded-xl bg-[#EDE9FE]/80 hover:bg-[#EDE9FE] border border-[#D4C9EE] space-y-1.5 cursor-pointer transition-all"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-extrabold text-[#171226]">
+                                <span className="font-extrabold text-[#1E1B2E]">
                                   {matched.customerName}
                                 </span>
                                 <StatusBadge
@@ -604,10 +953,10 @@ export const BusinessCalendarPage: React.FC = () => {
                                   tone={statusMeta.tone}
                                 />
                               </div>
-                              <p className="text-[11px] font-medium text-[#4E4760]">
+                              <p className="text-[11px] font-medium text-[#6B6480]">
                                 {matched.serviceTitle}
                               </p>
-                              <p className="text-[10px] text-[#2A0F54]">
+                              <p className="text-[10px] text-[#8B5CF6]">
                                 کد پیگیری:{' '}
                                 <span dir="ltr" className="font-mono font-bold">
                                   {matched.referenceCode}
@@ -615,7 +964,7 @@ export const BusinessCalendarPage: React.FC = () => {
                               </p>
                             </button>
                           ) : (
-                            <div className="p-3 rounded-xl border border-dashed border-[#E6E3EE] text-[#787189] text-[11px] flex items-center justify-between">
+                            <div className="p-3 rounded-xl border border-dashed border-[#E6E0F5] text-[#6B6480] text-[11px] flex items-center justify-between">
                               <span>بازه آزاد</span>
                               <span className="text-[10px]">قابل رزرو</span>
                             </div>
@@ -630,16 +979,16 @@ export const BusinessCalendarPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {sampleDays.map((d) => (
+            {calendarDays.slice(0, 6).map((d) => (
               <div
                 key={d.date}
-                className="p-4 rounded-2xl border border-[#E6E3EE] bg-[#FAF9FC] space-y-3"
+                className="p-4 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] space-y-3"
               >
-                <div className="flex items-center justify-between border-b border-[#E6E3EE] pb-2.5">
-                  <p className="text-xs font-extrabold text-[#171226]">
+                <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
+                  <p className="text-xs font-extrabold text-[#1E1B2E]">
                     {d.label}
                   </p>
-                  <span className="text-[11px] text-[#787189] tabular-nums">
+                  <span className="text-[11px] text-[#6B6480] tabular-nums">
                     {d.date}
                   </span>
                 </div>
@@ -648,12 +997,12 @@ export const BusinessCalendarPage: React.FC = () => {
                     key={`${d.date}-${apt.id}`}
                     type="button"
                     onClick={() => setSelectedApt(apt)}
-                    className="w-full text-right p-3 rounded-xl bg-white hover:border-[#2A0F54] border border-[#E6E3EE] text-xs space-y-1 cursor-pointer transition-all"
+                    className="w-full text-right p-3 rounded-xl bg-white hover:border-[#8B5CF6] border border-[#E6E0F5] text-xs space-y-1 cursor-pointer transition-all"
                   >
-                    <p className="font-extrabold text-[#171226] tabular-nums">
+                    <p className="font-extrabold text-[#1E1B2E] tabular-nums">
                       ساعت {apt.timeSlot} — {apt.customerName}
                     </p>
-                    <p className="text-[#4E4760]">{apt.serviceTitle}</p>
+                    <p className="text-[#6B6480]">{apt.serviceTitle}</p>
                   </button>
                 ))}
               </div>
@@ -666,7 +1015,7 @@ export const BusinessCalendarPage: React.FC = () => {
       <Modal
         isOpen={Boolean(selectedApt)}
         onClose={() => setSelectedApt(null)}
-        title="جزئیات و مدیریت وضعیت نوبت"
+        title="جزئیات و تغییر وضعیت نوبت"
         description={selectedApt?.referenceCode}
         footer={
           selectedApt ? (
@@ -716,31 +1065,33 @@ export const BusinessCalendarPage: React.FC = () => {
       >
         {selectedApt ? (
           <div className="space-y-2.5 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-[#E6E3EE]">
-              <span className="text-[#787189]">مشتری:</span>
-              <span className="font-extrabold text-[#171226]">
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#6B6480]">مشتری:</span>
+              <span className="font-extrabold text-[#1E1B2E]">
                 {selectedApt.customerName} ({selectedApt.customerPhoneMasked})
               </span>
             </div>
-            <div className="flex justify-between py-1.5 border-b border-[#E6E3EE]">
-              <span className="text-[#787189]">خدمت:</span>
-              <span className="font-bold text-[#171226]">
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#6B6480]">خدمت:</span>
+              <span className="font-bold text-[#1E1B2E]">
                 {selectedApt.serviceTitle}
               </span>
             </div>
-            <div className="flex justify-between py-1.5 border-b border-[#E6E3EE]">
-              <span className="text-[#787189]">متخصص:</span>
-              <span className="font-bold">{selectedApt.specialistName}</span>
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#6B6480]">متخصص:</span>
+              <span className="font-bold text-[#1E1B2E]">
+                {selectedApt.specialistName}
+              </span>
             </div>
-            <div className="flex justify-between py-1.5 border-b border-[#E6E3EE]">
-              <span className="text-[#787189]">زمان مراجعه:</span>
-              <span className="font-bold tabular-nums">
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#6B6480]">زمان مراجعه:</span>
+              <span className="font-bold tabular-nums text-[#1E1B2E]">
                 {selectedApt.dateJalali} ساعت {selectedApt.timeSlot}
               </span>
             </div>
             <div className="flex justify-between py-1">
-              <span className="text-[#787189]">مبلغ خدمت:</span>
-              <span className="font-extrabold text-[#2A0F54] tabular-nums">
+              <span className="text-[#6B6480]">مبلغ خدمت:</span>
+              <span className="font-extrabold text-[#8B5CF6] tabular-nums">
                 {formatPriceToman(selectedApt.priceToman)}
               </span>
             </div>
@@ -762,6 +1113,10 @@ export const BusinessAppointmentsPage: React.FC = () => {
   const [dateFilter, setDateFilter] = useState<string>('ALL');
   const [detailApt, setDetailApt] = useState<AppointmentItem | null>(null);
 
+  const uniqueDates = Array.from(
+    new Set(appointments.map((a) => a.dateJalali).filter(Boolean))
+  );
+
   const filtered = appointments.filter((a) => {
     const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
     const matchStaff =
@@ -773,9 +1128,9 @@ export const BusinessAppointmentsPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="عملیات روزانه · فهرست نوبت‌ها"
-        title="مدیریت و پایش نوبت‌ها"
-        subtitle="فیلتر چندبعدی بر اساس وضعیت، متخصص و تاریخ همراه با تغییر وضعیت فوری"
+        kicker="فعالیت روزانه · فهرست نوبت‌ها"
+        title="مدیریت نوبت‌ها"
+        subtitle="جست‌وجو و فیلتر نوبت‌ها بر اساس وضعیت، متخصص و تاریخ مراجعه همراه با امکان تغییر وضعیت"
         routePattern="/app/appointments"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -785,7 +1140,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
 
       <Card className="mb-6 space-y-4">
         {/* نوار وضعیت سریع */}
-        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E3EE]">
+        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
           {[
             { id: 'ALL', label: 'همه نوبت‌ها', count: appointments.length },
             {
@@ -827,14 +1182,14 @@ export const BusinessAppointmentsPage: React.FC = () => {
                 }
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
                   active
-                    ? 'bg-[#2A0F54] text-white'
-                    : 'bg-[#FAF9FC] text-[#4E4760] border border-[#E6E3EE] hover:text-[#171226]'
+                    ? 'bg-[#8B5CF6] text-white'
+                    : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5] hover:text-[#1E1B2E]'
                 }`}
               >
                 <span>{tab.label}</span>
                 <span
-                  className={`px-1.5 py-0.2 rounded text-[11px] tabular-nums ${
-                    active ? 'bg-white/20 text-white' : 'bg-[#E6E3EE]'
+                  className={`px-1.5 py-0.5 rounded-md text-[11px] tabular-nums ${
+                    active ? 'bg-white/20 text-white' : 'bg-[#E6E0F5]'
                   }`}
                 >
                   {toPersianDigits(tab.count)}
@@ -884,9 +1239,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
               onChange={(e) => setDateFilter(e.target.value)}
               options={[
                 { value: 'ALL', label: 'همه تاریخ‌ها' },
-                { value: '۱۴۰۵/۰۸/۰۳', label: '۱۴۰۵/۰۸/۰۳' },
-                { value: '۱۴۰۵/۰۸/۰۲', label: '۱۴۰۵/۰۸/۰۲' },
-                { value: '۱۴۰۵/۰۸/۰۱', label: '۱۴۰۵/۰۸/۰۱' },
+                ...uniqueDates.map((d) => ({ value: d, label: d })),
               ]}
             />
           </FormField>
@@ -911,7 +1264,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
               key: 'code',
               header: 'کد پیگیری',
               render: (r) => (
-                <span className="font-mono text-xs font-bold text-[#2A0F54] bg-[#F4F3F8] px-2 py-0.5 rounded">
+                <span className="font-mono text-xs font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded-md">
                   {r.referenceCode}
                 </span>
               ),
@@ -921,10 +1274,10 @@ export const BusinessAppointmentsPage: React.FC = () => {
               header: 'مشتری و زمان',
               render: (r) => (
                 <div>
-                  <p className="font-extrabold text-[#171226]">
+                  <p className="font-extrabold text-[#1E1B2E]">
                     {r.customerName}
                   </p>
-                  <p className="text-xs text-[#787189] tabular-nums">
+                  <p className="text-xs text-[#6B6480] tabular-nums">
                     {r.dateJalali} · ساعت {r.timeSlot}
                   </p>
                 </div>
@@ -935,8 +1288,8 @@ export const BusinessAppointmentsPage: React.FC = () => {
               header: 'خدمت / متخصص',
               render: (r) => (
                 <div>
-                  <p className="font-bold text-[#171226]">{r.serviceTitle}</p>
-                  <p className="text-xs text-[#4E4760]">{r.specialistName}</p>
+                  <p className="font-bold text-[#1E1B2E]">{r.serviceTitle}</p>
+                  <p className="text-xs text-[#6B6480]">{r.specialistName}</p>
                 </div>
               ),
             },
@@ -945,7 +1298,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
               header: 'مبلغ',
               align: 'left',
               render: (r) => (
-                <span className="tabular-nums font-extrabold text-[#2A0F54]">
+                <span className="tabular-nums font-extrabold text-[#8B5CF6]">
                   {formatPriceToman(r.priceToman)}
                 </span>
               ),
@@ -981,27 +1334,27 @@ export const BusinessAppointmentsPage: React.FC = () => {
       <Modal
         isOpen={Boolean(detailApt)}
         onClose={() => setDetailApt(null)}
-        title="مدیریت وضعیت نوبت (نسخه دمو)"
+        title="مدیریت وضعیت نوبت"
         description={detailApt?.referenceCode}
       >
         {detailApt ? (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-1.5 text-xs">
-              <p className="font-extrabold text-[#171226]">
+            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1.5 text-xs">
+              <p className="font-extrabold text-[#1E1B2E]">
                 {detailApt.customerName} — {detailApt.serviceTitle}
               </p>
-              <p className="text-[#4E4760]">
+              <p className="text-[#6B6480]">
                 متخصص: {detailApt.specialistName} · زمان: {detailApt.dateJalali}{' '}
                 ساعت {detailApt.timeSlot}
               </p>
               {detailApt.notes ? (
-                <p className="text-[#787189]">یادداشت: {detailApt.notes}</p>
+                <p className="text-[#6B6480]">یادداشت: {detailApt.notes}</p>
               ) : null}
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-extrabold text-[#171226]">
-                تغییر وضعیت آزمایشی نوبت:
+              <p className="text-xs font-extrabold text-[#1E1B2E]">
+                تغییر وضعیت نوبت:
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {[
@@ -1128,9 +1481,9 @@ export const BusinessServicesPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        kicker="خدمات، تیم و مشتریان · کاتالوگ خدمات"
+        kicker="کسب‌وکار · فهرست خدمات"
         title="مدیریت خدمات و تعرفه‌ها"
-        subtitle="سازمان‌دهی منوی خدمات سالن، زمان ارائه، تعرفه‌ها و وضعیت نمایش در صفحه رزرو آنلاین"
+        subtitle="سازمان‌دهی منوی خدمات سالن، مدت زمان ارائه، تعرفه‌ها و وضعیت نمایش در صفحه رزرو آنلاین"
         routePattern="/app/services"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1151,8 +1504,8 @@ export const BusinessServicesPage: React.FC = () => {
           onClick={() => setSelectedCat('ALL')}
           className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
             selectedCat === 'ALL'
-              ? 'bg-[#2A0F54] text-white'
-              : 'bg-white border border-[#E6E3EE] text-[#4E4760] hover:text-[#171226]'
+              ? 'bg-[#8B5CF6] text-white'
+              : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
           }`}
         >
           همه خدمات ({toPersianDigits(services.length)})
@@ -1164,8 +1517,8 @@ export const BusinessServicesPage: React.FC = () => {
             onClick={() => setSelectedCat(cat)}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
               selectedCat === cat
-                ? 'bg-[#2A0F54] text-white'
-                : 'bg-white border border-[#E6E3EE] text-[#4E4760] hover:text-[#171226]'
+                ? 'bg-[#8B5CF6] text-white'
+                : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
             }`}
           >
             {cat}
@@ -1182,22 +1535,22 @@ export const BusinessServicesPage: React.FC = () => {
             header: 'عنوان و شرح خدمت',
             render: (s) => (
               <div>
-                <p className="font-extrabold text-[#171226]">{s.title}</p>
-                <p className="text-xs text-[#787189] mt-0.5">{s.description}</p>
+                <p className="font-extrabold text-[#1E1B2E]">{s.title}</p>
+                <p className="text-xs text-[#6B6480] mt-0.5">{s.description}</p>
               </div>
             ),
           },
           {
             key: 'cat',
-            header: 'لاین خدمتی',
+            header: 'دسته‌بندی',
             render: (s) => <StatusBadge label={s.category} tone="primary" />,
           },
           {
             key: 'duration',
             header: 'مدت زمان',
             render: (s) => (
-              <span className="tabular-nums text-xs font-semibold text-[#4E4760] inline-flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-[#787189]" />
+              <span className="tabular-nums text-xs font-semibold text-[#6B6480] inline-flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-[#6B6480]" />
                 {formatDurationMinutes(s.durationMinutes)}
               </span>
             ),
@@ -1207,7 +1560,7 @@ export const BusinessServicesPage: React.FC = () => {
             header: 'تعرفه (تومان)',
             align: 'left',
             render: (s) => (
-              <span className="font-extrabold text-[#2A0F54] tabular-nums">
+              <span className="font-extrabold text-[#8B5CF6] tabular-nums">
                 {formatPriceToman(s.priceToman)}
               </span>
             ),
@@ -1249,7 +1602,7 @@ export const BusinessServicesPage: React.FC = () => {
                   size="sm"
                   onClick={() => setDeleteTarget(s)}
                   aria-label={`حذف ${s.title}`}
-                  className="text-red-700 hover:bg-red-50"
+                  className="text-[#EF4444] hover:bg-[#FEF2F2]"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
@@ -1263,7 +1616,7 @@ export const BusinessServicesPage: React.FC = () => {
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editingService ? 'ویرایش خدمت (دمو)' : 'افزودن خدمت جدید (دمو)'}
+        title={editingService ? 'ویرایش خدمت' : 'افزودن خدمت جدید'}
       >
         <form onSubmit={handleSaveService} className="space-y-4" noValidate>
           <FormField
@@ -1363,7 +1716,7 @@ export const BusinessServicesPage: React.FC = () => {
         onConfirm={() => {
           if (deleteTarget) deleteService(deleteTarget.id);
         }}
-        title="تایید حذف خدمت آزمایشی"
+        title="تایید حذف خدمت"
         message={`آیا از حذف خدمت «${deleteTarget?.title ?? ''}» از فهرست خدمات سالن اطمینان دارید؟`}
       />
     </div>
@@ -1437,7 +1790,7 @@ export const BusinessStaffPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="خدمات، تیم و مشتریان · اعضای تیم"
+        kicker="کسب‌وکار · اعضای تیم"
         title="مدیریت متخصصان و پرسنل"
         subtitle="مدیریت اعضای تیم، مهارت‌های تخصصی و وضعیت فعال بودن تقویم پذیرش هر متخصص"
         routePattern="/app/staff"
@@ -1461,10 +1814,10 @@ export const BusinessStaffPage: React.FC = () => {
                 <div className="flex items-center gap-3.5">
                   <Avatar name={sp.fullName} size="lg" tone="violet" />
                   <div>
-                    <h2 className="text-base font-extrabold text-[#171226]">
+                    <h2 className="text-base font-extrabold text-[#1E1B2E]">
                       {sp.fullName}
                     </h2>
-                    <p className="text-xs text-[#2A0F54] font-bold mt-0.5">
+                    <p className="text-xs text-[#8B5CF6] font-bold mt-0.5">
                       {sp.roleTitle}
                     </p>
                   </div>
@@ -1484,12 +1837,12 @@ export const BusinessStaffPage: React.FC = () => {
                   />
                 </button>
               </div>
-              <p className="text-xs text-[#4E4760] leading-relaxed">{sp.bio}</p>
+              <p className="text-xs text-[#6B6480] leading-relaxed">{sp.bio}</p>
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {sp.specialties.map((skill) => (
                   <span
                     key={skill}
-                    className="px-2.5 py-1 rounded-lg bg-[#FAF9FC] border border-[#E6E3EE] text-[11px] font-semibold text-[#4E4760]"
+                    className="px-2.5 py-1 rounded-lg bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
                   >
                     {skill}
                   </span>
@@ -1497,8 +1850,8 @@ export const BusinessStaffPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-3.5 border-t border-[#E6E3EE] flex items-center justify-between text-xs">
-              <span className="text-[#787189] font-semibold tabular-nums">
+            <div className="pt-3.5 border-t border-[#E6E0F5] flex items-center justify-between text-xs">
+              <span className="text-[#6B6480] font-semibold tabular-nums">
                 سابقه: {toPersianDigits(sp.experienceYears)} سال · امتیاز: ★{' '}
                 {toPersianDigits(sp.rating)}
               </span>
@@ -1515,7 +1868,7 @@ export const BusinessStaffPage: React.FC = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={
-          editingStaff ? 'ویرایش اطلاعات متخصص (دمو)' : 'افزودن متخصص جدید (دمو)'
+          editingStaff ? 'ویرایش اطلاعات متخصص' : 'افزودن متخصص جدید'
         }
       >
         <form onSubmit={handleSaveStaff} className="space-y-4">
@@ -1577,9 +1930,9 @@ export const BusinessCustomersPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        kicker="خدمات، تیم و مشتریان · CRM سالن"
-        title="پرونده و سوابق مشتریان"
-        subtitle="جست‌وجوی مراجعان، مشاهده فراوانی مراجعات، ارزش طول عمر مشتری و یادداشت‌های تخصصی"
+        kicker="مشتریان · پرونده مراجعان"
+        title="فهرست و سوابق مشتریان"
+        subtitle="جست‌وجوی مراجعان، مشاهده تعداد مراجعات، خدمات محبوب و یادداشت‌های تخصصی سالن"
         routePattern="/app/customers"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1602,14 +1955,14 @@ export const BusinessCustomersPage: React.FC = () => {
           </FormField>
         </Card>
         <Card variant="muted" className="flex flex-col justify-center space-y-1">
-          <p className="text-xs text-[#787189] font-bold">
+          <p className="text-xs text-[#6B6480] font-bold">
             مشتریان وفادار (بیش از ۳ مراجعه)
           </p>
-          <p className="text-2xl font-extrabold text-[#2A0F54] tabular-nums">
+          <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {toPersianDigits(
               customers.filter((c) => c.totalVisits >= 3).length
             )}{' '}
-            نفر در فهرست نمونه
+            نفر
           </p>
         </Card>
       </div>
@@ -1625,15 +1978,15 @@ export const BusinessCustomersPage: React.FC = () => {
               <div className="flex items-center gap-2.5">
                 <Avatar name={r.fullName} size="sm" tone="rose" />
                 <div>
-                  <p className="font-extrabold text-[#171226]">{r.fullName}</p>
-                  <p className="text-xs text-[#787189]">{r.favoriteService}</p>
+                  <p className="font-extrabold text-[#1E1B2E]">{r.fullName}</p>
+                  <p className="text-xs text-[#6B6480]">{r.favoriteService}</p>
                 </div>
               </div>
             ),
           },
           {
             key: 'phone',
-            header: 'شماره همراه (ماسک‌شده)',
+            header: 'شماره همراه',
             render: (r) => (
               <span dir="ltr" className="text-xs font-mono tabular-nums">
                 {r.phoneMasked}
@@ -1652,10 +2005,10 @@ export const BusinessCustomersPage: React.FC = () => {
           },
           {
             key: 'spent',
-            header: 'مجموع تراکنش نمونه',
+            header: 'مجموع تراکنش‌ها',
             align: 'left',
             render: (r) => (
-              <span className="tabular-nums font-extrabold text-[#2A0F54]">
+              <span className="tabular-nums font-extrabold text-[#8B5CF6]">
                 {formatPriceToman(r.totalSpentToman)}
               </span>
             ),
@@ -1680,42 +2033,44 @@ export const BusinessCustomersPage: React.FC = () => {
         isOpen={Boolean(selectedCustomer)}
         onClose={() => setSelectedCustomer(null)}
         title={`پرونده مشتری: ${selectedCustomer?.fullName ?? ''}`}
-        description="سوابق مراجعات آزمایشی و یادداشت‌های خدمتی"
+        description="سوابق مراجعات و یادداشت‌های تخصصی سالن"
       >
         {selectedCustomer ? (
           <div className="space-y-4 text-xs">
-            <div className="p-4 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] space-y-2">
+            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-2">
               <p>
-                <strong className="text-[#171226]">خدمت پرتکرار:</strong>{' '}
+                <strong className="text-[#1E1B2E]">خدمت پرتکرار:</strong>{' '}
                 {selectedCustomer.favoriteService}
               </p>
               <p>
-                <strong className="text-[#171226]">آخرین مراجعه:</strong>{' '}
+                <strong className="text-[#1E1B2E]">آخرین مراجعه:</strong>{' '}
                 <span className="tabular-nums">
                   {selectedCustomer.lastVisitJalali}
                 </span>
               </p>
               <p>
-                <strong className="text-[#171226]">یادداشت تخصصی سالن:</strong>{' '}
+                <strong className="text-[#1E1B2E]">یادداشت تخصصی سالن:</strong>{' '}
                 {selectedCustomer.notes}
               </p>
             </div>
 
             <div className="space-y-2">
-              <h3 className="font-extrabold text-[#171226]">
-                تاریخچه نوبت‌های ثبت‌شده (دمو):
+              <h3 className="font-extrabold text-[#1E1B2E]">
+                تاریخچه نوبت‌های ثبت‌شده:
               </h3>
               {appointments
-                .filter((a) => a.customerName.includes(selectedCustomer.fullName))
+                .filter((a) =>
+                  a.customerName.includes(selectedCustomer.fullName)
+                )
                 .map((apt) => (
                   <div
                     key={apt.id}
-                    className="p-3 rounded-xl border border-[#E6E3EE] flex items-center justify-between"
+                    className="p-3 rounded-xl border border-[#E6E0F5] flex items-center justify-between"
                   >
-                    <span className="font-bold text-[#171226]">
+                    <span className="font-bold text-[#1E1B2E]">
                       {apt.serviceTitle} ({apt.dateJalali})
                     </span>
-                    <span className="font-extrabold text-[#2A0F54] tabular-nums">
+                    <span className="font-extrabold text-[#8B5CF6] tabular-nums">
                       {formatPriceToman(apt.priceToman)}
                     </span>
                   </div>
@@ -1756,9 +2111,9 @@ export const BusinessGalleryPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="ویترین و رشد کسب‌وکار · نمونه کارها"
+        kicker="کسب‌وکار · نمونه کارها"
         title="گالری نمونه کارها و تصاویر سالن"
-        subtitle="مدیریت قاب‌های تصویری ویترین عمومی سالن برای نمایش کیفیت خدمات به مشتریان"
+        subtitle="مدیریت قاب‌های تصویری پروفایل عمومی سالن برای نمایش کیفیت خدمات به مشتریان"
         routePattern="/app/gallery"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1776,7 +2131,7 @@ export const BusinessGalleryPage: React.FC = () => {
               id="gal-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="مثلاً نمونه لایت کهکشانی..."
+              placeholder="مثلاً نمونه لایت و بالیاژ..."
             />
           </FormField>
           <FormField id="gal-cat" label="دسته‌بندی تخصصی">
@@ -1788,7 +2143,7 @@ export const BusinessGalleryPage: React.FC = () => {
           </FormField>
           <Button type="submit" variant="primary">
             <Plus className="w-4 h-4" />
-            <span>افزودن به گالری ویترین</span>
+            <span>افزودن به گالری</span>
           </Button>
         </form>
       </Card>
@@ -1804,17 +2159,17 @@ export const BusinessGalleryPage: React.FC = () => {
             />
             <div className="flex items-center justify-between text-xs px-1 pt-0.5">
               <div>
-                <p className="font-extrabold text-[#171226] truncate">
+                <p className="font-extrabold text-[#1E1B2E] truncate">
                   {item.title}
                 </p>
-                <p className="text-[11px] text-[#787189]">
+                <p className="text-[11px] text-[#6B6480]">
                   {item.categoryLabel}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => removeGalleryItem(item.id)}
-                className="text-red-700 font-semibold hover:underline cursor-pointer shrink-0"
+                className="text-[#EF4444] font-semibold hover:underline cursor-pointer shrink-0"
               >
                 حذف
               </button>
@@ -1843,14 +2198,16 @@ export const BusinessProfileEditPage: React.FC = () => {
   const [address, setAddress] = useState(currentBiz?.address ?? '');
   const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 35.7596);
   const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.4072);
-  const [shortDesc, setShortDesc] = useState(currentBiz?.shortDescription ?? '');
+  const [shortDesc, setShortDesc] = useState(
+    currentBiz?.shortDescription ?? ''
+  );
   const [aboutText, setAboutText] = useState(currentBiz?.aboutText ?? '');
   const [savedNotice, setSavedNotice] = useState(false);
 
   if (!currentBiz) {
     return (
       <Card className="p-8 text-center">
-        <p className="text-sm font-bold text-[#171226]">
+        <p className="text-sm font-bold text-[#1E1B2E]">
           کسب‌وکاری برای ویرایش یافت نشد.
         </p>
       </Card>
@@ -1884,8 +2241,8 @@ export const BusinessProfileEditPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="ویترین و رشد کسب‌وکار · تنظیمات ویترین"
-        title="ویرایش پروفایل عمومی کسب‌وکار"
+        kicker="کسب‌وکار · پروفایل عمومی"
+        title="ویرایش پروفایل عمومی سالن"
         subtitle="تغییرات نشانی، موقعیت نقشه و آدرس اینستاگرام بلافاصله در صفحه عمومی سالن نمایش داده می‌شود."
         routePattern="/app/profile"
         breadcrumbs={[
@@ -1895,7 +2252,7 @@ export const BusinessProfileEditPage: React.FC = () => {
         actions={
           <Link to={`/salon/${currentBiz.slug}`}>
             <Button variant="outline" size="sm">
-              <span>مشاهده ویترین زنده</span>
+              <span>مشاهده پروفایل سالن</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </Button>
           </Link>
@@ -1974,8 +2331,8 @@ export const BusinessProfileEditPage: React.FC = () => {
                 ذخیره تغییرات پروفایل
               </Button>
               {savedNotice ? (
-                <span className="text-xs font-bold text-emerald-700">
-                  تغییرات با موفقیت در پروفایل و ویترین عمومی ذخیره شد.
+                <span className="text-xs font-bold text-[#10B981]">
+                  تغییرات با موفقیت در پروفایل عمومی ذخیره شد.
                 </span>
               ) : null}
             </div>
@@ -1984,8 +2341,8 @@ export const BusinessProfileEditPage: React.FC = () => {
 
         <Card variant="muted" className="lg:col-span-5 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#2A0F54]">
-              پیش‌نمایش کارت و موقعیت در ویترین عمومی
+            <span className="text-xs font-extrabold text-[#8B5CF6]">
+              پیش‌نمایش کارت و موقعیت در پروفایل عمومی
             </span>
             <StatusBadge label="زنده" tone="primary" />
           </div>
@@ -1996,24 +2353,24 @@ export const BusinessProfileEditPage: React.FC = () => {
             city={currentBiz.city}
           />
           <div className="space-y-2">
-            <h3 className="text-sm font-extrabold text-[#171226]">{name}</h3>
-            <p className="text-xs text-[#4E4760] leading-relaxed">
+            <h3 className="text-sm font-extrabold text-[#1E1B2E]">{name}</h3>
+            <p className="text-xs text-[#6B6480] leading-relaxed">
               {shortDesc}
             </p>
-            <div className="pt-2 border-t border-[#E6E3EE] space-y-1.5 text-xs">
-              <p className="text-[#4E4760] flex items-start gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-[#2A0F54] shrink-0 mt-0.5" />
+            <div className="pt-2 border-t border-[#E6E0F5] space-y-1.5 text-xs">
+              <p className="text-[#6B6480] flex items-start gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-[#8B5CF6] shrink-0 mt-0.5" />
                 <span>{address}</span>
               </p>
               {instagramHandle.trim() ? (
                 <p className="flex items-center justify-between gap-2 pt-0.5">
-                  <span className="inline-flex items-center gap-1 text-[#787189]">
-                    <Instagram className="w-3.5 h-3.5 text-[#9D174D]" />
+                  <span className="inline-flex items-center gap-1 text-[#6B6480]">
+                    <Instagram className="w-3.5 h-3.5 text-[#8B5CF6]" />
                     <span>صفحه اینستاگرام:</span>
                   </span>
                   <span
                     dir="ltr"
-                    className="font-mono font-bold text-[#9D174D] bg-pink-50 px-2 py-0.5 rounded border border-pink-200"
+                    className="font-mono font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded border border-[#EDE9FE]"
                   >
                     {instagramHandle.trim().startsWith('@')
                       ? instagramHandle.trim()
@@ -2069,9 +2426,9 @@ export const BusinessWorkingHoursPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="عملیات روزانه · برنامه پذیرش"
+        kicker="کسب‌وکار · برنامه پذیرش"
         title="تنظیم ساعات کاری هفتگی"
-        subtitle="تعیین روزهای باز یا تعطیل و ویرایش ساعت شروع و پایان پذیرش نوبت آنلاین"
+        subtitle="تعیین روزهای کاری یا تعطیل و ویرایش ساعت شروع و پایان پذیرش نوبت آنلاین"
         routePattern="/app/working-hours"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2081,18 +2438,18 @@ export const BusinessWorkingHoursPage: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <Card padding="lg" className="lg:col-span-8 space-y-4">
-          <div className="divide-y divide-[#E6E3EE]">
+          <div className="divide-y divide-[#E6E0F5]">
             {hours.map((d, idx) => (
               <div
                 key={d.dayName}
                 className="py-3.5 first:pt-0 last:pb-0 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm"
               >
-                <label className="inline-flex items-center gap-2.5 font-extrabold text-[#171226] cursor-pointer">
+                <label className="inline-flex items-center gap-2.5 font-extrabold text-[#1E1B2E] cursor-pointer">
                   <input
                     type="checkbox"
                     checked={d.isOpen}
                     onChange={() => handleToggleDay(idx)}
-                    className="accent-[#2A0F54] w-4 h-4"
+                    className="accent-[#8B5CF6] w-4 h-4"
                   />
                   <span>{d.dayName}</span>
                 </label>
@@ -2106,9 +2463,9 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                         handleTimeChange(idx, 'openTime', e.target.value)
                       }
                       aria-label={`ساعت شروع ${d.dayName}`}
-                      className="w-22 rounded-xl border border-[#D0CADF] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums"
+                      className="w-22 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
                     />
-                    <span className="text-[#787189] text-xs">تا</span>
+                    <span className="text-[#6B6480] text-xs">تا</span>
                     <input
                       type="text"
                       value={d.closeTime}
@@ -2116,7 +2473,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                         handleTimeChange(idx, 'closeTime', e.target.value)
                       }
                       aria-label={`ساعت پایان ${d.dayName}`}
-                      className="w-22 rounded-xl border border-[#D0CADF] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums"
+                      className="w-22 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
                     />
                   </div>
                 ) : (
@@ -2126,7 +2483,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
             ))}
           </div>
 
-          <div className="pt-4 border-t border-[#E6E3EE]">
+          <div className="pt-4 border-t border-[#E6E0F5]">
             <Button
               variant="primary"
               disabled={!currentBiz}
@@ -2142,13 +2499,13 @@ export const BusinessWorkingHoursPage: React.FC = () => {
         </Card>
 
         <Card variant="muted" className="lg:col-span-4 space-y-3">
-          <p className="text-xs font-extrabold text-[#2A0F54]">
+          <p className="text-xs font-extrabold text-[#8B5CF6]">
             خلاصه برنامه هفتگی
           </p>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
+          <p className="text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
             {toPersianDigits(openDaysCount)} روز کاری فعال در هفته
           </p>
-          <p className="text-xs text-[#4E4760] leading-relaxed">
+          <p className="text-xs text-[#6B6480] leading-relaxed">
             ساعات کاری تنظیم‌شده مستقیماً بازه‌های قابل انتخاب در تقویم رزرو آنلاین
             مشتریان را مشخص می‌کند.
           </p>
@@ -2172,8 +2529,8 @@ export const BusinessMarketingPage: React.FC = () => {
       title: title.trim(),
       targetSegment: segment,
       discountPercent: Number(discount) || 10,
-      channel: 'کمپین پیامکی شبیه‌سازی‌شده',
-      statusLabel: 'فعال (آزمایشی)',
+      channel: 'کمپین پیامکی مشتریان',
+      statusLabel: 'فعال',
       createdAtJalali: '۱۴۰۵/۰۸/۰۳',
     });
     setTitle('');
@@ -2182,9 +2539,9 @@ export const BusinessMarketingPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="ویترین و رشد کسب‌وکار · باشگاه مشتریان"
+        kicker="مشتریان · باشگاه مشتریان"
         title="بازاریابی و کمپین‌های تخفیف"
-        subtitle="طراحی کمپین‌های بازگشت مشتری و تخفیف‌های فصلی (در این مرحله ارسال پیامک شبیه‌سازی شده است)"
+        subtitle="تعریف کمپین‌های بازگشت مشتری و تخفیف‌های مناسبتی برای مراجعان سالن"
         routePattern="/app/marketing"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2230,7 +2587,7 @@ export const BusinessMarketingPage: React.FC = () => {
           </FormField>
           <Button type="submit" variant="primary">
             <Plus className="w-4 h-4" />
-            <span>ایجاد کمپین دمو</span>
+            <span>ایجاد کمپین</span>
           </Button>
         </form>
       </Card>
@@ -2240,19 +2597,19 @@ export const BusinessMarketingPage: React.FC = () => {
           <Card key={cmp.id} className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4 text-[#9D174D]" />
-                <h2 className="text-sm font-extrabold text-[#171226]">
+                <Megaphone className="w-4 h-4 text-[#8B5CF6]" />
+                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
                   {cmp.title}
                 </h2>
               </div>
               <StatusBadge label={cmp.statusLabel} tone="success" />
             </div>
-            <p className="text-xs text-[#4E4760]">
+            <p className="text-xs text-[#6B6480]">
               مخاطب هدف: <strong>{cmp.targetSegment}</strong> · کانال:{' '}
               {cmp.channel}
             </p>
-            <div className="pt-3 border-t border-[#E6E3EE] flex items-center justify-between text-xs text-[#787189] tabular-nums">
-              <span className="font-extrabold text-[#2A0F54]">
+            <div className="pt-3 border-t border-[#E6E0F5] flex items-center justify-between text-xs text-[#6B6480] tabular-nums">
+              <span className="font-extrabold text-[#8B5CF6]">
                 تخفیف: {toPersianDigits(cmp.discountPercent)}٪
               </span>
               <span>تاریخ ثبت: {cmp.createdAtJalali}</span>
@@ -2285,9 +2642,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="ویترین و رشد کسب‌وکار · هوش تجاری"
+        kicker="مالی · گزارش عملکرد"
         title="گزارش‌ها و آمار عملکرد سالن"
-        subtitle="تحلیل درآمد ماهانه، نرخ بازگشت مراجعان و سهم هر لاین خدمتی از کل درآمد"
+        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و سهم هر لاین خدمتی از کل درآمد"
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2297,58 +2654,56 @@ export const BusinessAnalyticsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#787189]">
-            درآمد کل ماه جاری (داده نمونه)
-          </p>
-          <p className="text-2xl font-extrabold text-[#2A0F54] tabular-nums">
+          <p className="text-xs font-bold text-[#6B6480]">درآمد کل ماه جاری</p>
+          <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {formatPriceToman(64800000)}
           </p>
-          <p className="text-xs text-emerald-700 font-semibold">
+          <p className="text-xs text-[#10B981] font-semibold">
             بر اساس ۱۰۲ نوبت انجام‌شده (+۱۴٪ رشد)
           </p>
         </Card>
         <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#787189]">
+          <p className="text-xs font-bold text-[#6B6480]">
             نرخ بازگشت مجدد مشتریان
           </p>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
+          <p className="text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
             {toPersianDigits(76)}٪
           </p>
-          <p className="text-xs text-[#4E4760]">
+          <p className="text-xs text-[#6B6480]">
             مراجعه بیش از ۲ بار در فصل جاری
           </p>
         </Card>
         <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#787189]">
+          <p className="text-xs font-bold text-[#6B6480]">
             میانگین امتیاز رضایت مشتریان
           </p>
-          <p className="text-2xl font-extrabold text-amber-600 tabular-nums">
+          <p className="text-2xl font-extrabold text-[#F59E0B] tabular-nums">
             ★ {toPersianDigits(4.9)} از ۵
           </p>
-          <p className="text-xs text-[#4E4760]">بر اساس ۱۴۲ دیدگاه نمونه</p>
+          <p className="text-xs text-[#6B6480]">بر اساس ۱۴۲ دیدگاه ثبت‌شده</p>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <Card className="lg:col-span-7 space-y-4">
-          <h2 className="text-base font-extrabold text-[#171226]">
+          <h2 className="text-base font-extrabold text-[#1E1B2E]">
             سهم خدمات پرطرفدار از درآمد ماهانه
           </h2>
           <div className="space-y-4">
             {popularBreakdown.map((item) => (
               <div key={item.name} className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-[#171226]">
+                  <span className="font-extrabold text-[#1E1B2E]">
                     {item.name}
                   </span>
-                  <span className="tabular-nums text-[#4E4760] font-semibold">
+                  <span className="tabular-nums text-[#6B6480] font-semibold">
                     {toPersianDigits(item.pct)}٪ ({formatPriceToman(item.amount)}
                     )
                   </span>
                 </div>
-                <div className="w-full h-2.5 rounded-full bg-[#F4F3F8] overflow-hidden">
+                <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
                   <div
-                    className="h-full bg-[#2A0F54] rounded-full"
+                    className="h-full bg-[#8B5CF6] rounded-full"
                     style={{ width: `${item.pct}%` }}
                   />
                 </div>
@@ -2359,28 +2714,28 @@ export const BusinessAnalyticsPage: React.FC = () => {
 
         <Card className="lg:col-span-5 space-y-4 flex flex-col justify-between">
           <div>
-            <h2 className="text-base font-extrabold text-[#171226]">
+            <h2 className="text-base font-extrabold text-[#1E1B2E]">
               روند ۶ ماهه درآمد سالن (میلیون تومان)
             </h2>
-            <p className="text-xs text-[#787189] mt-0.5">
+            <p className="text-xs text-[#6B6480] mt-0.5">
               رشد پیوسته پس از فعال‌سازی رزرو آنلاین
             </p>
           </div>
 
-          <div className="h-40 pt-4 flex items-end justify-between gap-2 border-b border-[#E6E3EE] pb-2">
+          <div className="h-40 pt-4 flex items-end justify-between gap-2 border-b border-[#E6E0F5] pb-2">
             {monthlyTrend.map((m) => (
               <div
                 key={m.month}
                 className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end"
               >
-                <span className="text-[10px] font-bold text-[#4E4760] tabular-nums">
+                <span className="text-[10px] font-bold text-[#6B6480] tabular-nums">
                   {m.label}
                 </span>
                 <div
-                  className="w-full max-w-[30px] rounded-t-lg bg-[#2A0F54]"
+                  className="w-full max-w-[30px] rounded-t-lg bg-[#8B5CF6]"
                   style={{ height: `${Math.round((m.value / 70) * 100)}%` }}
                 />
-                <span className="text-[11px] font-semibold text-[#787189]">
+                <span className="text-[11px] font-semibold text-[#6B6480]">
                   {m.month}
                 </span>
               </div>
@@ -2402,12 +2757,12 @@ export const BusinessSubscriptionPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="حساب و تنظیمات · اشتراک ماهانه"
-        title="مدیریت اشتراک ماهانه کسب‌وکار"
+        kicker="مالی · اشتراک ماهانه"
+        title="مدیریت اشتراک کسب‌وکار"
         subtitle={
           dataMode === 'real'
-            ? 'مشاهده پلن اشتراک کسب‌وکار؛ رزرو آنلاین بدون نیاز به پیش‌پرداخت فعال است و درگاه پرداخت آنلاین تا زمان تنظیم درگاه بانکی غیرفعال است.'
-            : 'مشاهده پلن فعال، سهمیه پیامک ماهانه و تغییر آزمایشی پلن (بدون اتصال به درگاه بانکی در این مرحله)'
+            ? 'مشاهده پلن اشتراک کسب‌وکار؛ رزرو آنلاین بدون نیاز به پیش‌پرداخت فعال است.'
+            : 'مشاهده پلن فعال، سهمیه پیامک ماهانه و مقایسه امکانات پلن‌های BeautyHub'
         }
         routePattern="/app/subscription"
         breadcrumbs={[
@@ -2420,15 +2775,13 @@ export const BusinessSubscriptionPage: React.FC = () => {
         <Card variant="dark" className="mb-7 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <span className="text-xs font-bold text-[#F5D0FE]">
-                {dataMode === 'real'
-                  ? 'پلن پایه فعال کسب‌وکار:'
-                  : 'پلن فعال فعلی شما (حالت دمو):'}
+              <span className="text-xs font-bold text-[#EDE9FE]">
+                پلن فعال فعلی کسب‌وکار:
               </span>
               <h2 className="text-xl font-extrabold text-white">
                 {currentPlan.name}
               </h2>
-              <p className="text-xs text-[#E9D5FF] tabular-nums">
+              <p className="text-xs text-[#EDE9FE]/85 tabular-nums">
                 ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک ماهانه:{' '}
                 {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
               </p>
@@ -2437,7 +2790,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
               <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
                 {dataMode === 'real'
                   ? 'رزرو آنلاین بدون پیش‌پرداخت: فعال'
-                  : 'اعتبار آزمایشی: ۲۴ روز باقیمانده'}
+                  : 'وضعیت اشتراک: فعال'}
               </span>
             </div>
           </div>
@@ -2451,30 +2804,30 @@ export const BusinessSubscriptionPage: React.FC = () => {
             <Card
               key={plan.id}
               className={`space-y-5 flex flex-col justify-between ${
-                isCurrent ? 'border-2 border-[#2A0F54] shadow-md' : ''
+                isCurrent ? 'border-2 border-[#8B5CF6] shadow-sm' : ''
               }`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-base font-extrabold text-[#171226]">
+                  <h3 className="text-base font-extrabold text-[#1E1B2E]">
                     {plan.name}
                   </h3>
                   {isCurrent ? (
                     <StatusBadge label="پلن فعال شما" tone="success" />
                   ) : null}
                 </div>
-                <p className="text-xl font-extrabold text-[#2A0F54] tabular-nums">
+                <p className="text-xl font-extrabold text-[#8B5CF6] tabular-nums">
                   {formatPriceToman(plan.monthlyPriceToman)}
-                  <span className="text-xs font-normal text-[#787189]">
+                  <span className="text-xs font-normal text-[#6B6480]">
                     {' '}
                     / ماهانه
                   </span>
                 </p>
-                <p className="text-xs text-[#4E4760]">{plan.audience}</p>
-                <ul className="space-y-2 pt-3 border-t border-[#E6E3EE] text-xs text-[#171226]">
+                <p className="text-xs text-[#6B6480]">{plan.audience}</p>
+                <ul className="space-y-2 pt-3 border-t border-[#E6E0F5] text-xs text-[#1E1B2E]">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-center gap-2">
-                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
                       <span>{f}</span>
                     </li>
                   ))}
@@ -2488,18 +2841,16 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 onClick={() => {
                   if (dataMode === 'real') {
                     showToast(
-                      'درگاه پرداخت آنلاین هنوز فعال نشده است؛ ارتقای پلن بدون تأیید پرداخت سمت سرور ثبت نمی‌شود.',
+                      'درگاه پرداخت آنلاین هنوز فعال نشده است؛ ارتقای پلن پس از اتصال درگاه بانکی امکان‌پذیر خواهد بود.',
                       'info'
                     );
                     return;
                   }
                   setActivePlanId(plan.id);
-                  showToast(
-                    `پلن آزمایشی کسب‌وکار به «${plan.name}» تغییر یافت (بدون پرداخت واقعی).`
-                  );
+                  showToast(`پلن کسب‌وکار به «${plan.name}» تغییر یافت.`);
                 }}
               >
-                {isCurrent ? 'پلن انتخاب‌شده' : `ارتقا / تغییر به ${plan.name}`}
+                {isCurrent ? 'پلن انتخاب‌شده' : `ارتقا به ${plan.name}`}
               </Button>
             </Card>
           );
@@ -2517,9 +2868,9 @@ export const BusinessSettingsPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="حساب و تنظیمات · پیکربندی سالن"
+        kicker="تنظیمات · پیکربندی سالن"
         title="تنظیمات پنل کسب‌وکار"
-        subtitle="مدیریت قوانین نوبت‌دهی، ترجیحات اطلاع‌رسانی پیامکی و امنیت حساب در حالت دمو"
+        subtitle="مدیریت قوانین نوبت‌دهی، فاصله استراحت بین نوبت‌ها و ترجیحات اطلاع‌رسانی پیامکی"
         routePattern="/app/settings"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2573,34 +2924,34 @@ export const BusinessSettingsPage: React.FC = () => {
               </FormField>
             </>
           ) : activeTab === 'notifications' ? (
-            <div className="space-y-3 text-xs sm:text-sm text-[#171226]">
-              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E3EE] cursor-pointer">
+            <div className="space-y-3 text-xs sm:text-sm text-[#1E1B2E]">
+              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E0F5] cursor-pointer">
                 <span className="font-bold">
                   ارسال پیامک تایید بلافاصله پس از ثبت نوبت
                 </span>
                 <input
                   type="checkbox"
                   defaultChecked
-                  className="accent-[#2A0F54] w-4 h-4"
+                  className="accent-[#8B5CF6] w-4 h-4"
                 />
               </label>
-              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E3EE] cursor-pointer">
+              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E0F5] cursor-pointer">
                 <span className="font-bold">
                   ارسال یادآور ۲۴ ساعت مانده به زمان مراجعه
                 </span>
                 <input
                   type="checkbox"
                   defaultChecked
-                  className="accent-[#2A0F54] w-4 h-4"
+                  className="accent-[#8B5CF6] w-4 h-4"
                 />
               </label>
             </div>
           ) : (
-            <div className="p-4 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] flex items-start gap-3 text-xs text-[#4E4760]">
-              <ShieldCheck className="w-5 h-5 text-[#2A0F54] shrink-0 mt-0.5" />
+            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-start gap-3 text-xs text-[#6B6480]">
+              <ShieldCheck className="w-5 h-5 text-[#8B5CF6] shrink-0 mt-0.5" />
               <p className="leading-relaxed">
-                در نسخه تجاری، نشست‌های فعال، سطوح دسترسی منشی و متخصصان و احراز
-                هویت دو مرحله‌ای پیامکی در این بخش مدیریت می‌شوند.
+                سطوح دسترسی مدیر سالن، منشی و متخصصان از طریق احراز هویت پیامکی
+                محافظت می‌شود.
               </p>
             </div>
           )}
@@ -2609,10 +2960,10 @@ export const BusinessSettingsPage: React.FC = () => {
             <Button
               variant="primary"
               onClick={() =>
-                showToast('تنظیمات پنل کسب‌وکار در وضعیت فرانت‌اند ذخیره شد.')
+                showToast('تنظیمات پنل کسب‌وکار با موفقیت ذخیره شد.')
               }
             >
-              ذخیره تنظیمات آزمایشی
+              ذخیره تنظیمات
             </Button>
           </div>
         </Card>

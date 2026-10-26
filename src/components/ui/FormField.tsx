@@ -24,26 +24,26 @@ export const FormField: React.FC<FormFieldProps> = ({
       <div className="flex items-center justify-between gap-2">
         <label
           htmlFor={id}
-          className="text-xs sm:text-sm font-semibold text-[#120F1D]"
+          className="text-xs sm:text-sm font-semibold text-[#1E1B2E]"
         >
           {label}
           {required ? (
-            <span className="text-[#9D174D] mr-1" aria-hidden="true">
+            <span className="text-[#8B5CF6] mr-1" aria-hidden="true">
               *
             </span>
           ) : null}
         </label>
         {optionalLabel ? (
-          <span className="text-[11px] text-[#756F86]">{optionalLabel}</span>
+          <span className="text-[11px] text-[#6B6480]">{optionalLabel}</span>
         ) : null}
       </div>
       {children}
       {error ? (
-        <p role="alert" className="text-xs font-medium text-red-700">
+        <p role="alert" className="text-xs font-medium text-[#EF4444]">
           {error}
         </p>
       ) : hint ? (
-        <p className="text-xs text-[#756F86] leading-relaxed">{hint}</p>
+        <p className="text-xs text-[#6B6480] leading-relaxed">{hint}</p>
       ) : null}
     </div>
   );

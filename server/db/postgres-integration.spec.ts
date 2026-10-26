@@ -7,25 +7,169 @@ const { Pool } = pg;
 
 // =============================================================================
 // تست‌های یکپارچگی واقعی PostgreSQL 17 (Real PostgreSQL Integration Suite)
-// توجه بسیار مهم:
-// این فایل برای اثبات رفتار واقعی موتور PostgreSQL 17 (شامل اجرای SQLها،
-// قفل‌های هم‌زمان، قید EXCLUDE USING gist، توابع PL/pgSQL، رفتار اتمیک OTP،
-// تریگر مالکیت کسب‌وکار و قیود پرداخت) طراحی شده است.
-//
-// طبق محدودیت‌های فاز فعلی، این تست‌ها به صورت پیش‌فرض غیرفعال هستند و تنها زمانی
-// اجرا می‌شوند که متغیر محیطی RUN_REAL_PG_TESTS="true" و DATABASE_URL معتبر
-// به صورت صریح در مرحله تست دیتابیس واقعی فعال شوند.
+// توجه بسیار مهم (گارد حفاظتی دیتابیس تست مجزا):
+// ۱. این تست‌ها هرگز و تحت هیچ شرایطی به متغیر DATABASE_URL (دیتابیس اصلی یا Production لیارا)
+//    متصل نمی‌شوند و صرفاً از متغیر مجزای TEST_DATABASE_URL استفاده می‌کنند.
+// ۲. اگر RUN_REAL_PG_TESTS="true" باشد اما TEST_DATABASE_URL تعریف نشده باشد، یا برابر با
+//    DATABASE_URL باشد، یا به هاست‌های لیارا (*.liara.ir / *.liara.run) اشاره کند، یا نام
+//    دیتابیس شامل کلمه test نباشد، گارد ایمنی اجرای تست را متوقف و رد می‌کند.
 // =============================================================================
 
-const SHOULD_RUN_REAL_PG_TESTS =
-  process.env.RUN_REAL_PG_TESTS === 'true' &&
-  Boolean(process.env.DATABASE_URL?.trim());
+export function resolveSafeTestDatabaseUrl(
+  env: Record<string, string | undefined>
+): {
+  safe: boolean;
+  url: string | null;
+  reason: string;
+} {
+  if (env.RUN_REAL_PG_TESTS !== 'true') {
+    return {
+      safe: false,
+      url: null,
+      reason: 'RUN_REAL_PG_TESTS_NOT_ENABLED',
+    };
+  }
+
+  const rawTestUrl = (env.TEST_DATABASE_URL ?? '').trim();
+  if (!rawTestUrl) {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_MISSING',
+    };
+  }
+
+  const rawMainUrl = (env.DATABASE_URL ?? '').trim();
+  if (rawMainUrl && rawTestUrl === rawMainUrl) {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_EQUALS_MAIN_DATABASE_URL',
+    };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawTestUrl);
+  } catch {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_INVALID_FORMAT',
+    };
+  }
+
+  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_INVALID_PROTOCOL',
+    };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    hostname.includes('liara.ir') ||
+    hostname.includes('liara.run') ||
+    hostname.includes('iran.liara')
+  ) {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_FORBIDDEN_LIARA_HOST',
+    };
+  }
+
+  const dbName = parsed.pathname.replace(/^\/+/, '').toLowerCase();
+  if (!dbName || !dbName.includes('test') || dbName.includes('prod')) {
+    return {
+      safe: false,
+      url: null,
+      reason: 'TEST_DATABASE_URL_MUST_TARGET_EXPLICIT_TEST_DB',
+    };
+  }
+
+  return {
+    safe: true,
+    url: rawTestUrl,
+    reason: 'SAFE_ISOLATED_TEST_DATABASE',
+  };
+}
+
+const PG_TEST_GUARD = resolveSafeTestDatabaseUrl(process.env);
+const SHOULD_RUN_REAL_PG_TESTS = PG_TEST_GUARD.safe && Boolean(PG_TEST_GUARD.url);
+const SAFE_TEST_DB_URL = PG_TEST_GUARD.url ?? '';
+
+test('Real PG Safety Guard: Strictly requires isolated TEST_DATABASE_URL and blocks DATABASE_URL, Liara hosts, and production DB names', () => {
+  // ۱. در صورت فعال بودن RUN_REAL_PG_TESTS در محیط فعلی، اتصال حتماً باید امن و مجزا باشد
+  if (process.env.RUN_REAL_PG_TESTS === 'true') {
+    assert.equal(
+      PG_TEST_GUARD.safe,
+      true,
+      `توقف ایمنی تست PostgreSQL: متغیر TEST_DATABASE_URL تعریف نشده یا ناامن است (${PG_TEST_GUARD.reason}). هیچ تستی روی دیتابیس اصلی اجرا نمی‌شود.`
+    );
+  }
+
+  // ۲. رد شدن در صورت نبود TEST_DATABASE_URL حتی اگر DATABASE_URL وجود داشته باشد
+  const missingTestUrl = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub_test',
+  });
+  assert.equal(missingTestUrl.safe, false);
+  assert.equal(missingTestUrl.reason, 'TEST_DATABASE_URL_MISSING');
+
+  // ۳. رد شدن در صورت یکسان بودن TEST_DATABASE_URL با DATABASE_URL
+  const duplicateUrl = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub_test',
+    TEST_DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub_test',
+  });
+  assert.equal(duplicateUrl.safe, false);
+  assert.equal(
+    duplicateUrl.reason,
+    'TEST_DATABASE_URL_EQUALS_MAIN_DATABASE_URL'
+  );
+
+  // ۴. رد شدن قطعی هاست‌های لیارا (جلوگیری از اتصال به دیتابیس Production لیارا)
+  const liaraHost = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    TEST_DATABASE_URL: 'postgresql://root:secret@s12.db.liara.ir:34567/beautyhub_test',
+  });
+  assert.equal(liaraHost.safe, false);
+  assert.equal(liaraHost.reason, 'TEST_DATABASE_URL_FORBIDDEN_LIARA_HOST');
+
+  // ۵. رد شدن دیتابیس‌هایی که نام آن‌ها صراحتاً شامل test نیست یا شامل prod است
+  const nonTestDbName = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    TEST_DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub_main',
+  });
+  assert.equal(nonTestDbName.safe, false);
+  assert.equal(
+    nonTestDbName.reason,
+    'TEST_DATABASE_URL_MUST_TARGET_EXPLICIT_TEST_DB'
+  );
+
+  const prodDbName = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    TEST_DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub_prod_test',
+  });
+  assert.equal(prodDbName.safe, false);
+
+  // ۶. تایید دیتابیس تست محلی مجزا
+  const validIsolatedTestDb = resolveSafeTestDatabaseUrl({
+    RUN_REAL_PG_TESTS: 'true',
+    DATABASE_URL: 'postgresql://user:pass@db.liara.ir:5432/beautyhub_prod',
+    TEST_DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:5432/beautyhub_test_isolated',
+  });
+  assert.equal(validIsolatedTestDb.safe, true);
+  assert.equal(validIsolatedTestDb.reason, 'SAFE_ISOLATED_TEST_DATABASE');
+});
 
 test(
   'Real PG 1: Run all 6 migrations on PostgreSQL 17 and verify schema_migrations & btree_gist',
   { skip: !SHOULD_RUN_REAL_PG_TESTS },
   async () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({ connectionString: SAFE_TEST_DB_URL });
     try {
       const summary = await runMigrationsOnPool(pool);
       assert.equal(summary.totalFiles, 6);
@@ -44,7 +188,7 @@ test(
   'Real PG 2: OTP atomic rate-limit, concurrent challenge issuance, attempt increment, auto-lock, and one-time consumption',
   { skip: !SHOULD_RUN_REAL_PG_TESTS },
   async () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({ connectionString: SAFE_TEST_DB_URL });
     const testPhone = '09120009988';
     const validHmac = 'a'.repeat(64);
     const wrongHmac = 'b'.repeat(64);
@@ -145,7 +289,7 @@ test(
   'Real PG 3: Business creation automatically registers owner in business_members and is conflict-safe with manual upsert',
   { skip: !SHOULD_RUN_REAL_PG_TESTS },
   async () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({ connectionString: SAFE_TEST_DB_URL });
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -206,7 +350,7 @@ test(
   'Real PG 4: Appointments EXCLUDE USING gist overlap prevention across buffer times, specialist updates, cancellation, and reactivation',
   { skip: !SHOULD_RUN_REAL_PG_TESTS },
   async () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({ connectionString: SAFE_TEST_DB_URL });
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -352,7 +496,7 @@ test(
   'Real PG 5: Payments convert_toman_to_rial_strict, CASE-guarded overflow-safe CHECK constraint, and VERIFIED server proof',
   { skip: !SHOULD_RUN_REAL_PG_TESTS },
   async () => {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const pool = new Pool({ connectionString: SAFE_TEST_DB_URL });
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

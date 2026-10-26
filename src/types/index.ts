@@ -232,6 +232,7 @@ export interface OnboardingDraft {
 export interface BookingDraft {
   businessSlug: string;
   serviceId: string;
+  serviceIds?: string[];
   specialistId: string;
   dateJalali: string;
   timeSlot: string;

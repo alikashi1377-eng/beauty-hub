@@ -121,7 +121,8 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
     errMsg === 'INVALID_APPOINTMENT_STATUS' ||
     errMsg === 'BUSINESS_NOT_APPROVED' ||
     errMsg === 'OUTSIDE_BUSINESS_WORKING_HOURS' ||
-    errMsg === 'SPECIALIST_NOT_ASSIGNED_TO_SERVICE'
+    errMsg === 'SPECIALIST_NOT_ASSIGNED_TO_SERVICE' ||
+    errMsg === 'APPOINTMENT_TIME_IN_PAST'
   ) {
     res.status(400).json({
       ok: false,
@@ -140,7 +141,9 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
                   ? 'بازه زمانی انتخاب‌شده خارج از ساعات کاری کسب‌وکار است یا سالن در این روز تعطیل است.'
                   : errMsg === 'SPECIALIST_NOT_ASSIGNED_TO_SERVICE'
                     ? 'متخصص انتخاب‌شده ارائه این خدمت را بر عهده ندارد.'
-                    : 'اطلاعات ارسالی نامعتبر یا ناقص است.',
+                    : errMsg === 'APPOINTMENT_TIME_IN_PAST'
+                      ? 'امکان ثبت نوبت برای تاریخ یا ساعت گذشته وجود ندارد.'
+                      : 'اطلاعات ارسالی نامعتبر یا ناقص است.',
     });
     return;
   }
@@ -616,9 +619,9 @@ export function createApiV1Router(
 
       try {
         const dateJalali =
-          typeof req.query.dateJalali === 'string' && req.query.dateJalali.trim()
+          typeof req.query.dateJalali === 'string'
             ? req.query.dateJalali.trim()
-            : '۱۴۰۵/۰۸/۰۵';
+            : '';
         const serviceId =
           typeof req.query.serviceId === 'string' && req.query.serviceId.trim()
             ? req.query.serviceId.trim()

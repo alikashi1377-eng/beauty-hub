@@ -33,22 +33,22 @@ export const Modal: React.FC<ModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#120F1D]/60 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1E1B2E]/55 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white border border-[#E6E3EE] shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E6E3EE] bg-[#FAF9FC]">
+      <div className="w-full max-w-lg rounded-3xl bg-white border border-[#E6E0F5] shadow-[0_24px_60px_-15px_rgba(30,27,46,0.28)] overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E6E0F5] bg-[#FAF8FF]">
           <div>
             <h2
               id="modal-title"
-              className="text-base font-bold text-[#120F1D]"
+              className="text-base font-bold text-[#1E1B2E]"
             >
               {title}
             </h2>
             {description ? (
-              <p className="text-xs font-normal text-[#756F86] mt-0.5">{description}</p>
+              <p className="text-xs font-normal text-[#6B6480] mt-0.5">{description}</p>
             ) : null}
           </div>
           <Button
@@ -60,9 +60,9 @@ export const Modal: React.FC<ModalProps> = ({
             <X className="w-4 h-4" />
           </Button>
         </div>
-        <div className="p-6 text-sm text-[#4A4458]">{children}</div>
+        <div className="p-6 text-sm text-[#6B6480]">{children}</div>
         {footer ? (
-          <div className="flex items-center justify-end gap-2 px-6 py-3.5 bg-[#F4F3F8] border-t border-[#E6E3EE]">
+          <div className="flex items-center justify-end gap-2 px-6 py-3.5 bg-[#FAF8FF] border-t border-[#E6E0F5]">
             {footer}
           </div>
         ) : null}

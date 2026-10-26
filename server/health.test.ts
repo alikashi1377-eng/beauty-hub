@@ -1736,7 +1736,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
         businessSlug: 'pending-salon',
         serviceId: 'srv-haircut',
         specialistId: 'spc-general',
-        dateJalali: '۱۴۰۵/۰۸/۰۳',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
         timeSlot: '۱۱:۰۰',
       }),
     });
@@ -1755,7 +1755,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
         businessSlug: 'royal-golzar',
         serviceId: 'srv-nail',
         specialistId: 'spc-restricted',
-        dateJalali: '۱۴۰۵/۰۸/۰۳',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
         timeSlot: '۱۱:۰۰',
       }),
     });
@@ -1774,7 +1774,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
         businessSlug: 'royal-golzar',
         serviceId: 'srv-haircut',
         specialistId: 'spc-restricted',
-        dateJalali: '۱۴۰۵/۰۸/۰۳',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
         timeSlot: '۱۸:۳۰',
       }),
     });
@@ -1795,7 +1795,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
         businessSlug: 'royal-golzar',
         serviceId: 'srv-haircut',
         specialistId: 'spc-restricted',
-        dateJalali: '۱۴۰۵/۰۸/۰۳',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
         timeSlot: '۱۱:۰۰',
         priceToman: 1000, // تلاش برای ارسال قیمت دستکاری‌شده از سمت کلاینت
         durationMinutes: 5,
@@ -1815,7 +1815,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
     // ساعت ۱۱:۰۰ که به مدت ۹۰+۱۵ دقیقه اشغال شده و ساعت ۱۸:۳۰ که از ۱۹:۳۰ فراتر می‌رود باید غیرقابل انتخاب باشند
     const availRes = await fetch(
       `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
-        '۱۴۰۵/۰۸/۰۳'
+        '۱۴۰۵/۰۸/۱۰'
       )}&serviceId=srv-haircut&specialistId=spc-restricted`
     );
     assert.equal(availRes.status, 200);
@@ -1847,7 +1847,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
         businessSlug: 'royal-golzar',
         serviceId: 'srv-haircut',
         specialistId: 'spc-restricted',
-        dateJalali: '۱۴۰۵/۰۸/۰۳',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
         timeSlot: '۱۱:۰۰',
       }),
     });
@@ -2239,6 +2239,924 @@ test('MelliPayamak Adapter Diagnostics: Normalizes full console URL in SMS_API_K
     await new Promise<void>((resolve) => mockSmsServer.close(() => resolve()));
   }
 });
+
+test('Step 2 Booking Engine & Availability Overhaul: Dynamic slots, closing boundaries, service durations & buffer, missing/closed working hours, business_time_exceptions (salon holiday, specialist leave, partial windows), past-time rejection, invalid IDs, tampered serviceStartsAtIso, and concurrent 409 conflict', async () => {
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map([
+      [
+        'user-cust-step2',
+        {
+          id: 'user-cust-step2',
+          phone: '09124445566',
+          full_name: 'المیرا شمس',
+          default_city: 'تهران',
+          is_active: true,
+        },
+      ],
+    ]),
+    admins: new Map(),
+    memberships: [],
+    businesses: new Map([
+      [
+        'biz-approved',
+        {
+          id: 'biz-approved',
+          slug: 'royal-golzar',
+          name: 'سالن رویال گلزار',
+          city: 'تهران',
+          neighborhood: 'فرمانیه',
+          address: 'تهران، فرمانیه',
+          phone_display: '02122222222',
+          instagram_handle: '@royal',
+          short_description: 'سالن تخصصی',
+          about_text: 'درباره رویال',
+          map_lat: 35.79,
+          map_lng: 51.46,
+          subscription_plan: 'plan-professional',
+          subscription_status: 'ACTIVE',
+          approval_status: 'APPROVED',
+        },
+      ],
+    ]),
+    services: new Map([
+      [
+        'srv-90',
+        {
+          id: 'srv-90',
+          business_id: 'biz-approved',
+          title: 'لایت و بالیاژ (۹۰ دقیقه)',
+        },
+      ],
+      [
+        'srv-60',
+        {
+          id: 'srv-60',
+          business_id: 'biz-approved',
+          title: 'کوتاهی ژورنالی (۶۰ دقیقه)',
+        },
+      ],
+      [
+        'srv-30',
+        {
+          id: 'srv-30',
+          business_id: 'biz-approved',
+          title: 'اصلاح ابرو (۳۰ دقیقه)',
+        },
+      ],
+      [
+        'srv-unassigned',
+        {
+          id: 'srv-unassigned',
+          business_id: 'biz-approved',
+          title: 'کاشت ناخن (عدم تخصیص به متخصص اول)',
+        },
+      ],
+    ]),
+    appointments: new Map(),
+  };
+
+  const serviceMeta: Record<string, { duration: number; price: number }> = {
+    'srv-90': { duration: 90, price: 1850000 },
+    'srv-60': { duration: 60, price: 650000 },
+    'srv-30': { duration: 30, price: 280000 },
+    'srv-unassigned': { duration: 60, price: 750000 },
+  };
+
+  const activeAppointments: Array<{
+    id: string;
+    specialistId: string;
+    startIso: string;
+    occupiedEndIso: string;
+    dateJalali: string;
+    timeSlot: string;
+  }> = [];
+
+  const basePool = createSecurityTestPool(state);
+
+  const step2Pool = {
+    query: async (sql: string, params: unknown[] = []) => {
+      return (await step2Pool.connect()).query(sql, params);
+    },
+    connect: async () => {
+      const baseClient = await basePool.connect();
+      return {
+        release: () => baseClient.release(),
+        query: async (sql: string, params: unknown[] = []) => {
+          const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+
+          // ۱. بازیابی خدمت با مدت‌زمان و قیمت متفاوت
+          if (
+            normalized.includes('from services') &&
+            normalized.includes('where business_id = $1')
+          ) {
+            const bizId = String(params[0] || '');
+            const srvId = String(params[1] || '');
+            const srv = state.services.get(srvId);
+            if (!srv || srv.business_id !== bizId) {
+              return { rows: [], rowCount: 0 };
+            }
+            const meta = serviceMeta[srv.id] ?? { duration: 60, price: 500000 };
+            return {
+              rows: [
+                {
+                  id: srv.id,
+                  external_id: srv.id,
+                  title: srv.title,
+                  duration_minutes: meta.duration,
+                  price_toman: meta.price,
+                },
+              ],
+              rowCount: 1,
+            };
+          }
+
+          // ۲. بازیابی متخصص
+          if (
+            normalized.includes('from specialists') &&
+            normalized.includes('where business_id = $1')
+          ) {
+            const bizId = String(params[0] || '');
+            const spcId = String(params[1] || '');
+            if (
+              bizId === 'biz-approved' &&
+              (spcId === 'spc-restricted' || spcId === 'spc-general')
+            ) {
+              return {
+                rows: [
+                  {
+                    id: spcId,
+                    external_id: spcId,
+                    full_name:
+                      spcId === 'spc-restricted' ? 'مریم کاظمی' : 'سارا احمدی',
+                  },
+                ],
+                rowCount: 1,
+              };
+            }
+            return { rows: [], rowCount: 0 };
+          }
+
+          // ۳. بررسی specialist_services
+          if (
+            normalized.includes(
+              'select count(*)::int as cnt from specialist_services'
+            )
+          ) {
+            const spcId = String(params[0] || '');
+            return {
+              rows: [{ cnt: spcId === 'spc-restricted' ? 3 : 0 }],
+              rowCount: 1,
+            };
+          }
+          if (
+            normalized.includes(
+              'select 1 from specialist_services where specialist_id = $1 and service_id = $2'
+            )
+          ) {
+            const spcId = String(params[0] || '');
+            const srvId = String(params[1] || '');
+            if (
+              spcId === 'spc-restricted' &&
+              ['srv-90', 'srv-60', 'srv-30'].includes(srvId)
+            ) {
+              return { rows: [{ '?column?': 1 }], rowCount: 1 };
+            }
+            return { rows: [], rowCount: 0 };
+          }
+
+          // ۴. ساعات کاری سالن بر اساس روز هفته:
+          // - شنبه (dayOfWeek=0): ۱۰:۰۰ تا ۱۵:۰۰ (برای تست تولید پویا و مرز ساعت پایان)
+          // - دوشنبه (dayOfWeek=2): بدون رکورد در دیتابیس (rowCount=0 -> باید تعطیل تلقی شود)
+          // - جمعه (dayOfWeek=6): is_open = false (تعطیل هفتگی)
+          // - سایر روزها: ۰۹:۳۰ تا ۱۹:۳۰
+          if (normalized.includes('from business_working_hours')) {
+            const dayOfWeek = Number(params[1]);
+            const dayName = String(params[2] || '');
+            if (dayOfWeek === 2 || dayName === 'دوشنبه') {
+              return { rows: [], rowCount: 0 };
+            }
+            if (dayOfWeek === 6 || dayName === 'جمعه') {
+              return {
+                rows: [
+                  {
+                    is_open: false,
+                    open_str: '09:30',
+                    close_str: '19:30',
+                  },
+                ],
+                rowCount: 1,
+              };
+            }
+            if (dayOfWeek === 0 || dayName === 'شنبه') {
+              return {
+                rows: [
+                  {
+                    is_open: true,
+                    open_str: '10:00',
+                    close_str: '15:00',
+                  },
+                ],
+                rowCount: 1,
+              };
+            }
+            return {
+              rows: [
+                {
+                  is_open: true,
+                  open_str: '09:30',
+                  close_str: '19:30',
+                },
+              ],
+              rowCount: 1,
+            };
+          }
+
+          // ۵. جدول استثناهای تقویمی (business_time_exceptions) بر اساس تاریخ میلادی:
+          // - ۱۴۰۵/۰۸/۱۲ = 2026-11-03 (سه‌شنبه): تعطیلی کامل سالن (specialist_id = null, is_closed_all_day = true)
+          // - ۱۴۰۵/۰۸/۱۳ = 2026-11-04 (چهارشنبه): مرخصی کامل متخصص spc-general (specialist_id = 'spc-general', is_closed_all_day = true)
+          // - ۱۴۰۵/۰۸/۱۴ = 2026-11-05 (پنج‌شنبه): دو بازه استثنای ساعتی (۱۲:۰۰ تا ۱۳:۳۰ برای کل سالن + ۱۵:۰۰ تا ۱۶:۳۰ برای متخصص spc-restricted)
+          if (normalized.includes('from business_time_exceptions')) {
+            const exceptionDate = String(params[1] || '');
+            if (exceptionDate === '2026-11-03') {
+              return {
+                rows: [
+                  {
+                    id: 'ex-full-biz',
+                    specialist_id: null,
+                    is_closed_all_day: true,
+                    start_str: null,
+                    end_str: null,
+                    reason: 'تعطیلی سراسری سالن جهت بازسازی',
+                  },
+                ],
+                rowCount: 1,
+              };
+            }
+            if (exceptionDate === '2026-11-04') {
+              return {
+                rows: [
+                  {
+                    id: 'ex-full-spc',
+                    specialist_id: 'spc-general',
+                    is_closed_all_day: true,
+                    start_str: null,
+                    end_str: null,
+                    reason: 'مرخصی روزانه متخصص',
+                  },
+                ],
+                rowCount: 1,
+              };
+            }
+            if (exceptionDate === '2026-11-05') {
+              return {
+                rows: [
+                  {
+                    id: 'ex-part-biz',
+                    specialist_id: null,
+                    is_closed_all_day: false,
+                    start_str: '12:00',
+                    end_str: '13:30',
+                    reason: 'جلسه آموزشی سالن',
+                  },
+                  {
+                    id: 'ex-part-spc',
+                    specialist_id: 'spc-restricted',
+                    is_closed_all_day: false,
+                    start_str: '15:00',
+                    end_str: '16:30',
+                    reason: 'مرخصی ساعتی متخصص',
+                  },
+                ],
+                rowCount: 2,
+              };
+            }
+            return { rows: [], rowCount: 0 };
+          }
+
+          // ۶. تنظیمات فاصله استراحت (buffer_minutes = 15)
+          if (
+            normalized.includes('select buffer_minutes from business_settings')
+          ) {
+            return { rows: [{ buffer_minutes: 15 }], rowCount: 1 };
+          }
+
+          // ۷. خواندن نوبت‌های فعال در getBusinessAvailabilityInDb و createAppointmentInDb
+          if (
+            normalized.includes(
+              'select service_starts_at, occupied_until_at from appointments'
+            )
+          ) {
+            const targetSpc = params[1] ? String(params[1]) : null;
+            const filtered = activeAppointments.filter(
+              (a) => !targetSpc || a.specialistId === targetSpc
+            );
+            return {
+              rows: filtered.map((iv) => ({
+                service_starts_at: iv.startIso,
+                occupied_until_at: iv.occupiedEndIso,
+              })),
+              rowCount: filtered.length,
+            };
+          }
+
+          // ۸. درج اتمیک نوبت با شبیه‌سازی قید EXCLUDE USING gist (کد 23P01 در صورت تداخل هم‌زمان)
+          if (normalized.startsWith('insert into appointments')) {
+            const refCode = String(params[0] || 'BH-999222');
+            const spcId = String(params[4] || '');
+            const durationMins = Number(params[7] || 60);
+            const bufferMins = Number(params[8] || 15);
+            const dateJalali = String(params[13] || '');
+            const timeSlot = String(params[14] || '');
+            const startsAtIso = String(params[15] || '');
+            const startMs = new Date(startsAtIso).getTime();
+            const occupiedEndMs =
+              startMs + (durationMins + bufferMins) * 60 * 1000;
+            const occupiedEndIso = new Date(occupiedEndMs).toISOString();
+
+            const hasOverlap = activeAppointments.some((existing) => {
+              if (existing.specialistId !== spcId) return false;
+              const exStart = new Date(existing.startIso).getTime();
+              const exEnd = new Date(existing.occupiedEndIso).getTime();
+              return startMs < exEnd && occupiedEndMs > exStart;
+            });
+
+            if (hasOverlap) {
+              const pgErr = new Error(
+                'conflicting key value violates exclusion constraint "excl_appointments_specialist_active_overlap"'
+              ) as Error & { code?: string };
+              pgErr.code = '23P01';
+              throw pgErr;
+            }
+
+            const newId = `apt-step2-${activeAppointments.length + 1}`;
+            activeAppointments.push({
+              id: newId,
+              specialistId: spcId,
+              startIso: startsAtIso,
+              occupiedEndIso,
+              dateJalali,
+              timeSlot,
+            });
+
+            return {
+              rows: [
+                {
+                  id: newId,
+                  external_id: newId,
+                  reference_code: refCode,
+                  date_jalali: dateJalali,
+                  time_slot_label: timeSlot,
+                  status: 'CONFIRMED',
+                  notes: params[16] || null,
+                },
+              ],
+              rowCount: 1,
+            };
+          }
+
+          if (normalized.startsWith('insert into business_customers')) {
+            return { rows: [], rowCount: 1 };
+          }
+
+          return baseClient.query(sql, params);
+        },
+      };
+    },
+  } as unknown as Pool;
+
+  const custToken = issueTestSession(state, {
+    sessionId: '77777777-7777-4777-8777-777777777771',
+    userId: 'user-cust-step2',
+  });
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+    },
+    step2Pool
+  );
+
+  try {
+    // -------------------------------------------------------------------------
+    // ۱. تولید پویا از ساعت کاری (شنبه ۱۴۰۵/۰۸/۰۹: ۱۰:۰۰ تا ۱۵:۰۰) و مرز ساعت پایان برای خدمات با مدت‌های متفاوت
+    // -------------------------------------------------------------------------
+    const sat90Res = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۰۹'
+      )}&serviceId=srv-90&specialistId=spc-restricted`
+    );
+    assert.equal(sat90Res.status, 200);
+    const sat90Body = (await sat90Res.json()) as {
+      ok: boolean;
+      data: {
+        isOpen: boolean;
+        openTime: string;
+        closeTime: string;
+        durationMinutes: number;
+        bufferMinutes: number;
+        slots: Array<{ time: string; available: boolean; reason?: string }>;
+      };
+    };
+    assert.equal(sat90Body.data.isOpen, true);
+    assert.equal(sat90Body.data.openTime, '۱۰:۰۰');
+    assert.equal(sat90Body.data.closeTime, '۱۵:۰۰');
+    assert.equal(sat90Body.data.durationMinutes, 90);
+    assert.equal(sat90Body.data.bufferMinutes, 15);
+    // بین ۱۰:۰۰ تا ۱۵:۰۰ با گام ۳۰ دقیقه دقیقاً ۱۰ اسلات تولید می‌شود (۱۰:۰۰ تا ۱۴:۳۰)
+    assert.deepEqual(
+      sat90Body.data.slots.map((s) => s.time),
+      [
+        '۱۰:۰۰',
+        '۱۰:۳۰',
+        '۱۱:۰۰',
+        '۱۱:۳۰',
+        '۱۲:۰۰',
+        '۱۲:۳۰',
+        '۱۳:۰۰',
+        '۱۳:۳۰',
+        '۱۴:۰۰',
+        '۱۴:۳۰',
+      ]
+    );
+    // برای خدمت ۹۰ دقیقه‌ای: ۱۳:۳۰ (پایان ۱۵:۰۰) آزاد است اما ۱۴:۰۰ (پایان ۱۵:۳۰) و ۱۴:۳۰ خارج از ساعت کاری هستند
+    assert.equal(
+      sat90Body.data.slots.find((s) => s.time === '۱۳:۳۰')?.available,
+      true
+    );
+    assert.equal(
+      sat90Body.data.slots.find((s) => s.time === '۱۴:۰۰')?.available,
+      false
+    );
+    assert.equal(
+      sat90Body.data.slots.find((s) => s.time === '۱۴:۰۰')?.reason,
+      'خارج از ساعت کاری'
+    );
+    assert.equal(
+      sat90Body.data.slots.find((s) => s.time === '۱۴:۳۰')?.available,
+      false
+    );
+
+    // همان روز برای خدمت ۳۰ دقیقه‌ای (srv-30): اسلات‌های ۱۴:۰۰ و ۱۴:۳۰ آزاد و قابل رزرو هستند
+    const sat30Res = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۰۹'
+      )}&serviceId=srv-30&specialistId=spc-restricted`
+    );
+    assert.equal(sat30Res.status, 200);
+    const sat30Body = (await sat30Res.json()) as {
+      data: {
+        slots: Array<{ time: string; available: boolean }>;
+      };
+    };
+    assert.equal(
+      sat30Body.data.slots.find((s) => s.time === '۱۴:۰۰')?.available,
+      true
+    );
+    assert.equal(
+      sat30Body.data.slots.find((s) => s.time === '۱۴:۳۰')?.available,
+      true
+    );
+
+    // -------------------------------------------------------------------------
+    // ۲. تاثیر مدت خدمت + buffer در اشغال ظرفیت پس از ثبت نوبت
+    // ثبت خدمت ۹۰ دقیقه‌ای در ساعت ۱۰:۰۰ (اشغال از ۱۰:۰۰ تا ۱۱:۴۵ به دلیل ۹۰ دقیقه خدمت + ۱۵ دقیقه استراحت)
+    // -------------------------------------------------------------------------
+    const bookSat10Res = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${custToken}`,
+      },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        serviceId: 'srv-90',
+        specialistId: 'spc-restricted',
+        dateJalali: '۱۴۰۵/۰۸/۰۹',
+        timeSlot: '۱۰:۰۰',
+      }),
+    });
+    assert.equal(bookSat10Res.status, 201);
+
+    // اکنون برای خدمت ۳۰ دقیقه‌ای، اسلات‌های ۱۰:۰۰، ۱۰:۳۰، ۱۱:۰۰ و ۱۱:۳۰ (که قبل از ۱۱:۴۵ شروع می‌شوند) اشغال هستند، اما ۱۲:۰۰ آزاد است
+    const satAfterBookRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۰۹'
+      )}&serviceId=srv-30&specialistId=spc-restricted`
+    );
+    const satAfterBookBody = (await satAfterBookRes.json()) as {
+      data: {
+        slots: Array<{ time: string; available: boolean; reason?: string }>;
+      };
+    };
+    for (const busySlot of ['۱۰:۰۰', '۱۰:۳۰', '۱۱:۰۰', '۱۱:۳۰']) {
+      const found = satAfterBookBody.data.slots.find(
+        (s) => s.time === busySlot
+      );
+      assert.equal(found?.available, false, `Slot ${busySlot} should be busy`);
+      assert.equal(found?.reason, 'رزروشده');
+    }
+    assert.equal(
+      satAfterBookBody.data.slots.find((s) => s.time === '۱۲:۰۰')?.available,
+      true
+    );
+
+    // -------------------------------------------------------------------------
+    // ۳. نبود رکورد ساعت کاری (دوشنبه ۱۴۰۵/۰۸/۱۱) و روز تعطیل هفتگی (جمعه ۱۴۰۵/۰۸/۰۸)
+    // -------------------------------------------------------------------------
+    for (const closedJalali of ['۱۴۰۵/۰۸/۰۸', '۱۴۰۵/۰۸/۱۱']) {
+      const closedAvailRes = await fetch(
+        `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+          closedJalali
+        )}&serviceId=srv-60&specialistId=spc-restricted`
+      );
+      assert.equal(closedAvailRes.status, 200);
+      const closedAvailBody = (await closedAvailRes.json()) as {
+        data: {
+          isOpen: boolean;
+          slots: Array<{ available: boolean; reason?: string }>;
+        };
+      };
+      assert.equal(closedAvailBody.data.isOpen, false);
+      assert.equal(
+        closedAvailBody.data.slots.every(
+          (s) => s.available === false && s.reason === 'تعطیل'
+        ),
+        true
+      );
+
+      const closedBookRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify({
+          businessSlug: 'royal-golzar',
+          serviceId: 'srv-60',
+          specialistId: 'spc-restricted',
+          dateJalali: closedJalali,
+          timeSlot: '۱۱:۰۰',
+        }),
+      });
+      assert.equal(closedBookRes.status, 400);
+      const closedBookBody = (await closedBookRes.json()) as {
+        errorCode: string;
+      };
+      assert.equal(closedBookBody.errorCode, 'OUTSIDE_BUSINESS_WORKING_HOURS');
+    }
+
+    // -------------------------------------------------------------------------
+    // ۴. اعمال business_time_exceptions:
+    // الف) تعطیلی کل سالن (۱۴۰۵/۰۸/۱۲)
+    // ب) مرخصی کامل متخصص spc-general (۱۴۰۵/۰۸/۱۳) در حالی که spc-restricted آزاد است
+    // ج) استثنای بازه ساعتی سالن (۱۲:۰۰-۱۳:۳۰) و متخصص (۱۵:۰۰-۱۶:۳۰) در ۱۴۰۵/۰۸/۱۴
+    // -------------------------------------------------------------------------
+    // ۴-الف: تعطیلی کامل سالن در ۱۴۰۵/۰۸/۱۲
+    const exSalonAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۲'
+      )}&serviceId=srv-60&specialistId=spc-restricted`
+    );
+    const exSalonAvailBody = (await exSalonAvailRes.json()) as {
+      data: {
+        isOpen: boolean;
+        slots: Array<{ available: boolean; reason?: string }>;
+      };
+    };
+    assert.equal(exSalonAvailBody.data.isOpen, false);
+    assert.equal(
+      exSalonAvailBody.data.slots.every(
+        (s) =>
+          s.available === false &&
+          s.reason === 'تعطیلی سراسری سالن جهت بازسازی'
+      ),
+      true
+    );
+
+    const exSalonBookRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${custToken}`,
+      },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        serviceId: 'srv-60',
+        specialistId: 'spc-restricted',
+        dateJalali: '۱۴۰۵/۰۸/۱۲',
+        timeSlot: '۱۰:۳۰',
+      }),
+    });
+    assert.equal(exSalonBookRes.status, 400);
+    assert.equal(
+      ((await exSalonBookRes.json()) as { errorCode: string }).errorCode,
+      'OUTSIDE_BUSINESS_WORKING_HOURS'
+    );
+
+    // ۴-ب: مرخصی کامل متخصص spc-general در ۱۴۰۵/۰۸/۱۳
+    const exSpcLeaveAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۳'
+      )}&serviceId=srv-60&specialistId=spc-general`
+    );
+    const exSpcLeaveAvailBody = (await exSpcLeaveAvailRes.json()) as {
+      data: {
+        isOpen: boolean;
+        slots: Array<{ available: boolean; reason?: string }>;
+      };
+    };
+    assert.equal(exSpcLeaveAvailBody.data.isOpen, true);
+    assert.equal(
+      exSpcLeaveAvailBody.data.slots.every(
+        (s) => s.available === false && s.reason === 'مرخصی روزانه متخصص'
+      ),
+      true
+    );
+
+    const exSpcLeaveBookRes = await fetch(
+      `${srv.baseUrl}/api/v1/appointments`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify({
+          businessSlug: 'royal-golzar',
+          serviceId: 'srv-60',
+          specialistId: 'spc-general',
+          dateJalali: '۱۴۰۵/۰۸/۱۳',
+          timeSlot: '۱۱:۰۰',
+        }),
+      }
+    );
+    assert.equal(exSpcLeaveBookRes.status, 400);
+    assert.equal(
+      ((await exSpcLeaveBookRes.json()) as { errorCode: string }).errorCode,
+      'OUTSIDE_BUSINESS_WORKING_HOURS'
+    );
+
+    // در همان روز ۱۴۰۵/۰۸/۱۳ متخصص دوم (spc-restricted) مرخصی ندارد و اسلات ۱۱:۰۰ او آزاد است
+    const exOtherSpcAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۳'
+      )}&serviceId=srv-60&specialistId=spc-restricted`
+    );
+    const exOtherSpcAvailBody = (await exOtherSpcAvailRes.json()) as {
+      data: { slots: Array<{ time: string; available: boolean }> };
+    };
+    assert.equal(
+      exOtherSpcAvailBody.data.slots.find((s) => s.time === '۱۱:۰۰')?.available,
+      true
+    );
+
+    // ۴-ج: بازه استثنای ساعتی در ۱۴۰۵/۰۸/۱۴ برای خدمت ۶۰ دقیقه‌ای:
+    // - ۱۱:۰۰ (۱۱:۰۰ تا ۱۲:۰۰) آزاد است
+    // - ۱۱:۳۰ (۱۱:۳۰ تا ۱۲:۳۰) با استثنای ۱۲:۰۰ تا ۱۳:۳۰ سالن هم‌پوشانی دارد -> غیرمجاز
+    // - ۱۳:۳۰ (۱۳:۳۰ تا ۱۴:۳۰) آزاد است
+    // - ۱۴:۳۰ (۱۴:۳۰ تا ۱۵:۳۰) با مرخصی ساعتی ۱۵:۰۰ تا ۱۶:۳۰ متخصص هم‌پوشانی دارد -> غیرمجاز
+    // - ۱۶:۳۰ (۱۶:۳۰ تا ۱۷:۳۰) آزاد است
+    const exPartialAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۴'
+      )}&serviceId=srv-60&specialistId=spc-restricted`
+    );
+    const exPartialAvailBody = (await exPartialAvailRes.json()) as {
+      data: {
+        slots: Array<{ time: string; available: boolean; reason?: string }>;
+      };
+    };
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۱:۰۰')?.available,
+      true
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۱:۳۰')?.available,
+      false
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۱:۳۰')?.reason,
+      'جلسه آموزشی سالن'
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۳:۳۰')?.available,
+      true
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۴:۳۰')?.available,
+      false
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۴:۳۰')?.reason,
+      'مرخصی ساعتی متخصص'
+    );
+    assert.equal(
+      exPartialAvailBody.data.slots.find((s) => s.time === '۱۶:۳۰')?.available,
+      true
+    );
+
+    // تلاش برای رزرو روی بازه‌های دارای هم‌پوشانی با استثنای ساعتی باید با 400 رد شود
+    for (const blockedSlot of ['۱۱:۳۰', '۱۲:۰۰', '۱۴:۳۰', '۱۵:۳۰']) {
+      const partialBookRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify({
+          businessSlug: 'royal-golzar',
+          serviceId: 'srv-60',
+          specialistId: 'spc-restricted',
+          dateJalali: '۱۴۰۵/۰۸/۱۴',
+          timeSlot: blockedSlot,
+        }),
+      });
+      assert.equal(partialBookRes.status, 400);
+      assert.equal(
+        ((await partialBookRes.json()) as { errorCode: string }).errorCode,
+        'OUTSIDE_BUSINESS_WORKING_HOURS'
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // ۵. رد قطعی تاریخ و ساعت گذشته در ثبت نوبت و availability
+    // -------------------------------------------------------------------------
+    const pastBookRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${custToken}`,
+      },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        serviceId: 'srv-60',
+        specialistId: 'spc-restricted',
+        dateJalali: '۱۴۰۵/۰۸/۰۳', // روز گذشته نسبت به زمان سیستم
+        timeSlot: '۱۱:۰۰',
+      }),
+    });
+    assert.equal(pastBookRes.status, 400);
+    assert.equal(
+      ((await pastBookRes.json()) as { errorCode: string }).errorCode,
+      'APPOINTMENT_TIME_IN_PAST'
+    );
+
+    const pastAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۰۳'
+      )}&serviceId=srv-60&specialistId=spc-restricted`
+    );
+    assert.equal(pastAvailRes.status, 200);
+    const pastAvailBody = (await pastAvailRes.json()) as {
+      data: { slots: Array<{ available: boolean; reason?: string }> };
+    };
+    assert.equal(
+      pastAvailBody.data.slots.every(
+        (s) => s.available === false && s.reason === 'گذشته'
+      ),
+      true
+    );
+
+    // -------------------------------------------------------------------------
+    // ۶. اعتبارسنجی سخت‌گیرانه شناسه‌ها و تاریخ (بدون هیچ Fallback خاموش به مقدار پیش‌فرض)
+    // -------------------------------------------------------------------------
+    // نبود dateJalali در availability -> 400 INVALID_INPUT_PAYLOAD
+    const noDateAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability`
+    );
+    assert.equal(noDateAvailRes.status, 400);
+    assert.equal(
+      ((await noDateAvailRes.json()) as { errorCode: string }).errorCode,
+      'INVALID_INPUT_PAYLOAD'
+    );
+
+    // شناسه خدمت نامعتبر در availability -> 404 SERVICE_NOT_FOUND_FOR_BUSINESS
+    const badSrvAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۰'
+      )}&serviceId=srv-does-not-exist`
+    );
+    assert.equal(badSrvAvailRes.status, 404);
+    assert.equal(
+      ((await badSrvAvailRes.json()) as { errorCode: string }).errorCode,
+      'SERVICE_NOT_FOUND_FOR_BUSINESS'
+    );
+
+    // شناسه متخصص نامعتبر در availability -> 404 SPECIALIST_NOT_FOUND_FOR_BUSINESS
+    const badSpcAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۰'
+      )}&specialistId=spc-does-not-exist`
+    );
+    assert.equal(badSpcAvailRes.status, 404);
+    assert.equal(
+      ((await badSpcAvailRes.json()) as { errorCode: string }).errorCode,
+      'SPECIALIST_NOT_FOUND_FOR_BUSINESS'
+    );
+
+    // عدم تخصیص خدمت به متخصص در availability -> 400 SPECIALIST_NOT_ASSIGNED_TO_SERVICE
+    const unassignedAvailRes = await fetch(
+      `${srv.baseUrl}/api/v1/businesses/royal-golzar/availability?dateJalali=${encodeURIComponent(
+        '۱۴۰۵/۰۸/۱۰'
+      )}&serviceId=srv-unassigned&specialistId=spc-restricted`
+    );
+    assert.equal(unassignedAvailRes.status, 400);
+    assert.equal(
+      ((await unassignedAvailRes.json()) as { errorCode: string }).errorCode,
+      'SPECIALIST_NOT_ASSIGNED_TO_SERVICE'
+    );
+
+    // -------------------------------------------------------------------------
+    // ۷. خنثی‌سازی کامل serviceStartsAtIso دست‌کاری‌شده از سمت کلاینت
+    // -------------------------------------------------------------------------
+    // الف) کلاینت ساعت غیرمجاز ۲۲:۰۰ می‌فرستد اما serviceStartsAtIso را روی ساعت ۱۱:۰۰ تنظیم می‌کند -> باید رد شود
+    const bypassAttemptRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${custToken}`,
+      },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        serviceId: 'srv-60',
+        specialistId: 'spc-restricted',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
+        timeSlot: '۲۲:۰۰',
+        serviceStartsAtIso: '2026-11-01T07:30:00.000Z',
+      }),
+    });
+    assert.equal(bypassAttemptRes.status, 400);
+    assert.equal(
+      ((await bypassAttemptRes.json()) as { errorCode: string }).errorCode,
+      'OUTSIDE_BUSINESS_WORKING_HOURS'
+    );
+
+    // ب) کلاینت تاریخ و ساعت معتبر (۱۴۰۵/۰۸/۱۰ ساعت ۱۰:۳۰) می‌فرستد اما serviceStartsAtIso جعلی (سال ۲۰۹۹) ارسال می‌کند -> سرور فقط زمان واقعی ۱۴۰۵/۰۸/۱۰ ساعت ۱۰:۳۰ تهران (07:00 UTC) را ذخیره می‌کند
+    const ignoredIsoRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${custToken}`,
+      },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        serviceId: 'srv-60',
+        specialistId: 'spc-restricted',
+        dateJalali: '۱۴۰۵/۰۸/۱۰',
+        timeSlot: '۱۰:۳۰',
+        serviceStartsAtIso: '2099-05-05T12:00:00.000Z',
+      }),
+    });
+    assert.equal(ignoredIsoRes.status, 201);
+    const savedApt = activeAppointments[activeAppointments.length - 1];
+    assert.equal(savedApt.startIso, '2026-11-01T07:00:00.000Z');
+
+    // -------------------------------------------------------------------------
+    // ۸. دو درخواست هم‌زمان (Concurrent) برای یک متخصص و یک بازه زمانی -> یکی 201 و دیگری 409
+    // -------------------------------------------------------------------------
+    const concurrentPayload = {
+      businessSlug: 'royal-golzar',
+      serviceId: 'srv-60',
+      specialistId: 'spc-general',
+      dateJalali: '۱۴۰۵/۰۸/۱۰',
+      timeSlot: '۱۴:۰۰',
+    };
+    const [concRes1, concRes2] = await Promise.all([
+      fetch(`${srv.baseUrl}/api/v1/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify(concurrentPayload),
+      }),
+      fetch(`${srv.baseUrl}/api/v1/appointments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify(concurrentPayload),
+      }),
+    ]);
+
+    const statuses = [concRes1.status, concRes2.status].sort((a, b) => a - b);
+    assert.deepEqual(statuses, [201, 409]);
+    const conflictResponse = concRes1.status === 409 ? concRes1 : concRes2;
+    const conflictJson = (await conflictResponse.json()) as {
+      errorCode: string;
+    };
+    assert.equal(conflictJson.errorCode, 'APPOINTMENT_OVERLAP_CONFLICT');
+  } finally {
+    await srv.close();
+  }
+});
+
 
 
 

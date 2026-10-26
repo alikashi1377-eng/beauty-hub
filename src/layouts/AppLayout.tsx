@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Bell, Store } from 'lucide-react';
+import { Bell, CalendarPlus, Store } from 'lucide-react';
 import { PublicHeader } from '../components/navigation/PublicHeader';
 import { PublicFooter } from '../components/navigation/PublicFooter';
+import { PublicMobileBottomNav } from '../components/navigation/PublicMobileBottomNav';
 import { BusinessSidebar } from '../components/navigation/BusinessSidebar';
 import { BusinessMobileNavigation } from '../components/navigation/BusinessMobileNavigation';
 import { AdminSidebar } from '../components/navigation/AdminSidebar';
@@ -10,7 +11,9 @@ import { ARCHITECTURE_ROUTES } from '../config/designTokens';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ToastBanner } from '../components/ui/MarketplaceComponents';
+import { PWAMobileInstallBanner } from '../components/ui/PWAInstallPrompt';
 import { usePrototypeData } from '../context/PrototypeDataContext';
+import { useScrollToTop } from '../hooks/useScrollToTop';
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -20,6 +23,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const location = useLocation();
   const pathname = location.pathname;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  // فراخوانی هوک مدیریت اسکرول برای بازگشت فوری به بالای صفحه در تمام مسیرها
+  useScrollToTop();
+
   const {
     dataMode,
     authUser,
@@ -35,11 +42,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
   const isAdminPanel = pathname === '/admin' || pathname.startsWith('/admin/');
   const isAuthorizedPlatformAdmin =
-    !isLoadingInitialData &&
-    dataMode === 'real' &&
-    Boolean(
-      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
-    );
+    dataMode === 'mock' ||
+    (!isLoadingInitialData &&
+      dataMode === 'real' &&
+      Boolean(
+        authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
+      ));
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
 
@@ -51,63 +59,82 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     { to: '/me', label: 'پیشخوان حساب', end: true },
     { to: '/me/appointments', label: 'نوبت‌های من' },
     { to: '/me/favorites', label: 'سالن‌های منتخب' },
-    { to: '/me/profile', label: 'ویرایش پروفایل' },
+    { to: '/me/profile', label: 'اطلاعات کاربری' },
   ];
 
+  const pendingCount = appointments.filter(
+    (a) => a.status === 'PENDING'
+  ).length;
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9FC] text-[#120F1D]">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#F3F6FC] text-[#061138]">
       {databaseError ? (
         <div
           role="alert"
-          className="bg-red-900 text-white px-4 py-3 text-xs sm:text-sm font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-red-700"
+          className="bg-[#EF4444] text-white px-4 py-3 text-xs sm:text-sm font-semibold flex flex-wrap items-center justify-between gap-3 border-b border-[#DC2626]"
         >
-          <span>خطای اتصال به دیتابیس PostgreSQL: {databaseError}</span>
+          <span>خطا در ارتباط با پایگاه داده: {databaseError}</span>
           <button
             type="button"
             onClick={() => void refreshRealData()}
-            className="px-3 py-1 rounded-lg bg-white text-red-950 font-semibold text-xs cursor-pointer hover:bg-red-50"
+            className="px-3.5 py-1 rounded-full bg-white text-[#EF4444] font-semibold text-xs cursor-pointer hover:bg-red-50"
           >
-            تلاش مجدد اتصال
+            تلاش مجدد
           </button>
         </div>
       ) : null}
-      {/* چیدمان بر اساس محیط فعال */}
+
       {isBusinessPanel ? (
         <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
           <BusinessSidebar />
           <div className="flex-1 flex flex-col min-w-0">
-            {/* هدر بالای پنل کسب‌وکار */}
-            <header className="bg-white border-b border-[#E6E3EE] px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+            <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 z-20">
               <div className="flex items-center gap-2.5 min-w-0">
-                <Store className="w-4 h-4 text-[#2A0F54] shrink-0" />
-                <span className="text-xs sm:text-sm font-bold text-[#120F1D] truncate">
-                  {currentRouteMeta?.title ?? 'پنل مدیریت کسب‌وکار'}
+                <span className="w-9 h-9 rounded-2xl bg-[#E0ECFF] text-[#0057FF] flex items-center justify-center shrink-0">
+                  <Store className="w-4 h-4" />
                 </span>
-                <span className="hidden sm:inline-block text-xs text-[#756F86]">
-                  · {currentBusiness?.name ?? (dataMode === 'mock' ? 'سالن زیبایی رویال گلزار' : 'کسب‌وکار فعال')}
-                </span>
+                <div className="min-w-0">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] truncate block">
+                    {currentRouteMeta?.title ?? 'پنل مدیریت کسب‌وکار'}
+                  </span>
+                  <span className="text-[11px] font-medium text-[#334155] truncate block">
+                    {currentBusiness?.name ?? 'سالن زیبایی رویال گلزار'}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  to="/app/calendar"
+                  className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#F3F6FC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-xs font-bold text-[#061138] transition-colors"
+                >
+                  <CalendarPlus className="w-3.5 h-3.5 text-[#0057FF]" />
+                  <span>تقویم روزانه</span>
+                </Link>
+
                 <button
                   type="button"
                   onClick={() => setNotificationsOpen(true)}
                   aria-label="اعلان‌های پنل کسب‌وکار"
-                  className="p-2 rounded-xl border border-[#D0CADF] text-[#4A4458] hover:bg-[#F4F3F8] cursor-pointer relative"
+                  className="p-2.5 rounded-full border border-[#CBD5E1] text-[#334155] hover:bg-[#E0ECFF] hover:text-[#0057FF] cursor-pointer relative transition-colors"
                 >
                   <Bell className="w-4 h-4" />
+                  {pendingCount > 0 ? (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#0057FF] border-2 border-white" />
+                  ) : null}
                 </button>
+
                 <Link
-                  to="/app/profile"
-                  className="px-3.5 py-1.5 rounded-xl bg-[#F3EEFA] hover:bg-[#E6E3EE] text-xs font-semibold text-[#2A0F54]"
+                  to="/app/appointments"
+                  className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-xs font-bold text-white transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
                 >
-                  تنظیمات سالن
+                  مدیریت رزروها
                 </Link>
               </div>
             </header>
 
             <BusinessMobileNavigation />
-            <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+            <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
           </div>
         </div>
       ) : isAdminPanel && isAuthorizedPlatformAdmin ? (
@@ -119,12 +146,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <>
           <PublicHeader />
 
-          {/* نوار ناوبری داخلی حساب کاربری مشتری */}
           {isCustomerAccountArea ? (
-            <div className="bg-white border-b border-[#E6E3EE]">
-              <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs font-bold text-[#120F1D]">
-                  حساب کاربری من:
+            <div className="bg-white border-b border-[#CBD5E1] shadow-2xs">
+              <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-extrabold text-[#061138]">
+                  حساب کاربری من
                 </span>
                 <nav
                   aria-label="ناوبری حساب مشتری"
@@ -136,10 +162,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       to={tab.to}
                       end={tab.end}
                       className={({ isActive }) =>
-                        `px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-colors ${
+                        `px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                           isActive
-                            ? 'bg-[#2A0F54] text-white font-semibold'
-                            : 'bg-[#F4F3F8] text-[#4A4458] hover:bg-[#E6E3EE]'
+                            ? 'bg-[#0057FF] text-white shadow-[0_4px_12px_rgba(0,87,255,0.35)]'
+                            : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF] hover:text-[#0057FF]'
                         }`
                       }
                     >
@@ -151,15 +177,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
           ) : null}
 
-          <main className="flex-1 max-w-[1240px] w-full mx-auto px-4 sm:px-6 py-6 sm:py-9">
+          <main className="flex-1 max-w-[1240px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0">
+            <PWAMobileInstallBanner />
             {children}
           </main>
 
-          <PublicFooter />
+          <div className="pb-24 lg:pb-0">
+            <PublicFooter />
+          </div>
+          <PublicMobileBottomNav />
         </>
       )}
 
-      {/* اعلان بازخورد سراسری */}
       {toast ? (
         <ToastBanner
           message={toast.message}
@@ -168,11 +197,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         />
       ) : null}
 
-      {/* مودال اعلان‌های پنل کسب‌وکار */}
       <Modal
         isOpen={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
-        title="اعلان‌های پنل کسب‌وکار"
+        title="اعلان‌ها و درخواست‌های نوبت"
         footer={
           <Button
             variant="secondary"
@@ -184,50 +212,33 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         }
       >
         <div className="space-y-3 text-xs">
-          {dataMode === 'real' ? (
-            appointments.length === 0 ? (
-              <p className="text-[#756F86] py-3 text-center">
-                اعلان جدیدی برای کسب‌وکار شما ثبت نشده است.
-              </p>
-            ) : (
-              appointments.slice(0, 3).map((apt) => (
-                <div
-                  key={apt.id}
-                  className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE]"
-                >
-                  <p className="font-bold text-[#120F1D]">
-                    نوبت ثبت‌شده — {apt.customerName}
-                  </p>
-                  <p className="text-[#4A4458] mt-1 leading-relaxed">
-                    خدمت {apt.serviceTitle} برای تاریخ {apt.dateJalali} ساعت{' '}
-                    {apt.timeSlot} ({apt.referenceCode}).
-                  </p>
-                </div>
-              ))
-            )
+          {appointments.length === 0 ? (
+            <p className="text-[#334155] py-3 text-center">
+              اعلان جدیدی برای کسب‌وکار شما ثبت نشده است.
+            </p>
           ) : (
-            <>
-              <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE]">
-                <p className="font-bold text-[#120F1D]">
-                  درخواست نوبت جدید — پرنیا توکلی
-                </p>
-                <p className="text-[#4A4458] mt-1 leading-relaxed">
-                  خدمت مانیکور روسی برای تاریخ ۱۴۰۵/۰۸/۰۳ ساعت ۱۳:۳۰ در انتظار تایید شماست.
+            appointments.slice(0, 4).map((apt) => (
+              <div
+                key={apt.id}
+                className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-bold text-[#061138]">
+                    {apt.customerName} — {apt.serviceTitle}
+                  </p>
+                  <span className="text-[11px] font-mono text-[#0057FF]">
+                    {apt.referenceCode}
+                  </span>
+                </div>
+                <p className="text-[#334155] mt-1 leading-relaxed">
+                  تاریخ {apt.dateJalali} ساعت {apt.timeSlot} · متخصص:{' '}
+                  {apt.specialistName}
                 </p>
               </div>
-              <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE]">
-                <p className="font-bold text-[#120F1D]">
-                  دیدگاه ۵ ستاره جدید ثبت شد
-                </p>
-                <p className="text-[#4A4458] mt-1 leading-relaxed">
-                  المیرا شمس برای خدمت پروتئین‌تراپی مو امتیاز کامل ثبت کرد.
-                </p>
-              </div>
-            </>
+            ))
           )}
         </div>
       </Modal>
     </div>
   );
 };
-

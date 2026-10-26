@@ -14,9 +14,6 @@ export interface ResponsiveTableProps<T> {
   caption?: string;
 }
 
-/**
- * جدول واکنش‌گرا با تراکم بهینه برای دسکتاپ و کارت‌های ساختاریافته برای موبایل
- */
 export function ResponsiveTable<T>({
   columns,
   data,
@@ -25,12 +22,11 @@ export function ResponsiveTable<T>({
 }: ResponsiveTableProps<T>) {
   return (
     <div className="w-full">
-      {/* نمای جدول در تبلت و دسکتاپ */}
-      <div className="hidden md:block overflow-x-auto rounded-2xl border border-[#E6E3EE] bg-white">
+      <div className="hidden md:block overflow-x-auto rounded-3xl border border-[#E6E0F5] bg-white shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]">
         <table className="w-full text-sm text-right border-collapse">
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead>
-            <tr className="border-b border-[#E6E3EE] bg-[#F4F3F8]/80 text-[#4A4458] text-xs font-semibold">
+            <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF] text-[#6B6480] text-xs font-semibold">
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -48,16 +44,16 @@ export function ResponsiveTable<T>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E6E3EE]">
+          <tbody className="divide-y divide-[#E6E0F5]">
             {data.map((row) => (
               <tr
                 key={keyExtractor(row)}
-                className="hover:bg-[#FAF9FC] transition-colors"
+                className="hover:bg-[#F3EEFF]/60 transition-colors"
               >
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`py-3.5 px-4 text-[#120F1D] align-middle ${
+                    className={`py-3.5 px-4 text-[#1E1B2E] align-middle ${
                       col.align === 'left'
                         ? 'text-left tabular-nums'
                         : col.align === 'center'
@@ -74,20 +70,19 @@ export function ResponsiveTable<T>({
         </table>
       </div>
 
-      {/* نمای کارتی در موبایل برای جلوگیری از اسکرول افقی */}
       <div className="md:hidden space-y-3">
         {data.map((row) => (
           <div
             key={keyExtractor(row)}
-            className="rounded-2xl border border-[#E6E3EE] bg-white p-4 space-y-2.5"
+            className="rounded-3xl border border-[#E6E0F5] bg-white p-4 space-y-2.5 shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]"
           >
             {columns.map((col) => (
               <div
                 key={col.key}
-                className="flex items-center justify-between gap-3 text-xs border-b border-[#F4F3F8] last:border-b-0 pb-2 last:pb-0"
+                className="flex items-center justify-between gap-3 text-xs border-b border-[#F3EEFF] last:border-b-0 pb-2 last:pb-0"
               >
-                <span className="font-medium text-[#756F86]">{col.header}</span>
-                <div className="text-[#120F1D] font-medium">
+                <span className="font-medium text-[#6B6480]">{col.header}</span>
+                <div className="text-[#1E1B2E] font-medium">
                   {col.render(row)}
                 </div>
               </div>

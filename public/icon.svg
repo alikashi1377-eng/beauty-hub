@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="timeto-bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0A1D56" />
+      <stop offset="50%" stop-color="#061138" />
+      <stop offset="100%" stop-color="#030920" />
+    </linearGradient>
+    <linearGradient id="timeto-t-top" x1="36" y1="74" x2="162" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#007BFF" />
+    </linearGradient>
+    <linearGradient id="timeto-t-stem" x1="120" y1="74" x2="108" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00D4FF" />
+      <stop offset="55%" stop-color="#0084FF" />
+      <stop offset="100%" stop-color="#0051FF" />
+    </linearGradient>
+    <linearGradient id="timeto-clock" x1="168" y1="64" x2="212" y2="114" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4DF0FF" />
+      <stop offset="100%" stop-color="#00C4FF" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="60" fill="url(#timeto-bg)" />
+  <rect x="3" y="3" width="250" height="250" rx="57" stroke="#1E40AF" stroke-opacity="0.45" stroke-width="4" />
+  <!-- Top horizontal wing of T -->
+  <path d="M84 72H158C136 86 118 106 112 114H56C47.1634 114 42 106.5 45.5 97.5C51.5 82 66.5 72 84 72Z" fill="url(#timeto-t-top)" />
+  <!-- Curved vertical stem of T -->
+  <path d="M158 72C145 82 138 96 138 114V168C138 187.882 121.882 204 102 204C87.6406 204 76 192.359 76 178V144C76 112 108 84 146 72H158Z" fill="url(#timeto-t-stem)" />
+  <!-- Clock badge at top right -->
+  <circle cx="186" cy="92" r="24" fill="url(#timeto-clock)" />
+  <path d="M184 79V93H196" stroke="#061138" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

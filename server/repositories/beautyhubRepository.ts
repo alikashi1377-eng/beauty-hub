@@ -130,38 +130,186 @@ export function normalizeValidSlug(raw: string, fallbackPrefix = 'item'): string
   return `${fallbackPrefix}-${randomSuffix}`;
 }
 
+const JALALI_BREAKS = [
+  -61, 9, 38, 199, 426, 686, 756, 818, 1111, 1181,
+  1210, 1635, 2060, 2097, 2192, 2262, 2324, 2394, 2456, 3178,
+];
+
+function intDiv(a: number, b: number): number {
+  return Math.trunc(a / b);
+}
+
+function intMod(a: number, b: number): number {
+  return a - Math.trunc(a / b) * b;
+}
+
+function jalCal(jy: number): { leap: number; gy: number; march: number } {
+  const bl = JALALI_BREAKS.length;
+  const gy = jy + 621;
+  let leapJ = -14;
+  let jp = JALALI_BREAKS[0];
+  if (!Number.isInteger(jy) || jy < 1300 || jy > 1500 || jy < jp || jy >= JALALI_BREAKS[bl - 1]) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  let jump = 0;
+  for (let i = 1; i < bl; i += 1) {
+    const jm = JALALI_BREAKS[i];
+    jump = jm - jp;
+    if (jy < jm) {
+      break;
+    }
+    leapJ = leapJ + intDiv(jump, 33) * 8 + intDiv(intMod(jump, 33), 4);
+    jp = jm;
+  }
+
+  let n = jy - jp;
+  leapJ = leapJ + intDiv(n, 33) * 8 + intDiv(intMod(n, 33) + 3, 4);
+  if (intMod(jump, 33) === 4 && jump - n === 4) {
+    leapJ += 1;
+  }
+
+  const leapG = intDiv(gy, 4) - intDiv((intDiv(gy, 100) + 1) * 3, 4) - 150;
+  const march = 20 + leapJ - leapG;
+
+  if (jump - n < 6) {
+    n = n - jump + intDiv(jump + 4, 33) * 33;
+  }
+  let leap = intMod(intMod(n + 1, 33) - 1, 4);
+  if (leap === -1) {
+    leap = 4;
+  }
+
+  return { leap, gy, march };
+}
+
 /**
- * تبدیل تاریخ شمسی نمایشی (مثلاً ۱۴۰۵/۰۸/۰۳) و ساعت (مثلاً ۱۰:۳۰) به TIMESTAMPTZ معتبر
- * برای ذخیره‌سازی دقیق در PostgreSQL
+ * بررسی کبیسه بودن سال شمسی (جلالی) بر اساس الگوریتم دقیق نجومی/جلالی
+ */
+export function isJalaliLeapYear(jy: number): boolean {
+  return jalCal(jy).leap === 0;
+}
+
+/**
+ * تعداد روزهای مجاز هر ماه شمسی (۶ ماه اول ۳۱ روز، ۵ ماه بعدی ۳۰ روز، اسفند ۲۹ یا ۳۰ روز در سال کبیسه)
+ */
+export function getJalaliMonthLength(jy: number, jm: number): number {
+  if (!Number.isInteger(jm) || jm < 1 || jm > 12) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+  if (jm <= 6) return 31;
+  if (jm <= 11) return 30;
+  return isJalaliLeapYear(jy) ? 30 : 29;
+}
+
+export interface ParsedJalaliDate {
+  jy: number;
+  jm: number;
+  jd: number;
+  normalizedJalali: string;
+  gregorianYear: number;
+  gregorianMonth: number;
+  gregorianDay: number;
+  gregorianIsoDate: string;
+}
+
+/**
+ * اعتبارسنجی دقیق تاریخ شمسی و تبدیل به معادل میلادی بدون بازگشت پنهان به تاریخ فعلی
+ */
+export function parseAndValidateJalaliDate(dateJalaliRaw: string): ParsedJalaliDate {
+  const normalizedDate = toEnglishDigits(String(dateJalaliRaw ?? '')).trim();
+  const dateMatch = normalizedDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!dateMatch) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const jy = Number(dateMatch[1]);
+  const jm = Number(dateMatch[2]);
+  const jd = Number(dateMatch[3]);
+
+  const maxDay = getJalaliMonthLength(jy, jm);
+  if (!Number.isInteger(jd) || jd < 1 || jd > maxDay) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const { gy: startGy, march } = jalCal(jy);
+  const dayOffsetInYear =
+    jm <= 7 ? (jm - 1) * 31 + (jd - 1) : 6 * 31 + (jm - 7) * 30 + (jd - 1);
+
+  const utcNoon = new Date(Date.UTC(startGy, 2, march + dayOffsetInYear, 12, 0, 0, 0));
+  const gregorianYear = utcNoon.getUTCFullYear();
+  const gregorianMonth = utcNoon.getUTCMonth() + 1;
+  const gregorianDay = utcNoon.getUTCDate();
+
+  const normalizedJalali = `${String(jy).padStart(4, '0')}/${String(jm).padStart(2, '0')}/${String(jd).padStart(2, '0')}`;
+  const gregorianIsoDate = `${String(gregorianYear).padStart(4, '0')}-${String(gregorianMonth).padStart(2, '0')}-${String(gregorianDay).padStart(2, '0')}`;
+
+  return {
+    jy,
+    jm,
+    jd,
+    normalizedJalali,
+    gregorianYear,
+    gregorianMonth,
+    gregorianDay,
+    gregorianIsoDate,
+  };
+}
+
+/**
+ * تبدیل تاریخ شمسی به رشته تاریخ میلادی YYYY-MM-DD (مورد استفاده برای ستون‌های DATE مانند business_time_exceptions)
+ */
+export function jalaliDateToGregorianIsoDate(dateJalaliRaw: string): string {
+  return parseAndValidateJalaliDate(dateJalaliRaw).gregorianIsoDate;
+}
+
+/**
+ * تبدیل تاریخ شمسی (مثلاً ۱۴۰۵/۰۸/۰۳) و ساعت (مثلاً ۱۰:۳۰) به TIMESTAMPTZ معتبر
+ * در منطقه زمانی رسمی ایران (Asia/Tehran: UTC+03:30) برای ذخیره‌سازی دقیق در PostgreSQL
  */
 export function jalaliSlotToTimestamptz(
   dateJalali: string,
   timeSlotLabel: string
 ): Date {
-  const normalizedDate = toEnglishDigits(dateJalali).trim();
-  const normalizedTime = toEnglishDigits(timeSlotLabel).trim();
+  const { gregorianYear, gregorianMonth, gregorianDay } =
+    parseAndValidateJalaliDate(dateJalali);
 
-  const dateMatch = normalizedDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  const timeMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})/);
-
-  const hour = timeMatch ? Math.min(23, Math.max(0, Number(timeMatch[1]))) : 10;
-  const minute = timeMatch
-    ? Math.min(59, Math.max(0, Number(timeMatch[2])))
-    : 0;
-
-  if (dateMatch) {
-    const jy = Number(dateMatch[1]);
-    const jm = Number(dateMatch[2]);
-    const jd = Number(dateMatch[3]);
-    const gy = jy + 621;
-    const dayOfYear = (jm - 1) * 30 + jd + 79;
-    const baseUtc = Date.UTC(gy, 0, 1, hour - 3, minute - 30, 0, 0);
-    return new Date(baseUtc + dayOfYear * 86400 * 1000);
+  const normalizedTime = toEnglishDigits(String(timeSlotLabel ?? '')).trim();
+  const timeMatch = normalizedTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!timeMatch) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
   }
 
-  const now = new Date();
-  now.setUTCHours(hour, minute, 0, 0);
-  return now;
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const second = timeMatch[3] !== undefined ? Number(timeMatch[3]) : 0;
+
+  if (
+    !Number.isInteger(hour) ||
+    hour < 0 ||
+    hour > 23 ||
+    !Number.isInteger(minute) ||
+    minute < 0 ||
+    minute > 59 ||
+    !Number.isInteger(second) ||
+    second < 0 ||
+    second > 59
+  ) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  // Asia/Tehran is permanently UTC+03:30
+  return new Date(
+    Date.UTC(
+      gregorianYear,
+      gregorianMonth - 1,
+      gregorianDay,
+      hour - 3,
+      minute - 30,
+      second,
+      0
+    )
+  );
 }
 
 /**
@@ -193,12 +341,133 @@ export function normalizeWorkingTimePair(
 
 export function parseTimeLabelToMinutes(raw: string): number | null {
   const clean = toEnglishDigits(raw || '').trim();
-  const match = clean.match(/^(\d{1,2}):(\d{2})/);
+  const match = clean.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) return null;
   const h = Number(match[1]);
   const m = Number(match[2]);
-  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  const s = match[3] !== undefined ? Number(match[3]) : 0;
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) return null;
   return h * 60 + m;
+}
+
+/**
+ * تبدیل دقیقه روز (۰ تا ۱۴۳۹) به رشته ساعت فارسی با فرمت استاندارد HH:MM (مانند ۰۹:۳۰)
+ */
+export function formatMinutesToPersianTimeLabel(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, Math.floor(totalMinutes)));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return toPersianDigitsServer(`${hh}:${mm}`);
+}
+
+/**
+ * تولید پویا و یکپارچه اسلات‌های کاندید روزانه بر اساس ساعت شروع و پایان واقعی کار سالن
+ */
+export function generateDynamicSlotMinutes(
+  openMins: number,
+  closeMins: number,
+  stepMinutes = 30
+): number[] {
+  const step = Math.max(5, Math.floor(stepMinutes));
+  const result: number[] = [];
+  if (closeMins <= openMins) {
+    return result;
+  }
+  for (let m = openMins; m < closeMins; m += step) {
+    result.push(m);
+  }
+  return result;
+}
+
+export interface BusinessTimeExceptionRow {
+  id?: string;
+  specialist_id: string | null;
+  is_closed_all_day: boolean;
+  start_str: string | null;
+  end_str: string | null;
+  reason: string | null;
+}
+
+export interface EvaluatedDayExceptions {
+  isBusinessClosedAllDay: boolean;
+  businessClosedReason: string | null;
+  isSpecialistClosedAllDay: boolean;
+  specialistClosedReason: string | null;
+  partialWindows: Array<{
+    specialistId: string | null;
+    startMins: number;
+    endMins: number;
+    reason: string | null;
+  }>;
+  hasInvalidExceptionRow: boolean;
+}
+
+/**
+ * ارزیابی بدون ابهام رکوردهای جدول business_time_exceptions برای یک روز و متخصص مشخص:
+ * ۱. تعطیلی کامل سالن (specialist_id IS NULL و is_closed_all_day = TRUE)
+ * ۲. مرخصی کامل متخصص (specialist_id = targetSpecialistUuid و is_closed_all_day = TRUE)
+ * ۳. بازه‌های استثنای ساعتی سالن یا متخصص (is_closed_all_day = FALSE با start_time و end_time)
+ */
+export function evaluateDayTimeExceptions(
+  rows: BusinessTimeExceptionRow[],
+  targetSpecialistUuid: string | null
+): EvaluatedDayExceptions {
+  let isBusinessClosedAllDay = false;
+  let businessClosedReason: string | null = null;
+  let isSpecialistClosedAllDay = false;
+  let specialistClosedReason: string | null = null;
+  let hasInvalidExceptionRow = false;
+  const partialWindows: Array<{
+    specialistId: string | null;
+    startMins: number;
+    endMins: number;
+    reason: string | null;
+  }> = [];
+
+  for (const row of rows) {
+    const spcId = row.specialist_id ? String(row.specialist_id) : null;
+    if (spcId !== null && spcId !== targetSpecialistUuid) {
+      continue;
+    }
+
+    const cleanReason = row.reason?.trim() || null;
+
+    if (row.is_closed_all_day) {
+      if (spcId === null) {
+        isBusinessClosedAllDay = true;
+        if (!businessClosedReason && cleanReason) {
+          businessClosedReason = cleanReason;
+        }
+      } else {
+        isSpecialistClosedAllDay = true;
+        if (!specialistClosedReason && cleanReason) {
+          specialistClosedReason = cleanReason;
+        }
+      }
+    } else {
+      const startMins = parseTimeLabelToMinutes(String(row.start_str || ''));
+      const endMins = parseTimeLabelToMinutes(String(row.end_str || ''));
+      if (startMins === null || endMins === null || endMins <= startMins) {
+        hasInvalidExceptionRow = true;
+        continue;
+      }
+      partialWindows.push({
+        specialistId: spcId,
+        startMins,
+        endMins,
+        reason: cleanReason,
+      });
+    }
+  }
+
+  return {
+    isBusinessClosedAllDay,
+    businessClosedReason,
+    isSpecialistClosedAllDay,
+    specialistClosedReason,
+    partialWindows,
+    hasInvalidExceptionRow,
+  };
 }
 
 const IRAN_DAY_NAMES = [
@@ -1291,6 +1560,16 @@ export async function createAppointmentInDb(
     throw new Error('INVALID_INPUT_PAYLOAD');
   }
 
+  const parsedDate = parseAndValidateJalaliDate(dateJalaliRaw);
+  const slotStartMinutes = parseTimeLabelToMinutes(timeSlotRaw);
+  if (slotStartMinutes === null) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  // محاسبه زمان دقیق شروع نوبت صرفاً در سرور از روی تاریخ شمسی و ساعت اسلات معتبر (نادیده گرفتن کامل serviceStartsAtIso ارسالی کلاینت)
+  const startsAtDate = jalaliSlotToTimestamptz(dateJalaliRaw, timeSlotRaw);
+  const gregorianIsoDate = parsedDate.gregorianIsoDate;
+
   const customerName = (input.customerName ?? actorUser.fullName ?? '').trim();
   if (customerName.length < 2) {
     throw new Error('INVALID_INPUT_PAYLOAD');
@@ -1364,14 +1643,15 @@ export async function createAppointmentInDb(
       }
     }
 
+    // جلوگیری از ثبت نوبت برای تاریخ یا ساعت گذشته
+    if (startsAtDate.getTime() <= Date.now()) {
+      throw new Error('APPOINTMENT_TIME_IN_PAST');
+    }
+
     const durationMinutes = Number(srv.duration_minutes);
     const priceToman = Number(srv.price_toman);
 
-    // بررسی ساعات کاری کسب‌وکار در روز انتخابی (در صورتی که ساعات کاری برای آن روز ثبت شده باشد)
-    const slotStartMinutes = parseTimeLabelToMinutes(timeSlotRaw);
-    if (slotStartMinutes === null) {
-      throw new Error('INVALID_INPUT_PAYLOAD');
-    }
+    // بررسی سخت‌گیرانه ساعات کاری کسب‌وکار در روز انتخابی (نبود رکورد یا is_open=false به منزله تعطیلی است)
     const { dayOfWeek, dayName } = jalaliDateToIranDayOfWeek(dateJalaliRaw);
     const whRes = await client.query(
       `
@@ -1386,19 +1666,59 @@ export async function createAppointmentInDb(
       `,
       [biz.id, dayOfWeek, dayName]
     );
-    if (whRes.rowCount && whRes.rows[0]) {
-      const whRow = whRes.rows[0];
-      if (!whRow.is_open) {
-        throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
-      }
-      const openMins = parseTimeLabelToMinutes(String(whRow.open_str || '09:30')) ?? 570;
-      const closeMins = parseTimeLabelToMinutes(String(whRow.close_str || '19:30')) ?? 1170;
-      if (
-        slotStartMinutes < openMins ||
-        slotStartMinutes + durationMinutes > closeMins
-      ) {
-        throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
-      }
+    if (!whRes.rowCount || !whRes.rows[0] || !whRes.rows[0].is_open) {
+      throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
+    }
+    const whRow = whRes.rows[0];
+    const openMins = parseTimeLabelToMinutes(String(whRow.open_str || ''));
+    const closeMins = parseTimeLabelToMinutes(String(whRow.close_str || ''));
+    if (
+      openMins === null ||
+      closeMins === null ||
+      closeMins <= openMins ||
+      slotStartMinutes < openMins ||
+      slotStartMinutes + durationMinutes > closeMins
+    ) {
+      throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
+    }
+
+    // بررسی تعطیلات سالن، مرخصی متخصص و بازه‌های استثنای ساعتی در جدول business_time_exceptions
+    const exRes = await client.query<BusinessTimeExceptionRow>(
+      `
+      SELECT
+        id,
+        specialist_id,
+        is_closed_all_day,
+        to_char(start_time, 'HH24:MI') AS start_str,
+        to_char(end_time, 'HH24:MI') AS end_str,
+        reason
+      FROM business_time_exceptions
+      WHERE business_id = $1
+        AND exception_date = $2::date
+        AND (specialist_id IS NULL OR specialist_id = $3)
+      ORDER BY is_closed_all_day DESC, (specialist_id IS NULL) DESC, start_time ASC NULLS FIRST
+      `,
+      [biz.id, gregorianIsoDate, spc.id]
+    );
+
+    const exceptions = evaluateDayTimeExceptions(
+      exRes.rows ?? [],
+      String(spc.id)
+    );
+    if (
+      exceptions.hasInvalidExceptionRow ||
+      exceptions.isBusinessClosedAllDay ||
+      exceptions.isSpecialistClosedAllDay
+    ) {
+      throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
+    }
+    const overlapsExceptionWindow = exceptions.partialWindows.some(
+      (w) =>
+        slotStartMinutes < w.endMins &&
+        slotStartMinutes + durationMinutes > w.startMins
+    );
+    if (overlapsExceptionWindow) {
+      throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
     }
 
     const settingsRes = await client.query(
@@ -1410,9 +1730,34 @@ export async function createAppointmentInDb(
         ? Number(settingsRes.rows[0].buffer_minutes)
         : 15;
 
-    const startsAtDate = input.serviceStartsAtIso
-      ? new Date(input.serviceStartsAtIso)
-      : jalaliSlotToTimestamptz(dateJalaliRaw, timeSlotRaw);
+    // بررسی تداخل زمانی با نوبت‌های فعال همان متخصص درون تراکنش (علاوه بر قید EXCLUDE USING gist سطح PostgreSQL)
+    const activeAptsRes = await client.query(
+      `
+      SELECT
+        service_starts_at,
+        occupied_until_at
+      FROM appointments
+      WHERE business_id = $1
+        AND status IN ('PENDING', 'CONFIRMED')
+        AND specialist_id = $2
+      `,
+      [biz.id, spc.id]
+    );
+    const slotStartMs = startsAtDate.getTime();
+    const slotOccupiedEndMs =
+      slotStartMs + (durationMinutes + bufferMinutes) * 60 * 1000;
+    const hasActiveOverlap = (activeAptsRes.rows ?? []).some((r) => {
+      const existStartMs = new Date(String(r.service_starts_at)).getTime();
+      const existEndMs = new Date(String(r.occupied_until_at)).getTime();
+      return slotStartMs < existEndMs && slotOccupiedEndMs > existStartMs;
+    });
+    if (hasActiveOverlap) {
+      const conflictErr = new Error(
+        'APPOINTMENT_OVERLAP_CONFLICT'
+      ) as Error & { code?: string };
+      conflictErr.code = '23P01';
+      throw conflictErr;
+    }
 
     const maskedPhone = maskPhoneDisplay(normalizedPhone);
     const referenceCode = `BH-${Math.floor(100000 + Math.random() * 899999)}`;
@@ -2928,7 +3273,14 @@ export async function getBusinessAvailabilityInDb(
   serviceIdRaw?: string,
   specialistIdRaw?: string
 ): Promise<BusinessAvailabilityPayload> {
-  const dateJalali = (dateJalaliRaw || '۱۴۰۵/۰۸/۰۵').trim();
+  const trimmedDate = (dateJalaliRaw ?? '').trim();
+  if (!trimmedDate) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+  const parsedDate = parseAndValidateJalaliDate(trimmedDate);
+  const dateJalali = toPersianDigitsServer(parsedDate.normalizedJalali);
+  const gregorianIsoDate = parsedDate.gregorianIsoDate;
+
   const client = await pool.connect();
   try {
     const biz = await resolveBusinessUuid(client, businessSlugOrId);
@@ -2937,10 +3289,11 @@ export async function getBusinessAvailabilityInDb(
     }
 
     let durationMinutes = 60;
-    if (serviceIdRaw && serviceIdRaw.trim()) {
+    let targetServiceUuid: string | null = null;
+    if (serviceIdRaw !== undefined && serviceIdRaw.trim() !== '') {
       const srvRes = await client.query(
         `
-        SELECT duration_minutes
+        SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, title, duration_minutes, price_toman
         FROM services
         WHERE business_id = $1
           AND is_active = TRUE
@@ -2949,16 +3302,18 @@ export async function getBusinessAvailabilityInDb(
         `,
         [biz.id, serviceIdRaw.trim()]
       );
-      if (srvRes.rowCount && srvRes.rows[0]) {
-        durationMinutes = Number(srvRes.rows[0].duration_minutes);
+      if (!srvRes.rowCount || !srvRes.rows[0]) {
+        throw new Error('SERVICE_NOT_FOUND_FOR_BUSINESS');
       }
+      targetServiceUuid = String(srvRes.rows[0].id);
+      durationMinutes = Number(srvRes.rows[0].duration_minutes);
     }
 
     let targetSpecialistUuid: string | null = null;
-    if (specialistIdRaw && specialistIdRaw.trim()) {
+    if (specialistIdRaw !== undefined && specialistIdRaw.trim() !== '') {
       const spcRes = await client.query(
         `
-        SELECT id
+        SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, full_name
         FROM specialists
         WHERE business_id = $1
           AND is_active = TRUE
@@ -2967,8 +3322,26 @@ export async function getBusinessAvailabilityInDb(
         `,
         [biz.id, specialistIdRaw.trim()]
       );
-      if (spcRes.rowCount && spcRes.rows[0]) {
-        targetSpecialistUuid = String(spcRes.rows[0].id);
+      if (!spcRes.rowCount || !spcRes.rows[0]) {
+        throw new Error('SPECIALIST_NOT_FOUND_FOR_BUSINESS');
+      }
+      targetSpecialistUuid = String(spcRes.rows[0].id);
+    }
+
+    // بررسی تخصیص خدمت به متخصص در صورتی که هر دو پارامتر ارسال شده باشند
+    if (targetSpecialistUuid && targetServiceUuid) {
+      const spcSrvCountRes = await client.query(
+        `SELECT COUNT(*)::int AS cnt FROM specialist_services WHERE specialist_id = $1 AND business_id = $2`,
+        [targetSpecialistUuid, biz.id]
+      );
+      if (Number(spcSrvCountRes.rows[0]?.cnt ?? 0) > 0) {
+        const spcSrvMatchRes = await client.query(
+          `SELECT 1 FROM specialist_services WHERE specialist_id = $1 AND service_id = $2 AND business_id = $3 LIMIT 1`,
+          [targetSpecialistUuid, targetServiceUuid, biz.id]
+        );
+        if (!spcSrvMatchRes.rowCount) {
+          throw new Error('SPECIALIST_NOT_ASSIGNED_TO_SERVICE');
+        }
       }
     }
 
@@ -2981,7 +3354,7 @@ export async function getBusinessAvailabilityInDb(
         ? Number(settingsRes.rows[0].buffer_minutes)
         : 15;
 
-    const { dayOfWeek, dayName } = jalaliDateToIranDayOfWeek(dateJalali);
+    const { dayOfWeek, dayName } = jalaliDateToIranDayOfWeek(trimmedDate);
     const whRes = await client.query(
       `
       SELECT
@@ -2996,7 +3369,7 @@ export async function getBusinessAvailabilityInDb(
       [biz.id, dayOfWeek, dayName]
     );
 
-    let isOpen = true;
+    let isOpen = false;
     let openStr = '09:30';
     let closeStr = '19:30';
 
@@ -3006,8 +3379,44 @@ export async function getBusinessAvailabilityInDb(
       closeStr = String(whRes.rows[0].close_str || '19:30');
     }
 
-    const openMins = parseTimeLabelToMinutes(openStr) ?? 570;
-    const closeMins = parseTimeLabelToMinutes(closeStr) ?? 1170;
+    const parsedOpenMins = parseTimeLabelToMinutes(openStr);
+    const parsedCloseMins = parseTimeLabelToMinutes(closeStr);
+    if (
+      parsedOpenMins === null ||
+      parsedCloseMins === null ||
+      parsedCloseMins <= parsedOpenMins
+    ) {
+      isOpen = false;
+    }
+    const openMins = parsedOpenMins ?? 570;
+    const closeMins = parsedCloseMins ?? 1170;
+
+    // دریافت استثناهای زمانی سالن یا متخصص در آن تاریخ از جدول business_time_exceptions
+    const exRes = await client.query<BusinessTimeExceptionRow>(
+      `
+      SELECT
+        id,
+        specialist_id,
+        is_closed_all_day,
+        to_char(start_time, 'HH24:MI') AS start_str,
+        to_char(end_time, 'HH24:MI') AS end_str,
+        reason
+      FROM business_time_exceptions
+      WHERE business_id = $1
+        AND exception_date = $2::date
+        AND (specialist_id IS NULL OR specialist_id = $3)
+      ORDER BY is_closed_all_day DESC, (specialist_id IS NULL) DESC, start_time ASC NULLS FIRST
+      `,
+      [biz.id, gregorianIsoDate, targetSpecialistUuid]
+    );
+    const exceptions = evaluateDayTimeExceptions(
+      exRes.rows ?? [],
+      targetSpecialistUuid
+    );
+
+    if (exceptions.isBusinessClosedAllDay || exceptions.hasInvalidExceptionRow) {
+      isOpen = false;
+    }
 
     // دریافت نوبت‌های فعال در آن تاریخ برای بررسی تداخل زمانی
     const aptQueryParams: unknown[] = [biz.id];
@@ -3030,62 +3439,96 @@ export async function getBusinessAvailabilityInDb(
       aptQueryParams
     );
 
-    const occupiedWindows = activeAptsRes.rows.map((r) => ({
+    const occupiedWindows = (activeAptsRes.rows ?? []).map((r) => ({
       startMs: new Date(String(r.service_starts_at)).getTime(),
       endMs: new Date(String(r.occupied_until_at)).getTime(),
     }));
 
-    const candidateLabels = [
-      '۰۹:۳۰',
-      '۱۰:۳۰',
-      '۱۱:۰۰',
-      '۱۲:۰۰',
-      '۱۳:۳۰',
-      '۱۴:۳۰',
-      '۱۶:۰۰',
-      '۱۷:۳۰',
-      '۱۸:۳۰',
-    ];
+    const candidateMinutesList = generateDynamicSlotMinutes(
+      openMins,
+      closeMins,
+      30
+    );
+    const nowMs = Date.now();
 
-    const slots: TimeSlotAvailabilityItem[] = candidateLabels.map((label) => {
-      if (!isOpen) {
+    const slots: TimeSlotAvailabilityItem[] = candidateMinutesList.map(
+      (startMins) => {
+        const label = formatMinutesToPersianTimeLabel(startMins);
+
+        if (!isOpen) {
+          return {
+            time: label,
+            available: false,
+            reason: exceptions.businessClosedReason || 'تعطیل',
+          };
+        }
+
+        if (exceptions.isSpecialistClosedAllDay) {
+          return {
+            time: label,
+            available: false,
+            reason: exceptions.specialistClosedReason || 'مرخصی متخصص',
+          };
+        }
+
+        const slotStartMs = jalaliSlotToTimestamptz(
+          trimmedDate,
+          label
+        ).getTime();
+
+        if (slotStartMs <= nowMs) {
+          return {
+            time: label,
+            available: false,
+            reason: 'گذشته',
+          };
+        }
+
+        if (startMins < openMins || startMins + durationMinutes > closeMins) {
+          return {
+            time: label,
+            available: false,
+            reason: 'خارج از ساعت کاری',
+          };
+        }
+
+        const matchedException = exceptions.partialWindows.find(
+          (w) =>
+            startMins < w.endMins && startMins + durationMinutes > w.startMins
+        );
+        if (matchedException) {
+          return {
+            time: label,
+            available: false,
+            reason:
+              matchedException.reason ||
+              (matchedException.specialistId
+                ? 'مرخصی متخصص'
+                : 'خارج از ساعت کاری'),
+          };
+        }
+
+        const slotOccupiedEndMs =
+          slotStartMs + (durationMinutes + bufferMinutes) * 60 * 1000;
+
+        const hasOverlap = occupiedWindows.some(
+          (w) => slotStartMs < w.endMs && slotOccupiedEndMs > w.startMs
+        );
+
+        if (hasOverlap) {
+          return {
+            time: label,
+            available: false,
+            reason: 'رزروشده',
+          };
+        }
+
         return {
           time: label,
-          available: false,
-          reason: 'تعطیل',
+          available: true,
         };
       }
-
-      const startMins = parseTimeLabelToMinutes(label) ?? 600;
-      if (startMins < openMins || startMins + durationMinutes > closeMins) {
-        return {
-          time: label,
-          available: false,
-          reason: 'خارج از ساعت کاری',
-        };
-      }
-
-      const slotStartMs = jalaliSlotToTimestamptz(dateJalali, label).getTime();
-      const slotOccupiedEndMs =
-        slotStartMs + (durationMinutes + bufferMinutes) * 60 * 1000;
-
-      const hasOverlap = occupiedWindows.some(
-        (w) => slotStartMs < w.endMs && slotOccupiedEndMs > w.startMs
-      );
-
-      if (hasOverlap) {
-        return {
-          time: label,
-          available: false,
-          reason: 'رزروشده',
-        };
-      }
-
-      return {
-        time: label,
-        available: true,
-      };
-    });
+    );
 
     return {
       businessId: biz.externalId,

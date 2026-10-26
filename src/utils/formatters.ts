@@ -2,6 +2,7 @@ import {
   AppointmentStatus,
   BusinessItem,
   BusinessType,
+  ServiceItem,
   SubscriptionStatus,
 } from '../types';
 
@@ -22,6 +23,53 @@ export function formatPriceToman(amount: number): string {
 export function formatDurationMinutes(minutes: number): string {
   if (minutes <= 0) return '۰ دقیقه';
   return `${toPersianDigits(minutes)} دقیقه`;
+}
+
+export function computeSelectedServicesSummary(
+  availableServices: ServiceItem[],
+  selectedIds?: string[],
+  fallbackServiceId?: string
+): {
+  selectedServices: ServiceItem[];
+  services: ServiceItem[];
+  combinedTitle: string;
+  totalDurationMinutes: number;
+  totalPriceToman: number;
+} {
+  const validIds =
+    selectedIds && selectedIds.length > 0
+      ? selectedIds
+      : fallbackServiceId
+      ? [fallbackServiceId]
+      : [];
+  const matched = availableServices.filter((s) => validIds.includes(s.id));
+  const selectedServices =
+    matched.length > 0
+      ? matched
+      : availableServices[0]
+      ? [availableServices[0]]
+      : [];
+
+  const combinedTitle =
+    selectedServices.length > 0
+      ? selectedServices.map((s) => s.title).join(' + ')
+      : 'خدمت زیبایی';
+  const totalDurationMinutes = selectedServices.reduce(
+    (sum, s) => sum + (s.durationMinutes || 0),
+    0
+  );
+  const totalPriceToman = selectedServices.reduce(
+    (sum, s) => sum + (s.priceToman || 0),
+    0
+  );
+
+  return {
+    selectedServices,
+    services: selectedServices,
+    combinedTitle,
+    totalDurationMinutes: totalDurationMinutes || 60,
+    totalPriceToman: totalPriceToman || 0,
+  };
 }
 
 export function getAppointmentStatusMeta(status: AppointmentStatus): {
@@ -178,3 +226,61 @@ export function validateServiceForm(input: {
     errors,
   };
 }
+
+export interface UpcomingJalaliDayItem {
+  date: string;
+  dateJalali: string;
+  label: string;
+  dayName: string;
+  dayMonthLabel: string;
+  fullLabel: string;
+  tag: string;
+}
+
+export function getUpcomingJalaliDays(count = 7): UpcomingJalaliDayItem[] {
+  const result: UpcomingJalaliDayItem[] = [];
+  const now = new Date();
+
+  const numericFormatter = new Intl.DateTimeFormat('en-US-u-ca-persian', {
+    timeZone: 'Asia/Tehran',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const weekdayFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    timeZone: 'Asia/Tehran',
+    weekday: 'long',
+  });
+
+  const dayMonthFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    timeZone: 'Asia/Tehran',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  for (let i = 0; i < count; i++) {
+    const target = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+    const parts = numericFormatter.formatToParts(target);
+    const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+    const dateJalali = toPersianDigits(`${map.year}/${map.month}/${map.day}`);
+    const dayName = weekdayFormatter.format(target);
+    const dayMonthLabel = dayMonthFormatter.format(target);
+    const fullLabel = `${dayName} ${dayMonthLabel}`;
+    const tag =
+      i === 0 ? 'امروز' : i === 1 ? 'فردا' : dayName === 'جمعه' ? 'آخر هفته' : 'ظرفیت باز';
+
+    result.push({
+      date: dateJalali,
+      dateJalali,
+      label: fullLabel,
+      dayName,
+      dayMonthLabel,
+      fullLabel,
+      tag,
+    });
+  }
+
+  return result;
+}
+

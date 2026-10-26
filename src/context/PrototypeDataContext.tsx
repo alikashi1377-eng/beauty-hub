@@ -35,6 +35,7 @@ import {
   SubscriptionPlanItem,
   WorkingHourItem,
 } from '../types';
+import { computeSelectedServicesSummary } from '../utils/formatters';
 
 export interface ToastNotice {
   id: number;
@@ -62,6 +63,8 @@ interface PrototypeDataContextValue {
   setSelectedCity: (city: string) => void;
   favoriteBusinessIds: string[];
   toggleFavoriteBusiness: (businessId: string) => void;
+  favoriteSpecialistIds: string[];
+  toggleFavoriteSpecialist: (specialistId: string) => void;
   businesses: BusinessItem[];
   currentBusiness: BusinessItem | null;
   updateBusinessProfile: (
@@ -177,13 +180,14 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
 const INITIAL_BOOKING_DRAFT: BookingDraft = {
   businessSlug: 'royal-golzar',
   serviceId: 'srv-101',
+  serviceIds: ['srv-101'],
   specialistId: 'spc-1',
   dateJalali: '۱۴۰۵/۰۸/۰۵',
   timeSlot: '۱۱:۰۰',
   customerName: 'المیرا شمس',
   customerPhone: '09123456789',
   customerNotes: '',
-  lastReferenceCode: 'BH-403990',
+  lastReferenceCode: 'TM-403990',
 };
 
 const PrototypeDataContext = createContext<PrototypeDataContextValue | null>(
@@ -202,10 +206,30 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
-  const [favoriteBusinessIds, setFavoriteBusinessIds] = useState<string[]>([
-    'biz-1',
-    'biz-3',
-  ]);
+  const [favoriteBusinessIds, setFavoriteBusinessIds] = useState<string[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('beautyhub_fav_businesses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return ['biz-1', 'biz-3'];
+  });
+  const [favoriteSpecialistIds, setFavoriteSpecialistIds] = useState<string[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('beautyhub_fav_specialists');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return ['spc-1', 'spc-4'];
+  });
   const [businesses, setBusinesses] =
     useState<BusinessItem[]>(SAMPLE_BUSINESSES);
   const [services, setServices] = useState<ServiceItem[]>(SAMPLE_SERVICES);
@@ -369,6 +393,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev,
           businessSlug: firstRealBiz?.slug ?? prev.businessSlug,
           serviceId: firstRealSrv?.id ?? prev.serviceId,
+          serviceIds: firstRealSrv?.id ? [firstRealSrv.id] : prev.serviceIds,
           specialistId: firstRealSpc?.id ?? prev.specialistId,
           customerName: '',
           customerPhone: '',
@@ -544,10 +569,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .toggleFavoriteBusiness(businessId)
         .then((res) => {
           setFavoriteBusinessIds(res.favoriteBusinessIds);
+          try {
+            window.localStorage.setItem(
+              'beautyhub_fav_businesses',
+              JSON.stringify(res.favoriteBusinessIds)
+            );
+          } catch {
+            // ignore storage errors
+          }
           showToast(
             res.favorited
-              ? 'به فهرست سالن‌های منتخب شما در دیتابیس اضافه شد.'
-              : 'از فهرست سالن‌های منتخب شما در دیتابیس حذف شد.',
+              ? 'به فهرست سالن‌های علاقه‌مندی شما اضافه شد.'
+              : 'از فهرست سالن‌های علاقه‌مندی شما حذف شد.',
             'info'
           );
         })
@@ -567,11 +600,45 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const next = exists
         ? prev.filter((id) => id !== businessId)
         : [...prev, businessId];
+      try {
+        window.localStorage.setItem(
+          'beautyhub_fav_businesses',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      const targetBiz = businesses.find((b) => b.id === businessId);
       showToast(
         exists
-          ? 'از فهرست سالن‌های منتخب شما حذف شد.'
-          : 'به فهرست سالن‌های منتخب شما اضافه شد.',
-        'info'
+          ? `${targetBiz ? `«${targetBiz.name}»` : 'سالن'} از لیست علاقه‌مندی‌ها حذف شد.`
+          : `${targetBiz ? `«${targetBiz.name}»` : 'سالن'} در علاقه‌مندی‌های پروفایل شما ذخیره شد.`,
+        exists ? 'info' : 'success'
+      );
+      return next;
+    });
+  };
+
+  const toggleFavoriteSpecialist = (specialistId: string) => {
+    setFavoriteSpecialistIds((prev) => {
+      const exists = prev.includes(specialistId);
+      const next = exists
+        ? prev.filter((id) => id !== specialistId)
+        : [...prev, specialistId];
+      try {
+        window.localStorage.setItem(
+          'beautyhub_fav_specialists',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      const targetSpc = specialists.find((s) => s.id === specialistId);
+      showToast(
+        exists
+          ? `${targetSpc ? `«${targetSpc.fullName}»` : 'متخصص'} از لیست علاقه‌مندی‌ها حذف شد.`
+          : `${targetSpc ? `«${targetSpc.fullName}»` : 'متخصص'} در علاقه‌مندی‌های پروفایل شما ذخیره شد.`,
+        exists ? 'info' : 'success'
       );
       return next;
     });
@@ -1058,12 +1125,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const biz =
       businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
       businesses[0];
-    const srv =
-      services.find((s) => s.id === bookingDraft.serviceId) ?? services[0];
+    const bizServices = biz
+      ? services.filter((s) => s.businessId === biz.id)
+      : services;
+    const summary = computeSelectedServicesSummary(
+      bizServices.length > 0 ? bizServices : services,
+      bookingDraft.serviceIds ?? [],
+      bookingDraft.serviceId
+    );
+    const primarySrv = summary.selectedServices[0] ?? services[0];
     const spc =
       specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
       specialists[0];
-    const refCode = `BH-${Math.floor(404000 + Math.random() * 9000)}`;
+    const refCode = `TM-${Math.floor(404000 + Math.random() * 9000)}`;
 
     const optimisticApt: AppointmentItem = {
       id: `apt-${Date.now()}`,
@@ -1073,14 +1147,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       businessName: biz?.name ?? 'سالن زیبایی',
       customerName: bookingDraft.customerName || 'المیرا شمس',
       customerPhoneMasked: bookingDraft.customerPhone || '۰۹۱۲***۴۵۸۱',
-      serviceId: srv?.id ?? bookingDraft.serviceId,
-      serviceTitle: srv?.title ?? 'خدمت زیبایی',
+      serviceId: primarySrv?.id ?? bookingDraft.serviceId,
+      serviceTitle: summary.combinedTitle,
       specialistId: spc?.id ?? bookingDraft.specialistId,
       specialistName: spc?.fullName ?? 'متخصص سالن',
       dateJalali: bookingDraft.dateJalali,
       timeSlot: bookingDraft.timeSlot,
-      durationMinutes: srv?.durationMinutes ?? 60,
-      priceToman: srv?.priceToman ?? 450000,
+      durationMinutes: summary.totalDurationMinutes,
+      priceToman: summary.totalPriceToman || 450000,
       status: AppointmentStatus.Confirmed,
       notes: bookingDraft.customerNotes || undefined,
     };
@@ -1166,6 +1240,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setSelectedCity,
         favoriteBusinessIds,
         toggleFavoriteBusiness,
+        favoriteSpecialistIds,
+        toggleFavoriteSpecialist,
         businesses,
         currentBusiness,
         updateBusinessProfile,

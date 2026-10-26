@@ -76,12 +76,6 @@ const NotFoundRouteWrapper: React.FC = () => {
   return <NotFoundState attemptedPath={location.pathname} />;
 };
 
-/**
- * گارد محافظت از مسیرهای کنسول مدیریت کلان (/admin و /admin/*)
- * - تا پیش از تکمیل بررسی نشست سمت سرور هیچ داده‌ای از پنل ادمین رندر نمی‌شود.
- * - اگر کاربر احراز هویت نشده باشد به صفحه ورود (/login?redirect=...) هدایت می‌شود.
- * - اگر کاربر وارد شده باشد اما نقش PLATFORM_ADMIN او از دیتابیس تایید نشده باشد، پاسخ صریح ۴۰۳ نمایش داده می‌شود.
- */
 const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -92,19 +86,21 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
     return (
       <div
         role="status"
-        className="max-w-md mx-auto my-16 p-8 rounded-2xl bg-white border border-[#E6E3EE] text-center space-y-3"
+        className="max-w-md mx-auto my-16 p-8 rounded-3xl bg-white border border-[#E6E0F5] text-center space-y-3"
       >
-        <p className="text-sm font-bold text-[#120F1D]">
-          در حال بررسی اعتبار نشست و مجوز دسترسی مدیریت...
+        <p className="text-sm font-bold text-[#1E1B2E]">
+          در حال بررسی اعتبار نشست و مجوز دسترسی...
         </p>
-        <p className="text-xs text-[#756F86]">
-          لطفاً چند لحظه صبر کنید.
-        </p>
+        <p className="text-xs text-[#6B6480]">لطفاً چند لحظه صبر کنید.</p>
       </div>
     );
   }
 
-  if (dataMode !== 'real' || !authUser) {
+  if (dataMode === 'mock') {
+    return <>{children}</>;
+  }
+
+  if (!authUser) {
     return (
       <Navigate
         to={`/login?redirect=${encodeURIComponent(location.pathname)}`}
@@ -120,22 +116,22 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
     return (
       <div
         role="alert"
-        className="max-w-lg mx-auto my-12 p-8 rounded-2xl bg-white border border-[#E6E3EE] text-center space-y-4 shadow-2xs"
+        className="max-w-lg mx-auto my-12 p-8 rounded-3xl bg-white border border-[#E6E0F5] text-center space-y-4 shadow-2xs"
       >
-        <div className="w-12 h-12 rounded-2xl bg-rose-50 text-[#9D174D] mx-auto flex items-center justify-center">
+        <div className="w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#8B5CF6] mx-auto flex items-center justify-center">
           <ShieldAlert className="w-6 h-6" />
         </div>
-        <h1 className="text-lg font-extrabold text-[#120F1D]">
+        <h1 className="text-lg font-extrabold text-[#1E1B2E]">
           ۴۰۳ — عدم مجوز دسترسی (Forbidden)
         </h1>
-        <p className="text-xs sm:text-sm text-[#4A4458] leading-relaxed">
+        <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed">
           حساب کاربری شما دارای نقش مدیر کل سامانه (PLATFORM_ADMIN) نیست و مجوز
           دسترسی به کنسول مدیریت کلان را ندارد.
         </p>
         <div className="pt-2">
           <Link
             to="/"
-            className="inline-flex items-center justify-center px-4 py-2 rounded-xl bg-[#2A0F54] text-white text-xs font-semibold hover:bg-[#1D093B] transition-colors"
+            className="inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-[#8B5CF6] text-white text-xs font-semibold hover:bg-[#7C3AED] transition-colors"
           >
             بازگشت به صفحه اصلی
           </Link>

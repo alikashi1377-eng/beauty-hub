@@ -8,10 +8,12 @@ import {
   Scissors,
   X,
 } from 'lucide-react';
-import { BUSINESS_NAV_ITEMS } from './BusinessSidebar';
+import { BUSINESS_NAV_GROUPS, BUSINESS_NAV_ITEMS } from './BusinessSidebar';
+import { usePrototypeData } from '../../context/PrototypeDataContext';
 
 export const BusinessMobileNavigation: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { currentBusiness } = usePrototypeData();
 
   const primaryQuickTabs = [
     {
@@ -27,7 +29,7 @@ export const BusinessMobileNavigation: React.FC = () => {
     },
     {
       to: '/app/appointments',
-      label: 'نوبت‌ها',
+      label: 'رزروها',
       icon: <ClipboardList className="w-4 h-4" />,
     },
     {
@@ -39,25 +41,25 @@ export const BusinessMobileNavigation: React.FC = () => {
 
   return (
     <div className="lg:hidden">
-      <div className="bg-white border-b border-[#E6E3EE] px-4 py-2.5 flex items-center justify-between">
-        <span className="text-xs font-bold text-[#120F1D]">
-          پنل کسب‌وکار · سالن رویال گلزار
+      <div className="bg-white border-b border-[#E6E0F5] px-4 py-2.5 flex items-center justify-between">
+        <span className="text-xs font-bold text-[#1E1B2E] truncate">
+          {currentBusiness?.name || 'پنل مدیریت سالن'}
         </span>
         <button
           type="button"
           onClick={() => setDrawerOpen((prev) => !prev)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D0CADF] text-xs font-semibold text-[#120F1D] bg-[#FAF9FC] cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#E6E0F5] text-xs font-semibold text-[#1E1B2E] bg-[#FAF8FF] hover:bg-[#EDE9FE] cursor-pointer shrink-0 transition-colors"
           aria-expanded={drawerOpen}
           aria-label="فهرست کامل بخش‌های پنل کسب‌وکار"
         >
           {drawerOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          <span>همه بخش‌های پنل (۱۳)</span>
+          <span>منوی کامل پنل</span>
         </button>
       </div>
 
       <nav
         aria-label="ناوبری سریع موبایل پنل کسب‌وکار"
-        className="bg-[#F4F3F8] border-b border-[#E6E3EE] px-3 py-1.5 grid grid-cols-4 gap-1"
+        className="bg-[#F3EEFF] border-b border-[#E6E0F5] px-3 py-1.5 grid grid-cols-4 gap-1"
       >
         {primaryQuickTabs.map((tab) => (
           <NavLink
@@ -65,10 +67,10 @@ export const BusinessMobileNavigation: React.FC = () => {
             to={tab.to}
             end={tab.end}
             className={({ isActive }) =>
-              `flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-medium whitespace-nowrap ${
+              `flex items-center justify-center gap-1.5 py-2 px-2 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? 'bg-[#2A0F54] text-white font-semibold'
-                  : 'text-[#4A4458] hover:bg-white'
+                  ? 'bg-[#8B5CF6] text-white font-semibold shadow-[0_4px_12px_rgba(139,92,246,0.3)]'
+                  : 'text-[#6B6480] hover:bg-white'
               }`
             }
           >
@@ -79,27 +81,34 @@ export const BusinessMobileNavigation: React.FC = () => {
       </nav>
 
       {drawerOpen ? (
-        <div className="bg-white border-b border-[#D0CADF] p-4 shadow-md">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {BUSINESS_NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                onClick={() => setDrawerOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 p-2.5 rounded-xl text-xs font-medium border ${
-                    isActive
-                      ? 'bg-[#2A0F54] text-white border-[#2A0F54] font-semibold'
-                      : 'bg-[#FAF9FC] text-[#4A4458] border-[#E6E3EE] hover:bg-[#F4F3F8]'
-                  }`
-                }
-              >
-                {item.icon}
-                <span className="truncate">{item.label}</span>
-              </NavLink>
-            ))}
-          </div>
+        <div className="bg-white border-b border-[#E6E0F5] p-4 shadow-lg space-y-4">
+          {BUSINESS_NAV_GROUPS.map((group) => (
+            <div key={group} className="space-y-1.5">
+              <p className="text-[11px] font-bold text-[#6B6480]">{group}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {BUSINESS_NAV_ITEMS.filter((i) => i.group === group).map(
+                  (item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onClick={() => setDrawerOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 p-2.5 rounded-2xl text-xs font-medium border ${
+                          isActive
+                            ? 'bg-[#8B5CF6] text-white border-[#8B5CF6] font-semibold'
+                            : 'bg-[#FAF8FF] text-[#6B6480] border-[#E6E0F5] hover:bg-[#EDE9FE] hover:text-[#7C3AED]'
+                        }`
+                      }
+                    >
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </NavLink>
+                  )
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       ) : null}
     </div>

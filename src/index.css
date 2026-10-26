@@ -76,42 +76,43 @@
     --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
     /* مقیاس منظم وزن‌های تایپوگرافی پروژه */
-    --font-weight-regular: 400;   /* متن معمولی */
-    --font-weight-medium: 500;    /* متن تأکیدی */
-    --font-weight-semibold: 600;  /* دکمه‌ها و تیترهای فرعی */
-    --font-weight-bold: 700;      /* تیترهای اصلی */
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
 
-    /* پالت مرکزی برند BeautyHub — مرحله ۲.۵ */
-    --color-canvas: #FAF9FC;
-    --color-canvas-subtle: #F3F1F8;
+    /* پالت مرکزی با کنتراست بالا — برند Timeto (تایم تو) */
+    --color-canvas: #F3F6FC;
+    --color-canvas-subtle: #E8EFFA;
     --color-surface: #FFFFFF;
     --color-surface-elevated: #FFFFFF;
-    --color-surface-muted: #F4F3F8;
+    --color-surface-muted: #EEF3FA;
 
-    --color-primary: #2A0F54;
-    --color-primary-hover: #1D093B;
-    --color-primary-soft: #F3EEFA;
+    --color-primary: #0057FF;
+    --color-primary-hover: #0044CC;
+    --color-primary-soft: #E0ECFF;
 
-    --color-accent: #9D174D;
-    --color-accent-hover: #831843;
-    --color-accent-soft: #FDF2F7;
+    --color-accent: #00C6FF;
+    --color-accent-hover: #0057FF;
+    --color-accent-soft: #E0F7FF;
 
-    --color-text-main: #120F1D;
-    --color-text-secondary: #4A4458;
-    --color-text-muted: #756F86;
+    --color-text-main: #061138;
+    --color-text-secondary: #334155;
+    --color-text-muted: #64748B;
 
-    --color-border: #E6E3EE;
-    --color-border-strong: #D0CADF;
+    --color-border: #CBD5E1;
+    --color-border-strong: #94A3B8;
 
-    --color-success: #15803D;
-    --color-warning: #B45309;
-    --color-danger: #B91C1C;
-    --color-info: #1D4ED8;
+    --color-success: #10B981;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+    --color-info: #0057FF;
 
-    --radius-sm: 0.5rem;
-    --radius-md: 0.75rem;
-    --radius-lg: 1rem;
-    --radius-xl: 1.25rem;
+    --radius-sm: 0.625rem;
+    --radius-md: 0.875rem;
+    --radius-lg: 1.25rem;
+    --radius-xl: 1.5rem;
+    --radius-pill: 9999px;
   }
 
   html {
@@ -121,6 +122,8 @@
     text-align: right;
     color: var(--color-text-main);
     background-color: var(--color-canvas);
+    overflow-x: hidden;
+    max-width: 100vw;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -134,10 +137,10 @@
     color: var(--color-text-main);
     margin: 0;
     overflow-x: hidden;
-    line-height: 1.65;
+    max-width: 100vw;
+    line-height: 1.7;
   }
 
-  /* تضمین اعمال فونت Estedad روی تمامی کنترل‌های فرم، دکمه‌ها، فیلدهای ورودی و منوهای انتخابی */
   button,
   input,
   select,
@@ -157,12 +160,6 @@
     font-weight: var(--font-weight-semibold);
   }
 
-  /* سلسله‌مراتب استاندارد وزن‌های تایپوگرافی:
-     - تیترهای اصلی (h1, h2): 700
-     - تیترهای فرعی (h3, h4, h5, h6): 600
-     - متن تأکیدی (strong, b): 500
-     - متن معمولی (p, li): 400
-  */
   h1,
   h2 {
     font-family: var(--font-sans);
@@ -183,7 +180,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  /* سازگاری جهت و فونت برای متون انگلیسی و شناسه‌های لاتین */
   [dir="ltr"],
   [lang="en"],
   .font-latin {
@@ -200,6 +196,15 @@
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* مخفی‌سازی اسکرول‌بار افقی در نوارهای فیلتر و تب موبایل */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

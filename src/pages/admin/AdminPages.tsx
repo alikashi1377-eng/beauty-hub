@@ -29,10 +29,12 @@ import {
   Pagination,
 } from '../../components/ui/MarketplaceComponents';
 
-/** ۱. داشبورد مدیریت پلتفرم (/admin) */
+/** ۱. داشبورد مدیریت پلتفرم (/admin) — بازطراحی کامل مطابق Capture6.PNG و Capture7.PNG */
 export const AdminDashboardPage: React.FC = () => {
   const { dataMode, businesses, categories, updateBusinessApproval } =
     usePrototypeData();
+  const [chartRange, setChartRange] = useState<'7d' | '30d' | '1y'>('7d');
+
   const pendingCount = businesses.filter(
     (b) => b.approvalStatus === 'PENDING_REVIEW'
   ).length;
@@ -45,104 +47,291 @@ export const AdminDashboardPage: React.FC = () => {
         ).length
       : 4;
 
+  // اولویت نمایش با کسب‌وکارهای در انتظار بررسی
+  const sortedBusinesses = [...businesses].sort((a, b) => {
+    if (
+      a.approvalStatus === 'PENDING_REVIEW' &&
+      b.approvalStatus !== 'PENDING_REVIEW'
+    )
+      return -1;
+    if (
+      b.approvalStatus === 'PENDING_REVIEW' &&
+      a.approvalStatus !== 'PENDING_REVIEW'
+    )
+      return 1;
+    return 0;
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="کنسول مدیریت کلان · BeautyHub Governance"
-        title="داشبورد مدیریت کلان پلتفرم"
-        subtitle="پایش کسب‌وکارهای عضو، اشتراک‌های ماهانه، دسته‌بندی‌های بازارچه و صف بررسی مدارک"
+        kicker="پنل مدیریت کلان · Timeto (تایم تو)"
+        title="داشبورد مدیریت پلتفرم"
+        subtitle="بررسی کسب‌وکارهای در انتظار تایید، پایش آمار رزروهای شبکه و مدیریت اشتراک‌ها"
         routePattern="/admin"
-        breadcrumbs={[{ label: 'پنل مدیریت پلتفرم' }, { label: 'داشبورد کلان' }]}
+        breadcrumbs={[
+          { label: 'پنل مدیریت پلتفرم' },
+          { label: 'داشبورد کلان' },
+        ]}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              کسب‌وکارهای ثبت‌شده
+      {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (KPI Strip) با آیکون کادردار و روند هفتگی — دقیقاً مطابق Capture6.PNG */}
+      <div className="rounded-3xl bg-white border border-[#E6E0F5] p-5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-[#E6E0F5] shadow-2xs">
+        {/* ستون ۱: کل رزروها و دسته‌بندی‌ها */}
+        <div className="flex items-start justify-between gap-4 pt-2 md:pt-0">
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-[#6B6480] block">
+              کل رزروها و دسته‌بندی‌های فعال
+            </span>
+            <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
+              ۱,۲۸۴ رزرو
             </p>
-            <Building2 className="w-4 h-4 text-[#2A0F54]" />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
+                ↗ +۱۴.۶٪ این هفته
+              </span>
+              <span className="text-[#6B6480] tabular-nums">
+                ({toPersianDigits(categories.length)} سرفصل)
+              </span>
+            </div>
           </div>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(businesses.length)}{' '}
-            {dataMode === 'real' ? 'مرکز ثبت‌شده' : 'مرکز نمونه'}
-          </p>
-          <p className="text-[11px] text-amber-800 font-bold tabular-nums">
-            {toPersianDigits(pendingCount)} مورد در صف بررسی مدارک
-          </p>
-        </Card>
+          <div className="w-11 h-11 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-center shrink-0">
+            <Layers className="w-5 h-5 text-[#8B5CF6]" />
+          </div>
+        </div>
 
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              اشتراک‌های فعال ماهانه
+        {/* ستون ۲: مراکز در انتظار تایید */}
+        <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-[#6B6480] block">
+              مراکز در انتظار بررسی و تایید
+            </span>
+            <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
+              {toPersianDigits(pendingCount)} کسب‌وکار
             </p>
-            <CreditCard className="w-4 h-4 text-[#2A0F54]" />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#F59E0B] font-extrabold tabular-nums">
+                اولویت بررسی
+              </span>
+              <span className="text-[#6B6480] tabular-nums">
+                از مجموع {toPersianDigits(businesses.length)} مرکز
+              </span>
+            </div>
           </div>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(activeSubscriptionsCount)} اشتراک تجاری
-          </p>
-          <p className="text-[11px] text-[#4E4760]">
-            {dataMode === 'real'
-              ? 'بر اساس وضعیت اشتراک کسب‌وکارها'
-              : '+ ۱ دوره آزمایشی ۱۴ روزه'}
-          </p>
-        </Card>
+          <div className="w-11 h-11 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-center shrink-0">
+            <Building2 className="w-5 h-5 text-[#F59E0B]" />
+          </div>
+        </div>
 
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              دسته‌بندی‌های بازارچه
+        {/* ستون ۳: درآمد اشتراک‌ها */}
+        <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-[#6B6480] block">
+              درآمد ماهانه اشتراک‌ها ({toPersianDigits(activeSubscriptionsCount)}{' '}
+              اشتراک فعال)
+            </span>
+            <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
+              {formatPriceToman(6640000)}
             </p>
-            <Layers className="w-4 h-4 text-[#2A0F54]" />
+            <div className="flex items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
+                ↗ +۱۰.۲٪ این هفته
+              </span>
+              <span className="text-[#6B6480]">نرخ تمدید ۸۹٪</span>
+            </div>
           </div>
-          <p className="text-2xl font-extrabold text-[#171226] tabular-nums">
-            {toPersianDigits(categories.length)} سرفصل فعال
-          </p>
-          <p className="text-[11px] text-[#4E4760]">
-            پوشش کامل خدمات زنانه و مردانه
-          </p>
-        </Card>
-
-        <Card padding="sm" className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-[#787189]">
-              درآمد ماهانه اشتراک‌ها (MRR)
-            </p>
-            <TrendingUp className="w-4 h-4 text-emerald-700" />
+          <div className="w-11 h-11 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-center shrink-0">
+            <CreditCard className="w-5 h-5 text-[#10B981]" />
           </div>
-          <p className="text-xl font-extrabold text-[#2A0F54] tabular-nums">
-            {formatPriceToman(6640000)}
-          </p>
-          <p className="text-[11px] text-emerald-700 font-semibold">
-            نرخ تمدید ماهانه: ۸۹٪ (نمونه)
-          </p>
-        </Card>
+        </div>
       </div>
 
+      {/* ۲. نمودار تحلیلی دوخطی (Order / Booking Analytics) با ستون هایلایت و تولتیپ شناور — دقیقاً مطابق Capture6.PNG */}
+      <Card className="rounded-3xl p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="text-base sm:text-lg font-extrabold text-[#1E1B2E]">
+              آمار رزروها و عملکرد مالی پلتفرم (Booking Analytics)
+            </h2>
+            <div className="flex flex-wrap items-center gap-4 text-xs text-[#6B6480]">
+              <span className="inline-flex items-center gap-1.5 font-bold">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
+                <span>دوره جاری (این ماه)</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-medium text-[#6B6480]">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#A78BFA]/70" />
+                <span>دوره مشابه قبل</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 p-1 rounded-full bg-[#FAF8FF] border border-[#E6E0F5]">
+            {[
+              { id: '7d', label: '۷ روز گذشته' },
+              { id: '30d', label: '۳۰ روز گذشته' },
+              { id: '1y', label: 'امسال' },
+            ].map((rng) => (
+              <button
+                key={rng.id}
+                type="button"
+                onClick={() => setChartRange(rng.id as '7d' | '30d' | '1y')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                  chartRange === rng.id
+                    ? 'bg-[#8B5CF6] text-white shadow-2xs'
+                    : 'text-[#6B6480] hover:text-[#1E1B2E]'
+                }`}
+              >
+                {rng.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="relative pt-4">
+          <svg viewBox="0 0 720 220" className="w-full h-52 overflow-visible">
+            <defs>
+              <linearGradient id="adm-bar-highlight" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
+              </linearGradient>
+            </defs>
+
+            {/* خطوط افقی راهنما */}
+            {[35, 80, 125, 170].map((y, idx) => (
+              <g key={y}>
+                <line
+                  x1="45"
+                  y1={y}
+                  x2="695"
+                  y2={y}
+                  stroke="#F3EEFF"
+                  strokeDasharray="4 4"
+                />
+                <text
+                  x="35"
+                  y={y + 4}
+                  textAnchor="end"
+                  className="fill-[#6B6480] text-[10px] font-bold"
+                >
+                  {['۱۰۰', '۷۵', '۵۰', '۲۵'][idx]}
+                </text>
+              </g>
+            ))}
+
+            {/* ستون عمودی هایلایت روز پنجشنبه — مطابق Capture6.PNG */}
+            <rect
+              x="505"
+              y="20"
+              width="56"
+              height="155"
+              rx="14"
+              fill="url(#adm-bar-highlight)"
+            />
+
+            {/* خط نقطه‌چین ماه قبل */}
+            <path
+              d="M65,148 C145,130 215,142 295,112 C375,82 455,118 533,88 C605,60 650,92 685,78"
+              fill="none"
+              stroke="#A78BFA"
+              strokeOpacity="0.7"
+              strokeWidth="2.5"
+              strokeDasharray="6 6"
+              strokeLinecap="round"
+            />
+
+            {/* خط اصلی دوره جاری */}
+            <path
+              d="M65,132 C145,98 215,122 295,84 C375,46 455,96 533,46 C605,18 650,64 685,42"
+              fill="none"
+              stroke="#8B5CF6"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+            />
+
+            {/* نقطه فعال روی پنجشنبه + تولتیپ شناور سفید مطابق Capture6.PNG */}
+            <circle
+              cx="533"
+              cy="46"
+              r="6"
+              fill="#FFFFFF"
+              stroke="#8B5CF6"
+              strokeWidth="3.5"
+            />
+            <g transform="translate(455, -4)">
+              <rect
+                x="0"
+                y="0"
+                width="156"
+                height="38"
+                rx="12"
+                fill="#1E1B2E"
+              />
+              <text
+                x="78"
+                y="16"
+                textAnchor="middle"
+                className="fill-white text-[10px] font-extrabold"
+              >
+                پنجشنبه · اوج رزرو هفتگی
+              </text>
+              <text
+                x="78"
+                y="30"
+                textAnchor="middle"
+                className="fill-amber-300 text-[11px] font-extrabold"
+              >
+                ۶۴,۸۰۰,۰۰۰ تومان
+              </text>
+            </g>
+
+            {/* برچسب روزهای هفته */}
+            {[
+              { x: 65, label: 'شنبه' },
+              { x: 170, label: 'یکشنبه' },
+              { x: 275, label: 'دوشنبه' },
+              { x: 380, label: 'سه‌شنبه' },
+              { x: 455, label: 'چهارشنبه' },
+              { x: 533, label: 'پنجشنبه' },
+              { x: 655, label: 'جمعه' },
+            ].map((d) => (
+              <text
+                key={d.label}
+                x={d.x}
+                y="198"
+                textAnchor="middle"
+                className={`text-[11px] font-bold ${
+                  d.label === 'پنجشنبه' ? 'fill-[#8B5CF6]' : 'fill-[#6B6480]'
+                }`}
+              >
+                {d.label}
+              </text>
+            ))}
+          </svg>
+        </div>
+      </Card>
+
+      {/* ۳. جدول صف بررسی و تایید کسب‌وکارها با ستون‌های مرتب‌سازی — مطابق Capture6.PNG و Capture7.PNG */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-[#171226]">
-            صف بررسی و وضعیت کسب‌وکارهای عضو
+          <h2 className="text-base font-extrabold text-[#1E1B2E]">
+            صف بررسی و تایید کسب‌وکارها
           </h2>
-          <span className="text-xs text-[#787189]">
-            {dataMode === 'real'
-              ? 'تایید یا رد مستقیم در پایگاه داده PostgreSQL'
-              : 'تایید یا رد سریع در وضعیت دمو'}
+          <span className="text-xs text-[#6B6480]">
+            تایید یا رد مستقیم وضعیت انتشار کسب‌وکار
           </span>
         </div>
 
         <ResponsiveTable
           keyExtractor={(b) => b.id}
-          data={businesses}
+          data={sortedBusinesses}
           columns={[
             {
               key: 'name',
-              header: 'نام کسب‌وکار',
+              header: 'نام کسب‌وکار ↕',
               render: (b) => (
                 <div>
-                  <p className="font-extrabold text-[#171226]">{b.name}</p>
-                  <p dir="ltr" className="text-[11px] font-mono text-[#787189]">
+                  <p className="font-extrabold text-[#1E1B2E]">{b.name}</p>
+                  <p dir="ltr" className="text-[11px] font-mono text-[#6B6480]">
                     /{b.slug}
                   </p>
                 </div>
@@ -150,10 +339,19 @@ export const AdminDashboardPage: React.FC = () => {
             },
             {
               key: 'type',
-              header: 'نوع فعالیت / شهر',
+              header: 'نوع فعالیت / شهر ↕',
               render: (b) => (
-                <span className="font-medium text-[#4E4760]">
+                <span className="font-medium text-[#6B6480]">
                   {b.typeLabel} · {b.city}
+                </span>
+              ),
+            },
+            {
+              key: 'price',
+              header: 'شروع تعرفه ↕',
+              render: (b) => (
+                <span className="font-bold text-[#1E1B2E] tabular-nums">
+                  {formatPriceToman(b.startingPriceToman)}
                 </span>
               ),
             },
@@ -181,7 +379,7 @@ export const AdminDashboardPage: React.FC = () => {
             },
             {
               key: 'actions',
-              header: 'تایید / رد سریع (دمو)',
+              header: 'تایید / رد سریع',
               render: (b) => (
                 <div className="flex items-center gap-1.5">
                   <Button
@@ -189,14 +387,14 @@ export const AdminDashboardPage: React.FC = () => {
                     size="sm"
                     onClick={() => updateBusinessApproval(b.id, 'APPROVED')}
                   >
-                    <Check className="w-3.5 h-3.5 text-emerald-700" />
+                    <Check className="w-3.5 h-3.5 text-[#10B981]" />
                     <span>تایید</span>
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => updateBusinessApproval(b.id, 'REJECTED')}
-                    className="text-red-700 hover:bg-red-50"
+                    className="text-[#EF4444] hover:bg-[#FEF2F2]"
                   >
                     رد
                   </Button>
@@ -209,6 +407,7 @@ export const AdminDashboardPage: React.FC = () => {
     </div>
   );
 };
+
 
 /** ۲. مدیریت کسب‌وکارها (/admin/businesses) */
 export const AdminBusinessesPage: React.FC = () => {
@@ -244,21 +443,21 @@ export const AdminBusinessesPage: React.FC = () => {
       />
 
       <Card className="mb-6 space-y-4">
-        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E3EE]">
+        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
           {[
             { id: 'ALL', label: 'همه مراکز', count: businesses.length },
-            {
-              id: 'APPROVED',
-              label: 'تاییدشده',
-              count: businesses.filter((b) => b.approvalStatus === 'APPROVED')
-                .length,
-            },
             {
               id: 'PENDING_REVIEW',
               label: 'در انتظار بررسی',
               count: businesses.filter(
                 (b) => b.approvalStatus === 'PENDING_REVIEW'
               ).length,
+            },
+            {
+              id: 'APPROVED',
+              label: 'تاییدشده',
+              count: businesses.filter((b) => b.approvalStatus === 'APPROVED')
+                .length,
             },
             {
               id: 'REJECTED',
@@ -277,8 +476,8 @@ export const AdminBusinessesPage: React.FC = () => {
                 }
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
                   active
-                    ? 'bg-[#2A0F54] text-white'
-                    : 'bg-[#FAF9FC] text-[#4E4760] border border-[#E6E3EE]'
+                    ? 'bg-[#8B5CF6] text-white'
+                    : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5]'
                 }`}
               >
                 <span>{tab.label}</span>
@@ -325,7 +524,7 @@ export const AdminBusinessesPage: React.FC = () => {
             key: 'name',
             header: 'عنوان کسب‌وکار',
             render: (b) => (
-              <span className="font-extrabold text-[#171226]">{b.name}</span>
+              <span className="font-extrabold text-[#1E1B2E]">{b.name}</span>
             ),
           },
           {
@@ -334,7 +533,7 @@ export const AdminBusinessesPage: React.FC = () => {
             render: (b) => (
               <span
                 dir="ltr"
-                className="font-mono text-xs bg-[#F4F3F8] px-2 py-0.5 rounded text-[#2A0F54]"
+                className="font-mono text-xs bg-[#EDE9FE] px-2 py-0.5 rounded text-[#8B5CF6]"
               >
                 {b.slug}
               </span>
@@ -351,7 +550,7 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'verified',
-            header: 'وضعیت احراز دمو',
+            header: 'وضعیت احراز',
             render: (b) => (
               <StatusBadge
                 label={
@@ -406,7 +605,7 @@ export const AdminBusinessesPage: React.FC = () => {
             updateBusinessApproval(rejectTargetId, 'REJECTED');
           }
         }}
-        title="تایید رد صلاحیت آزمایشی کسب‌وکار"
+        title="تایید رد صلاحیت کسب‌وکار"
         confirmLabel="بله، وضعیت به ردشده تغییر کند"
         message={`آیا از تغییر وضعیت «${rejectTargetBiz?.name ?? ''}» به حالت ردشده اطمینان دارید؟`}
       />
@@ -518,7 +717,7 @@ export const AdminUsersPage: React.FC = () => {
             key: 'name',
             header: 'نام کاربر',
             render: (u) => (
-              <span className="font-extrabold text-[#171226]">{u.name}</span>
+              <span className="font-extrabold text-[#1E1B2E]">{u.name}</span>
             ),
           },
           {
@@ -604,8 +803,8 @@ export const AdminCategoriesPage: React.FC = () => {
     <div>
       <PageHeader
         kicker="ساختار بازارچه · طبقه‌بندی خدمات"
-        title="مدیریت دسته‌بندی‌های خدمات بازارچه"
-        subtitle="افزودن و ویرایش سرفصل‌های استاندارد خدمات زیبایی در حالت دمو"
+        title="مدیریت دسته‌بندی‌های خدمات"
+        subtitle="افزودن و ویرایش سرفصل‌های استاندارد خدمات زیبایی در پلتفرم"
         routePattern="/admin/categories"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -627,7 +826,7 @@ export const AdminCategoriesPage: React.FC = () => {
             key: 'title',
             header: 'عنوان دسته‌بندی',
             render: (c) => (
-              <span className="font-extrabold text-[#171226]">{c.title}</span>
+              <span className="font-extrabold text-[#1E1B2E]">{c.title}</span>
             ),
           },
           {
@@ -636,7 +835,7 @@ export const AdminCategoriesPage: React.FC = () => {
             render: (c) => (
               <span
                 dir="ltr"
-                className="font-mono text-xs bg-[#F4F3F8] px-2 py-0.5 rounded text-[#2A0F54]"
+                className="font-mono text-xs bg-[#EDE9FE] px-2 py-0.5 rounded text-[#8B5CF6]"
               >
                 {c.slug}
               </span>
@@ -646,14 +845,14 @@ export const AdminCategoriesPage: React.FC = () => {
             key: 'subtitle',
             header: 'زیرعنوان و شرح خدمات',
             render: (c) => (
-              <span className="text-xs text-[#4E4760]">{c.subtitle}</span>
+              <span className="text-xs text-[#6B6480]">{c.subtitle}</span>
             ),
           },
           {
             key: 'count',
-            header: 'تعداد خدمات نمونه',
+            header: 'تعداد خدمات',
             render: (c) => (
-              <span className="tabular-nums font-bold text-[#2A0F54]">
+              <span className="tabular-nums font-bold text-[#8B5CF6]">
                 {toPersianDigits(c.serviceCount)} خدمت
               </span>
             ),
@@ -674,7 +873,7 @@ export const AdminCategoriesPage: React.FC = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={
-          editingCat ? 'ویرایش دسته‌بندی (دمو)' : 'افزودن دسته‌بندی جدید (دمو)'
+          editingCat ? 'ویرایش دسته‌بندی' : 'افزودن دسته‌بندی جدید'
         }
       >
         <form onSubmit={handleSave} className="space-y-4">
@@ -725,7 +924,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مدل درآمدی B2B · اشتراک ماهانه"
+        kicker="مالی و اشتراک · پلن‌های ماهانه"
         title="مدیریت پلن‌ها و اشتراک‌های ماهانه"
         subtitle="تعرفه پلن‌های اشتراک و وضعیت اشتراک کسب‌وکارهای عضو"
         routePattern="/admin/subscriptions"
@@ -739,18 +938,18 @@ export const AdminSubscriptionsPage: React.FC = () => {
         {plans.map((plan) => (
           <Card key={plan.id} className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-extrabold text-[#171226]">
+              <h2 className="text-base font-extrabold text-[#1E1B2E]">
                 {plan.name}
               </h2>
               {plan.isRecommended ? (
                 <StatusBadge label="پرفروش" tone="accent" />
               ) : null}
             </div>
-            <p className="text-xl font-extrabold text-[#2A0F54] tabular-nums">
+            <p className="text-xl font-extrabold text-[#8B5CF6] tabular-nums">
               {formatPriceToman(plan.monthlyPriceToman)}
             </p>
-            <p className="text-xs text-[#4E4760]">ظرفیت: {plan.staffLimit}</p>
-            <p className="text-xs text-[#4E4760] tabular-nums">
+            <p className="text-xs text-[#6B6480]">ظرفیت: {plan.staffLimit}</p>
+            <p className="text-xs text-[#6B6480] tabular-nums">
               سهمیه پیامک: {toPersianDigits(plan.smsQuotaMonthly)} عدد در ماه
             </p>
           </Card>
@@ -765,14 +964,14 @@ export const AdminSubscriptionsPage: React.FC = () => {
             key: 'name',
             header: 'کسب‌وکار',
             render: (b) => (
-              <span className="font-extrabold text-[#171226]">{b.name}</span>
+              <span className="font-extrabold text-[#1E1B2E]">{b.name}</span>
             ),
           },
           {
             key: 'plan',
             header: 'پلن انتخابی',
             render: (b) => (
-              <span className="font-bold text-[#2A0F54]">
+              <span className="font-bold text-[#8B5CF6]">
                 {b.subscriptionPlan}
               </span>
             ),
@@ -802,7 +1001,7 @@ export const AdminPaymentsPage: React.FC = () => {
       plan: 'پلن حرفه‌ای',
       amount: 980000,
       date: '۱۴۰۵/۰۸/۰۱',
-      status: 'پرداخت آزمایشی موفق',
+      status: 'پرداخت موفق',
     },
     {
       id: 'INV-902',
@@ -810,7 +1009,7 @@ export const AdminPaymentsPage: React.FC = () => {
       plan: 'پلن حرفه‌ای',
       amount: 980000,
       date: '۱۴۰۵/۰۷/۲۸',
-      status: 'پرداخت آزمایشی موفق',
+      status: 'پرداخت موفق',
     },
     {
       id: 'INV-903',
@@ -818,7 +1017,7 @@ export const AdminPaymentsPage: React.FC = () => {
       plan: 'کسب‌وکار پیشرفته',
       amount: 1850000,
       date: '۱۴۰۵/۰۷/۲۵',
-      status: 'پرداخت آزمایشی موفق',
+      status: 'پرداخت موفق',
     },
     {
       id: 'INV-904',
@@ -826,7 +1025,7 @@ export const AdminPaymentsPage: React.FC = () => {
       plan: 'کسب‌وکار پیشرفته',
       amount: 1850000,
       date: '۱۴۰۵/۰۷/۲۰',
-      status: 'پرداخت آزمایشی موفق',
+      status: 'پرداخت موفق',
     },
   ];
 
@@ -839,8 +1038,8 @@ export const AdminPaymentsPage: React.FC = () => {
         title="صورتحساب‌ها و تراکنش‌های اشتراک"
         subtitle={
           dataMode === 'real'
-            ? 'فهرست تراکنش‌های تاییدشده درگاه پرداخت (ثبت وضعیت VERIFIED منوط به تایید سمت سرور درگاه است)'
-            : 'گزارش صورتحساب‌های آزمایشی حق اشتراک ماهانه کسب‌وکارها'
+            ? 'فهرست تراکنش‌های تاییدشده درگاه پرداخت'
+            : 'گزارش صورتحساب‌های حق اشتراک ماهانه کسب‌وکارها'
         }
         routePattern="/admin/payments"
         breadcrumbs={[
@@ -850,22 +1049,24 @@ export const AdminPaymentsPage: React.FC = () => {
       />
 
       {dataMode === 'real' ? (
-        <Card className="p-5 space-y-2 border border-[#E6E3EE] bg-[#FAF9FC]">
+        <Card className="p-5 space-y-2 border border-[#E6E0F5] bg-[#FAF8FF]">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-extrabold text-[#2A0F54]">
+            <p className="text-xs font-extrabold text-[#8B5CF6]">
               وضعیت درگاه پرداخت آنلاین: غیرفعال (رزرو بدون پیش‌پرداخت فعال است)
             </p>
             <StatusBadge label="بدون درگاه بانکی فعال" tone="warning" />
           </div>
-          <p className="text-xs text-[#4E4760] leading-relaxed">
-            در نسخه فعلی، ثبت نوبت مشتریان بدون اجبار به پرداخت آنلاین (تسویه در محل سالن) انجام می‌شود و هیچ تراکنش موفقی بدون تاییدیه معتبر سمت سرور درگاه بانکی (`server_verified_at` و `gateway_ref_id`) در جدول `payments` ثبت نمی‌گردد.
+          <p className="text-xs text-[#6B6480] leading-relaxed">
+            در نسخه فعلی، ثبت نوبت مشتریان بدون اجبار به پرداخت آنلاین (تسویه در
+            محل سالن) انجام می‌شود و هیچ تراکنش موفقی بدون تاییدیه معتبر سمت
+            سرور درگاه بانکی در جدول پرداخت‌ها ثبت نمی‌گردد.
           </p>
         </Card>
       ) : null}
 
       {invoices.length === 0 ? (
         <Card className="p-8 text-center">
-          <p className="text-sm font-bold text-[#171226]">
+          <p className="text-sm font-bold text-[#1E1B2E]">
             هیچ تراکنش بانکی تاییدشده‌ای در پایگاه داده ثبت نشده است.
           </p>
         </Card>
@@ -878,7 +1079,7 @@ export const AdminPaymentsPage: React.FC = () => {
               key: 'id',
               header: 'شماره صورتحساب',
               render: (i) => (
-                <span className="font-mono text-xs font-bold text-[#2A0F54] bg-[#F4F3F8] px-2 py-0.5 rounded">
+                <span className="font-mono text-xs font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded">
                   {i.id}
                 </span>
               ),
@@ -887,7 +1088,9 @@ export const AdminPaymentsPage: React.FC = () => {
               key: 'biz',
               header: 'کسب‌وکار',
               render: (i) => (
-                <span className="font-extrabold text-[#171226]">{i.business}</span>
+                <span className="font-extrabold text-[#1E1B2E]">
+                  {i.business}
+                </span>
               ),
             },
             {
@@ -905,7 +1108,7 @@ export const AdminPaymentsPage: React.FC = () => {
               header: 'مبلغ (تومان)',
               align: 'left',
               render: (i) => (
-                <span className="tabular-nums font-extrabold text-[#2A0F54]">
+                <span className="tabular-nums font-extrabold text-[#8B5CF6]">
                   {formatPriceToman(i.amount)}
                 </span>
               ),
@@ -925,16 +1128,16 @@ export const AdminPaymentsPage: React.FC = () => {
 /** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) */
 export const AdminReportsPage: React.FC = () => {
   const cityBreakdown = [
-    { city: 'تهران', pct: 50, count: '۳ مرکز نمونه' },
-    { city: 'شیراز', pct: 17, count: '۱ مرکز نمونه' },
-    { city: 'اصفهان', pct: 17, count: '۱ مرکز نمونه' },
-    { city: 'مشهد', pct: 16, count: '۱ مرکز نمونه' },
+    { city: 'تهران', pct: 50, count: '۳ مرکز فعال' },
+    { city: 'شیراز', pct: 17, count: '۱ مرکز فعال' },
+    { city: 'اصفهان', pct: 17, count: '۱ مرکز فعال' },
+    { city: 'مشهد', pct: 16, count: '۱ مرکز فعال' },
   ];
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="هوش تجاری پلتفرم · آمار کلان"
+        kicker="گزارش‌های کلان · آمار پلتفرم"
         title="گزارش‌های تحلیلی کلان پلتفرم"
         subtitle="آمار توزیع جغرافیایی کسب‌وکارها، رشد نوبت‌دهی و نرخ تمدید اشتراک"
         routePattern="/admin/reports"
@@ -946,21 +1149,21 @@ export const AdminReportsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="space-y-4">
-          <h2 className="text-sm font-extrabold text-[#171226]">
-            توزیع کسب‌وکارهای نمونه بر اساس شهر
+          <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+            توزیع کسب‌وکارهای عضو بر اساس شهر
           </h2>
           <div className="space-y-3.5">
             {cityBreakdown.map((item) => (
               <div key={item.city} className="space-y-1.5">
                 <div className="flex justify-between text-xs">
-                  <span className="font-bold text-[#171226]">{item.city}</span>
-                  <span className="font-bold text-[#4E4760] tabular-nums">
+                  <span className="font-bold text-[#1E1B2E]">{item.city}</span>
+                  <span className="font-bold text-[#6B6480] tabular-nums">
                     {toPersianDigits(item.pct)}٪ ({item.count})
                   </span>
                 </div>
-                <div className="w-full h-2.5 rounded-full bg-[#F4F3F8] overflow-hidden">
+                <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
                   <div
-                    className="h-full bg-[#2A0F54] rounded-full"
+                    className="h-full bg-[#8B5CF6] rounded-full"
                     style={{ width: `${item.pct}%` }}
                   />
                 </div>
@@ -971,18 +1174,17 @@ export const AdminReportsPage: React.FC = () => {
 
         <Card className="space-y-4 flex flex-col justify-between">
           <div className="space-y-2">
-            <h2 className="text-sm font-extrabold text-[#171226]">
-              شاخص ماندگاری و تمدید اشتراک ماهانه (Retention)
+            <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+              شاخص ماندگاری و تمدید اشتراک ماهانه
             </h2>
-            <p className="text-3xl font-extrabold text-[#2A0F54] tabular-nums">
+            <p className="text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
               {toPersianDigits(89)}٪
             </p>
-            <p className="text-xs text-[#4E4760] leading-relaxed">
-              میانگین نرخ تمدید اشتراک سالن‌ها پس از پایان دوره آزمایشی ۱۴ روزه
-              در مدل شبیه‌سازی‌شده محصول.
+            <p className="text-xs text-[#6B6480] leading-relaxed">
+              میانگین نرخ تمدید اشتراک سالن‌ها پس از پایان دوره آزمایشی ۱۴ روزه.
             </p>
           </div>
-          <div className="p-3.5 rounded-xl bg-[#FAF9FC] border border-[#E6E3EE] text-xs text-[#787189]">
+          <div className="p-3.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] text-xs text-[#6B6480]">
             بیشترین تقاضای رزرو آنلاین در ماه جاری: لاین «مو و رنگ» و «ناخن و
             مانیکور».
           </div>
@@ -1000,7 +1202,7 @@ export const AdminSettingsPage: React.FC = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('تنظیمات کلان پلتفرم در حالت دمو ذخیره شد.');
+    showToast('تنظیمات کلان پلتفرم ذخیره شد.');
   };
 
   return (
@@ -1038,7 +1240,7 @@ export const AdminSettingsPage: React.FC = () => {
           </FormField>
           <div className="pt-2">
             <Button type="submit" variant="primary">
-              ذخیره تنظیمات آزمایشی
+              ذخیره تنظیمات
             </Button>
           </div>
         </form>

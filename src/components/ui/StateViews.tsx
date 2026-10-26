@@ -20,22 +20,22 @@ export interface StateBlockProps {
 
 /** ۱. حالت در حال بارگذاری (LoadingState) */
 export const LoadingState: React.FC<{ label?: string }> = ({
-  label = 'در حال بارگذاری اطلاعات آزمایشی...',
+  label = 'در حال بارگذاری اطلاعات...',
 }) => {
   return (
     <div
       role="status"
       aria-live="polite"
-      className="rounded-2xl border border-[#E6E3EE] bg-white p-8 text-center space-y-4"
+      className="rounded-3xl border border-[#E6E0F5] bg-white p-8 text-center space-y-4 shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]"
     >
-      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#F3EEFA] text-[#2A0F54]">
+      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-[#EDE9FE] text-[#8B5CF6]">
         <Loader2 className="w-5 h-5 animate-spin" />
       </div>
-      <p className="text-sm font-semibold text-[#120F1D]">{label}</p>
+      <p className="text-sm font-semibold text-[#1E1B2E]">{label}</p>
       <div className="max-w-md mx-auto space-y-2.5 pt-2">
-        <div className="h-3 bg-[#E6E3EE] rounded animate-pulse w-full" />
-        <div className="h-3 bg-[#E6E3EE] rounded animate-pulse w-4/5 mx-auto" />
-        <div className="h-3 bg-[#E6E3EE] rounded animate-pulse w-3/5 mx-auto" />
+        <div className="h-3 bg-[#F3EEFF] rounded-full animate-pulse w-full" />
+        <div className="h-3 bg-[#F3EEFF] rounded-full animate-pulse w-4/5 mx-auto" />
+        <div className="h-3 bg-[#F3EEFF] rounded-full animate-pulse w-3/5 mx-auto" />
       </div>
     </div>
   );
@@ -44,17 +44,17 @@ export const LoadingState: React.FC<{ label?: string }> = ({
 /** ۲. حالت بدون داده (EmptyState) */
 export const EmptyState: React.FC<StateBlockProps> = ({
   title = 'موردی برای نمایش یافت نشد',
-  description = 'هنوز داده‌ای در این بخش ثبت نشده یا فیلترهای انتخابی نتیجه‌ای ندارند.',
-  actionLabel = 'بازنشانی نمای صفحه',
+  description = 'هنوز موردی در این بخش ثبت نشده یا فیلترهای انتخابی نتیجه‌ای ندارند.',
+  actionLabel = 'بازنشانی فیلترها',
   onAction,
 }) => {
   return (
-    <div className="rounded-2xl border border-[#E6E3EE] bg-white p-8 sm:p-10 text-center space-y-3">
-      <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#F3EEFA] text-[#2A0F54]">
+    <div className="rounded-3xl border border-[#E6E0F5] bg-white p-8 sm:p-10 text-center space-y-3 shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]">
+      <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#8B5CF6]">
         <Inbox className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
-      <p className="text-xs sm:text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#1E1B2E]">{title}</h3>
+      <p className="text-xs sm:text-sm font-normal text-[#6B6480] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -71,20 +71,20 @@ export const EmptyState: React.FC<StateBlockProps> = ({
 /** ۳. حالت خطا در دریافت اطلاعات (ErrorState) */
 export const ErrorState: React.FC<StateBlockProps> = ({
   title = 'خطا در دریافت اطلاعات',
-  description = 'ارتباط با سرویس داده برقرار نشد. در مرحله اتصال به بک‌اند، جزئیات خطا و تلاش مجدد در این بخش مدیریت می‌شود.',
+  description = 'ارتباط با سرور برقرار نشد. لطفاً اتصال اینترنت خود را بررسی کرده و دوباره تلاش کنید.',
   actionLabel = 'تلاش مجدد',
   onAction,
 }) => {
   return (
     <div
       role="alert"
-      className="rounded-2xl border border-red-200 bg-red-50/50 p-6 sm:p-8 text-center space-y-3"
+      className="rounded-3xl border border-[#EF4444]/30 bg-[#FEF2F2]/80 p-6 sm:p-8 text-center space-y-3"
     >
-      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-red-100 text-red-800">
+      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-[#FEE2E2] text-[#EF4444]">
         <AlertTriangle className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
-      <p className="text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#1E1B2E]">{title}</h3>
+      <p className="text-sm font-normal text-[#6B6480] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -100,21 +100,21 @@ export const ErrorState: React.FC<StateBlockProps> = ({
 
 /** ۴. حالت موفقیت عملیات (SuccessState) */
 export const SuccessState: React.FC<StateBlockProps> = ({
-  title = 'عملیات آزمایشی با موفقیت انجام شد',
-  description = 'تغییرات در وضعیت محلی رابط کاربری اعمال شد. در مراحل بعد این عملیات در پایگاه داده ذخیره خواهد شد.',
-  actionLabel = 'بازگشت به نمای عادی',
+  title = 'عملیات با موفقیت انجام شد',
+  description = 'اطلاعات شما با موفقیت ثبت و به‌روزرسانی شد.',
+  actionLabel = 'بازگشت',
   onAction,
 }) => {
   return (
     <div
       role="status"
-      className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-6 sm:p-8 text-center space-y-3"
+      className="rounded-3xl border border-[#10B981]/30 bg-[#ECFDF5]/70 p-6 sm:p-8 text-center space-y-3"
     >
-      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-800">
+      <div className="inline-flex items-center justify-center w-11 h-11 rounded-full bg-[#D1FAE5] text-[#10B981]">
         <CheckCircle2 className="w-5 h-5" />
       </div>
-      <h3 className="text-base font-semibold text-[#120F1D]">{title}</h3>
-      <p className="text-sm font-normal text-[#4A4458] max-w-md mx-auto leading-relaxed">
+      <h3 className="text-base font-semibold text-[#1E1B2E]">{title}</h3>
+      <p className="text-sm font-normal text-[#6B6480] max-w-md mx-auto leading-relaxed">
         {description}
       </p>
       {onAction ? (
@@ -134,21 +134,21 @@ export const IncompleteFormState: React.FC<{
   onDismiss?: () => void;
 }> = ({
   errors = [
-    'نام کسب‌وکار یا نام خانوادگی وارد نشده است.',
-    'فرمت شماره موبایل معتبر نیست (باید ۱۱ رقم و با ۰۹ شروع شود).',
-    'ساعات کاری یا خدمت انتخابی تکمیل نشده است.',
+    'نام یا مشخصات الزامی وارد نشده است.',
+    'فرمت شماره موبایل معتبر نیست (۱۱ رقم با شروع ۰۹).',
+    'خدمت یا بازه زمانی مورد نظر انتخاب نشده است.',
   ],
   onDismiss,
 }) => {
   return (
     <div
       role="alert"
-      className="rounded-2xl border border-amber-300 bg-amber-50/70 p-5 space-y-3"
+      className="rounded-3xl border border-[#F59E0B]/40 bg-[#FFFBEB] p-5 space-y-3"
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
-          <FileWarning className="w-4 h-4 shrink-0" />
-          <span>لطفاً موارد الزامی زیر را تکمیل نمایید:</span>
+        <div className="flex items-center gap-2 text-[#D97706] font-bold text-sm">
+          <FileWarning className="w-4 h-4 text-[#F59E0B] shrink-0" />
+          <span>لطفاً موارد زیر را بررسی و تکمیل کنید:</span>
         </div>
         {onDismiss ? (
           <Button variant="ghost" size="sm" onClick={onDismiss}>
@@ -156,7 +156,7 @@ export const IncompleteFormState: React.FC<{
           </Button>
         ) : null}
       </div>
-      <ul className="list-disc list-inside text-xs text-amber-950 space-y-1.5 pr-1">
+      <ul className="list-disc list-inside text-xs text-[#92400E] space-y-1.5 pr-1">
         {errors.map((err, i) => (
           <li key={i}>{err}</li>
         ))}
@@ -166,25 +166,18 @@ export const IncompleteFormState: React.FC<{
 };
 
 /** ۶. حالت صفحه یافت نشد (NotFoundState - 404) */
-export const NotFoundState: React.FC<{ attemptedPath?: string }> = ({
-  attemptedPath,
-}) => {
+export const NotFoundState: React.FC<{ attemptedPath?: string }> = () => {
   return (
-    <div className="rounded-2xl border border-[#E6E3EE] bg-white p-10 text-center space-y-4 max-w-xl mx-auto my-8">
-      <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#F3EEFA] text-[#2A0F54]">
+    <div className="rounded-3xl border border-[#E6E0F5] bg-white p-10 text-center space-y-4 max-w-xl mx-auto my-8 shadow-[0_6px_24px_-6px_rgba(139,92,246,0.08)]">
+      <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#8B5CF6]">
         <Compass className="w-6 h-6" />
       </div>
-      <h1 className="text-xl font-bold text-[#120F1D]">
-        صفحه مورد نظر یافت نشد (۴۰۴)
+      <h1 className="text-xl font-bold text-[#1E1B2E]">
+        صفحه مورد نظر یافت نشد
       </h1>
-      <p className="text-sm font-normal text-[#4A4458] leading-relaxed">
-        مسیر واردشده در ساختار مسیریابی BeautyHub وجود ندارد یا آدرس آن تغییر کرده است.
+      <p className="text-sm font-normal text-[#6B6480] leading-relaxed">
+        ممکن است آدرس صفحه تغییر کرده باشد یا این بخش در دسترس نباشد.
       </p>
-      {attemptedPath ? (
-        <p dir="ltr" className="text-xs font-mono text-[#756F86]">
-          Path: {attemptedPath}
-        </p>
-      ) : null}
       <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
         <Link to="/">
           <Button variant="primary" size="md">
@@ -206,18 +199,18 @@ export const StateSimulatorToolbar: React.FC<{
   onChange: (mode: UIStateMode) => void;
 }> = ({ mode, onChange }) => {
   const options: { value: UIStateMode; label: string }[] = [
-    { value: 'normal', label: 'نمای عادی (با داده آزمایشی)' },
+    { value: 'normal', label: 'نمای عادی' },
     { value: 'loading', label: 'در حال بارگذاری' },
     { value: 'empty', label: 'بدون داده' },
-    { value: 'error', label: 'خطا در دریافت اطلاعات' },
-    { value: 'success', label: 'موفقیت عملیات' },
+    { value: 'error', label: 'خطا' },
+    { value: 'success', label: 'موفقیت' },
     { value: 'incomplete_form', label: 'فرم ناقص' },
   ];
 
   return (
-    <div className="mb-6 rounded-2xl border border-[#E6E3EE] bg-[#F4F3F8] p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
-      <div className="text-xs font-medium text-[#4A4458]">
-        شبیه‌ساز وضعیت‌های استاندارد رابط کاربری:
+    <div className="mb-6 rounded-3xl border border-[#E6E0F5] bg-[#F3EEFF] p-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
+      <div className="text-xs font-medium text-[#6B6480]">
+        پیش‌نمایش وضعیت‌های صفحه:
       </div>
       <div
         role="group"
@@ -229,10 +222,10 @@ export const StateSimulatorToolbar: React.FC<{
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap cursor-pointer ${
               mode === opt.value
-                ? 'bg-[#2A0F54] text-white'
-                : 'bg-white text-[#4A4458] hover:bg-[#E6E3EE]/70 border border-[#E6E3EE]'
+                ? 'bg-[#8B5CF6] text-white'
+                : 'bg-white text-[#6B6480] hover:bg-[#EDE9FE] border border-[#E6E0F5]'
             }`}
           >
             {opt.label}
