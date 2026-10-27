@@ -946,20 +946,21 @@ export const AdminCategoriesPage: React.FC = () => {
   );
 };
 
-/** ۵. مدیریت اشتراک‌ها (/admin/subscriptions) */
+/** ۵. مدیریت اشتراک‌ها و جایگاه‌های تبلیغاتی (/admin/subscriptions) */
 export const AdminSubscriptionsPage: React.FC = () => {
-  const { plans, businesses } = usePrototypeData();
+  const { plans, businesses, updateBusinessProfile, showToast } =
+    usePrototypeData();
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی و اشتراک · پلن‌های ماهانه"
-        title="مدیریت پلن‌ها و اشتراک‌های ماهانه"
-        subtitle="تعرفه پلن‌های اشتراک و وضعیت اشتراک کسب‌وکارهای عضو"
+        kicker="مالی، اشتراک و تبلیغات · پلن‌های ماهانه و جایگاه‌های ویژه"
+        title="مدیریت پلن‌های اشتراک و جایگاه‌های تبلیغاتی (Boost)"
+        subtitle="پایش ظرفیت پلن‌ها، سهمیه پیامک بهینه‌شده برای سودآوری پلتفرم و مدیریت سالن‌های دارای جایگاه تبلیغاتی در صدر جست‌وجو"
         routePattern="/admin/subscriptions"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'پلن‌ها و اشتراک‌ها' },
+          { label: 'پلن‌ها و تبلیغات' },
         ]}
       />
 
@@ -967,23 +968,78 @@ export const AdminSubscriptionsPage: React.FC = () => {
         {plans.map((plan) => (
           <Card key={plan.id} className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-extrabold text-[#1E1B2E]">
+              <h2 className="text-base font-extrabold text-[#061138]">
                 {plan.name}
               </h2>
               {plan.isRecommended ? (
                 <StatusBadge label="پرفروش" tone="accent" />
               ) : null}
             </div>
-            <p className="text-xl font-extrabold text-[#8B5CF6] tabular-nums">
+            <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
               {formatPriceToman(plan.monthlyPriceToman)}
             </p>
-            <p className="text-xs text-[#6B6480]">ظرفیت: {plan.staffLimit}</p>
-            <p className="text-xs text-[#6B6480] tabular-nums">
-              سهمیه پیامک: {toPersianDigits(plan.smsQuotaMonthly)} عدد در ماه
-            </p>
+            <div className="space-y-1 text-xs text-[#334155] pt-2 border-t border-[#E2E8F0]">
+              <p>
+                ظرفیت متخصصان: <strong>{plan.staffLimit}</strong>
+              </p>
+              <p className="tabular-nums">
+                سهمیه پیامک ماهانه:{' '}
+                <strong>{toPersianDigits(plan.smsQuotaMonthly)} عدد</strong>
+              </p>
+            </div>
           </Card>
         ))}
       </div>
+
+      {/* کارت تعرفه جایگاه‌های تبلیغاتی (جدا از حق اشتراک ماهانه) */}
+      <Card className="bg-[#061138] text-white border-[#1E293B] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="text-xs font-extrabold text-[#00E5FF]">
+              جریان درآمدی دوم پلتفرم (حاشیه سود ۱۰۰٪ خالص بدون هزینه پیامک)
+            </span>
+            <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
+              تعرفه‌های تبلیغات و ارتقای جایگاه سالن‌ها (Sponsored Placements)
+            </h2>
+          </div>
+          <StatusBadge label="فعال در پنل سالن‌ها (/app/marketing)" tone="success" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+            <p className="font-extrabold text-[#00E5FF]">
+              ۱. صدرنشینی در نتایج جست‌وجو (Search Boost)
+            </p>
+            <p className="text-slate-200">
+              نمایش در ردیف اول `/search` با نشان «★ آگهی ویژه»
+            </p>
+            <p className="font-extrabold text-white pt-1 tabular-nums">
+              ۴۹۰,۰۰۰ تومان / ماهانه (۱۹۰,۰۰۰ هفتگی)
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+            <p className="font-extrabold text-[#00E5FF]">
+              ۲. بنر ویژه در صفحه اول (Home Banner)
+            </p>
+            <p className="text-slate-200">
+              جایگاه بنر تصویری در بخش پیشنهادهای ویژه صفحه اصلی
+            </p>
+            <p className="font-extrabold text-white pt-1 tabular-nums">
+              ۸۹۰,۰۰۰ تومان / ماهانه (۳۵۰,۰۰۰ هفتگی)
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+            <p className="font-extrabold text-emerald-300">
+              ۳. بسته افزونه ۲۰۰ پیامک اضافه
+            </p>
+            <p className="text-slate-200">
+              شارژ پیامک یادآور مازاد بر سهمیه پلن ماهانه
+            </p>
+            <p className="font-extrabold text-white pt-1 tabular-nums">
+              ۱۸۰,۰۰۰ تومان / هر بسته ۲۰۰ عددی
+            </p>
+          </div>
+        </div>
+      </Card>
 
       <ResponsiveTable
         keyExtractor={(b) => b.id}
@@ -993,14 +1049,21 @@ export const AdminSubscriptionsPage: React.FC = () => {
             key: 'name',
             header: 'کسب‌وکار',
             render: (b) => (
-              <span className="font-extrabold text-[#1E1B2E]">{b.name}</span>
+              <div className="space-y-0.5">
+                <span className="font-extrabold text-[#061138] block">
+                  {b.name}
+                </span>
+                <span className="text-[11px] text-[#64748B]">
+                  {b.neighborhood}
+                </span>
+              </div>
             ),
           },
           {
             key: 'plan',
             header: 'پلن انتخابی',
             render: (b) => (
-              <span className="font-bold text-[#8B5CF6]">
+              <span className="font-bold text-[#0057FF]">
                 {b.subscriptionPlan}
               </span>
             ),
@@ -1012,6 +1075,41 @@ export const AdminSubscriptionsPage: React.FC = () => {
               const meta = getSubscriptionStatusMeta(b.subscriptionStatus);
               return <StatusBadge label={meta.label} tone={meta.tone} />;
             },
+          },
+          {
+            key: 'sponsored',
+            header: 'جایگاه تبلیغاتی (صدر جست‌وجو)',
+            render: (b) => (
+              <div className="flex items-center gap-2">
+                {b.isSponsored ? (
+                  <StatusBadge
+                    label={`★ فعال (${b.sponsoredLabel || 'پیشنهاد ویژه'})`}
+                    tone="primary"
+                  />
+                ) : (
+                  <StatusBadge label="عادی" tone="neutral" />
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const nextVal = !b.isSponsored;
+                    updateBusinessProfile(b.id, {
+                      isSponsored: nextVal,
+                      sponsoredLabel: b.sponsoredLabel || 'پیشنهاد ویژه',
+                    });
+                    showToast(
+                      nextVal
+                        ? `جایگاه تبلیغاتی صدر جست‌وجو برای «${b.name}» فعال شد.`
+                        : `جایگاه تبلیغاتی «${b.name}» به حالت عادی برگشت.`
+                    );
+                  }}
+                >
+                  {b.isSponsored ? 'لغو پین' : 'پین در صدر جست‌وجو'}
+                </Button>
+              </div>
+            ),
           },
         ]}
       />

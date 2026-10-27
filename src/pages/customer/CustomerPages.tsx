@@ -57,6 +57,7 @@ import {
   ProfessionalCard,
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
+import { MelipayamakQuickSetupCard } from '../../components/ui/MelipayamakQuickSetupCard';
 
 /** نوار مرحله‌به‌مرحله مینیمال، آیکون‌محور و قابل کلیک برای مسیر رزرو نوبت */
 const BookingFlowStepIndicator: React.FC<{
@@ -132,7 +133,7 @@ const BookingFlowStepIndicator: React.FC<{
   );
 };
 
-/** ۱. صفحه ورود مشتری / کاربر با کد یک‌بارمصرف (/login) */
+/** ۱. صفحه ورود مشتری / کاربر با کد یک‌بارمصرف (/login) + دسترسی مستقیم مدیر کل پلتفرم */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -156,6 +157,19 @@ export const CustomerLoginPage: React.FC = () => {
       ? rawRedirect
       : '';
 
+  const isAdminRedirect = safeRedirectPath.startsWith('/admin');
+  const [showAdminDirectPanel, setShowAdminDirectPanel] =
+    useState<boolean>(isAdminRedirect);
+  const [showInlineSmsSetup, setShowInlineSmsSetup] = useState<boolean>(false);
+  const [adminSecretInput, setAdminSecretInput] = useState('');
+  const [adminDirectLoading, setAdminDirectLoading] = useState(false);
+
+  useEffect(() => {
+    if (isAdminRedirect) {
+      setShowAdminDirectPanel(true);
+    }
+  }, [isAdminRedirect]);
+
   const handleRequestOtpOrSimulatedLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedPhone = phone.trim();
@@ -176,13 +190,54 @@ export const CustomerLoginPage: React.FC = () => {
       await requestOtpLogin(normalizedPhone);
       setStep('otp');
     } catch (err) {
-      setError(
+      const msg =
         err instanceof Error
           ? err.message
-          : 'خطا در ارسال کد تایید یک‌بارمصرف.'
-      );
+          : 'خطا در ارسال کد تایید یک‌بارمصرف.';
+      setError(msg);
+      if (msg.includes('پیامک') || msg.includes('SMS')) {
+        setShowAdminDirectPanel(true);
+      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDirectAdminLogin = async () => {
+    setError('');
+    if (dataMode === 'mock') {
+      showToast('ورود مستقیم به پنل مدیریت کلان انجام شد.');
+      navigate('/admin');
+      return;
+    }
+
+    setAdminDirectLoading(true);
+    try {
+      const res = await fetch('/api/v1/auth/admin-direct-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          phone: /^09\d{9}$/.test(phone.trim()) ? phone.trim() : '09120000000',
+          adminKey: adminSecretInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        setError(
+          data?.message ||
+            'خطا در ورود مستقیم مدیر کل؛ در صورت فعال بودن پیامک، کد امنیتی سرور یا API Key ملی‌پیامک را وارد کنید.'
+        );
+        return;
+      }
+      showToast('نشست مدیر کل فعال شد. در حال ورود به پنل مدیریت...');
+      window.location.href = safeRedirectPath.startsWith('/admin')
+        ? safeRedirectPath
+        : '/admin';
+    } catch {
+      setError('خطا در ارتباط با سرور برای ورود مستقیم مدیر کل.');
+    } finally {
+      setAdminDirectLoading(false);
     }
   };
 
@@ -216,7 +271,7 @@ export const CustomerLoginPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto my-4 sm:my-8">
+    <div className="max-w-4xl mx-auto my-4 sm:my-8 space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center rounded-[32px] border border-[#CBD5E1] bg-white p-6 sm:p-10 shadow-[0_14px_45px_-20px_rgba(6,17,56,0.14)]">
         {/* ستون فرم ورود با موبایل */}
         <div className="lg:col-span-6 space-y-6">
@@ -336,7 +391,72 @@ export const CustomerLoginPage: React.FC = () => {
             </form>
           )}
 
-          <div className="pt-4 border-t border-[#CBD5E1] flex items-center justify-between text-xs text-[#475569]">
+          {/* کادر ویژه ورود مستقیم مدیر کل پلتفرم (/admin) و رفع سریع خطای پیامک */}
+          <div className="p-4 rounded-2xl bg-[#F3F6FC] border-2 border-[#0057FF]/30 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
+                <span className="text-xs font-extrabold text-[#061138]">
+                  مدیر کل پلتفرم هستید؟ (ورود به /admin بدون وابستگی به پیامک)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminDirectPanel((p) => !p)}
+                className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer shrink-0"
+              >
+                {showAdminDirectPanel ? 'بستن' : 'باز کردن پنل مدیر'}
+              </button>
+            </div>
+
+            {showAdminDirectPanel ? (
+              <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
+                <p className="text-[11px] text-[#334155] leading-relaxed">
+                  اگر هنوز سامانه پیامکی ملی‌پیامک را وصل نکرده‌اید، با دکمه زیر
+                  مستقیماً وارد <strong>پنل مدیریت کلان (/admin)</strong> شوید یا
+                  همین‌جا درگاه پیامک را فعال کنید:
+                </p>
+
+                {dataMode === 'real' ? (
+                  <Input
+                    id="admin-direct-key"
+                    dir="ltr"
+                    value={adminSecretInput}
+                    onChange={(e) => setAdminSecretInput(e.target.value)}
+                    placeholder="کلید امنیتی سرور یا API Key ملی‌پیامک (در اولین ورود اختیاری است)"
+                  />
+                ) : null}
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    fullWidth
+                    isLoading={adminDirectLoading}
+                    onClick={() => void handleDirectAdminLogin()}
+                  >
+                    <span>ورود یک‌کلیکی به پنل مدیریت کلان (/admin)</span>
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowInlineSmsSetup((p) => !p)}
+                  >
+                    <span>
+                      {showInlineSmsSetup
+                        ? 'بستن تنظیمات پیامک'
+                        : 'اتصال آنی ملی‌پیامک'}
+                    </span>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="pt-3 border-t border-[#CBD5E1] flex items-center justify-between text-xs text-[#475569]">
             <span>صاحب سالن زیبایی یا متخصص هستید؟</span>
             <Link
               to="/business/register"
@@ -394,6 +514,10 @@ export const CustomerLoginPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showInlineSmsSetup ? (
+        <MelipayamakQuickSetupCard />
+      ) : null}
     </div>
   );
 };

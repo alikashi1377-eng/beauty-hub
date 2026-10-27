@@ -1304,7 +1304,7 @@ export const BusinessReadyStepPage: React.FC = () => {
                 <span>تقویم مجزا برای تمام پرسنل</span>
               </div>
               <p className="text-xs text-slate-200 leading-relaxed">
-                مدیریت هم‌زمان تا ۸ متخصص با گزارش دقیق درآمد هر لاین و باشگاه مشتریان پیامکی.
+                مدیریت هم‌زمان تا ۳ متخصص در پلن حرفه‌ای (و تا ۸ متخصص در پلن VIP) همراه با گزارش درآمد هر لاین.
               </p>
             </div>
           </div>

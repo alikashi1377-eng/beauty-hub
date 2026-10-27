@@ -2526,12 +2526,53 @@ export const BusinessWorkingHoursPage: React.FC = () => {
   );
 };
 
-/** ۱۰. بازاریابی و کمپین‌ها (/app/marketing) */
+/** ۱۰. تبلیغات، ارتقای جایگاه و کمپین‌ها (/app/marketing) */
 export const BusinessMarketingPage: React.FC = () => {
-  const { campaigns, addCampaign } = usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    campaigns,
+    addCampaign,
+    updateBusinessProfile,
+    showToast,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
+
   const [title, setTitle] = useState('');
   const [discount, setDiscount] = useState('15');
   const [segment, setSegment] = useState('مشتریان وفادار');
+  const [sponsoredLabelInput, setSponsoredLabelInput] = useState(
+    currentBiz?.sponsoredLabel || 'پیشنهاد ویژه · ۲۰٪ تخفیف'
+  );
+
+  const isSponsoredActive = Boolean(currentBiz?.isSponsored);
+  const extraSms = currentBiz?.extraSmsBalance ?? 0;
+
+  const handleToggleSearchBoost = () => {
+    if (!currentBiz) return;
+    const nextState = !isSponsoredActive;
+    updateBusinessProfile(currentBiz.id, {
+      isSponsored: nextState,
+      sponsoredLabel:
+        sponsoredLabelInput.trim() || 'پیشنهاد ویژه رزرو آنلاین',
+    });
+    showToast(
+      nextState
+        ? `جایگاه «صدرنشینی در جست‌وجو» برای «${currentBiz.name}» فعال شد! اکنون سالن شما در بالای صفحه جست‌وجو نمایش داده می‌شود.`
+        : 'نمایش تبلیغاتی صدر جست‌وجو غیرفعال شد.'
+    );
+  };
+
+  const handleBuyExtraSmsPack = () => {
+    if (!currentBiz) return;
+    const updatedSms = extraSms + 200;
+    updateBusinessProfile(currentBiz.id, {
+      extraSmsBalance: updatedSms,
+    });
+    showToast(
+      `بسته ۲۰۰ پیامک خدماتی اضافه با موفقیت شارژ شد (موجودی پیامک اضافه: ${toPersianDigits(updatedSms)} عدد).`
+    );
+  };
 
   const handleCreateCampaign = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2548,19 +2589,195 @@ export const BusinessMarketingPage: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        kicker="مشتریان · باشگاه مشتریان"
-        title="بازاریابی و کمپین‌های تخفیف"
-        subtitle="تعریف کمپین‌های بازگشت مشتری و تخفیف‌های مناسبتی برای مراجعان سالن"
+        kicker="جذب مشتری جدید · جایگاه‌های تبلیغاتی و کمپین‌ها"
+        title="تبلیغات ویژه، صدرنشینی در جست‌وجو و کمپین‌ها"
+        subtitle="جدا از پلن اشتراک ماهانه، می‌توانید با رزرو جایگاه تبلیغاتی در صدر نتایج جست‌وجو یا بنر صفحه اول، بازدید و رزرو سالن خود را تا ۳ برابر افزایش دهید"
         routePattern="/app/marketing"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'بازاریابی و کمپین‌ها' },
+          { label: 'تبلیغات و ارتقای جایگاه' },
         ]}
       />
 
-      <Card className="mb-6">
+      {/* بخش ۱: بسته‌های تبلیغاتی و ارتقای جایگاه (Sponsored Boost & Add-on SMS) */}
+      <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 space-y-5 border border-[#1E293B] shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-4">
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+              <Megaphone className="w-4 h-4" />
+              <span>جایگاه‌های تبلیغاتی پربازده تایم تو (مستقل از پلن اشتراک)</span>
+            </span>
+            <h2 className="text-base sm:text-xl font-extrabold text-white">
+              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان نشان دهید
+            </h2>
+          </div>
+          <Link to="/search">
+            <Button variant="secondary" size="sm">
+              <span>مشاهده جایگاه فعلی در صفحه جست‌وجو ←</span>
+            </Button>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+          {/* کارت ۱: صدرنشینی در نتایج جست‌وجو (Search Pin Boost) */}
+          <div className="rounded-2xl bg-white text-[#061138] p-5 flex flex-col justify-between space-y-4 border-2 border-[#00E5FF]">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="px-2.5 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-extrabold">
+                  ★ پربازده‌ترین جایگاه
+                </span>
+                {isSponsoredActive ? (
+                  <StatusBadge label="فعال روی سالن شما" tone="success" />
+                ) : null}
+              </div>
+              <h3 className="text-base font-extrabold text-[#061138]">
+                ۱. صدرنشینی در نتایج جست‌وجوی شهر
+              </h3>
+              <p className="text-xs text-[#334155] leading-relaxed">
+                پین شدن کارت سالن شما در <strong>ردیف اول نتایج جست‌وجو (/search)</strong> با نشان طلایی و آبی «★ آگهی ویژه» و متن تبلیغاتی دلخواه شما.
+              </p>
+              <div className="pt-2 border-t border-[#E2E8F0] flex items-baseline justify-between">
+                <span className="text-xs text-[#64748B]">تعرفه جایگاه:</span>
+                <div className="text-left">
+                  <span className="text-lg font-extrabold text-[#0057FF] tabular-nums">
+                    ۴۹۰,۰۰۰ تومان
+                  </span>
+                  <span className="text-[11px] text-[#64748B]"> / ماهانه (یا ۱۹۰ هزار تومان هفتگی)</span>
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <label
+                  htmlFor="boost-badge-label"
+                  className="block text-[11px] font-bold text-[#334155] mb-1"
+                >
+                  متن برچسب ویژه روی کارت سالن شما:
+                </label>
+                <Input
+                  id="boost-badge-label"
+                  value={sponsoredLabelInput}
+                  onChange={(e) => setSponsoredLabelInput(e.target.value)}
+                  placeholder="مثلاً پیشنهاد ویژه چهارباغ · ۲۰٪ تخفیف"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant={isSponsoredActive ? 'outline' : 'primary'}
+              size="sm"
+              fullWidth
+              onClick={handleToggleSearchBoost}
+            >
+              <span>
+                {isSponsoredActive
+                  ? 'بروزرسانی برچسب / غیرفعال‌سازی موقت'
+                  : 'فعال‌سازی آنی صدرنشینی در جست‌وجو'}
+              </span>
+            </Button>
+          </div>
+
+          {/* کارت ۲: بنر بزرگ در صفحه اول (Home Featured Banner) */}
+          <div className="rounded-2xl bg-white/10 border border-white/20 p-5 flex flex-col justify-between space-y-4 text-white">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="px-2.5 py-1 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] text-[11px] font-extrabold">
+                  ویترین صفحه اول
+                </span>
+                <span className="text-[11px] text-slate-300 font-bold">
+                  ظرفیت محدود (۲ اسلات در شهر)
+                </span>
+              </div>
+              <h3 className="text-base font-extrabold text-white">
+                ۲. بنر ویژه در صفحه اول تایم تو
+              </h3>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                نمایش بنر تصویری اختصاصی سالن شما در بخش <strong>«پیشنهادهای ویژه رزرو آنلاین»</strong> در صفحه اول سایت با دکمه رزرو مستقیم.
+              </p>
+              <div className="pt-2 border-t border-white/15 flex items-baseline justify-between">
+                <span className="text-xs text-slate-300">تعرفه جایگاه:</span>
+                <div className="text-left">
+                  <span className="text-lg font-extrabold text-[#00E5FF] tabular-nums">
+                    ۸۹۰,۰۰۰ تومان
+                  </span>
+                  <span className="text-[11px] text-slate-300"> / ماهانه (یا ۳۵۰ هزار تومان هفتگی)</span>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="accent"
+              size="sm"
+              fullWidth
+              onClick={() => {
+                if (currentBiz) {
+                  updateBusinessProfile(currentBiz.id, {
+                    featured: true,
+                    isSponsored: true,
+                    sponsoredLabel:
+                      sponsoredLabelInput.trim() || 'بنر ویژه صفحه اول',
+                  });
+                }
+                showToast(
+                  'جایگاه «بنر ویژه صفحه اول و پیشنهاد برگزیده» برای سالن شما رزرو و فعال شد.'
+                );
+              }}
+            >
+              <span>رزرو و فعال‌سازی بنر صفحه اول</span>
+            </Button>
+          </div>
+
+          {/* کارت ۳: بسته افزونه پیامک خدماتی (Add-on SMS Pack) */}
+          <div className="rounded-2xl bg-white/10 border border-white/20 p-5 flex flex-col justify-between space-y-4 text-white">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="px-2.5 py-1 rounded-full bg-emerald-400/20 text-emerald-300 text-[11px] font-extrabold">
+                  بسته افزونه پیامک
+                </span>
+                <span className="text-[11px] text-emerald-300 font-extrabold tabular-nums">
+                  شارژ اضافه فعلی: {toPersianDigits(extraSms)} پیامک
+                </span>
+              </div>
+              <h3 className="text-base font-extrabold text-white">
+                ۳. بسته ۲۰۰ پیامک خدماتی و یادآور اضافه
+              </h3>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                اگر سهمیه پیامک ماهانه پلن شما تمام شده یا در پلن رایگان هستید، بدون تغییر پلن می‌توانید بسته ۲۰۰ تایی پیامک یادآور و تبریک تولد بخرید.
+              </p>
+              <div className="pt-2 border-t border-white/15 flex items-baseline justify-between">
+                <span className="text-xs text-slate-300">تعرفه بسته ۲۰۰ تایی:</span>
+                <span className="text-lg font-extrabold text-emerald-300 tabular-nums">
+                  ۱۸۰,۰۰۰ تومان
+                </span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              fullWidth
+              onClick={handleBuyExtraSmsPack}
+            >
+              <span>افزودن فوری ۲۰۰ پیامک به اعتبار سالن</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* بخش ۲: تعریف کمپین‌های تخفیف باشگاه مشتریان */}
+      <Card>
+        <div className="mb-4 space-y-1">
+          <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+            ساخت کمپین تخفیف برای مشتریان سالن
+          </h2>
+          <p className="text-xs text-[#64748B]">
+            کد تخفیف یا پیشنهاد مناسبتی برای بازگشت مشتریان قبلی تعریف کنید
+          </p>
+        </div>
         <form
           onSubmit={handleCreateCampaign}
           className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end"
@@ -2608,19 +2825,19 @@ export const BusinessMarketingPage: React.FC = () => {
           <Card key={cmp.id} className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Megaphone className="w-4 h-4 text-[#8B5CF6]" />
-                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                <Megaphone className="w-4 h-4 text-[#0057FF]" />
+                <h2 className="text-sm font-extrabold text-[#061138]">
                   {cmp.title}
                 </h2>
               </div>
               <StatusBadge label={cmp.statusLabel} tone="success" />
             </div>
-            <p className="text-xs text-[#6B6480]">
+            <p className="text-xs text-[#334155]">
               مخاطب هدف: <strong>{cmp.targetSegment}</strong> · کانال:{' '}
               {cmp.channel}
             </p>
-            <div className="pt-3 border-t border-[#E6E0F5] flex items-center justify-between text-xs text-[#6B6480] tabular-nums">
-              <span className="font-extrabold text-[#8B5CF6]">
+            <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between text-xs text-[#64748B] tabular-nums">
+              <span className="font-extrabold text-[#0057FF]">
                 تخفیف: {toPersianDigits(cmp.discountPercent)}٪
               </span>
               <span>تاریخ ثبت: {cmp.createdAtJalali}</span>

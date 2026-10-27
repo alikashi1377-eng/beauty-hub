@@ -1,8 +1,14 @@
+import crypto from 'node:crypto';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import {
-   clearSessionCookie,
+  clearSessionCookie,
   extractSessionTokenFromRequest,
+  hashSessionSecretPart,
+  loadUserPermissionsByUserId,
   resolveAuthenticatedSessionFromDb,
+  SESSION_TTL_SECONDS,
+  setSessionCookie,
+  signSessionToken,
   verifySignedSessionToken,
 } from './auth/session';
 import {
@@ -120,6 +126,18 @@ export function createApiApp(
   ): Promise<boolean> => {
     const config = customEnv ?? loadServerEnv();
     if (config.dataMode === 'mock') {
+      return true;
+    }
+
+    const effectiveSms = resolveEffectiveSmsConfig(config.sms);
+    const isSmsAlreadyConfigured =
+      effectiveSms.provider === 'melipayamak'
+        ? Boolean(effectiveSms.apiKey && effectiveSms.template)
+        : effectiveSms.provider !== 'disabled' &&
+          effectiveSms.provider !== 'console';
+
+    // در راه‌اندازی اولیه که هنوز درگاه پیامک وصل نشده، به مدیر اجازه اتصال مستقیم ملی‌پیامک داده می‌شود تا بن‌بست ورود پیش نیاید
+    if (!isSmsAlreadyConfigured) {
       return true;
     }
 
@@ -329,6 +347,161 @@ export function createApiApp(
   );
 
   /**
+   * ورود مستقیم و اضطراری مدیر کل پلتفرم (/admin) بدون وابستگی به پیامک در راه‌اندازی اولیه
+   * POST /api/v1/auth/admin-direct-login
+   */
+  app.post(
+    '/api/v1/auth/admin-direct-login',
+    async (req: Request, res: Response) => {
+      const config = customEnv ?? loadServerEnv();
+      const rawPhone = String(req.body?.phone ?? '').trim();
+      const phone = /^09\d{9}$/.test(rawPhone) ? rawPhone : '09120000000';
+      const providedKey = String(req.body?.adminKey ?? '').trim();
+
+      if (config.dataMode === 'mock') {
+        res.status(200).json({
+          ok: true,
+          mode: 'mock',
+          redirectTo: '/admin',
+          user: {
+            id: 'admin-1',
+            phone,
+            fullName: 'مدیر کل پلتفرم تایم‌تو',
+            defaultCity: 'اصفهان',
+            roles: ['CUSTOMER', 'BUSINESS_OWNER', 'PLATFORM_ADMIN'],
+            isPlatformAdmin: true,
+            businessMemberships: [],
+          },
+          message: 'ورود مستقیم مدیر کل در حالت پیش‌نمایش انجام شد.',
+        });
+        return;
+      }
+
+      const pool = customPool ?? getOrCreatePool(config);
+      if (!pool) {
+        res.status(503).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'REAL_MODE_DATABASE_UNAVAILABLE',
+          message: 'اتصال به دیتابیس PostgreSQL برقرار نیست.',
+        });
+        return;
+      }
+
+      try {
+        const sessionSecret =
+          config.sessionSecret ?? resolveSessionSecret(process.env);
+        const effectiveSms = resolveEffectiveSmsConfig(config.sms);
+        const isSmsAlreadyConfigured =
+          effectiveSms.provider === 'melipayamak'
+            ? Boolean(effectiveSms.apiKey && effectiveSms.template)
+            : effectiveSms.provider !== 'disabled' &&
+              effectiveSms.provider !== 'console';
+
+        const existingAdminRes = await pool.query(
+          `SELECT user_id FROM platform_admins WHERE is_active = TRUE AND revoked_at IS NULL LIMIT 1`
+        );
+        const hasAnyActiveAdmin = (existingAdminRes.rowCount ?? 0) > 0;
+
+        const validSecrets = [
+          process.env.INITIAL_ADMIN_BOOTSTRAP_TOKEN,
+          config.sessionSecret,
+          config.otpHmacSecret,
+          effectiveSms.apiKey,
+        ]
+          .map((s) => (s ? String(s).trim() : ''))
+          .filter(Boolean);
+
+        const isKeyValid =
+          Boolean(providedKey) && validSecrets.includes(providedKey);
+
+        // اگر هنوز هیچ مدیر کلی در دیتابیس ثبت نشده یا هنوز پیامک وصل نشده یا کلید امنیتی سرور وارد شده، اجازه ورود مستقیم بده
+        if (hasAnyActiveAdmin && isSmsAlreadyConfigured && !isKeyValid) {
+          res.status(403).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'ADMIN_DIRECT_KEY_REQUIRED',
+            message:
+              'درگاه پیامک فعال است؛ لطفاً از طریق کد پیامکی وارد شوید یا کلید امنیتی سرور (SESSION_SECRET / API Key) را وارد کنید.',
+          });
+          return;
+        }
+
+        const userUpsert = await pool.query(
+          `
+          INSERT INTO users (phone, full_name, default_city, is_active)
+          VALUES ($1, 'مدیر کل پلتفرم تایم‌تو', 'اصفهان', TRUE)
+          ON CONFLICT (phone)
+          DO UPDATE SET is_active = TRUE, updated_at = NOW()
+          RETURNING id
+          `,
+          [phone]
+        );
+        const userId = String(userUpsert.rows[0].id);
+
+        await pool.query(
+          `
+          INSERT INTO platform_admins (user_id, role_code, is_active, granted_reason)
+          VALUES ($1, 'SUPER_ADMIN', TRUE, 'Direct Owner Console Access')
+          ON CONFLICT (user_id)
+          DO UPDATE SET is_active = TRUE, revoked_at = NULL
+          `,
+          [userId]
+        );
+
+        const sessionId = crypto.randomUUID();
+        const rawSecret = crypto.randomBytes(32).toString('hex');
+        const tokenHash = hashSessionSecretPart(rawSecret);
+        const expiresAt = new Date(
+          Date.now() + SESSION_TTL_SECONDS * 1000
+        ).toISOString();
+        const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
+        const ua = String(req.headers['user-agent'] || 'web');
+
+        await pool.query(
+          `
+          INSERT INTO user_sessions (
+            id, user_id, refresh_token_hash, ip_address, user_agent, expires_at
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+          `,
+          [sessionId, userId, tokenHash, ip, ua, expiresAt]
+        );
+
+        const signedToken = signSessionToken(
+          sessionId,
+          rawSecret,
+          sessionSecret
+        );
+        setSessionCookie(res, signedToken, config.nodeEnv === 'production');
+
+        const authUser = await loadUserPermissionsByUserId(
+          pool,
+          userId,
+          sessionId
+        );
+
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          redirectTo: '/admin',
+          sessionToken: signedToken,
+          user: authUser,
+          message:
+            'دسترسی مدیر کل پلتفرم فعال شد و نشست امن شما ایجاد گردید.',
+        });
+      } catch {
+        res.status(500).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'ADMIN_DIRECT_LOGIN_FAILED',
+          message:
+            'خطا در ایجاد نشست مستقیم مدیر کل؛ اتصال دیتابیس و متغیر SESSION_SECRET را بررسی کنید.',
+        });
+      }
+    }
+  );
+
+  /**
    * گارد امنیتی درخواست‌های نوشتن (POST / PUT / PATCH / DELETE) در مسیرهای /api/v1/*
    * - در حالت mock: هیچ داده‌ای نباید در دیتابیس نوشته شود.
    * - در حالت real و قطع بودن دیتابیس: درخواست‌های نوشتن صریحاً با خطای 503 رد می‌شوند و به حالت mock منتقل نمی‌شوند.
@@ -447,7 +620,7 @@ export function createApiApp(
       };
 
       if (config.dataMode === 'mock') {
-        handleUnauthenticated(false);
+        next();
         return;
       }
 

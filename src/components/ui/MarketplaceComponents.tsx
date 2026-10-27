@@ -248,7 +248,11 @@ export const BusinessCard: React.FC<{
       <Card
         padding="none"
         variant="interactive"
-        className="overflow-hidden rounded-2xl border border-[#CBD5E1] bg-white p-3 flex items-center gap-3.5 group"
+        className={`overflow-hidden rounded-2xl bg-white p-3 flex items-center gap-3.5 group ${
+          business.isSponsored
+            ? 'border-2 border-[#0057FF] ring-2 ring-[#0057FF]/10'
+            : 'border border-[#CBD5E1]'
+        }`}
       >
         <Link
           to={profileLink}
@@ -263,6 +267,12 @@ export const BusinessCard: React.FC<{
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : null}
+          {business.isSponsored ? (
+            <span className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-full bg-gradient-to-l from-[#061138] to-[#0057FF] text-[#00E5FF] text-[9px] font-extrabold inline-flex items-center gap-0.5 shadow-sm">
+              <span>★</span>
+              <span>آگهی ویژه</span>
+            </span>
+          ) : null}
           <span className="absolute bottom-1.5 right-1.5 px-2 py-0.5 rounded-full bg-[#061138]/90 text-white text-[10px] font-bold inline-flex items-center gap-1 tabular-nums">
             <Star className="w-2.5 h-2.5 text-[#F59E0B] fill-[#F59E0B]" />
             {toPersianDigits(business.rating)}
@@ -272,7 +282,12 @@ export const BusinessCard: React.FC<{
         <div className="flex-1 min-w-0 flex flex-col justify-between gap-2">
           <div>
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                {business.isSponsored ? (
+                  <span className="px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold shrink-0">
+                    {business.sponsoredLabel || 'پیشنهاد ویژه'}
+                  </span>
+                ) : null}
                 <h3 className="text-sm sm:text-base font-extrabold text-[#061138] truncate">
                   <Link
                     to={profileLink}
@@ -361,7 +376,11 @@ export const BusinessCard: React.FC<{
     <Card
       padding="none"
       variant="interactive"
-      className="overflow-hidden rounded-3xl flex flex-col justify-between group border border-[#CBD5E1] bg-white shadow-[0_8px_28px_-14px_rgba(6,17,56,0.12)] hover:shadow-[0_18px_40px_-14px_rgba(0,87,255,0.22)]"
+      className={`overflow-hidden rounded-3xl flex flex-col justify-between group bg-white shadow-[0_8px_28px_-14px_rgba(6,17,56,0.12)] hover:shadow-[0_18px_40px_-14px_rgba(0,87,255,0.22)] ${
+        business.isSponsored
+          ? 'border-2 border-[#0057FF] ring-2 ring-[#0057FF]/10'
+          : 'border border-[#CBD5E1]'
+      }`}
     >
       <div className="p-2.5 pb-0 relative">
         <Link
@@ -379,10 +398,17 @@ export const BusinessCard: React.FC<{
           ) : null}
           <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/80 via-transparent to-black/15 pointer-events-none" />
 
-          {/* نشان نوع مرکز در بالا راست */}
-          <span className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-[11px] font-extrabold text-[#061138] shadow-xs">
-            {business.typeLabel}
-          </span>
+          {/* نشان نوع مرکز یا آگهی ویژه در بالا راست */}
+          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
+            {business.isSponsored ? (
+              <span className="px-2.5 py-1 rounded-full bg-gradient-to-l from-[#061138] to-[#0057FF] text-[#00E5FF] text-[11px] font-extrabold shadow-xs">
+                ★ {business.sponsoredLabel || 'پیشنهاد ویژه'}
+              </span>
+            ) : null}
+            <span className="px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md text-[11px] font-extrabold text-[#061138] shadow-xs">
+              {business.typeLabel}
+            </span>
+          </div>
 
           {/* قرص تیره امتیاز روی لبه پایین تصویر */}
           <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-full bg-[#061138]/90 backdrop-blur-md text-white text-xs font-bold inline-flex items-center gap-1.5 tabular-nums shadow-sm">

@@ -1556,6 +1556,73 @@ export const PricingPage: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* بخش جایگاه‌های تبلیغاتی و ارتقای جایگاه سالن‌ها (مستقل از حق اشتراک ماهانه) */}
+      <div className="rounded-3xl bg-[#061138] text-white p-6 sm:p-8 space-y-5 border border-[#1E293B]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+              <Sparkles className="w-4 h-4" />
+              <span>خدمات تبلیغاتی و رشد سریع سالن (قابل فعال‌سازی روی همه پلن‌ها)</span>
+            </span>
+            <h2 className="text-lg sm:text-xl font-extrabold text-white">
+              چگونه سالن خود را بالاتر از همه رقبا در صفحه اول و صدر جست‌وجوی اصفهان نمایش دهید؟
+            </h2>
+          </div>
+          <Link to="/app/marketing">
+            <Button variant="accent" size="sm">
+              <span>ورود به پنل تبلیغات سالن ←</span>
+            </Button>
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] font-extrabold">
+              ★ صدرنشینی در جست‌وجو
+            </span>
+            <h3 className="text-sm font-extrabold text-white">
+              پین در ردیف اول نتایج جست‌وجو (/search)
+            </h3>
+            <p className="text-slate-200 leading-relaxed">
+              نمایش تضمینی سالن شما در بالای فهرست جست‌وجوی خدمات و محله‌ها به همراه نشان «★ آگهی ویژه».
+            </p>
+            <p className="font-extrabold text-[#00E5FF] pt-1 tabular-nums">
+              ۴۹۰,۰۰۰ تومان / ماهانه (یا ۱۹۰,۰۰۰ هفتگی)
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] font-extrabold">
+              ویترین صفحه اول
+            </span>
+            <h3 className="text-sm font-extrabold text-white">
+              بنر اختصاصی در صفحه اول تایم تو
+            </h3>
+            <p className="text-slate-200 leading-relaxed">
+              قرارگیری بنر تصویری بزرگ سالن شما در بخش «پیشنهادهای ویژه رزرو آنلاین» صفحه اصلی با ۳.۵ برابر بازدید بیشتر.
+            </p>
+            <p className="font-extrabold text-[#00E5FF] pt-1 tabular-nums">
+              ۸۹۰,۰۰۰ تومان / ماهانه (یا ۳۵۰,۰۰۰ هفتگی)
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-extrabold">
+              بسته افزونه پیامک
+            </span>
+            <h3 className="text-sm font-extrabold text-white">
+              بسته ۲۰۰ پیامک خدماتی و یادآور اضافه
+            </h3>
+            <p className="text-slate-200 leading-relaxed">
+              شارژ فوری اعتبار پیامک سالن در هر زمان که سهمیه ماهانه پلن شما به پایان رسید.
+            </p>
+            <p className="font-extrabold text-emerald-300 pt-1 tabular-nums">
+              ۱۸۰,۰۰۰ تومان / بسته ۲۰۰ عددی
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

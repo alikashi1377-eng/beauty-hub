@@ -161,6 +161,7 @@ export function filterBusinesses(
   } else {
     sorted.sort(
       (a, b) =>
+        Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)) ||
         Number(Boolean(b.featured)) - Number(Boolean(a.featured)) ||
         b.rating - a.rating
     );

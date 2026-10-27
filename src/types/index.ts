@@ -125,6 +125,9 @@ export interface BusinessItem {
   workingHours: WorkingHourItem[];
   visualTheme: 'rose' | 'slate' | 'emerald' | 'violet';
   featured?: boolean;
+  isSponsored?: boolean;
+  sponsoredLabel?: string;
+  extraSmsBalance?: number;
   instagramHandle?: string;
   mapLat?: number;
   mapLng?: number;
