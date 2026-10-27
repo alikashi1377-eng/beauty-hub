@@ -14,8 +14,17 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
+  Edit3,
+  Megaphone,
 } from 'lucide-react';
-import { ApprovalStatus, CategoryItem } from '../../types';
+import {
+  AdPackageItem,
+  ApprovalStatus,
+  BusinessItem,
+  CategoryItem,
+  SubscriptionPlanItem,
+  SponsoredPlacementSlot,
+} from '../../types';
 import {
   formatPriceToman,
   getSubscriptionStatusMeta,
@@ -948,15 +957,154 @@ export const AdminCategoriesPage: React.FC = () => {
 
 /** ۵. مدیریت اشتراک‌ها و جایگاه‌های تبلیغاتی (/admin/subscriptions) */
 export const AdminSubscriptionsPage: React.FC = () => {
-  const { plans, businesses, updateBusinessProfile, showToast } =
-    usePrototypeData();
+  const {
+    plans,
+    updatePlan,
+    adPackages,
+    updateAdPackage,
+    businesses,
+    updateBusinessProfile,
+    paymentOrders,
+    reviewPaymentOrder,
+    showToast,
+  } = usePrototypeData();
+
+  // مودال ویرایش پلن اشتراک
+  const [editingPlan, setEditingPlan] = useState<SubscriptionPlanItem | null>(
+    null
+  );
+  const [planNameInput, setPlanNameInput] = useState('');
+  const [planPriceInput, setPlanPriceInput] = useState('');
+  const [planStaffInput, setPlanStaffInput] = useState('');
+  const [planSmsInput, setPlanSmsInput] = useState('');
+  const [planAudienceInput, setPlanAudienceInput] = useState('');
+  const [planFeaturesInput, setPlanFeaturesInput] = useState('');
+
+  // مودال ویرایش بسته تبلیغاتی / پیامک
+  const [editingAdPkg, setEditingAdPkg] = useState<AdPackageItem | null>(null);
+  const [adTitleInput, setAdTitleInput] = useState('');
+  const [adMonthlyPriceInput, setAdMonthlyPriceInput] = useState('');
+  const [adWeeklyPriceInput, setAdWeeklyPriceInput] = useState('');
+  const [adCapacityInput, setAdCapacityInput] = useState('');
+  const [adDescInput, setAdDescInput] = useState('');
+  const [adSmsCountInput, setAdSmsCountInput] = useState('');
+
+  // مودال مدیریت دقیق جایگاه و زمان تبلیغ یک کسب‌وکار
+  const [managingBiz, setManagingBiz] = useState<BusinessItem | null>(null);
+  const [bizSponsoredActive, setBizSponsoredActive] = useState(false);
+  const [bizPlacementSlot, setBizPlacementSlot] =
+    useState<SponsoredPlacementSlot>('SEARCH_TOP');
+  const [bizSponsoredOrder, setBizSponsoredOrder] = useState('1');
+  const [bizSponsoredDays, setBizSponsoredDays] = useState('30');
+  const [bizSponsoredLabel, setBizSponsoredLabel] = useState('');
+  const [bizExtraSms, setBizExtraSms] = useState('0');
+  const [bizPlanName, setBizPlanName] = useState('');
+
+  const openEditPlanModal = (plan: SubscriptionPlanItem) => {
+    setEditingPlan(plan);
+    setPlanNameInput(plan.name);
+    setPlanPriceInput(String(plan.monthlyPriceToman));
+    setPlanStaffInput(plan.staffLimit);
+    setPlanSmsInput(String(plan.smsQuotaMonthly));
+    setPlanAudienceInput(plan.audience);
+    setPlanFeaturesInput(plan.features.join('\n'));
+  };
+
+  const handleSavePlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlan) return;
+    updatePlan(editingPlan.id, {
+      name: planNameInput.trim() || editingPlan.name,
+      monthlyPriceToman: Math.max(0, Number(planPriceInput) || 0),
+      staffLimit: planStaffInput.trim() || editingPlan.staffLimit,
+      smsQuotaMonthly: Math.max(0, Number(planSmsInput) || 0),
+      audience: planAudienceInput.trim() || editingPlan.audience,
+      features: planFeaturesInput
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean),
+    });
+    setEditingPlan(null);
+  };
+
+  const openEditAdPkgModal = (pkg: AdPackageItem) => {
+    setEditingAdPkg(pkg);
+    setAdTitleInput(pkg.title);
+    setAdMonthlyPriceInput(String(pkg.priceToman));
+    setAdWeeklyPriceInput(String(pkg.weeklyPriceToman ?? 190000));
+    setAdCapacityInput(pkg.badge);
+    setAdDescInput(pkg.description);
+    setAdSmsCountInput(String(pkg.smsCount ?? 200));
+  };
+
+  const handleSaveAdPkg = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdPkg) return;
+    updateAdPackage(editingAdPkg.id, {
+      title: adTitleInput.trim() || editingAdPkg.title,
+      priceToman: Math.max(0, Number(adMonthlyPriceInput) || 0),
+      weeklyPriceToman: Math.max(0, Number(adWeeklyPriceInput) || 0),
+      badge: adCapacityInput.trim() || editingAdPkg.badge,
+      description: adDescInput.trim() || editingAdPkg.description,
+      smsCount:
+        editingAdPkg.slot === 'SMS_ADDON'
+          ? Math.max(10, Number(adSmsCountInput) || 200)
+          : undefined,
+    });
+    setEditingAdPkg(null);
+  };
+
+  const openManageBizModal = (biz: BusinessItem) => {
+    setManagingBiz(biz);
+    setBizSponsoredActive(Boolean(biz.isSponsored));
+    setBizPlacementSlot(biz.sponsoredPlacement || 'SEARCH_TOP');
+    setBizSponsoredOrder(String(biz.sponsoredOrder ?? 1));
+    setBizSponsoredDays(String(biz.sponsoredDaysRemaining ?? 30));
+    setBizSponsoredLabel(biz.sponsoredLabel || 'پیشنهاد ویژه رزرو آنلاین');
+    setBizExtraSms(String(biz.extraSmsBalance ?? 0));
+    setBizPlanName(biz.subscriptionPlan);
+  };
+
+  const handleSaveBizPlacement = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!managingBiz) return;
+    const daysNum = Math.max(0, Number(bizSponsoredDays) || 0);
+    const orderNum = Math.max(1, Number(bizSponsoredOrder) || 1);
+    updateBusinessProfile(managingBiz.id, {
+      isSponsored: bizSponsoredActive && daysNum > 0,
+      featured:
+        bizSponsoredActive &&
+        (bizPlacementSlot === 'HOME_BANNER' ||
+          bizPlacementSlot === 'HERO_SPOTLIGHT')
+          ? true
+          : managingBiz.featured,
+      sponsoredPlacement: bizPlacementSlot,
+      sponsoredOrder: orderNum,
+      sponsoredDaysRemaining: daysNum,
+      sponsoredLabel: bizSponsoredLabel.trim() || 'پیشنهاد ویژه',
+      extraSmsBalance: Math.max(0, Number(bizExtraSms) || 0),
+      subscriptionPlan: bizPlanName || managingBiz.subscriptionPlan,
+    });
+    showToast(
+      `تنظیمات جایگاه تبلیغاتی، رتبه نمایش و اشتراک «${managingBiz.name}» ذخیره شد.`
+    );
+    setManagingBiz(null);
+  };
+
+  const pendingOrders = paymentOrders.filter((o) => o.status === 'PENDING');
+
+  const placementLabels: Record<string, string> = {
+    SEARCH_TOP: 'صدر جست‌وجو (/search)',
+    HOME_BANNER: 'بنر صفحه اول + صدر جست‌وجو',
+    HERO_SPOTLIGHT: 'ویترین طلایی بالای صفحه اول',
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی، اشتراک و تبلیغات · پلن‌های ماهانه و جایگاه‌های ویژه"
-        title="مدیریت پلن‌های اشتراک و جایگاه‌های تبلیغاتی (Boost)"
-        subtitle="پایش ظرفیت پلن‌ها، سهمیه پیامک بهینه‌شده برای سودآوری پلتفرم و مدیریت سالن‌های دارای جایگاه تبلیغاتی در صدر جست‌وجو"
+        kicker="مالی، اشتراک و تبلیغات · کنترل کامل پلن‌ها و جایگاه‌های ویژه"
+        title="مدیریت و ویرایش پلن‌های اشتراک و جایگاه‌های تبلیغاتی (Boost)"
+        subtitle="ویرایش مستقیم قیمت و ظرفیت پلن‌ها، تعرفه بسته‌های تبلیغاتی، تایید سفارش‌های خرید سالن‌ها و تنظیم نحوه قرارگیری و مدت زمان تبلیغ هر کسب‌وکار"
         routePattern="/admin/subscriptions"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -964,249 +1112,920 @@ export const AdminSubscriptionsPage: React.FC = () => {
         ]}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {plans.map((plan) => (
-          <Card key={plan.id} className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-extrabold text-[#061138]">
-                {plan.name}
-              </h2>
-              {plan.isRecommended ? (
-                <StatusBadge label="پرفروش" tone="accent" />
-              ) : null}
-            </div>
-            <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
-              {formatPriceToman(plan.monthlyPriceToman)}
-            </p>
-            <div className="space-y-1 text-xs text-[#334155] pt-2 border-t border-[#E2E8F0]">
-              <p>
-                ظرفیت متخصصان: <strong>{plan.staffLimit}</strong>
-              </p>
-              <p className="tabular-nums">
-                سهمیه پیامک ماهانه:{' '}
-                <strong>{toPersianDigits(plan.smsQuotaMonthly)} عدد</strong>
-              </p>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* کارت تعرفه جایگاه‌های تبلیغاتی (جدا از حق اشتراک ماهانه) */}
-      <Card className="bg-[#061138] text-white border-[#1E293B] space-y-4">
+      {/* راهنمای عملی مدیر کل: دقیقاً کجا چیکار کنم؟ */}
+      <Card className="bg-[#F3F6FC] border-2 border-[#0057FF]/25 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <span className="text-xs font-extrabold text-[#00E5FF]">
-              جریان درآمدی دوم پلتفرم (حاشیه سود ۱۰۰٪ خالص بدون هزینه پیامک)
-            </span>
-            <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
-              تعرفه‌های تبلیغات و ارتقای جایگاه سالن‌ها (Sponsored Placements)
-            </h2>
-          </div>
-          <StatusBadge label="فعال در پنل سالن‌ها (/app/marketing)" tone="success" />
+          <p className="text-xs sm:text-sm font-extrabold text-[#0057FF] flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>راهنمای سریع مدیر کل: کجا چیکار کنم؟</span>
+          </p>
+          <Link to="/admin/payments">
+            <Button variant="outline" size="sm">
+              <span>مشاهده همه صورتحساب‌ها و تنظیم بله‌پی / کارت‌به‌کارت ←</span>
+            </Button>
+          </Link>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
-            <p className="font-extrabold text-[#00E5FF]">
-              ۱. صدرنشینی در نتایج جست‌وجو (Search Boost)
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#061138]">
+          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
+            <p className="font-extrabold text-[#0057FF]">
+              ۱. تغییر قیمت و ظرفیت پلن‌ها و بسته‌ها
             </p>
-            <p className="text-slate-200">
-              نمایش در ردیف اول `/search` با نشان «★ آگهی ویژه»
-            </p>
-            <p className="font-extrabold text-white pt-1 tabular-nums">
-              ۴۹۰,۰۰۰ تومان / ماهانه (۱۹۰,۰۰۰ هفتگی)
-            </p>
-          </div>
-          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
-            <p className="font-extrabold text-[#00E5FF]">
-              ۲. بنر ویژه در صفحه اول (Home Banner)
-            </p>
-            <p className="text-slate-200">
-              جایگاه بنر تصویری در بخش پیشنهادهای ویژه صفحه اصلی
-            </p>
-            <p className="font-extrabold text-white pt-1 tabular-nums">
-              ۸۹۰,۰۰۰ تومان / ماهانه (۳۵۰,۰۰۰ هفتگی)
+            <p className="text-[#334155] leading-relaxed">
+              روی دکمه <strong>«ویرایش پلن»</strong> یا{' '}
+              <strong>«ویرایش تعرفه بسته»</strong> در کارت‌های زیر بزنید تا قیمت
+              ماهانه/هفتگی، سقف متخصصان یا سهمیه پیامک بلافاصله در کل سایت آپدیت
+              شود.
             </p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
-            <p className="font-extrabold text-emerald-300">
-              ۳. بسته افزونه ۲۰۰ پیامک اضافه
+          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
+            <p className="font-extrabold text-[#059669]">
+              ۲. وقتی صاحب سالن بسته یا پلن می‌خرد
             </p>
-            <p className="text-slate-200">
-              شارژ پیامک یادآور مازاد بر سهمیه پلن ماهانه
+            <p className="text-[#334155] leading-relaxed">
+              سفارش او (با کد رهگیری بله‌پی یا کارت‌به‌کارت) همین پایین در بخش{' '}
+              <strong>«درخواست‌های خرید سالن‌ها»</strong> می‌آید. با زدن دکمه{' '}
+              <strong>«تایید و فعال‌سازی»</strong>، جایگاه و مدت زمان تبلیغ او
+              خودکار فعال می‌شود.
             </p>
-            <p className="font-extrabold text-white pt-1 tabular-nums">
-              ۱۸۰,۰۰۰ تومان / هر بسته ۲۰۰ عددی
+          </div>
+          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
+            <p className="font-extrabold text-[#D97706]">
+              ۳. تنظیم دستی جایگاه، رتبه و مدت زمان
+            </p>
+            <p className="text-[#334155] leading-relaxed">
+              در جدول پایین صفحه روی دکمه{' '}
+              <strong>«تنظیم جایگاه و زمان تبلیغ»</strong> هر سالن بزنید تا محل
+              نمایش (صفحه اول یا صدر جست‌وجو)، رتبه ۱ تا ۱۰ و تعداد روزهای
+              باقی‌مانده را دقیق تنظیم کنید.
             </p>
           </div>
         </div>
       </Card>
 
-      <ResponsiveTable
-        keyExtractor={(b) => b.id}
-        data={businesses}
-        columns={[
-          {
-            key: 'name',
-            header: 'کسب‌وکار',
-            render: (b) => (
-              <div className="space-y-0.5">
-                <span className="font-extrabold text-[#061138] block">
-                  {b.name}
-                </span>
-                <span className="text-[11px] text-[#64748B]">
-                  {b.neighborhood}
-                </span>
+      {/* صف سریع درخواست‌های خرید در انتظار تایید */}
+      {pendingOrders.length > 0 ? (
+        <Card className="border-2 border-[#F59E0B] bg-[#FFFBEB] space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-[#D97706]" />
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                درخواست‌های خرید جدید سالن‌ها (در انتظار تایید شما:{' '}
+                {toPersianDigits(pendingOrders.length)} مورد)
+              </h2>
+            </div>
+            <span className="text-xs font-bold text-[#92400E]">
+              با تایید هر مورد، پلن یا جایگاه تبلیغاتی سالن به صورت خودکار فعال
+              می‌شود
+            </span>
+          </div>
+          <ResponsiveTable
+            keyExtractor={(o) => o.id}
+            data={pendingOrders}
+            columns={[
+              {
+                key: 'biz',
+                header: 'سالن درخواست‌دهنده',
+                render: (o) => (
+                  <div>
+                    <span className="font-extrabold text-[#061138] block">
+                      {o.businessName}
+                    </span>
+                    <span className="text-[11px] text-[#64748B] font-mono">
+                      {o.id} · {o.createdAtJalali}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'item',
+                header: 'بسته / جایگاه انتخابی',
+                render: (o) => (
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-[#0057FF] block">
+                      {o.itemTitle}
+                    </span>
+                    {o.requestedPlacement ? (
+                      <span className="text-[11px] text-[#334155] block">
+                        محل: {placementLabels[o.requestedPlacement]} · مدت:{' '}
+                        {toPersianDigits(o.requestedDurationDays ?? 30)} روز
+                      </span>
+                    ) : null}
+                  </div>
+                ),
+              },
+              {
+                key: 'payment',
+                header: 'روش پرداخت و کد رهگیری',
+                render: (o) => (
+                  <div className="text-xs">
+                    <span className="font-extrabold text-[#061138]">
+                      {o.paymentMethod === 'BALEPAY'
+                        ? 'بله‌پی (BalePay)'
+                        : 'کارت‌به‌کارت'}
+                    </span>
+                    <span className="block font-mono text-[11px] text-[#059669]">
+                      کد رهگیری: {o.trackingCode}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'مبلغ واریزی',
+                render: (o) => (
+                  <span className="font-extrabold text-[#061138] tabular-nums">
+                    {formatPriceToman(o.amountToman)}
+                  </span>
+                ),
+              },
+              {
+                key: 'actions',
+                header: 'عملیات مدیر',
+                render: (o) => (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => reviewPaymentOrder(o.id, 'APPROVED')}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>تایید و فعال‌سازی</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => reviewPaymentOrder(o.id, 'REJECTED')}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>رد</span>
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      ) : null}
+
+      {/* بخش ۱: پلن‌های اشتراک ماهانه (قابل ویرایش توسط مدیر کل) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-extrabold text-[#061138]">
+            ۱. پلن‌های اشتراک ماهانه کسب‌وکارها (قابل ویرایش)
+          </h2>
+          <span className="text-xs text-[#64748B]">
+            تغییرات شما بلافاصله در صفحه تعرفه‌ها و پنل سالن‌ها اعمال می‌شود
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {plans.map((plan) => (
+            <Card
+              key={plan.id}
+              className="space-y-3 flex flex-col justify-between"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-extrabold text-[#061138]">
+                    {plan.name}
+                  </h3>
+                  {plan.isRecommended ? (
+                    <StatusBadge label="پرفروش" tone="accent" />
+                  ) : null}
+                </div>
+                <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
+                  {plan.monthlyPriceToman === 0
+                    ? 'رایگان (۰ تومان)'
+                    : formatPriceToman(plan.monthlyPriceToman)}
+                </p>
+                <div className="space-y-1 text-xs text-[#334155] pt-2 border-t border-[#E2E8F0]">
+                  <p>
+                    ظرفیت متخصصان: <strong>{plan.staffLimit}</strong>
+                  </p>
+                  <p className="tabular-nums">
+                    سهمیه پیامک ماهانه:{' '}
+                    <strong>{toPersianDigits(plan.smsQuotaMonthly)} عدد</strong>
+                  </p>
+                  <p className="text-[11px] text-[#64748B] pt-1">
+                    {plan.audience}
+                  </p>
+                </div>
               </div>
-            ),
-          },
-          {
-            key: 'plan',
-            header: 'پلن انتخابی',
-            render: (b) => (
-              <span className="font-bold text-[#0057FF]">
-                {b.subscriptionPlan}
-              </span>
-            ),
-          },
-          {
-            key: 'status',
-            header: 'وضعیت اشتراک',
-            render: (b) => {
-              const meta = getSubscriptionStatusMeta(b.subscriptionStatus);
-              return <StatusBadge label={meta.label} tone={meta.tone} />;
-            },
-          },
-          {
-            key: 'sponsored',
-            header: 'جایگاه تبلیغاتی (صدر جست‌وجو)',
-            render: (b) => (
-              <div className="flex items-center gap-2">
-                {b.isSponsored ? (
-                  <StatusBadge
-                    label={`★ فعال (${b.sponsoredLabel || 'پیشنهاد ویژه'})`}
-                    tone="primary"
-                  />
-                ) : (
-                  <StatusBadge label="عادی" tone="neutral" />
-                )}
+              <div className="pt-3 border-t border-[#E2E8F0]">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const nextVal = !b.isSponsored;
-                    updateBusinessProfile(b.id, {
-                      isSponsored: nextVal,
-                      sponsoredLabel: b.sponsoredLabel || 'پیشنهاد ویژه',
-                    });
-                    showToast(
-                      nextVal
-                        ? `جایگاه تبلیغاتی صدر جست‌وجو برای «${b.name}» فعال شد.`
-                        : `جایگاه تبلیغاتی «${b.name}» به حالت عادی برگشت.`
-                    );
-                  }}
+                  fullWidth
+                  onClick={() => openEditPlanModal(plan)}
                 >
-                  {b.isSponsored ? 'لغو پین' : 'پین در صدر جست‌وجو'}
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>ویرایش قیمت، ظرفیت و ویژگی‌ها</span>
                 </Button>
               </div>
-            ),
-          },
-        ]}
-      />
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* بخش ۲: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل) */}
+      <Card className="bg-[#061138] text-white border-[#1E293B] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="text-xs font-extrabold text-[#00E5FF]">
+              ۲. بسته‌های تبلیغات و جایگاه‌های ویژه (قابل ویرایش توسط شما)
+            </span>
+            <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
+              تعرفه‌های ارتقای جایگاه سالن‌ها و بسته پیامک اضافه
+            </h2>
+          </div>
+          <StatusBadge
+            label="متصل به درگاه بله‌پی و کارت‌به‌کارت"
+            tone="success"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          {adPackages.map((pkg, idx) => (
+            <div
+              key={pkg.id}
+              className="p-4 rounded-2xl bg-white/10 border border-white/15 flex flex-col justify-between space-y-3"
+            >
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-[#00E5FF]">
+                    {toPersianDigits(idx + 1)}. {pkg.title}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-slate-200">
+                    {pkg.badge}
+                  </span>
+                </div>
+                <p className="text-slate-200 leading-relaxed">
+                  {pkg.description}
+                </p>
+                <p className="font-extrabold text-white pt-1 tabular-nums text-sm">
+                  {formatPriceToman(pkg.priceToman)}
+                  {pkg.slot !== 'SMS_ADDON' ? (
+                    <span className="text-[11px] font-normal text-slate-300">
+                      {' '}
+                      / ماهانه ({formatPriceToman(pkg.weeklyPriceToman ?? 190000)}{' '}
+                      هفتگی)
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-normal text-emerald-300">
+                      {' '}
+                      / بسته {toPersianDigits(pkg.smsCount ?? 200)} پیامک
+                    </span>
+                  )}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                fullWidth
+                onClick={() => openEditAdPkgModal(pkg)}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>ویرایش تعرفه و توضیحات بسته</span>
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* بخش ۳: جدول کنترل کامل جایگاه، رتبه و مدت زمان تبلیغ هر کسب‌وکار */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-extrabold text-[#061138]">
+              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش و مدت زمان هر کسب‌وکار
+            </h2>
+            <p className="text-xs text-[#64748B]">
+              تعیین کنید کدام سالن در صدر جست‌وجو یا بنر صفحه اول باشد، در چه
+              رتبه‌ای قرار بگیرد و چند روز اعتبار تبلیغاتی داشته باشد
+            </p>
+          </div>
+        </div>
+
+        <ResponsiveTable
+          keyExtractor={(b) => b.id}
+          data={businesses}
+          columns={[
+            {
+              key: 'name',
+              header: 'کسب‌وکار و محله',
+              render: (b) => (
+                <div className="space-y-0.5">
+                  <span className="font-extrabold text-[#061138] block">
+                    {b.name}
+                  </span>
+                  <span className="text-[11px] text-[#64748B]">
+                    {b.city} · محله {b.neighborhood}
+                  </span>
+                </div>
+              ),
+            },
+            {
+              key: 'plan',
+              header: 'پلن و پیامک اضافه',
+              render: (b) => (
+                <div className="space-y-0.5">
+                  <span className="font-bold text-[#0057FF] block">
+                    {b.subscriptionPlan}
+                  </span>
+                  <span className="text-[11px] text-[#64748B] tabular-nums">
+                    شارژ پیامک اضافه:{' '}
+                    {toPersianDigits(b.extraSmsBalance ?? 0)} عدد
+                  </span>
+                </div>
+              ),
+            },
+            {
+              key: 'placement',
+              header: 'نحوه قرارگیری تبلیغ (Placement)',
+              render: (b) =>
+                b.isSponsored ? (
+                  <div className="space-y-1">
+                    <StatusBadge
+                      label={`★ ${
+                        placementLabels[b.sponsoredPlacement || 'SEARCH_TOP'] ||
+                        'صدر جست‌وجو'
+                      }`}
+                      tone="primary"
+                    />
+                    <span className="block text-[11px] text-[#334155]">
+                      برچسب: «{b.sponsoredLabel || 'پیشنهاد ویژه'}»
+                    </span>
+                  </div>
+                ) : (
+                  <StatusBadge label="نمایش عادی (بدون تبلیغ)" tone="neutral" />
+                ),
+            },
+            {
+              key: 'rankAndDuration',
+              header: 'رتبه نمایش و مدت زمان باقی‌مانده',
+              render: (b) =>
+                b.isSponsored ? (
+                  <div className="space-y-0.5 tabular-nums">
+                    <span className="font-extrabold text-[#061138] block text-xs">
+                      اولویت جایگاه: رتبه{' '}
+                      {toPersianDigits(b.sponsoredOrder ?? 1)}
+                    </span>
+                    <span className="text-[11px] font-bold text-[#059669] block">
+                      {toPersianDigits(b.sponsoredDaysRemaining ?? 30)} روز
+                      باقی‌مانده
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-[#64748B]">—</span>
+                ),
+            },
+            {
+              key: 'actions',
+              header: 'مدیریت کامل جایگاه و زمان',
+              render: (b) => (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => openManageBizModal(b)}
+                  >
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>تنظیم جایگاه و زمان تبلیغ</span>
+                  </Button>
+                  {b.isSponsored ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        updateBusinessProfile(b.id, {
+                          isSponsored: false,
+                        });
+                        showToast(
+                          `نمایش تبلیغاتی «${b.name}» غیرفعال شد و به حالت عادی بازگشت.`
+                        );
+                      }}
+                    >
+                      لغو پین
+                    </Button>
+                  ) : null}
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
+
+      {/* مودال ۱: ویرایش پلن اشتراک */}
+      <Modal
+        isOpen={Boolean(editingPlan)}
+        onClose={() => setEditingPlan(null)}
+        title={`ویرایش پلن اشتراک: ${editingPlan?.name ?? ''}`}
+        description="می‌توانید قیمت ماهانه، سقف متخصصان، سهمیه پیامک و ویژگی‌های این پلن را تغییر دهید"
+      >
+        <form onSubmit={handleSavePlan} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField id="edit-plan-name" label="عنوان پلن" required>
+              <Input
+                id="edit-plan-name"
+                value={planNameInput}
+                onChange={(e) => setPlanNameInput(e.target.value)}
+              />
+            </FormField>
+            <FormField
+              id="edit-plan-price"
+              label="قیمت ماهانه (تومان — ۰ برای رایگان)"
+              required
+            >
+              <Input
+                id="edit-plan-price"
+                dir="ltr"
+                type="number"
+                value={planPriceInput}
+                onChange={(e) => setPlanPriceInput(e.target.value)}
+              />
+            </FormField>
+            <FormField
+              id="edit-plan-staff"
+              label="متن ظرفیت متخصصان (مثلاً تا ۳ متخصص)"
+              required
+            >
+              <Input
+                id="edit-plan-staff"
+                value={planStaffInput}
+                onChange={(e) => setPlanStaffInput(e.target.value)}
+              />
+            </FormField>
+            <FormField
+              id="edit-plan-sms"
+              label="سهمیه پیامک ماهانه (عدد)"
+              required
+            >
+              <Input
+                id="edit-plan-sms"
+                dir="ltr"
+                type="number"
+                value={planSmsInput}
+                onChange={(e) => setPlanSmsInput(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <FormField id="edit-plan-aud" label="توضیح مخاطب هدف پلن">
+            <Input
+              id="edit-plan-aud"
+              value={planAudienceInput}
+              onChange={(e) => setPlanAudienceInput(e.target.value)}
+            />
+          </FormField>
+
+          <FormField
+            id="edit-plan-features"
+            label="امکانات پلن (هر ویژگی در یک خط مجزا)"
+          >
+            <textarea
+              id="edit-plan-features"
+              rows={4}
+              value={planFeaturesInput}
+              onChange={(e) => setPlanFeaturesInput(e.target.value)}
+              className="w-full rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 text-xs text-[#061138] focus:outline-none focus:border-[#0057FF]"
+            />
+          </FormField>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingPlan(null)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary">
+              <Check className="w-4 h-4" />
+              <span>ذخیره تغییرات پلن</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* مودال ۲: ویرایش بسته تبلیغاتی / پیامک */}
+      <Modal
+        isOpen={Boolean(editingAdPkg)}
+        onClose={() => setEditingAdPkg(null)}
+        title={`ویرایش بسته تبلیغاتی: ${editingAdPkg?.title ?? ''}`}
+        description="تغییر قیمت ماهانه، قیمت هفتگی و شرح جایگاه تبلیغاتی"
+      >
+        <form onSubmit={handleSaveAdPkg} className="space-y-4">
+          <FormField id="edit-ad-title" label="عنوان بسته تبلیغاتی" required>
+            <Input
+              id="edit-ad-title"
+              value={adTitleInput}
+              onChange={(e) => setAdTitleInput(e.target.value)}
+            />
+          </FormField>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              id="edit-ad-monthly"
+              label={
+                editingAdPkg?.slot === 'SMS_ADDON'
+                  ? 'قیمت بسته پیامک (تومان)'
+                  : 'تعرفه ۳۰ روزه / ماهانه (تومان)'
+              }
+              required
+            >
+              <Input
+                id="edit-ad-monthly"
+                dir="ltr"
+                type="number"
+                value={adMonthlyPriceInput}
+                onChange={(e) => setAdMonthlyPriceInput(e.target.value)}
+              />
+            </FormField>
+
+            {editingAdPkg?.slot !== 'SMS_ADDON' ? (
+              <FormField
+                id="edit-ad-weekly"
+                label="تعرفه ۷ روزه / هفتگی (تومان)"
+                required
+              >
+                <Input
+                  id="edit-ad-weekly"
+                  dir="ltr"
+                  type="number"
+                  value={adWeeklyPriceInput}
+                  onChange={(e) => setAdWeeklyPriceInput(e.target.value)}
+                />
+              </FormField>
+            ) : (
+              <FormField
+                id="edit-ad-sms-count"
+                label="تعداد پیامک داخل بسته"
+                required
+              >
+                <Input
+                  id="edit-ad-sms-count"
+                  dir="ltr"
+                  type="number"
+                  value={adSmsCountInput}
+                  onChange={(e) => setAdSmsCountInput(e.target.value)}
+                />
+              </FormField>
+            )}
+          </div>
+
+          <FormField id="edit-ad-cap" label="برچسب ظرفیت / اولویت">
+            <Input
+              id="edit-ad-cap"
+              value={adCapacityInput}
+              onChange={(e) => setAdCapacityInput(e.target.value)}
+            />
+          </FormField>
+
+          <FormField id="edit-ad-desc" label="توضیحات بسته برای صاحبان سالن">
+            <Input
+              id="edit-ad-desc"
+              value={adDescInput}
+              onChange={(e) => setAdDescInput(e.target.value)}
+            />
+          </FormField>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingAdPkg(null)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary">
+              <Check className="w-4 h-4" />
+              <span>ذخیره تعرفه بسته</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* مودال ۳: مدیریت نحوه قرارگیری، رتبه و مدت زمان تبلیغ هر کسب‌وکار */}
+      <Modal
+        isOpen={Boolean(managingBiz)}
+        onClose={() => setManagingBiz(null)}
+        title={`مدیریت تبلیغات و جایگاه: ${managingBiz?.name ?? ''}`}
+        description="تنظیم دقیق محل نمایش بنر/کارت، رتبه اولویت، تعداد روزهای باقی‌مانده و برچسب تبلیغاتی"
+      >
+        <form onSubmit={handleSaveBizPlacement} className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between">
+            <div>
+              <p className="text-xs font-extrabold text-[#061138]">
+                وضعیت نمایش تبلیغاتی (Sponsored Boost)
+              </p>
+              <p className="text-[11px] text-[#64748B]">
+                در صورت فعال بودن، این سالن بالاتر از نتایج عادی نمایش داده
+                می‌شود
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setBizSponsoredActive((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                bizSponsoredActive
+                  ? 'bg-[#10B981] text-white'
+                  : 'bg-white border border-[#CBD5E1] text-[#64748B]'
+              }`}
+            >
+              {bizSponsoredActive ? '★ تبلیغ فعال است' : 'غیرفعال (نمایش عادی)'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              id="biz-slot"
+              label="۱. نحوه و محل قرارگیری تبلیغ"
+              required
+            >
+              <Select
+                id="biz-slot"
+                value={bizPlacementSlot}
+                onChange={(e) =>
+                  setBizPlacementSlot(e.target.value as SponsoredPlacementSlot)
+                }
+                options={[
+                  {
+                    value: 'SEARCH_TOP',
+                    label: 'صدر نتایج جست‌وجو (/search)',
+                  },
+                  {
+                    value: 'HOME_BANNER',
+                    label: 'بنر ویژه صفحه اول + صدر جست‌وجو',
+                  },
+                  {
+                    value: 'HERO_SPOTLIGHT',
+                    label: 'ویترین طلایی صفحه اول + صدر جست‌وجو',
+                  },
+                ]}
+              />
+            </FormField>
+
+            <FormField
+              id="biz-order"
+              label="۲. رتبه و نوبت قرارگیری (۱ = اولین کارت)"
+              required
+            >
+              <Select
+                id="biz-order"
+                value={bizSponsoredOrder}
+                onChange={(e) => setBizSponsoredOrder(e.target.value)}
+                options={[
+                  { value: '1', label: 'رتبه ۱ (اولین سالن در لیست)' },
+                  { value: '2', label: 'رتبه ۲ (جایگاه دوم)' },
+                  { value: '3', label: 'رتبه ۳ (جایگاه سوم)' },
+                  { value: '4', label: 'رتبه ۴ (جایگاه چهارم)' },
+                  { value: '5', label: 'رتبه ۵ (جایگاه پنجم)' },
+                ]}
+              />
+            </FormField>
+
+            <FormField
+              id="biz-days"
+              label="۳. مدت زمان باقی‌مانده تبلیغ (روز)"
+              required
+            >
+              <Input
+                id="biz-days"
+                dir="ltr"
+                type="number"
+                value={bizSponsoredDays}
+                onChange={(e) => setBizSponsoredDays(e.target.value)}
+              />
+            </FormField>
+
+            <FormField id="biz-plan-select" label="۴. پلن اشتراک فعال سالن">
+              <Select
+                id="biz-plan-select"
+                value={bizPlanName}
+                onChange={(e) => setBizPlanName(e.target.value)}
+                options={plans.map((p) => ({ value: p.name, label: p.name }))}
+              />
+            </FormField>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-[#64748B]">
+              تنظیم سریع مدت زمان:
+            </span>
+            {[7, 14, 30, 60, 90].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setBizSponsoredDays(String(d))}
+                className="px-2.5 py-1 rounded-lg bg-[#E0ECFF] text-[#0057FF] text-[11px] font-extrabold hover:bg-[#0057FF] hover:text-white transition-colors cursor-pointer"
+              >
+                {toPersianDigits(d)} روز
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+              id="biz-label-input"
+              label="متن برچسب تبلیغاتی روی کارت سالن"
+            >
+              <Input
+                id="biz-label-input"
+                value={bizSponsoredLabel}
+                onChange={(e) => setBizSponsoredLabel(e.target.value)}
+                placeholder="مثلاً پیشنهاد ویژه · ۲۰٪ تخفیف"
+              />
+            </FormField>
+
+            <FormField
+              id="biz-extra-sms"
+              label="موجودی پیامک اضافه (مازاد بر پلن)"
+            >
+              <Input
+                id="biz-extra-sms"
+                dir="ltr"
+                type="number"
+                value={bizExtraSms}
+                onChange={(e) => setBizExtraSms(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setManagingBiz(null)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary">
+              <Check className="w-4 h-4" />
+              <span>ذخیره جایگاه و تنظیمات سالن</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
 
-/** ۶. تراکنش‌های حق اشتراک (/admin/payments) */
+/** ۶. تراکنش‌های حق اشتراک و مدیریت درگاه بله‌پی و کارت‌به‌کارت (/admin/payments) */
 export const AdminPaymentsPage: React.FC = () => {
-  const { dataMode } = usePrototypeData();
+  const {
+    paymentConfig,
+    updatePaymentConfig,
+    paymentOrders,
+    reviewPaymentOrder,
+  } = usePrototypeData();
 
-  const sampleInvoices = [
-    {
-      id: 'INV-901',
-      business: 'سالن زیبایی رویال گلزار',
-      plan: 'پلن حرفه‌ای',
-      amount: 980000,
-      date: '۱۴۰۵/۰۸/۰۱',
-      status: 'پرداخت موفق',
-    },
-    {
-      id: 'INV-902',
-      business: 'آرایشگاه مردانه پارسه استایل',
-      plan: 'پلن حرفه‌ای',
-      amount: 980000,
-      date: '۱۴۰۵/۰۷/۲۸',
-      status: 'پرداخت موفق',
-    },
-    {
-      id: 'INV-903',
-      business: 'مرکز تخصصی نیلوفر آبی',
-      plan: 'کسب‌وکار پیشرفته',
-      amount: 1850000,
-      date: '۱۴۰۵/۰۷/۲۵',
-      status: 'پرداخت موفق',
-    },
-    {
-      id: 'INV-904',
-      business: 'لانژ زیبایی و اسپا آوا',
-      plan: 'کسب‌وکار پیشرفته',
-      amount: 1850000,
-      date: '۱۴۰۵/۰۷/۲۰',
-      status: 'پرداخت موفق',
-    },
-  ];
+  const [cardNumber, setCardNumber] = useState(paymentConfig.cardNumber);
+  const [cardHolderName, setCardHolderName] = useState(
+    paymentConfig.cardHolderName
+  );
+  const [bankName, setBankName] = useState(paymentConfig.bankName);
+  const [balePayLink, setBalePayLink] = useState(paymentConfig.balePayLink);
+  const [supportHandle, setSupportHandle] = useState(
+    paymentConfig.supportTelegramOrBale
+  );
 
-  const invoices = dataMode === 'real' ? [] : sampleInvoices;
+  const handleSaveGateway = (e: React.FormEvent) => {
+    e.preventDefault();
+    updatePaymentConfig({
+      cardNumber: cardNumber.trim(),
+      cardHolderName: cardHolderName.trim(),
+      bankName: bankName.trim(),
+      balePayLink: balePayLink.trim(),
+      supportTelegramOrBale: supportHandle.trim(),
+    });
+  };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
-        kicker="مالی و صورتحساب · تراکنش‌های اشتراک"
-        title="صورتحساب‌ها و تراکنش‌های اشتراک"
-        subtitle={
-          dataMode === 'real'
-            ? 'فهرست تراکنش‌های تاییدشده درگاه پرداخت'
-            : 'گزارش صورتحساب‌های حق اشتراک ماهانه کسب‌وکارها'
-        }
+        kicker="مالی و تسویه آسان · درگاه بله‌پی (BalePay) و کارت‌به‌کارت"
+        title="مدیریت پرداخت‌ها، فیش‌های واریزی و درگاه بدون اینماد"
+        subtitle="تنظیم شماره کارت و لینک بله‌پی برای دریافت هزینه اشتراک و تبلیغات سالن‌ها بدون نیاز به ای‌نماد و تایید ۱-کلیکی واریزی‌ها"
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'تراکنش‌های اشتراک' },
+          { label: 'تراکنش‌ها و درگاه پرداخت' },
         ]}
       />
 
-      {dataMode === 'real' ? (
-        <Card className="p-5 space-y-2 border border-[#E6E0F5] bg-[#FAF8FF]">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-extrabold text-[#8B5CF6]">
-              وضعیت درگاه پرداخت آنلاین: غیرفعال (رزرو بدون پیش‌پرداخت فعال است)
-            </p>
-            <StatusBadge label="بدون درگاه بانکی فعال" tone="warning" />
+      {/* کارت تنظیمات درگاه بله‌پی و کارت‌به‌کارت */}
+      <Card className="space-y-4 border-2 border-[#0057FF]/25">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-[#061138] text-[#00E5FF] flex items-center justify-center">
+              <CreditCard className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                تنظیمات درگاه پرداخت آسان (بله‌پی + کارت‌به‌کارت)
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                این اطلاعات هنگام خرید اشتراک، جایگاه تبلیغاتی یا بسته پیامک به
+                صاحبان سالن نمایش داده می‌شود
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-[#6B6480] leading-relaxed">
-            در نسخه فعلی، ثبت نوبت مشتریان بدون اجبار به پرداخت آنلاین (تسویه در
-            محل سالن) انجام می‌شود و هیچ تراکنش موفقی بدون تاییدیه معتبر سمت
-            سرور درگاه بانکی در جدول پرداخت‌ها ثبت نمی‌گردد.
-          </p>
-        </Card>
-      ) : null}
+          <StatusBadge
+            label="فعال و بدون نیاز به اینماد"
+            tone="success"
+          />
+        </div>
 
-      {invoices.length === 0 ? (
-        <Card className="p-8 text-center">
-          <p className="text-sm font-bold text-[#1E1B2E]">
-            هیچ تراکنش بانکی تاییدشده‌ای در پایگاه داده ثبت نشده است.
-          </p>
-        </Card>
-      ) : (
+        <form onSubmit={handleSaveGateway} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <FormField
+              id="pay-card-num"
+              label="شماره کارت ۱۶ رقمی (جهت کارت‌به‌کارت)"
+              required
+            >
+              <Input
+                id="pay-card-num"
+                dir="ltr"
+                value={cardNumber}
+                onChange={(e) => setCardNumber(e.target.value)}
+                placeholder="6037-9975-0000-0000"
+              />
+            </FormField>
+
+            <FormField id="pay-holder" label="نام صاحب حساب / کارت" required>
+              <Input
+                id="pay-holder"
+                value={cardHolderName}
+                onChange={(e) => setCardHolderName(e.target.value)}
+                placeholder="مدیریت پلتفرم تایم تو"
+              />
+            </FormField>
+
+            <FormField id="pay-bank" label="نام بانک" required>
+              <Input
+                id="pay-bank"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+                placeholder="بانک ملی ایران"
+              />
+            </FormField>
+
+            <FormField
+              id="pay-bale"
+              label="لینک پرداخت یا آیدی بازرگان بله‌پی (BalePay)"
+              required
+            >
+              <Input
+                id="pay-bale"
+                dir="ltr"
+                value={balePayLink}
+                onChange={(e) => setBalePayLink(e.target.value)}
+                placeholder="https://ble.ir/timeto_pay"
+              />
+            </FormField>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
+            <div className="flex items-center gap-2 text-xs text-[#64748B]">
+              <span>آیدی پشتیبانی بله / تلگرام جهت ارسال فیش:</span>
+              <input
+                dir="ltr"
+                value={supportHandle}
+                onChange={(e) => setSupportHandle(e.target.value)}
+                className="rounded-xl border border-[#CBD5E1] px-2.5 py-1 text-xs font-mono text-[#061138]"
+              />
+            </div>
+
+            <Button type="submit" variant="primary" size="sm">
+              <Check className="w-4 h-4" />
+              <span>ذخیره تنظیمات درگاه بله‌پی و کارت‌به‌کارت</span>
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* جدول سفارش‌ها و تراکنش‌های ثبت‌شده */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-extrabold text-[#061138]">
+            لیست پرداخت‌ها و سفارش‌های اشتراک و تبلیغات (
+            {toPersianDigits(paymentOrders.length)} مورد)
+          </h2>
+        </div>
+
         <ResponsiveTable
           keyExtractor={(i) => i.id}
-          data={invoices}
+          data={paymentOrders}
           columns={[
             {
               key: 'id',
-              header: 'شماره صورتحساب',
+              header: 'شماره سفارش',
               render: (i) => (
-                <span className="font-mono text-xs font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded">
+                <span className="font-mono text-xs font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded">
                   {i.id}
                 </span>
               ),
@@ -1215,39 +2034,109 @@ export const AdminPaymentsPage: React.FC = () => {
               key: 'biz',
               header: 'کسب‌وکار',
               render: (i) => (
-                <span className="font-extrabold text-[#1E1B2E]">
-                  {i.business}
+                <span className="font-extrabold text-[#061138]">
+                  {i.businessName}
                 </span>
               ),
             },
             {
-              key: 'plan',
-              header: 'پلن اشتراک',
-              render: (i) => <span>{i.plan}</span>,
+              key: 'title',
+              header: 'بسته / پلن خریداری‌شده',
+              render: (i) => (
+                <div className="space-y-0.5">
+                  <span className="font-bold text-[#061138] block">
+                    {i.itemTitle}
+                  </span>
+                  {i.requestedDurationDays ? (
+                    <span className="text-[11px] text-[#64748B] tabular-nums">
+                      مدت زمان: {toPersianDigits(i.requestedDurationDays)} روز
+                    </span>
+                  ) : null}
+                </div>
+              ),
+            },
+            {
+              key: 'method',
+              header: 'روش پرداخت و کد رهگیری',
+              render: (i) => (
+                <div className="text-xs">
+                  <span className="font-bold text-[#061138]">
+                    {i.paymentMethod === 'BALEPAY'
+                      ? 'بله‌پی (BalePay)'
+                      : 'کارت‌به‌کارت'}
+                  </span>
+                  <span className="block font-mono text-[11px] text-[#059669]">
+                    Ref: {i.trackingCode}
+                  </span>
+                </div>
+              ),
             },
             {
               key: 'date',
               header: 'تاریخ ثبت',
-              render: (i) => <span className="tabular-nums">{i.date}</span>,
+              render: (i) => (
+                <span className="tabular-nums text-xs">
+                  {i.createdAtJalali}
+                </span>
+              ),
             },
             {
               key: 'amount',
               header: 'مبلغ (تومان)',
               align: 'left',
               render: (i) => (
-                <span className="tabular-nums font-extrabold text-[#8B5CF6]">
-                  {formatPriceToman(i.amount)}
+                <span className="tabular-nums font-extrabold text-[#0057FF]">
+                  {formatPriceToman(i.amountToman)}
                 </span>
               ),
             },
             {
               key: 'status',
-              header: 'وضعیت',
-              render: (i) => <StatusBadge label={i.status} tone="success" />,
+              header: 'وضعیت و تایید',
+              render: (i) => (
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge
+                    label={
+                      i.status === 'APPROVED'
+                        ? 'تایید و فعال شد'
+                        : i.status === 'REJECTED'
+                          ? 'رد شده'
+                          : 'در انتظار تایید'
+                    }
+                    tone={
+                      i.status === 'APPROVED'
+                        ? 'success'
+                        : i.status === 'REJECTED'
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  />
+                  {i.status === 'PENDING' ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() => reviewPaymentOrder(i.id, 'APPROVED')}
+                      >
+                        تایید و فعال‌سازی
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => reviewPaymentOrder(i.id, 'REJECTED')}
+                      >
+                        رد
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              ),
             },
           ]}
         />
-      )}
+      </div>
     </div>
   );
 };
@@ -1255,18 +2144,18 @@ export const AdminPaymentsPage: React.FC = () => {
 /** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) */
 export const AdminReportsPage: React.FC = () => {
   const cityBreakdown = [
-    { city: 'تهران', pct: 50, count: '۳ مرکز فعال' },
-    { city: 'شیراز', pct: 17, count: '۱ مرکز فعال' },
-    { city: 'اصفهان', pct: 17, count: '۱ مرکز فعال' },
-    { city: 'مشهد', pct: 16, count: '۱ مرکز فعال' },
+    { city: 'اصفهان — چهارباغ بالا و نظر شرقی', pct: 35, count: '۳ مرکز فعال' },
+    { city: 'درچه (اصفهان)', pct: 25, count: '۲ مرکز فعال' },
+    { city: 'اصفهان — مرداویج و شیخ صدوق', pct: 25, count: '۲ مرکز فعال' },
+    { city: 'اصفهان — جلفا و سپاهان‌شهر', pct: 15, count: '۱ مرکز فعال' },
   ];
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="گزارش‌های کلان · آمار پلتفرم"
+        kicker="گزارش‌های کلان · آمار پلتفرم در اصفهان و درچه"
         title="گزارش‌های تحلیلی کلان پلتفرم"
-        subtitle="آمار توزیع جغرافیایی کسب‌وکارها، رشد نوبت‌دهی و نرخ تمدید اشتراک"
+        subtitle="آمار توزیع کسب‌وکارها در محله‌های اصفهان و درچه، رشد نوبت‌دهی و نرخ تمدید اشتراک"
         routePattern="/admin/reports"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -1276,8 +2165,8 @@ export const AdminReportsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="space-y-4">
-          <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-            توزیع کسب‌وکارهای عضو بر اساس شهر
+          <h2 className="text-sm font-extrabold text-[#061138]">
+            توزیع کسب‌وکارهای عضو در محله‌های اصفهان و درچه
           </h2>
           <div className="space-y-3.5">
             {cityBreakdown.map((item) => (

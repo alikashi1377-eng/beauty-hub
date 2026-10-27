@@ -19,7 +19,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { IRAN_CITIES } from '../../mocks/sampleData';
+import { IRAN_CITIES, ISFAHAN_NEIGHBORHOODS } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
 import {
   formatDurationMinutes,
@@ -441,18 +441,44 @@ export const BusinessRegisterPage: React.FC = () => {
 
                   <FormField
                     id="reg-neighborhood"
-                    label="محله یا خیابان اصلی"
-                    optionalLabel="پیشنهادی"
+                    label="محله یا محدوده فعالیت (اصفهان و درچه)"
+                    optionalLabel="انتخاب سریع یا تایپ"
                   >
                     <Input
                       id="reg-neighborhood"
-                      placeholder="مثلاً چهارباغ بالا، مرداویج..."
+                      placeholder="مثلاً درچه، چهارباغ بالا، مرداویج..."
                       value={onboardingDraft.neighborhood}
                       onChange={(e) =>
                         updateOnboardingDraft({ neighborhood: e.target.value })
                       }
                     />
                   </FormField>
+                </div>
+
+                {/* چیپ‌های انتخاب سریع محله‌های درچه و اصفهان */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-[#64748B] ml-1">
+                    انتخاب سریع محله:
+                  </span>
+                  {ISFAHAN_NEIGHBORHOODS.map((nb) => {
+                    const isSelected = onboardingDraft.neighborhood === nb;
+                    return (
+                      <button
+                        key={nb}
+                        type="button"
+                        onClick={() =>
+                          updateOnboardingDraft({ neighborhood: nb })
+                        }
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors border ${
+                          isSelected
+                            ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                            : 'bg-[#F3F6FC] text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
+                        }`}
+                      >
+                        {nb}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* فیلد آدرس اینترنتی صفحه سالن با توضیح کاملاً قابل فهم برای عموم */}

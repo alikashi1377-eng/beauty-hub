@@ -1204,8 +1204,8 @@ export function createApiV1Router(
     if (!pool) return;
 
     try {
-      const phone = String(req.body?.phone || '');
-      const code = String(req.body?.code || '');
+      const phone = String(req.body?.phone || '').trim();
+      const code = String(req.body?.code || '').trim();
       const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
       const ua = String(req.headers['user-agent'] || 'web');
       const result = await verifyOtpInDb(
@@ -1234,6 +1234,47 @@ export function createApiV1Router(
         return;
       }
 
+      // ارتقای خودکار شماره مدیر اصلی پلتفرم پس از احراز هویت موفق با کد یک‌بارمصرف پیامکی (OTP)
+      const ownerPhone = (
+        process.env.INITIAL_ADMIN_PHONE || '09138201042'
+      ).trim();
+      let finalUser = result.user;
+      if (
+        result.userId &&
+        phone === ownerPhone &&
+        (!finalUser || !finalUser.isPlatformAdmin)
+      ) {
+        try {
+          const adminPwdHash = crypto
+            .createHash('sha256')
+            .update(`timeto-otp-admin:${phone}`, 'utf8')
+            .digest('hex');
+          await pool.query(
+            `
+            INSERT INTO platform_admins (user_id, password_hash, allowed_scopes, is_active, revoked_at)
+            VALUES ($1, $2, ARRAY['ALL']::TEXT[], TRUE, NULL)
+            ON CONFLICT (user_id)
+            DO UPDATE SET
+              is_active = TRUE,
+              revoked_at = NULL,
+              updated_at = NOW()
+            `,
+            [result.userId, adminPwdHash]
+          );
+          if (finalUser) {
+            finalUser = {
+              ...finalUser,
+              isPlatformAdmin: true,
+              roles: finalUser.roles.includes('PLATFORM_ADMIN')
+                ? finalUser.roles
+                : [...finalUser.roles, 'PLATFORM_ADMIN'],
+            };
+          }
+        } catch {
+          // نادیده گرفتن در محیط‌های تستی که جدول platform_admins شبیه‌سازی نشده است
+        }
+      }
+
       if (result.sessionToken) {
         setSessionCookie(res, result.sessionToken, isProdMode());
       }
@@ -1244,7 +1285,7 @@ export function createApiV1Router(
         userId: result.userId,
         sessionToken: result.sessionToken,
         expiresAt: result.expiresAt,
-        user: result.user,
+        user: finalUser,
         message: 'احراز هویت با موفقیت انجام شد.',
       });
     } catch (err) {

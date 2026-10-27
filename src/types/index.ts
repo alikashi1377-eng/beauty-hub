@@ -127,11 +127,62 @@ export interface BusinessItem {
   featured?: boolean;
   isSponsored?: boolean;
   sponsoredLabel?: string;
+  sponsoredPlacement?: SponsoredPlacementSlot;
+  sponsoredOrder?: number;
+  sponsoredDaysRemaining?: number;
+  sponsoredExpiresJalali?: string;
   extraSmsBalance?: number;
   instagramHandle?: string;
   mapLat?: number;
   mapLng?: number;
   avatarUrl?: string;
+}
+
+export type SponsoredPlacementSlot =
+  | 'SEARCH_TOP'
+  | 'HOME_BANNER'
+  | 'HERO_SPOTLIGHT';
+
+export interface AdPackageItem {
+  id: string;
+  title: string;
+  slot: SponsoredPlacementSlot | 'SMS_ADDON';
+  durationDays: number;
+  priceToman: number;
+  weeklyPriceToman?: number;
+  smsCount?: number;
+  badge: string;
+  description: string;
+}
+
+export interface PaymentGatewayConfig {
+  activeMethod: 'BALEPAY_AND_CARD' | 'BALEPAY_ONLY' | 'CARD_ONLY';
+  balePayId: string;
+  balePayLink: string;
+  cardNumber: string;
+  cardHolderName: string;
+  shebaNumber: string;
+  bankName: string;
+  supportTelegramOrBale: string;
+  instructions: string;
+}
+
+export interface PaymentOrderItem {
+  id: string;
+  businessId: string;
+  businessName: string;
+  itemType: 'PLAN' | 'AD_PACKAGE' | 'SMS_PACK';
+  itemId: string;
+  itemTitle: string;
+  amountToman: number;
+  paymentMethod: 'BALEPAY' | 'CARD_TO_CARD';
+  trackingCode: string;
+  createdAtJalali: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestedPlacement?: SponsoredPlacementSlot;
+  requestedDurationDays?: number;
+  requestedLabel?: string;
+  requestedSmsCount?: number;
 }
 
 export interface AppointmentItem {

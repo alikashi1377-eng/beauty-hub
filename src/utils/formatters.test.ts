@@ -42,7 +42,13 @@ test('filterBusinesses filters by type, city, category, price, rating, and sorts
   const womenSalons = filterBusinesses(SAMPLE_BUSINESSES, {
     type: BusinessType.WomenSalon,
   });
-  assert.equal(womenSalons.length, 3);
+  assert.equal(womenSalons.length, 4);
+
+  const dorchehResults = filterBusinesses(SAMPLE_BUSINESSES, {
+    query: 'درچه',
+  });
+  assert.equal(dorchehResults.length, 1);
+  assert.equal(dorchehResults[0].slug, 'mahtab-dorcheh');
 
   const isfahanResults = filterBusinesses(SAMPLE_BUSINESSES, {
     city: 'اصفهان',

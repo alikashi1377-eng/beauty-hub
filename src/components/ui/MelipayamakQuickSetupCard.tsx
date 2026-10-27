@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   Check,
@@ -7,7 +6,6 @@ import {
   Copy,
   MessageSquare,
   Send,
-  ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
@@ -18,8 +16,7 @@ import { Input } from './Input';
 import { StatusBadge } from './StatusBadge';
 
 export const MelipayamakQuickSetupCard: React.FC = () => {
-  const { showToast, refreshRealData } = usePrototypeData();
-  const navigate = useNavigate();
+  const { showToast } = usePrototypeData();
 
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [maskedSavedKey, setMaskedSavedKey] = useState<string | null>(null);
@@ -27,7 +24,6 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
   const [senderInput, setSenderInput] = useState('');
   const [smsConfigured, setSmsConfigured] = useState(false);
   const [smsSaving, setSmsSaving] = useState(false);
-  const [directEntering, setDirectEntering] = useState(false);
   const [smsStatusMessage, setSmsStatusMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -85,7 +81,6 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
           apiKey: effectiveKeyToSend,
           template: bodyIdInput.trim(),
           sender: senderInput.trim(),
-          phone: testPhone.trim() || '09138201042',
         }),
       });
       const data = await res.json();
@@ -100,14 +95,11 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
       setSmsConfigured(Boolean(data.configured));
       setMaskedSavedKey(data.maskedApiKey ?? null);
       setApiKeyInput('');
-      if (data?.adminSessionIssued) {
-        await refreshRealData();
-      }
       setSmsStatusMessage({
         type: 'success',
         text:
           data.message ||
-          'درگاه ملی‌پیامک با موفقیت فعال شد! اکنون می‌توانید پیامک تست بفرستید یا مستقیم وارد پنل مدیریت کلان شوید.',
+          'درگاه ملی‌پیامک با موفقیت فعال شد! اکنون می‌توانید پیامک تست بفرستید.',
       });
       showToast('درگاه پیامکی ملی‌پیامک فعال شد.');
     } catch {
@@ -140,15 +132,9 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           phone: testPhone.trim(),
-          apiKey: apiKeyInput.trim() || undefined,
-          template: bodyIdInput.trim() || undefined,
-          sender: senderInput.trim() || undefined,
         }),
       });
       const data = await res.json();
-      if (data?.adminSessionIssued) {
-        await refreshRealData();
-      }
       setTestResult({
         ok: Boolean(res.ok && data?.ok),
         message:
@@ -164,32 +150,6 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
       });
     } finally {
       setTestingSms(false);
-    }
-  };
-
-  const handleDirectAdminEnter = async () => {
-    setDirectEntering(true);
-    try {
-      const res = await fetch('/api/v1/auth/admin-direct-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          phone: /^09\d{9}$/.test(testPhone.trim())
-            ? testPhone.trim()
-            : '09138201042',
-        }),
-      });
-      const data = await res.json();
-      await refreshRealData();
-      if (res.ok && data?.ok) {
-        showToast('نشست مدیر کل فعال شد. خوش آمدید!');
-      }
-      navigate('/admin', { replace: true });
-    } catch {
-      navigate('/admin', { replace: true });
-    } finally {
-      setDirectEntering(false);
     }
   };
 
@@ -223,30 +183,14 @@ INITIAL_ADMIN_PHONE=${testPhone.trim() || '09138201042'}`;
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge
-            label={
-              smsConfigured
-                ? 'درگاه ملی‌پیامک فعال است'
-                : 'آماده اتصال کلید ملی‌پیامک'
-            }
-            tone={smsConfigured ? 'success' : 'warning'}
-          />
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled={directEntering}
-            onClick={handleDirectAdminEnter}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>
-              {directEntering
-                ? 'در حال ورود...'
-                : 'ورود مستقیم به پنل مدیریت کلان (/admin)'}
-            </span>
-          </Button>
-        </div>
+        <StatusBadge
+          label={
+            smsConfigured
+              ? 'درگاه ملی‌پیامک فعال است'
+              : 'آماده اتصال کلید ملی‌پیامک'
+          }
+          tone={smsConfigured ? 'success' : 'warning'}
+        />
       </div>
 
       {/* راهنمای ۲ گام ساده */}

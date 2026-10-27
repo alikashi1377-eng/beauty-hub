@@ -159,12 +159,20 @@ export function filterBusinesses(
   } else if (sortBy === 'price_asc') {
     sorted.sort((a, b) => a.startingPriceToman - b.startingPriceToman);
   } else {
-    sorted.sort(
-      (a, b) =>
-        Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)) ||
+    sorted.sort((a, b) => {
+      const aSpon = Number(Boolean(a.isSponsored));
+      const bSpon = Number(Boolean(b.isSponsored));
+      if (bSpon !== aSpon) return bSpon - aSpon;
+      if (aSpon && bSpon) {
+        const aOrder = a.sponsoredOrder ?? 99;
+        const bOrder = b.sponsoredOrder ?? 99;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      }
+      return (
         Number(Boolean(b.featured)) - Number(Boolean(a.featured)) ||
         b.rating - a.rating
-    );
+      );
+    });
   }
 
   return sorted;

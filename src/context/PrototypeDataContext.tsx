@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
+  DEFAULT_PAYMENT_GATEWAY_CONFIG,
+  SAMPLE_AD_PACKAGES,
   SAMPLE_APPOINTMENTS,
   SAMPLE_BUSINESSES,
   SAMPLE_CAMPAIGNS,
   SAMPLE_CATEGORIES,
   SAMPLE_CUSTOMERS,
   SAMPLE_GALLERY,
+  SAMPLE_PAYMENT_ORDERS,
   SAMPLE_REVIEWS,
   SAMPLE_SERVICES,
   SAMPLE_SPECIALISTS,
@@ -17,6 +20,7 @@ import {
   realApiClient,
 } from '../services/apiClient';
 import {
+  AdPackageItem,
   AdminUserRecord,
   AppointmentItem,
   AppointmentStatus,
@@ -29,6 +33,8 @@ import {
   GalleryItem,
   MarketingCampaignItem,
   OnboardingDraft,
+  PaymentGatewayConfig,
+  PaymentOrderItem,
   ReviewItem,
   ServiceItem,
   SpecialistItem,
@@ -106,6 +112,20 @@ interface PrototypeDataContextValue {
     comment: string;
   }) => Promise<boolean>;
   plans: SubscriptionPlanItem[];
+  updatePlan: (planId: string, patch: Partial<SubscriptionPlanItem>) => void;
+  adPackages: AdPackageItem[];
+  updateAdPackage: (pkgId: string, patch: Partial<AdPackageItem>) => void;
+  paymentConfig: PaymentGatewayConfig;
+  updatePaymentConfig: (patch: Partial<PaymentGatewayConfig>) => void;
+  paymentOrders: PaymentOrderItem[];
+  submitPaymentOrder: (
+    input: Omit<PaymentOrderItem, 'id' | 'createdAtJalali' | 'status'>,
+    autoApprove?: boolean
+  ) => PaymentOrderItem;
+  reviewPaymentOrder: (
+    orderId: string,
+    decision: 'APPROVED' | 'REJECTED'
+  ) => void;
   activePlanId: string;
   setActivePlanId: (planId: string) => void;
   onboardingDraft: OnboardingDraft;
@@ -235,8 +255,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return ['spc-1', 'spc-4'];
   });
-  const [businesses, setBusinesses] =
-    useState<BusinessItem[]>(SAMPLE_BUSINESSES);
+  const mergeBusinessOverrides = (list: BusinessItem[]): BusinessItem[] => {
+    try {
+      const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
+      if (!overridesRaw) return list;
+      const overrides = JSON.parse(overridesRaw);
+      return list.map((b) =>
+        overrides[b.id] ? { ...b, ...overrides[b.id] } : b
+      );
+    } catch {
+      return list;
+    }
+  };
+
+  const [businesses, setBusinesses] = useState<BusinessItem[]>(() =>
+    mergeBusinessOverrides(SAMPLE_BUSINESSES)
+  );
   const [services, setServices] = useState<ServiceItem[]>(SAMPLE_SERVICES);
   const [specialists, setSpecialists] =
     useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
@@ -252,9 +286,53 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>(SAMPLE_REVIEWS);
-  const [plans, setPlans] = useState<SubscriptionPlanItem[]>(
-    SAMPLE_SUBSCRIPTION_PLANS
-  );
+  const [plans, setPlans] = useState<SubscriptionPlanItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_custom_plans_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return SAMPLE_SUBSCRIPTION_PLANS;
+  });
+  const [adPackages, setAdPackages] = useState<AdPackageItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_custom_ad_packages_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return SAMPLE_AD_PACKAGES;
+  });
+  const [paymentConfig, setPaymentConfig] = useState<PaymentGatewayConfig>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_payment_config_v2');
+      if (saved) {
+        return { ...DEFAULT_PAYMENT_GATEWAY_CONFIG, ...JSON.parse(saved) };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return DEFAULT_PAYMENT_GATEWAY_CONFIG;
+  });
+  const [paymentOrders, setPaymentOrders] = useState<PaymentOrderItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_payment_orders_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return SAMPLE_PAYMENT_ORDERS;
+  });
   const [activePlanId, setActivePlanId] = useState<string>('plan-professional');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
@@ -349,9 +427,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     if (currentUser.roles.includes('PLATFORM_ADMIN')) {
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
-        setBusinesses(adminRes.data.businesses);
+        setBusinesses(mergeBusinessOverrides(adminRes.data.businesses));
         setCategories(adminRes.data.categories);
-        if (adminRes.data.plans.length > 0) {
+        if (
+          adminRes.data.plans.length > 0 &&
+          !window.localStorage.getItem('timeto_custom_plans_v2')
+        ) {
           setPlans(adminRes.data.plans);
         }
         if (Array.isArray(adminRes.data.users)) {
@@ -374,12 +455,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setDataMode('real');
         setDatabaseError(null);
         setCategories(response.data.categories);
-        setBusinesses(response.data.businesses);
+        setBusinesses(mergeBusinessOverrides(response.data.businesses));
         setServices(response.data.services);
         setSpecialists(response.data.specialists);
         setReviews(response.data.reviews);
         setGallery(response.data.gallery);
-        if (response.data.plans.length > 0) {
+        if (
+          response.data.plans.length > 0 &&
+          !window.localStorage.getItem('timeto_custom_plans_v2')
+        ) {
           setPlans(response.data.plans);
         }
 
@@ -653,30 +737,192 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     businessId: string,
     patch: Partial<BusinessItem>
   ) => {
+    setBusinesses((prev) => {
+      const next = prev.map((b) =>
+        b.id === businessId ? { ...b, ...patch } : b
+      );
+      try {
+        const overridesRaw =
+          window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
+        const overrides = JSON.parse(overridesRaw);
+        overrides[businessId] = {
+          ...(overrides[businessId] || {}),
+          ...patch,
+        };
+        window.localStorage.setItem(
+          'timeto_biz_overrides_v2',
+          JSON.stringify(overrides)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+
     if (dataMode === 'real') {
       void realApiClient
         .updateBusinessProfile(businessId, patch)
         .then(() => {
-          setBusinesses((prev) =>
-            prev.map((b) => (b.id === businessId ? { ...b, ...patch } : b))
-          );
-          showToast('اطلاعات پروفایل کسب‌وکار در پایگاه داده ذخیره شد.');
+          showToast('اطلاعات پروفایل و جایگاه کسب‌وکار ذخیره شد.');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در بروزرسانی پروفایل کسب‌وکار در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          showToast('تغییرات جایگاه و مشخصات کسب‌وکار اعمال شد.');
         });
       return;
     }
 
-    setBusinesses((prev) =>
-      prev.map((b) => (b.id === businessId ? { ...b, ...patch } : b))
-    );
     showToast('اطلاعات پروفایل کسب‌وکار بروزرسانی شد.');
+  };
+
+  const updatePlan = (planId: string, patch: Partial<SubscriptionPlanItem>) => {
+    setPlans((prev) => {
+      const next = prev.map((p) => (p.id === planId ? { ...p, ...patch } : p));
+      try {
+        window.localStorage.setItem(
+          'timeto_custom_plans_v2',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('پلن اشتراک با موفقیت ویرایش و ذخیره شد.');
+  };
+
+  const updateAdPackage = (pkgId: string, patch: Partial<AdPackageItem>) => {
+    setAdPackages((prev) => {
+      const next = prev.map((pkg) =>
+        pkg.id === pkgId ? { ...pkg, ...patch } : pkg
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_custom_ad_packages_v2',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('تعرفه و مشخصات بسته تبلیغاتی بروزرسانی شد.');
+  };
+
+  const updatePaymentConfig = (patch: Partial<PaymentGatewayConfig>) => {
+    setPaymentConfig((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(
+          'timeto_payment_config_v2',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('تنظیمات درگاه پرداخت (بله‌پی و کارت‌به‌کارت) ذخیره شد.');
+  };
+
+  const applyApprovedOrderEffect = (order: PaymentOrderItem) => {
+    if (order.itemType === 'PLAN') {
+      setActivePlanId(order.itemId);
+      const foundPlan = plans.find((p) => p.id === order.itemId);
+      updateBusinessProfile(order.businessId, {
+        subscriptionPlan: foundPlan?.name || order.itemTitle,
+        subscriptionStatus: SubscriptionStatus.Active,
+      });
+    } else if (order.itemType === 'AD_PACKAGE') {
+      const duration = order.requestedDurationDays || 30;
+      const placement = order.requestedPlacement || 'SEARCH_TOP';
+      updateBusinessProfile(order.businessId, {
+        isSponsored: true,
+        featured: true,
+        sponsoredPlacement: placement,
+        sponsoredDaysRemaining: duration,
+        sponsoredExpiresJalali: `تا ${duration} روز آینده`,
+        sponsoredOrder: placement === 'HERO_SPOTLIGHT' ? 1 : 2,
+        sponsoredLabel:
+          order.requestedLabel ||
+          (placement === 'HOME_BANNER'
+            ? 'بنر ویژه صفحه اول'
+            : 'پیشنهاد ویژه رزرو آنلاین'),
+      });
+    } else if (order.itemType === 'SMS_PACK') {
+      const targetBiz = businesses.find((b) => b.id === order.businessId);
+      const addedSms = order.requestedSmsCount || 200;
+      updateBusinessProfile(order.businessId, {
+        extraSmsBalance: (targetBiz?.extraSmsBalance ?? 0) + addedSms,
+      });
+    }
+  };
+
+  const submitPaymentOrder = (
+    input: Omit<PaymentOrderItem, 'id' | 'createdAtJalali' | 'status'>,
+    autoApprove = false
+  ): PaymentOrderItem => {
+    const newOrder: PaymentOrderItem = {
+      ...input,
+      id: `ORD-1405-${Math.floor(100 + Math.random() * 899)}`,
+      createdAtJalali: '۱۴۰۵/۰۸/۰۵',
+      status: autoApprove ? 'APPROVED' : 'PENDING',
+    };
+    setPaymentOrders((prev) => {
+      const next = [newOrder, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_payment_orders_v2',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    if (autoApprove) {
+      applyApprovedOrderEffect(newOrder);
+      showToast(
+        `پرداخت «${newOrder.itemTitle}» تایید و روی کسب‌وکار شما فعال شد.`
+      );
+    } else {
+      showToast(
+        `رسید پرداخت «${newOrder.itemTitle}» ثبت شد و در صف تایید مدیریت قرار گرفت.`
+      );
+    }
+    return newOrder;
+  };
+
+  const reviewPaymentOrder = (
+    orderId: string,
+    decision: 'APPROVED' | 'REJECTED'
+  ) => {
+    const target = paymentOrders.find((o) => o.id === orderId);
+    setPaymentOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === orderId ? { ...o, status: decision } : o
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_payment_orders_v2',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    if (target && decision === 'APPROVED') {
+      applyApprovedOrderEffect(target);
+      showToast(
+        `سفارش «${target.itemTitle}» برای «${target.businessName}» تایید و به صورت خودکار فعال شد.`
+      );
+    } else if (target && decision === 'REJECTED') {
+      showToast(
+        `سفارش «${target.itemTitle}» برای «${target.businessName}» رد شد.`,
+        'warning'
+      );
+    }
   };
 
   const updateBusinessWorkingHours = (
@@ -1338,6 +1584,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         reviews,
         addReview,
         plans,
+        updatePlan,
+        adPackages,
+        updateAdPackage,
+        paymentConfig,
+        updatePaymentConfig,
+        paymentOrders,
+        submitPaymentOrder,
+        reviewPaymentOrder,
         activePlanId,
         setActivePlanId,
         onboardingDraft,

@@ -20,6 +20,7 @@ import {
   MapPin,
   CheckCircle2,
   AlertCircle,
+  CreditCard,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -56,6 +57,10 @@ import {
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
 import { MelipayamakQuickSetupCard } from '../../components/ui/MelipayamakQuickSetupCard';
+import {
+  EasyCheckoutModal,
+  CheckoutItemPayload,
+} from '../../components/ui/EasyCheckoutModal';
 
 /** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — بازطراحی کامل مطابق Capture2.PNG (Salonia) و Capture8.PNG (Zolmilon) */
 export const BusinessDashboardPage: React.FC = () => {
@@ -2534,6 +2539,8 @@ export const BusinessMarketingPage: React.FC = () => {
     campaigns,
     addCampaign,
     updateBusinessProfile,
+    adPackages,
+    paymentOrders,
     showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -2544,34 +2551,63 @@ export const BusinessMarketingPage: React.FC = () => {
   const [sponsoredLabelInput, setSponsoredLabelInput] = useState(
     currentBiz?.sponsoredLabel || 'پیشنهاد ویژه · ۲۰٪ تخفیف'
   );
+  const [checkoutItem, setCheckoutItem] = useState<CheckoutItemPayload | null>(
+    null
+  );
 
   const isSponsoredActive = Boolean(currentBiz?.isSponsored);
   const extraSms = currentBiz?.extraSmsBalance ?? 0;
 
-  const handleToggleSearchBoost = () => {
+  const searchBoostPkg = adPackages.find((p) => p.slot === 'SEARCH_TOP') ?? {
+    id: 'ad-search-pin',
+    title: 'صدرنشینی در نتایج جست‌وجوی شهر',
+    slot: 'SEARCH_TOP' as const,
+    durationDays: 30,
+    priceToman: 490000,
+    weeklyPriceToman: 190000,
+    badge: 'پربازده‌ترین جایگاه',
+    description:
+      'پین شدن کارت سالن شما در ردیف اول نتایج جست‌وجو (/search) با نشان طلایی و آبی «★ آگهی ویژه» و متن تبلیغاتی دلخواه شما.',
+  };
+
+  const homeBannerPkg = adPackages.find((p) => p.slot === 'HOME_BANNER') ?? {
+    id: 'ad-home-banner',
+    title: 'بنر ویژه در صفحه اول تایم تو',
+    slot: 'HOME_BANNER' as const,
+    durationDays: 30,
+    priceToman: 890000,
+    weeklyPriceToman: 350000,
+    badge: 'ظرفیت محدود (۲ اسلات در شهر)',
+    description:
+      'نمایش بنر تصویری اختصاصی سالن شما در بخش «پیشنهادهای ویژه رزرو آنلاین» در صفحه اول سایت با دکمه رزرو مستقیم.',
+  };
+
+  const smsAddonPkg = adPackages.find((p) => p.slot === 'SMS_ADDON') ?? {
+    id: 'ad-sms-200',
+    title: 'بسته ۲۰۰ پیامک خدماتی و یادآور اضافه',
+    slot: 'SMS_ADDON' as const,
+    durationDays: 365,
+    priceToman: 180000,
+    weeklyPriceToman: 180000,
+    badge: 'شارژ فوری بدون انقضا',
+    description:
+      'اگر سهمیه پیامک ماهانه پلن شما تمام شده یا در پلن رایگان هستید، بدون تغییر پلن می‌توانید بسته ۲۰۰ تایی پیامک یادآور بخرید.',
+    smsCount: 200,
+  };
+
+  const bizOrders = paymentOrders.filter(
+    (o) =>
+      o.businessId === currentBiz?.id &&
+      (o.itemType === 'AD_PACKAGE' || o.itemType === 'SMS_PACK')
+  );
+
+  const handleUpdateActiveLabel = () => {
     if (!currentBiz) return;
-    const nextState = !isSponsoredActive;
     updateBusinessProfile(currentBiz.id, {
-      isSponsored: nextState,
       sponsoredLabel:
         sponsoredLabelInput.trim() || 'پیشنهاد ویژه رزرو آنلاین',
     });
-    showToast(
-      nextState
-        ? `جایگاه «صدرنشینی در جست‌وجو» برای «${currentBiz.name}» فعال شد! اکنون سالن شما در بالای صفحه جست‌وجو نمایش داده می‌شود.`
-        : 'نمایش تبلیغاتی صدر جست‌وجو غیرفعال شد.'
-    );
-  };
-
-  const handleBuyExtraSmsPack = () => {
-    if (!currentBiz) return;
-    const updatedSms = extraSms + 200;
-    updateBusinessProfile(currentBiz.id, {
-      extraSmsBalance: updatedSms,
-    });
-    showToast(
-      `بسته ۲۰۰ پیامک خدماتی اضافه با موفقیت شارژ شد (موجودی پیامک اضافه: ${toPersianDigits(updatedSms)} عدد).`
-    );
+    showToast('متن برچسب تبلیغاتی سالن شما بروزرسانی شد.');
   };
 
   const handleCreateCampaign = (e: React.FormEvent) => {
@@ -2588,12 +2624,18 @@ export const BusinessMarketingPage: React.FC = () => {
     setTitle('');
   };
 
+  const placementNameMap: Record<string, string> = {
+    SEARCH_TOP: 'صدر نتایج جست‌وجو (/search)',
+    HOME_BANNER: 'بنر ویژه صفحه اول + صدر جست‌وجو',
+    HERO_SPOTLIGHT: 'ویترین طلایی بالای صفحه اصلی',
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         kicker="جذب مشتری جدید · جایگاه‌های تبلیغاتی و کمپین‌ها"
         title="تبلیغات ویژه، صدرنشینی در جست‌وجو و کمپین‌ها"
-        subtitle="جدا از پلن اشتراک ماهانه، می‌توانید با رزرو جایگاه تبلیغاتی در صدر نتایج جست‌وجو یا بنر صفحه اول، بازدید و رزرو سالن خود را تا ۳ برابر افزایش دهید"
+        subtitle="جدا از پلن اشتراک ماهانه، می‌توانید با رزرو جایگاه تبلیغاتی در صدر نتایج جست‌وجو یا بنر صفحه اول (با پرداخت آسان بله‌پی یا کارت‌به‌کارت)، بازدید و رزرو سالن خود را تا ۳ برابر افزایش دهید"
         routePattern="/app/marketing"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2601,16 +2643,55 @@ export const BusinessMarketingPage: React.FC = () => {
         ]}
       />
 
+      {/* نوار وضعیت جایگاه تبلیغاتی فعلی سالن */}
+      {isSponsoredActive && currentBiz ? (
+        <Card className="border-2 border-[#10B981] bg-[#ECFDF5]/60 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <StatusBadge label="★ جایگاه تبلیغاتی فعال" tone="success" />
+                <span className="text-xs font-extrabold text-[#065F46] tabular-nums">
+                  رتبه نمایش: جایگاه شماره{' '}
+                  {toPersianDigits(currentBiz.sponsoredOrder ?? 1)} ·{' '}
+                  {toPersianDigits(currentBiz.sponsoredDaysRemaining ?? 30)} روز
+                  باقی‌مانده
+                </span>
+              </div>
+              <p className="text-xs text-[#064E3B]">
+                محل نمایش فعلی:{' '}
+                <strong>
+                  {placementNameMap[
+                    currentBiz.sponsoredPlacement || 'SEARCH_TOP'
+                  ] || 'صدر نتایج جست‌وجو'}
+                </strong>{' '}
+                · برچسب فعلی: «{currentBiz.sponsoredLabel || 'پیشنهاد ویژه'}»
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link to="/search">
+                <Button variant="outline" size="sm">
+                  <span>مشاهده در صفحه جست‌وجو ←</span>
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {/* بخش ۱: بسته‌های تبلیغاتی و ارتقای جایگاه (Sponsored Boost & Add-on SMS) */}
       <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 space-y-5 border border-[#1E293B] shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-4">
           <div className="space-y-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
               <Megaphone className="w-4 h-4" />
-              <span>جایگاه‌های تبلیغاتی پربازده تایم تو (مستقل از پلن اشتراک)</span>
+              <span>
+                جایگاه‌های تبلیغاتی پربازده تایم تو (پرداخت آسان با بله‌پی و
+                کارت‌به‌کارت)
+              </span>
             </span>
             <h2 className="text-base sm:text-xl font-extrabold text-white">
-              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان نشان دهید
+              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان و درچه
+              نشان دهید
             </h2>
           </div>
           <Link to="/search">
@@ -2626,25 +2707,29 @@ export const BusinessMarketingPage: React.FC = () => {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="px-2.5 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-extrabold">
-                  ★ پربازده‌ترین جایگاه
+                  ★ {searchBoostPkg.badge}
                 </span>
                 {isSponsoredActive ? (
                   <StatusBadge label="فعال روی سالن شما" tone="success" />
                 ) : null}
               </div>
               <h3 className="text-base font-extrabold text-[#061138]">
-                ۱. صدرنشینی در نتایج جست‌وجوی شهر
+                ۱. {searchBoostPkg.title}
               </h3>
               <p className="text-xs text-[#334155] leading-relaxed">
-                پین شدن کارت سالن شما در <strong>ردیف اول نتایج جست‌وجو (/search)</strong> با نشان طلایی و آبی «★ آگهی ویژه» و متن تبلیغاتی دلخواه شما.
+                {searchBoostPkg.description}
               </p>
               <div className="pt-2 border-t border-[#E2E8F0] flex items-baseline justify-between">
                 <span className="text-xs text-[#64748B]">تعرفه جایگاه:</span>
                 <div className="text-left">
                   <span className="text-lg font-extrabold text-[#0057FF] tabular-nums">
-                    ۴۹۰,۰۰۰ تومان
+                    {formatPriceToman(searchBoostPkg.priceToman)}
                   </span>
-                  <span className="text-[11px] text-[#64748B]"> / ماهانه (یا ۱۹۰ هزار تومان هفتگی)</span>
+                  <span className="text-[11px] text-[#64748B] block tabular-nums">
+                    ماهانه (یا{' '}
+                    {formatPriceToman(searchBoostPkg.weeklyPriceToman ?? 190000)}{' '}
+                    هفتگی)
+                  </span>
                 </div>
               </div>
 
@@ -2655,26 +2740,50 @@ export const BusinessMarketingPage: React.FC = () => {
                 >
                   متن برچسب ویژه روی کارت سالن شما:
                 </label>
-                <Input
-                  id="boost-badge-label"
-                  value={sponsoredLabelInput}
-                  onChange={(e) => setSponsoredLabelInput(e.target.value)}
-                  placeholder="مثلاً پیشنهاد ویژه چهارباغ · ۲۰٪ تخفیف"
-                />
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    id="boost-badge-label"
+                    value={sponsoredLabelInput}
+                    onChange={(e) => setSponsoredLabelInput(e.target.value)}
+                    placeholder="مثلاً پیشنهاد ویژه · ۲۰٪ تخفیف"
+                  />
+                  {isSponsoredActive ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUpdateActiveLabel}
+                    >
+                      ثبت
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </div>
 
             <Button
               type="button"
-              variant={isSponsoredActive ? 'outline' : 'primary'}
+              variant="primary"
               size="sm"
               fullWidth
-              onClick={handleToggleSearchBoost}
+              onClick={() =>
+                setCheckoutItem({
+                  itemType: 'AD_PACKAGE',
+                  itemId: searchBoostPkg.id,
+                  itemTitle: searchBoostPkg.title,
+                  baseAmountToman: searchBoostPkg.priceToman,
+                  weeklyAmountToman: searchBoostPkg.weeklyPriceToman ?? 190000,
+                  defaultPlacement: 'SEARCH_TOP',
+                  defaultDurationDays: 30,
+                  defaultLabel: sponsoredLabelInput,
+                })
+              }
             >
+              <CreditCard className="w-4 h-4" />
               <span>
                 {isSponsoredActive
-                  ? 'بروزرسانی برچسب / غیرفعال‌سازی موقت'
-                  : 'فعال‌سازی آنی صدرنشینی در جست‌وجو'}
+                  ? 'تمدید / ارتقای جایگاه صدر جست‌وجو'
+                  : 'رزرو و پرداخت جایگاه صدر جست‌وجو'}
               </span>
             </Button>
           </div>
@@ -2687,22 +2796,26 @@ export const BusinessMarketingPage: React.FC = () => {
                   ویترین صفحه اول
                 </span>
                 <span className="text-[11px] text-slate-300 font-bold">
-                  ظرفیت محدود (۲ اسلات در شهر)
+                  {homeBannerPkg.badge}
                 </span>
               </div>
               <h3 className="text-base font-extrabold text-white">
-                ۲. بنر ویژه در صفحه اول تایم تو
+                ۲. {homeBannerPkg.title}
               </h3>
               <p className="text-xs text-slate-200 leading-relaxed">
-                نمایش بنر تصویری اختصاصی سالن شما در بخش <strong>«پیشنهادهای ویژه رزرو آنلاین»</strong> در صفحه اول سایت با دکمه رزرو مستقیم.
+                {homeBannerPkg.description}
               </p>
               <div className="pt-2 border-t border-white/15 flex items-baseline justify-between">
                 <span className="text-xs text-slate-300">تعرفه جایگاه:</span>
                 <div className="text-left">
                   <span className="text-lg font-extrabold text-[#00E5FF] tabular-nums">
-                    ۸۹۰,۰۰۰ تومان
+                    {formatPriceToman(homeBannerPkg.priceToman)}
                   </span>
-                  <span className="text-[11px] text-slate-300"> / ماهانه (یا ۳۵۰ هزار تومان هفتگی)</span>
+                  <span className="text-[11px] text-slate-300 block tabular-nums">
+                    ماهانه (یا{' '}
+                    {formatPriceToman(homeBannerPkg.weeklyPriceToman ?? 350000)}{' '}
+                    هفتگی)
+                  </span>
                 </div>
               </div>
             </div>
@@ -2712,21 +2825,22 @@ export const BusinessMarketingPage: React.FC = () => {
               variant="accent"
               size="sm"
               fullWidth
-              onClick={() => {
-                if (currentBiz) {
-                  updateBusinessProfile(currentBiz.id, {
-                    featured: true,
-                    isSponsored: true,
-                    sponsoredLabel:
-                      sponsoredLabelInput.trim() || 'بنر ویژه صفحه اول',
-                  });
-                }
-                showToast(
-                  'جایگاه «بنر ویژه صفحه اول و پیشنهاد برگزیده» برای سالن شما رزرو و فعال شد.'
-                );
-              }}
+              onClick={() =>
+                setCheckoutItem({
+                  itemType: 'AD_PACKAGE',
+                  itemId: homeBannerPkg.id,
+                  itemTitle: homeBannerPkg.title,
+                  baseAmountToman: homeBannerPkg.priceToman,
+                  weeklyAmountToman: homeBannerPkg.weeklyPriceToman ?? 350000,
+                  defaultPlacement: 'HOME_BANNER',
+                  defaultDurationDays: 30,
+                  defaultLabel:
+                    sponsoredLabelInput.trim() || 'بنر ویژه صفحه اول',
+                })
+              }
             >
-              <span>رزرو و فعال‌سازی بنر صفحه اول</span>
+              <CreditCard className="w-4 h-4" />
+              <span>رزرو و پرداخت بنر صفحه اول</span>
             </Button>
           </div>
 
@@ -2742,15 +2856,17 @@ export const BusinessMarketingPage: React.FC = () => {
                 </span>
               </div>
               <h3 className="text-base font-extrabold text-white">
-                ۳. بسته ۲۰۰ پیامک خدماتی و یادآور اضافه
+                ۳. {smsAddonPkg.title}
               </h3>
               <p className="text-xs text-slate-200 leading-relaxed">
-                اگر سهمیه پیامک ماهانه پلن شما تمام شده یا در پلن رایگان هستید، بدون تغییر پلن می‌توانید بسته ۲۰۰ تایی پیامک یادآور و تبریک تولد بخرید.
+                {smsAddonPkg.description}
               </p>
               <div className="pt-2 border-t border-white/15 flex items-baseline justify-between">
-                <span className="text-xs text-slate-300">تعرفه بسته ۲۰۰ تایی:</span>
+                <span className="text-xs text-slate-300">
+                  تعرفه بسته {toPersianDigits(smsAddonPkg.smsCount ?? 200)} تایی:
+                </span>
                 <span className="text-lg font-extrabold text-emerald-300 tabular-nums">
-                  ۱۸۰,۰۰۰ تومان
+                  {formatPriceToman(smsAddonPkg.priceToman)}
                 </span>
               </div>
             </div>
@@ -2760,13 +2876,125 @@ export const BusinessMarketingPage: React.FC = () => {
               variant="secondary"
               size="sm"
               fullWidth
-              onClick={handleBuyExtraSmsPack}
+              onClick={() =>
+                setCheckoutItem({
+                  itemType: 'SMS_PACK',
+                  itemId: smsAddonPkg.id,
+                  itemTitle: smsAddonPkg.title,
+                  baseAmountToman: smsAddonPkg.priceToman,
+                  smsCount: smsAddonPkg.smsCount ?? 200,
+                })
+              }
             >
-              <span>افزودن فوری ۲۰۰ پیامک به اعتبار سالن</span>
+              <CreditCard className="w-4 h-4" />
+              <span>
+                خرید بسته {toPersianDigits(smsAddonPkg.smsCount ?? 200)} پیامک
+                (بله‌پی / کارت‌به‌کارت)
+              </span>
             </Button>
           </div>
         </div>
       </div>
+
+      {/* پیگیری سفارش‌های تبلیغات و پیامک ثبت‌شده توسط این سالن */}
+      {bizOrders.length > 0 ? (
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-extrabold text-[#061138]">
+              سفارش‌های تبلیغات و بسته‌های پیامک شما
+            </h3>
+            <span className="text-xs text-[#64748B] tabular-nums">
+              {toPersianDigits(bizOrders.length)} سفارش ثبت‌شده
+            </span>
+          </div>
+          <ResponsiveTable
+            keyExtractor={(o) => o.id}
+            data={bizOrders}
+            columns={[
+              {
+                key: 'id',
+                header: 'کد سفارش',
+                render: (o) => (
+                  <span className="font-mono text-xs font-bold text-[#0057FF]">
+                    {o.id}
+                  </span>
+                ),
+              },
+              {
+                key: 'title',
+                header: 'بسته / جایگاه انتخابی',
+                render: (o) => (
+                  <div className="space-y-0.5">
+                    <span className="font-extrabold text-[#061138] block">
+                      {o.itemTitle}
+                    </span>
+                    {o.requestedDurationDays ? (
+                      <span className="text-[11px] text-[#64748B] tabular-nums">
+                        مدت: {toPersianDigits(o.requestedDurationDays)} روز
+                      </span>
+                    ) : null}
+                  </div>
+                ),
+              },
+              {
+                key: 'method',
+                header: 'روش پرداخت / کد رهگیری',
+                render: (o) => (
+                  <div className="text-xs">
+                    <span className="font-bold text-[#061138]">
+                      {o.paymentMethod === 'BALEPAY'
+                        ? 'بله‌پی (BalePay)'
+                        : 'کارت‌به‌کارت'}
+                    </span>
+                    <span className="block text-[11px] text-[#64748B] font-mono">
+                      Ref: {o.trackingCode}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'مبلغ',
+                render: (o) => (
+                  <span className="font-extrabold text-[#0057FF] tabular-nums">
+                    {formatPriceToman(o.amountToman)}
+                  </span>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'وضعیت تایید مدیریت',
+                render: (o) => (
+                  <StatusBadge
+                    label={
+                      o.status === 'APPROVED'
+                        ? 'تایید و فعال شد'
+                        : o.status === 'REJECTED'
+                          ? 'رد شده'
+                          : 'در انتظار تایید مدیر'
+                    }
+                    tone={
+                      o.status === 'APPROVED'
+                        ? 'success'
+                        : o.status === 'REJECTED'
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  />
+                ),
+              },
+            ]}
+          />
+        </Card>
+      ) : null}
+
+      <EasyCheckoutModal
+        isOpen={Boolean(checkoutItem)}
+        onClose={() => setCheckoutItem(null)}
+        item={checkoutItem}
+        businessId={currentBiz?.id || 'biz-1'}
+        businessName={currentBiz?.name || 'سالن زیبایی شما'}
+      />
 
       {/* بخش ۲: تعریف کمپین‌های تخفیف باشگاه مشتریان */}
       <Card>
@@ -2977,17 +3205,34 @@ export const BusinessAnalyticsPage: React.FC = () => {
 
 /** ۱۲. اشتراک و صورتحساب (/app/subscription) */
 export const BusinessSubscriptionPage: React.FC = () => {
-  const { plans, activePlanId, setActivePlanId, showToast, dataMode } =
-    usePrototypeData();
+  const {
+    plans,
+    activePlanId,
+    setActivePlanId,
+    currentBusiness,
+    businesses,
+    paymentOrders,
+    showToast,
+    dataMode,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
   const currentPlan =
     plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
+
+  const [checkoutItem, setCheckoutItem] = useState<CheckoutItemPayload | null>(
+    null
+  );
+
+  const planOrders = paymentOrders.filter(
+    (o) => o.businessId === currentBiz?.id && o.itemType === 'PLAN'
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · اشتراک ماهانه"
+        kicker="مالی · اشتراک ماهانه و درگاه پرداخت بدون اینماد"
         title="مدیریت اشتراک و ارتقای کسب‌وکار"
-        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP برای کاهش کنسلی نوبت‌ها و جذب مشتریان جدید در اصفهان"
+        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP با امکان تسویه فوری از طریق بله‌پی (BalePay) یا کارت‌به‌کارت"
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -3013,7 +3258,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
                 {dataMode === 'real'
-                  ? 'رزرو آنلاین بدون پیش‌پرداخت: فعال'
+                  ? 'پرداخت آسان بله‌پی / کارت‌به‌کارت: فعال'
                   : 'وضعیت اشتراک: فعال'}
               </span>
             </div>
@@ -3034,7 +3279,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
         </div>
         <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
           <p className="text-xs font-extrabold text-[#0057FF]">
-            ۲. اولویت نمایش در جست‌وجوی اصفهان
+            ۲. اولویت نمایش در جست‌وجوی اصفهان و درچه
           </p>
           <p className="text-xs text-[#334155] leading-relaxed">
             درج نشان «سالن برگزیده» و جایگاه بالاتر در لیست جست‌وجوی محله و
@@ -3043,10 +3288,11 @@ export const BusinessSubscriptionPage: React.FC = () => {
         </div>
         <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
           <p className="text-xs font-extrabold text-[#D97706]">
-            ۳. تقویم مجزا برای تمام متخصصان
+            ۳. پرداخت آنی بدون پیچیدگی بانکی
           </p>
           <p className="text-xs text-[#334155] leading-relaxed">
-            مدیریت همزمان شیفت‌ها، مرخصی‌ها و گزارش مالی تفکیکی هر پرسنل سالن.
+            تسویه مستقیم با لینک بله‌پی یا کارت‌به‌کارت و فعال‌سازی سریع اشتراک
+            توسط مدیریت.
           </p>
         </div>
       </div>
@@ -3117,20 +3363,111 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 fullWidth
                 disabled={isCurrent}
                 onClick={() => {
-                  setActivePlanId(plan.id);
-                  showToast(`پلن کسب‌وکار به «${plan.name}» تغییر یافت.`);
+                  if (plan.monthlyPriceToman === 0) {
+                    setActivePlanId(plan.id);
+                    showToast(`پلن کسب‌وکار به «${plan.name}» تغییر یافت.`);
+                  } else {
+                    setCheckoutItem({
+                      itemType: 'PLAN',
+                      itemId: plan.id,
+                      itemTitle: `اشتراک یک‌ماهه ${plan.name}`,
+                      baseAmountToman: plan.monthlyPriceToman,
+                      defaultDurationDays: 30,
+                    });
+                  }
                 }}
               >
                 {isCurrent
                   ? 'پلن فعال فعلی شما'
                   : plan.monthlyPriceToman === 0
                     ? 'تغییر به پلن پایه رایگان'
-                    : `ارتقا و فعال‌سازی ${plan.name}`}
+                    : `پرداخت و ارتقا به ${plan.name}`}
               </Button>
             </Card>
           );
         })}
       </div>
+
+      {planOrders.length > 0 ? (
+        <Card className="space-y-3">
+          <h3 className="text-sm font-extrabold text-[#061138]">
+            تاریخچه درخواست‌های ارتقای اشتراک شما
+          </h3>
+          <ResponsiveTable
+            keyExtractor={(o) => o.id}
+            data={planOrders}
+            columns={[
+              {
+                key: 'id',
+                header: 'شماره سفارش',
+                render: (o) => (
+                  <span className="font-mono text-xs font-bold text-[#0057FF]">
+                    {o.id}
+                  </span>
+                ),
+              },
+              {
+                key: 'title',
+                header: 'پلن درخواستی',
+                render: (o) => (
+                  <span className="font-extrabold text-[#061138]">
+                    {o.itemTitle}
+                  </span>
+                ),
+              },
+              {
+                key: 'method',
+                header: 'روش پرداخت / کد رهگیری',
+                render: (o) => (
+                  <span className="text-xs">
+                    {o.paymentMethod === 'BALEPAY' ? 'بله‌پی' : 'کارت‌به‌کارت'}{' '}
+                    ({o.trackingCode})
+                  </span>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'مبلغ',
+                render: (o) => (
+                  <span className="font-extrabold text-[#0057FF] tabular-nums">
+                    {formatPriceToman(o.amountToman)}
+                  </span>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'وضعیت',
+                render: (o) => (
+                  <StatusBadge
+                    label={
+                      o.status === 'APPROVED'
+                        ? 'تایید و فعال شد'
+                        : o.status === 'REJECTED'
+                          ? 'رد شده'
+                          : 'در انتظار تایید مدیر'
+                    }
+                    tone={
+                      o.status === 'APPROVED'
+                        ? 'success'
+                        : o.status === 'REJECTED'
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  />
+                ),
+              },
+            ]}
+          />
+        </Card>
+      ) : null}
+
+      <EasyCheckoutModal
+        isOpen={Boolean(checkoutItem)}
+        onClose={() => setCheckoutItem(null)}
+        item={checkoutItem}
+        businessId={currentBiz?.id || 'biz-1'}
+        businessName={currentBiz?.name || 'سالن زیبایی شما'}
+      />
     </div>
   );
 };

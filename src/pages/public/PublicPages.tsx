@@ -24,7 +24,7 @@ import {
   Heart,
   X,
 } from 'lucide-react';
-import { IRAN_CITIES } from '../../mocks/sampleData';
+import { IRAN_CITIES, ISFAHAN_NEIGHBORHOODS } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
 import {
   filterBusinesses,
@@ -82,10 +82,11 @@ export const HomePage: React.FC = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
 
   const smartSearchSuggestions = [
-    'پروتئین‌تراپی مو',
-    'فیشیال تخصصی پوست',
+    'درچه',
     'چهارباغ بالا',
     'مرداویج',
+    'پروتئین‌تراپی مو',
+    'فیشیال تخصصی پوست',
     'کاشت و لمینت ناخن',
     'اصلاح مردانه',
   ];
@@ -189,9 +190,33 @@ export const HomePage: React.FC = () => {
     heroShowcaseCards[activeHeroCardIndex] ?? heroShowcaseCards[1];
   const isHeroSalonFav = favoriteBusinessIds.includes(activeHeroCard.id);
 
-  const featuredBusinesses = businesses
-    .filter((b) => b.approvalStatus === 'APPROVED')
-    .slice(0, 3);
+  const approvedSalons = businesses.filter(
+    (b) => b.approvalStatus === 'APPROVED'
+  );
+  const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
+    const aSpon = Number(Boolean(a.isSponsored));
+    const bSpon = Number(Boolean(b.isSponsored));
+    if (bSpon !== aSpon) return bSpon - aSpon;
+    if (aSpon && bSpon) {
+      return (a.sponsoredOrder ?? 99) - (b.sponsoredOrder ?? 99);
+    }
+    return b.rating - a.rating;
+  });
+
+  const featuredBusinesses = sortedHomeSalons.slice(0, 6);
+  const homeBannerPrimary =
+    sortedHomeSalons.find(
+      (b) =>
+        b.isSponsored &&
+        (b.sponsoredPlacement === 'HOME_BANNER' ||
+          b.sponsoredPlacement === 'HERO_SPOTLIGHT')
+    ) ?? sortedHomeSalons[0];
+  const homeBannerSecondary =
+    sortedHomeSalons.find(
+      (b) => b.id !== homeBannerPrimary?.id && b.isSponsored
+    ) ??
+    sortedHomeSalons.find((b) => b.id !== homeBannerPrimary?.id) ??
+    sortedHomeSalons[0];
 
   const filteredProfessionals = specialists.filter((sp) => {
     if (proSpecialtyFilter === 'ALL') return true;
@@ -516,75 +541,106 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* کارت اصلی پیشنهاد ویژه */}
-          <div className="lg:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-l from-[#1E1B2E] via-[#7C3AED] to-[#8B5CF6] text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-[0_18px_45px_-18px_rgba(139,92,246,0.35)]">
+          {/* کارت اصلی بنر ویژه (متصل به مدیریت تبلیغات ادمین) */}
+          <div className="lg:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-l from-[#061138] via-[#0A2568] to-[#0057FF] text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-[0_18px_45px_-18px_rgba(0,87,255,0.35)]">
             <div className="space-y-3.5 max-w-md z-10">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-bold text-[#EDE9FE]">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-extrabold text-[#00E5FF]">
                 <Percent className="w-3.5 h-3.5 text-[#F59E0B]" />
-                <span>تا ۲۵٪ تخفیف ویژه رزرو آنلاین</span>
+                <span>
+                  {homeBannerPrimary?.sponsoredLabel ||
+                    'تا ۲۵٪ تخفیف ویژه رزرو آنلاین'}
+                </span>
               </span>
               <h3 className="text-lg sm:text-2xl font-extrabold leading-snug">
-                پکیج تخصصی احیا، پروتئین‌تراپی و استایل مو در رویال گلزار
+                {homeBannerPrimary
+                  ? `${homeBannerPrimary.name} (${homeBannerPrimary.neighborhood})`
+                  : 'پکیج تخصصی احیا، پروتئین‌تراپی و استایل مو در رویال گلزار'}
               </h3>
               <p className="text-xs sm:text-sm text-white/85 leading-relaxed">
-                همراه با مشاوره رایگان سلامت مو و تضمین استفاده از مواد اورجینال
-                در نوبت‌های صبح و عصر چهارباغ بالا.
+                {homeBannerPrimary?.shortDescription ||
+                  'همراه با مشاوره رایگان سلامت مو و تضمین استفاده از مواد اورجینال در نوبت‌های صبح و عصر.'}
               </p>
-              <div className="pt-1">
+              <div className="pt-1 flex flex-wrap items-center gap-2.5">
                 <Link
-                  to="/booking/royal-golzar"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-[#8B5CF6] hover:bg-[#FAF8FF] text-xs sm:text-sm font-extrabold transition-colors shadow-sm"
+                  to={
+                    homeBannerPrimary
+                      ? `/booking/${homeBannerPrimary.slug}`
+                      : '/booking/royal-golzar'
+                  }
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#00E5FF] text-[#061138] hover:bg-white text-xs sm:text-sm font-extrabold transition-colors shadow-sm"
                 >
-                  <span>رزرو نوبت با تخفیف</span>
+                  <span>رزرو مستقیم نوبت</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Link>
+                {homeBannerPrimary ? (
+                  <span className="text-xs font-bold text-slate-200 tabular-nums">
+                    شروع تعرفه از:{' '}
+                    {formatPriceToman(homeBannerPrimary.startingPriceToman)}
+                  </span>
+                ) : null}
               </div>
             </div>
 
             <div className="w-full sm:w-44 h-44 rounded-2xl overflow-hidden border-2 border-white/25 shrink-0 shadow-lg">
               <img
-                src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80"
-                alt="پکیج استایل و احیای مو"
+                src={
+                  homeBannerPrimary?.avatarUrl ||
+                  'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80'
+                }
+                alt={homeBannerPrimary?.name || 'پکیج استایل و احیای مو'}
                 className="w-full h-full object-cover"
               />
             </div>
           </div>
 
           {/* کارت دوم پیشنهاد ویژه */}
-          <div className="lg:col-span-5 rounded-3xl border border-[#D4C9EE] bg-[#EDE9FE] p-6 sm:p-7 flex flex-col justify-between gap-5">
+          <div className="lg:col-span-5 rounded-3xl border border-[#CBD5E1] bg-white p-6 sm:p-7 flex flex-col justify-between gap-5 shadow-xs">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
-                <span className="inline-block px-3 py-1 rounded-full bg-white text-[#8B5CF6] text-xs font-extrabold shadow-2xs">
-                  پیشنهاد آخر هفته · ۲۰٪ تخفیف
+                <span className="inline-block px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
+                  {homeBannerSecondary?.sponsoredLabel ||
+                    'پیشنهاد ویژه · رزرو آنی'}
                 </span>
-                <h3 className="text-base sm:text-lg font-extrabold text-[#1E1B2E] leading-snug">
-                  فیشیال تخصصی پوست و آبرسانی عمیق با کلینیک سارا راد
+                <h3 className="text-base sm:text-lg font-extrabold text-[#061138] leading-snug">
+                  {homeBannerSecondary
+                    ? `${homeBannerSecondary.name} · ${homeBannerSecondary.neighborhood}`
+                    : 'فیشیال تخصصی پوست و آبرسانی عمیق با کلینیک سارا راد'}
                 </h3>
-                <p className="text-xs text-[#6B6480] leading-relaxed">
-                  پاکسازی چندمرحله‌ای، ماسک هیدروژلی و سرم‌تراپی ویژه انواع پوست در خیابان نظر.
+                <p className="text-xs text-[#334155] leading-relaxed line-clamp-2">
+                  {homeBannerSecondary?.shortDescription ||
+                    'پاکسازی چندمرحله‌ای، ماسک هیدروژلی و سرم‌تراپی ویژه انواع پوست.'}
                 </p>
               </div>
-              <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white shadow-sm shrink-0">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#CBD5E1] shadow-sm shrink-0">
                 <img
-                  src="https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=400&q=80"
-                  alt="فیشیال پوست"
+                  src={
+                    homeBannerSecondary?.avatarUrl ||
+                    'https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=400&q=80'
+                  }
+                  alt={homeBannerSecondary?.name || 'پیشنهاد ویژه'}
                   className="w-full h-full object-cover"
                 />
               </div>
             </div>
 
-            <div className="pt-3 border-t border-[#D4C9EE] flex items-center justify-between">
+            <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
               <div>
-                <span className="text-[11px] text-[#6B6480] block">
-                  تعرفه ویژه رزرو آنلاین
+                <span className="text-[11px] text-[#64748B] block">
+                  شروع تعرفه خدمات
                 </span>
-                <span className="text-sm font-extrabold text-[#8B5CF6] tabular-nums">
-                  ۶۵۰,۰۰۰ تومان
+                <span className="text-sm font-extrabold text-[#0057FF] tabular-nums">
+                  {homeBannerSecondary
+                    ? formatPriceToman(homeBannerSecondary.startingPriceToman)
+                    : '۶۵۰,۰۰۰ تومان'}
                 </span>
               </div>
               <Link
-                to="/pro/sara-rad"
-                className="px-4 py-2 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(139,92,246,0.4)]"
+                to={
+                  homeBannerSecondary
+                    ? `/booking/${homeBannerSecondary.slug}`
+                    : '/pro/sara-rad'
+                }
+                className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
               >
                 <span>مشاهده و رزرو</span>
                 <ArrowLeft className="w-3.5 h-3.5" />
@@ -991,13 +1047,7 @@ export const SearchPage: React.FC = () => {
     setSearchParams({});
   };
 
-  const quickNeighborhoodChips = [
-    'چهارباغ بالا',
-    'مرداویج',
-    'نظر شرقی',
-    'شیخ صدوق جنوبی',
-    'سپاهان‌شهر',
-  ];
+  const quickNeighborhoodChips = ISFAHAN_NEIGHBORHOODS;
 
   return (
     <div className="space-y-4">

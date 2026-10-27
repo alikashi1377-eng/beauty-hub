@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
-import { TimetoLogo, TIMETO_SHOWCASE_IMAGE_PATH } from '../ui/TimetoLogo';
+import { TimetoIconMark, TimetoLogo } from '../ui/TimetoLogo';
 
 export const PublicFooter: React.FC = () => {
   const { authUser, dataMode } = usePrototypeData();
@@ -25,15 +25,10 @@ export const PublicFooter: React.FC = () => {
             </Link>
             <p className="text-xs font-medium text-slate-300 leading-relaxed max-w-sm">
               پلتفرم هوشمند رزرو آنلاین سالن‌های زیبایی، آرایشگاه‌های مردانه و
-              متخصصان برتر اصفهان به همراه وب‌اپلیکیشن قابل نصب روی موبایل.
+              متخصصان برتر اصفهان و درچه به همراه وب‌اپلیکیشن قابل نصب روی موبایل.
             </p>
             <div className="pt-1 flex items-center gap-2.5">
-              <img
-                src={TIMETO_SHOWCASE_IMAGE_PATH}
-                alt="اپلیکیشن موبایل Timeto"
-                loading="lazy"
-                className="w-12 h-12 rounded-xl object-cover border border-white/20 shrink-0"
-              />
+              <TimetoIconMark size="md" />
               <span className="text-[11px] text-slate-300 leading-snug">
                 نسخه وب‌اپلیکیشن (PWA) قابل نصب روی آیفون و اندروید بدون نیاز به آپدیت دستی
               </span>

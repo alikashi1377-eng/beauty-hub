@@ -57,7 +57,6 @@ import {
   ProfessionalCard,
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
-import { MelipayamakQuickSetupCard } from '../../components/ui/MelipayamakQuickSetupCard';
 
 /** نوار مرحله‌به‌مرحله مینیمال، آیکون‌محور و قابل کلیک برای مسیر رزرو نوبت */
 const BookingFlowStepIndicator: React.FC<{
@@ -133,7 +132,7 @@ const BookingFlowStepIndicator: React.FC<{
   );
 };
 
-/** ۱. صفحه ورود مشتری / کاربر با کد یک‌بارمصرف (/login) + دسترسی مستقیم مدیر کل پلتفرم */
+/** ۱. صفحه ورود مشتری / کاربر با کد یک‌بارمصرف پیامکی (/login) */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -156,19 +155,6 @@ export const CustomerLoginPage: React.FC = () => {
     rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
       ? rawRedirect
       : '';
-
-  const isAdminRedirect = safeRedirectPath.startsWith('/admin');
-  const [showAdminDirectPanel, setShowAdminDirectPanel] =
-    useState<boolean>(isAdminRedirect);
-  const [showInlineSmsSetup, setShowInlineSmsSetup] = useState<boolean>(false);
-  const [adminSecretInput, setAdminSecretInput] = useState('');
-  const [adminDirectLoading, setAdminDirectLoading] = useState(false);
-
-  useEffect(() => {
-    if (isAdminRedirect) {
-      setShowAdminDirectPanel(true);
-    }
-  }, [isAdminRedirect]);
 
   const handleRequestOtpOrSimulatedLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,49 +181,8 @@ export const CustomerLoginPage: React.FC = () => {
           ? err.message
           : 'خطا در ارسال کد تایید یک‌بارمصرف.';
       setError(msg);
-      if (msg.includes('پیامک') || msg.includes('SMS')) {
-        setShowAdminDirectPanel(true);
-      }
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleDirectAdminLogin = async () => {
-    setError('');
-    if (dataMode === 'mock') {
-      showToast('ورود مستقیم به پنل مدیریت کلان انجام شد.');
-      navigate('/admin');
-      return;
-    }
-
-    setAdminDirectLoading(true);
-    try {
-      const res = await fetch('/api/v1/auth/admin-direct-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          phone: /^09\d{9}$/.test(phone.trim()) ? phone.trim() : '09120000000',
-          adminKey: adminSecretInput.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        setError(
-          data?.message ||
-            'خطا در ورود مستقیم مدیر کل؛ در صورت فعال بودن پیامک، کد امنیتی سرور یا API Key ملی‌پیامک را وارد کنید.'
-        );
-        return;
-      }
-      showToast('نشست مدیر کل فعال شد. در حال ورود به پنل مدیریت...');
-      window.location.href = safeRedirectPath.startsWith('/admin')
-        ? safeRedirectPath
-        : '/admin';
-    } catch {
-      setError('خطا در ارتباط با سرور برای ورود مستقیم مدیر کل.');
-    } finally {
-      setAdminDirectLoading(false);
     }
   };
 
@@ -278,14 +223,14 @@ export const CustomerLoginPage: React.FC = () => {
           <div className="space-y-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-bold">
               <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
-              <span>ورود سریع با کد پیامکی</span>
+              <span>ورود امن با کد تایید پیامکی</span>
             </span>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#061138]">
               ورود یا عضویت در Timeto
             </h1>
             <p className="text-xs sm:text-sm text-[#475569] leading-relaxed">
-              شماره موبایل خود را وارد کنید تا کد تایید یک‌بارمصرف برایتان ارسال
-              شود و به نوبت‌های خود در تایم تو دسترسی داشته باشید.
+              شماره موبایل خود را وارد کنید تا کد تایید ۶ رقمی برایتان پیامک شود
+              و وارد حساب کاربری، پنل سالن یا پنل مدیریت شوید.
             </p>
           </div>
 
@@ -340,7 +285,7 @@ export const CustomerLoginPage: React.FC = () => {
                 fullWidth
                 isLoading={isSubmitting}
               >
-                <span>دریافت کد تایید</span>
+                <span>دریافت کد تایید پیامکی</span>
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </form>
@@ -391,69 +336,11 @@ export const CustomerLoginPage: React.FC = () => {
             </form>
           )}
 
-          {/* کادر ویژه ورود مستقیم مدیر کل پلتفرم (/admin) و رفع سریع خطای پیامک */}
-          <div className="p-4 rounded-2xl bg-[#F3F6FC] border-2 border-[#0057FF]/30 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
-                <span className="text-xs font-extrabold text-[#061138]">
-                  مدیر کل پلتفرم هستید؟ (ورود به /admin بدون وابستگی به پیامک)
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAdminDirectPanel((p) => !p)}
-                className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer shrink-0"
-              >
-                {showAdminDirectPanel ? 'بستن' : 'باز کردن پنل مدیر'}
-              </button>
-            </div>
-
-            {showAdminDirectPanel ? (
-              <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
-                <p className="text-[11px] text-[#334155] leading-relaxed">
-                  اگر هنوز سامانه پیامکی ملی‌پیامک را وصل نکرده‌اید، با دکمه زیر
-                  مستقیماً وارد <strong>پنل مدیریت کلان (/admin)</strong> شوید یا
-                  همین‌جا درگاه پیامک را فعال کنید:
-                </p>
-
-                {dataMode === 'real' ? (
-                  <Input
-                    id="admin-direct-key"
-                    dir="ltr"
-                    value={adminSecretInput}
-                    onChange={(e) => setAdminSecretInput(e.target.value)}
-                    placeholder="کلید امنیتی سرور یا API Key ملی‌پیامک (در اولین ورود اختیاری است)"
-                  />
-                ) : null}
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    fullWidth
-                    isLoading={adminDirectLoading}
-                    onClick={() => void handleDirectAdminLogin()}
-                  >
-                    <span>ورود یک‌کلیکی به پنل مدیریت کلان (/admin)</span>
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowInlineSmsSetup((p) => !p)}
-                  >
-                    <span>
-                      {showInlineSmsSetup
-                        ? 'بستن تنظیمات پیامک'
-                        : 'اتصال آنی ملی‌پیامک'}
-                    </span>
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center gap-2.5 text-xs text-[#334155]">
+            <ShieldCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
+            <span>
+              تمامی ورودها (مراجعان، مدیران سالن و مدیر کل پلتفرم) صرفاً از طریق کد یک‌بارمصرف پیامکی (OTP) محافظت می‌شوند.
+            </span>
           </div>
 
           <div className="pt-3 border-t border-[#CBD5E1] flex items-center justify-between text-xs text-[#475569]">
@@ -508,16 +395,12 @@ export const CustomerLoginPage: React.FC = () => {
               تایم تو؛ وقت زیبایی تو، به انتخاب تو
             </h2>
             <p className="text-xs text-[#94A3B8] leading-relaxed">
-              بهترین سالن‌ها و متخصصان اصفهان را مقایسه کنید و نوبت خود را
+              بهترین سالن‌ها و متخصصان اصفهان و درچه را مقایسه کنید و نوبت خود را
               آنی رزرو نمایید.
             </p>
           </div>
         </div>
       </div>
-
-      {showInlineSmsSetup ? (
-        <MelipayamakQuickSetupCard />
-      ) : null}
     </div>
   );
 };
