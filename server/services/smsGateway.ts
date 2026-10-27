@@ -605,20 +605,43 @@ export async function sendOtpSmsViaGateway(
 
       const cleanRecipient = normalizeDigitsToEnglish(phone).replace(/\D/g, '');
       const cleanOtpArg = String(normalizeDigitsToEnglish(otpCode).trim());
+      const requestBody = JSON.stringify({
+        bodyId,
+        to: cleanRecipient,
+        args: [cleanOtpArg],
+      });
 
-      const res = await fetch(endpoint, {
+      let res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify({
-          bodyId,
-          to: cleanRecipient,
-          args: [cleanOtpArg],
-        }),
+        body: requestBody,
         signal: controller.signal,
       });
+
+      // در کنسول ملی‌پیامک گاهی توکن ۳۲ کاراکتری بدون خط تیره (UUID بدون -) در URL قرار می‌گیرد
+      if (
+        res.status === 404 &&
+        !config.apiUrl &&
+        !extractedEndpoint &&
+        extractedKey.includes('-')
+      ) {
+        const dashlessKey = extractedKey.replace(/-/g, '');
+        const fallbackEndpoint = `https://console.melipayamak.com/api/send/shared/${encodeURIComponent(
+          dashlessKey
+        )}`;
+        res = await fetch(fallbackEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: requestBody,
+          signal: controller.signal,
+        });
+      }
 
       const rawResponseText = await res.text();
       let data: { recId?: number | string; status?: string } | null = null;
