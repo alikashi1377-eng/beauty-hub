@@ -33,6 +33,7 @@ import {
   ServiceItem,
   SpecialistItem,
   SubscriptionPlanItem,
+  SubscriptionStatus,
   WorkingHourItem,
 } from '../types';
 import { computeSelectedServicesSummary } from '../utils/formatters';
@@ -48,6 +49,7 @@ interface PrototypeDataContextValue {
   databaseError: string | null;
   isLoadingInitialData: boolean;
   authUser: AuthenticatedSessionUser | null;
+  ownedBusinessId: string | null;
   requestOtpLogin: (phone: string) => Promise<{ challengeId?: string }>;
   verifyOtpLogin: (
     phone: string,
@@ -123,19 +125,21 @@ interface PrototypeDataContextValue {
 
 const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   businessType: BusinessType.WomenSalon,
-  businessName: 'سالن زیبایی ارکیده نقره‌ای (نمونه)',
+  businessName: 'سالن زیبایی ارکیده نقره‌ای',
   categorySlug: 'hair-color',
   slug: 'orkideh-salon',
   ownerName: 'مریم فرهادی',
-  phone: '09123456789',
+  phone: '09131234567',
   instagramHandle: '@orkideh.beauty',
-  city: 'تهران',
-  neighborhood: 'ولنجک',
-  address: 'تهران، ولنجک، خیابان سیزدهم، پلاک ۲۴، طبقه دوم (آدرس آزمایشی)',
-  mapLat: 35.8058,
-  mapLng: 51.4018,
+  avatarUrl:
+    'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=400&h=400&q=80',
+  city: 'اصفهان',
+  neighborhood: 'چهارباغ بالا',
+  address: 'اصفهان، چهارباغ بالا، روبه‌روی مجتمع پارک، ساختمان ارکیده، طبقه دوم',
+  mapLat: 32.6288,
+  mapLng: 51.6621,
   shortDescription:
-    'مرکز تخصصی رنگ و مش، احیای مو و طراحی ناخن با کادر مجرب و نوبت‌دهی آنلاین.',
+    'مرکز تخصصی رنگ و مش، احیای مو و طراحی ناخن با کادر مجرب و نوبت‌دهی آنلاین در اصفهان.',
   services: [
     {
       id: 'onb-srv-1',
@@ -173,8 +177,9 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
     { dayName: 'پنج‌شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۱۸:۰۰' },
     { dayName: 'جمعه', isOpen: false, openTime: '۱۰:۰۰', closeTime: '۱۶:۰۰' },
   ],
-  licenseCode: 'SNF-1405-88412',
-  nationalIdNumber: '0012345678',
+  licenseCode: '',
+  nationalIdNumber: '',
+  selectedPlanId: 'plan-professional',
 };
 
 const INITIAL_BOOKING_DRAFT: BookingDraft = {
@@ -1083,6 +1088,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const submitBusinessOnboarding = async (): Promise<boolean> => {
+    if (onboardingDraft.selectedPlanId) {
+      setActivePlanId(onboardingDraft.selectedPlanId);
+    }
+
     if (dataMode === 'real') {
       try {
         const res = await realApiClient.onboardBusiness(onboardingDraft);
@@ -1113,7 +1122,66 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    showToast(`راه‌اندازی «${onboardingDraft.businessName}» تکمیل شد.`);
+    const chosenPlan =
+      plans.find((p) => p.id === onboardingDraft.selectedPlanId) ?? plans[1];
+    const newBizId = `biz-onb-${onboardingDraft.slug || 'custom'}`;
+    const minServicePrice =
+      onboardingDraft.services.length > 0
+        ? Math.min(...onboardingDraft.services.map((s) => s.priceToman))
+        : 450000;
+
+    const newBiz: BusinessItem = {
+      id: newBizId,
+      slug: onboardingDraft.slug || 'orkideh-salon',
+      name: onboardingDraft.businessName || 'سالن زیبایی جدید',
+      type: onboardingDraft.businessType,
+      typeLabel:
+        onboardingDraft.businessType === BusinessType.MenBarbershop
+          ? 'آرایشگاه مردانه'
+          : onboardingDraft.businessType === BusinessType.IndependentSpecialist
+          ? 'متخصص مستقل زیبایی'
+          : 'سالن زیبایی زنانه',
+      categorySlug: onboardingDraft.categorySlug || 'hair-color',
+      city: onboardingDraft.city || 'اصفهان',
+      neighborhood: onboardingDraft.neighborhood || 'چهارباغ بالا',
+      address: onboardingDraft.address || 'اصفهان',
+      phoneDisplay: onboardingDraft.phone || '09131234567',
+      rating: 4.9,
+      reviewCount: 12,
+      startingPriceToman: minServicePrice,
+      shortDescription:
+        onboardingDraft.shortDescription ||
+        'مرکز تخصصی زیبایی و مراقبت با نوبت‌دهی آنلاین در تایم تو.',
+      aboutText:
+        onboardingDraft.shortDescription ||
+        'پذیرش منظم آنلاین با کادر مجرب و رعایت کامل استانداردهای بهداشتی.',
+      verifiedBadge: true,
+      approvalStatus: 'APPROVED',
+      subscriptionPlan: chosenPlan?.name ?? 'حرفه‌ای (پرفروش)',
+      subscriptionStatus: SubscriptionStatus.Trial,
+      workingHours: onboardingDraft.workingHours,
+      visualTheme: 'violet',
+      featured: true,
+      instagramHandle: onboardingDraft.instagramHandle,
+      mapLat: onboardingDraft.mapLat,
+      mapLng: onboardingDraft.mapLng,
+      avatarUrl: onboardingDraft.avatarUrl,
+    };
+
+    setBusinesses((prev) => {
+      const exists = prev.some(
+        (b) => b.id === newBizId || b.slug === newBiz.slug
+      );
+      if (exists) {
+        return prev.map((b) =>
+          b.id === newBizId || b.slug === newBiz.slug ? newBiz : b
+        );
+      }
+      return [newBiz, ...prev];
+    });
+    setOwnedBusinessId(newBizId);
+
+    showToast(`راه‌اندازی «${onboardingDraft.businessName}» با موفقیت تکمیل شد.`);
     return true;
   };
 
@@ -1231,6 +1299,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         databaseError,
         isLoadingInitialData,
         authUser,
+        ownedBusinessId,
         requestOtpLogin,
         verifyOtpLogin,
         logoutUser,

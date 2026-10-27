@@ -106,7 +106,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <div className="flex items-center gap-2 shrink-0">
                 <Link
                   to="/app/calendar"
-                  className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#F3F6FC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-xs font-bold text-[#061138] transition-colors"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#F3F6FC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-xs font-bold text-[#061138] transition-colors"
                 >
                   <CalendarPlus className="w-3.5 h-3.5 text-[#0057FF]" />
                   <span>تقویم روزانه</span>
@@ -126,9 +126,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
                 <Link
                   to="/app/appointments"
-                  className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-xs font-bold text-white transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
+                  className="hidden sm:inline-flex px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-xs font-bold text-white transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
                 >
                   مدیریت رزروها
+                </Link>
+
+                <Link
+                  to="/"
+                  aria-label="خروج از پیشخوان کسب‌وکار و بازگشت به سایت اصلی"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FEF2F2] hover:bg-[#FEE2E2] border border-[#EF4444]/30 text-xs font-extrabold text-[#DC2626] transition-colors whitespace-nowrap shrink-0"
+                >
+                  <span>خروج از پیشخوان</span>
                 </Link>
               </div>
             </header>

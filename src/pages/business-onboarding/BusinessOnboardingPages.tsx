@@ -6,19 +6,25 @@ import {
   ArrowRight,
   Plus,
   Trash2,
-  ShieldAlert,
   Sparkles,
   Clock,
   Check,
   Building2,
   ExternalLink,
   Instagram,
+  Wand2,
+  ShieldCheck,
+  TrendingUp,
+  MessageSquareText,
+  Users,
+  X,
 } from 'lucide-react';
 import { IRAN_CITIES } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
 import {
   formatDurationMinutes,
   formatPriceToman,
+  suggestSlugFromName,
   toPersianDigits,
   validateBusinessRegistrationDraft,
   validateServiceForm,
@@ -29,87 +35,91 @@ import { Card } from '../../components/ui/Card';
 import { FormField } from '../../components/ui/FormField';
 import { Input, Textarea } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
-import { PageHeader } from '../../components/ui/PageHeader';
 import { IncompleteFormState } from '../../components/ui/StateViews';
 import { VisualMediaIllustration } from '../../components/ui/VisualMediaIllustration';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
+import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
 
-/** نوار پیشرفت ۵ مرحله‌ای هدایت‌شده برای راه‌اندازی کسب‌وکار */
-const OnboardingProgressHeader: React.FC<{ currentStep: number }> = ({
-  currentStep,
-}) => {
+/** نوار پیشرفت افقی مینیمال و جمع‌وجور (بدون توضیحات اضافی بالای صفحه) */
+const OnboardingProgressHeader: React.FC<{
+  currentStep: number;
+  stepTitle: string;
+}> = ({ currentStep, stepTitle }) => {
   const steps = [
-    { num: 1, title: 'مشخصات پایه و نشانی', href: '/business/register' },
-    { num: 2, title: 'خدمات، تیم و برنامه کاری', href: '/business/onboarding' },
-    { num: 3, title: 'پیش‌نمایش پروفایل عمومی', href: '/business/preview' },
-    { num: 4, title: 'اطلاعات مجوز و احراز', href: '/business/verification' },
-    { num: 5, title: 'تکمیل راه‌اندازی', href: '/business/ready' },
+    { num: 1, title: 'مشخصات و عکس', href: '/business/register' },
+    { num: 2, title: 'خدمات و ساعت کاری', href: '/business/onboarding' },
+    { num: 3, title: 'پیش‌نمایش', href: '/business/preview' },
+    { num: 4, title: 'تکمیل پرونده', href: '/business/verification' },
+    { num: 5, title: 'انتخاب پلن و شروع', href: '/business/ready' },
   ];
 
-  const progressPct = Math.round((currentStep / steps.length) * 100);
-
   return (
-    <div className="mb-8 rounded-2xl border border-[#E6E0F5] bg-white p-4 sm:p-5 shadow-2xs space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 font-extrabold text-[#0057FF]">
-            <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
-            <span>راه‌اندازی گام‌به‌گام کسب‌وکار در Timeto (تایم تو)</span>
+    <div className="mb-5 rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-3 shadow-2xs">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-7 h-7 rounded-xl bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center tabular-nums shrink-0">
+            {toPersianDigits(currentStep)}
           </span>
-          <span className="text-[#6B6480] hidden sm:inline">
-            — اطلاعات شما در هر مرحله به‌طور خودکار ذخیره می‌شود
-          </span>
+          <div>
+            <h1 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              {stepTitle}
+            </h1>
+            <p className="text-[11px] text-[#334155]">
+              گام {toPersianDigits(currentStep)} از ۵ · ذخیره خودکار
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="font-extrabold text-[#8B5CF6] tabular-nums">
-            گام {toPersianDigits(currentStep)} از ۵ ({toPersianDigits(progressPct)}٪)
-          </span>
+
+        {/* استپر کپسولی مینیمال */}
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          {steps.map((s, idx) => {
+            const isDone = s.num < currentStep;
+            const isCurrent = s.num === currentStep;
+            return (
+              <React.Fragment key={s.num}>
+                <Link
+                  to={s.href}
+                  className={`px-2.5 py-1.5 rounded-full text-[11px] transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                    isCurrent
+                      ? 'bg-[#061138] text-white font-extrabold shadow-2xs'
+                      : isDone
+                      ? 'bg-[#ECFDF5] text-[#059669] border border-[#10B981]/30 font-bold'
+                      : 'bg-[#F3F6FC] text-[#64748B] font-semibold hover:text-[#061138]'
+                  }`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full inline-flex items-center justify-center text-[10px] font-extrabold tabular-nums ${
+                      isCurrent
+                        ? 'bg-[#00E5FF] text-[#061138]'
+                        : isDone
+                        ? 'bg-[#10B981] text-white'
+                        : 'bg-white text-[#64748B]'
+                    }`}
+                  >
+                    {isDone ? (
+                      <Check className="w-2.5 h-2.5" />
+                    ) : (
+                      toPersianDigits(s.num)
+                    )}
+                  </span>
+                  <span className="hidden md:inline">{s.title}</span>
+                </Link>
+                {idx < steps.length - 1 ? (
+                  <span className="w-2 sm:w-3 h-px bg-[#CBD5E1] shrink-0" />
+                ) : null}
+              </React.Fragment>
+            );
+          })}
         </div>
-      </div>
 
-      <div className="w-full h-1.5 rounded-full bg-[#F3EEFF] overflow-hidden">
-        <div
-          className="h-full bg-[#8B5CF6] rounded-full transition-all duration-300"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {steps.map((s) => {
-          const isDone = s.num < currentStep;
-          const isCurrent = s.num === currentStep;
-          return (
-            <Link
-              key={s.num}
-              to={s.href}
-              className={`p-2.5 rounded-xl border text-xs transition-all flex items-center gap-2.5 ${
-                isCurrent
-                  ? 'border-[#8B5CF6] bg-[#EDE9FE] text-[#8B5CF6] font-extrabold shadow-2xs'
-                  : isDone
-                  ? 'border-[#10B981]/30 bg-[#ECFDF5] text-[#10B981] font-bold'
-                  : 'border-[#E6E0F5] bg-[#FAF8FF] text-[#6B6480] font-medium hover:text-[#1E1B2E]'
-              }`}
-            >
-              <span
-                className={`w-5 h-5 rounded-lg inline-flex items-center justify-center text-[11px] font-extrabold shrink-0 tabular-nums ${
-                  isCurrent
-                    ? 'bg-[#8B5CF6] text-white'
-                    : isDone
-                    ? 'bg-[#10B981] text-white'
-                    : 'bg-white border border-[#D4C9EE] text-[#6B6480]'
-                }`}
-              >
-                {isDone ? (
-                  <Check className="w-3 h-3" />
-                ) : (
-                  toPersianDigits(s.num)
-                )}
-              </span>
-              <span className="truncate">{s.title}</span>
-            </Link>
-          );
-        })}
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold text-[#334155] hover:bg-[#F3F6FC] hover:text-[#061138] transition-colors shrink-0"
+        >
+          <X className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">خروج به سایت</span>
+        </Link>
       </div>
     </div>
   );
@@ -124,41 +134,51 @@ const OnboardingDraftSummarySidebar: React.FC<{ stepHint: string }> = ({
     onboardingDraft.businessType === BusinessType.IndependentSpecialist;
 
   return (
-    <div className="space-y-4 lg:sticky lg:top-24">
+    <div className="space-y-4 lg:sticky lg:top-20">
       <Card variant="dark" className="space-y-4">
         <div className="flex items-center justify-between border-b border-white/15 pb-3">
-          <span className="text-xs font-bold text-[#EDE9FE]">
-            پیش‌نمایش پروفایل در حال ساخت
+          <span className="text-xs font-bold text-[#00E5FF]">
+            پیش‌نمایش کارت سالن شما
           </span>
           <span
             dir="ltr"
-            className="text-[11px] font-mono text-white/80 bg-white/10 px-2 py-0.5 rounded"
+            className="text-[11px] font-mono text-white/90 bg-white/10 px-2 py-0.5 rounded"
           >
-            /{isPro ? 'pro' : 'salon'}/{onboardingDraft.slug || 'your-slug'}
+            timeto.ir/{isPro ? 'pro' : 'salon'}/
+            {onboardingDraft.slug || 'your-salon'}
           </span>
         </div>
 
-        <div className="space-y-1.5">
-          <h3 className="text-base font-extrabold text-white">
-            {onboardingDraft.businessName || 'نام کسب‌وکار شما'}
-          </h3>
-          <p className="text-xs text-[#EDE9FE]/85">
-            {onboardingDraft.city}
-            {onboardingDraft.neighborhood
-              ? ` · ${onboardingDraft.neighborhood}`
-              : ''}
-          </p>
+        <div className="flex items-center gap-3">
+          {onboardingDraft.avatarUrl ? (
+            <img
+              src={onboardingDraft.avatarUrl}
+              alt={onboardingDraft.businessName}
+              className="w-14 h-14 rounded-2xl object-cover border-2 border-[#00E5FF]/60 shrink-0"
+            />
+          ) : null}
+          <div className="space-y-1 min-w-0">
+            <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
+              {onboardingDraft.businessName || 'نام سالن زیبایی شما'}
+            </h3>
+            <p className="text-xs text-slate-300 truncate">
+              {onboardingDraft.city}
+              {onboardingDraft.neighborhood
+                ? ` · ${onboardingDraft.neighborhood}`
+                : ''}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-white/15 text-xs">
           <div className="p-2.5 rounded-xl bg-white/10">
-            <p className="text-[11px] text-[#EDE9FE]/80">خدمات ثبت‌شده</p>
+            <p className="text-[11px] text-slate-300">خدمات قابل رزرو</p>
             <p className="text-sm font-extrabold text-white mt-0.5 tabular-nums">
               {toPersianDigits(onboardingDraft.services.length)} خدمت
             </p>
           </div>
           <div className="p-2.5 rounded-xl bg-white/10">
-            <p className="text-[11px] text-[#EDE9FE]/80">اعضای تیم / متخصصان</p>
+            <p className="text-[11px] text-slate-300">متخصصان فعال</p>
             <p className="text-sm font-extrabold text-white mt-0.5 tabular-nums">
               {toPersianDigits(onboardingDraft.staff.length)} نفر
             </p>
@@ -166,11 +186,9 @@ const OnboardingDraftSummarySidebar: React.FC<{ stepHint: string }> = ({
         </div>
       </Card>
 
-      <Card variant="muted" padding="sm" className="space-y-2">
-        <p className="text-xs font-extrabold text-[#8B5CF6]">
-          راهنمای این مرحله
-        </p>
-        <p className="text-xs text-[#6B6480] leading-relaxed">{stepHint}</p>
+      <Card variant="muted" padding="sm" className="space-y-1.5">
+        <p className="text-xs font-extrabold text-[#0057FF]">نکته کاربردی</p>
+        <p className="text-xs text-[#334155] leading-relaxed">{stepHint}</p>
       </Card>
     </div>
   );
@@ -183,40 +201,42 @@ export const BusinessRegisterPage: React.FC = () => {
     usePrototypeData();
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const isPro =
+    onboardingDraft.businessType === BusinessType.IndependentSpecialist;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const effectiveSlug =
+      onboardingDraft.slug.trim() ||
+      suggestSlugFromName(onboardingDraft.businessName);
+    if (effectiveSlug !== onboardingDraft.slug) {
+      updateOnboardingDraft({ slug: effectiveSlug });
+    }
+
     const validation = validateBusinessRegistrationDraft({
       businessName: onboardingDraft.businessName,
       ownerName: onboardingDraft.ownerName,
       phone: onboardingDraft.phone,
       city: onboardingDraft.city,
-      slug: onboardingDraft.slug,
+      slug: effectiveSlug,
     });
     if (!validation.isValid) {
       setErrors(validation.errors);
       return;
     }
     setErrors({});
-    showToast('مشخصات پایه کسب‌وکار ذخیره شد.');
+    showToast('مشخصات سالن و عکس پروفایل ذخیره شد.');
     navigate('/business/onboarding');
   };
 
   return (
     <div>
-      <PageHeader
-        kicker="راه‌اندازی کسب‌وکار · گام ۱ از ۵"
-        title="ثبت‌نام و تعریف مشخصات کسب‌وکار"
-        subtitle="نوع فعالیت، نام تجاری، نشانی و پیوند اختصاصی صفحه خود را مشخص کنید."
-        routePattern="/business/register"
-        breadcrumbs={[
-          { label: 'صفحه اصلی', href: '/' },
-          { label: 'ثبت‌نام کسب‌وکار' },
-        ]}
+      <OnboardingProgressHeader
+        currentStep={1}
+        stepTitle="ثبت سالن زیبایی یا متخصص مستقل"
       />
 
-      <OnboardingProgressHeader currentStep={1} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-8 space-y-5">
           {Object.keys(errors).length > 0 ? (
             <IncompleteFormState
@@ -227,28 +247,28 @@ export const BusinessRegisterPage: React.FC = () => {
 
           <Card padding="lg">
             <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-              {/* انتخاب نوع کسب‌وکار */}
+              {/* ۱. انتخاب نوع کسب‌وکار */}
               <div className="space-y-2.5">
-                <label className="block text-sm font-extrabold text-[#1E1B2E]">
-                  ۱. الگوی فعالیت کسب‌وکار خود را انتخاب کنید{' '}
-                  <span className="text-[#8B5CF6]">*</span>
+                <label className="block text-sm font-extrabold text-[#061138]">
+                  ۱. نوع فعالیت شما چیست؟{' '}
+                  <span className="text-[#0057FF]">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {[
                     {
                       type: BusinessType.WomenSalon,
                       label: 'سالن زیبایی زنانه',
-                      desc: 'مجموعه دارای لاین‌های مو، ناخن، میکاپ و پوست',
+                      desc: 'لاین‌های مو، ناخن، میکاپ و پوست',
                     },
                     {
                       type: BusinessType.MenBarbershop,
                       label: 'آرایشگاه و پیرایش مردانه',
-                      desc: 'اصلاح مو و ریش، استایلینگ و خدمات داماد',
+                      desc: 'اصلاح مو و ریش، استایلینگ و داماد',
                     },
                     {
                       type: BusinessType.IndependentSpecialist,
                       label: 'متخصص مستقل زیبایی',
-                      desc: 'فیشیالیست، ناخن‌کار یا میکاپ‌آرتیست فردی',
+                      desc: 'فیشیالیست، ناخن‌کار یا میکاپ‌آرتیست',
                     },
                   ].map((opt) => {
                     const isSelected =
@@ -260,23 +280,23 @@ export const BusinessRegisterPage: React.FC = () => {
                         onClick={() =>
                           updateOnboardingDraft({ businessType: opt.type })
                         }
-                        className={`p-4 rounded-xl border text-right transition-all cursor-pointer ${
+                        className={`p-3.5 rounded-2xl border text-right transition-all cursor-pointer ${
                           isSelected
-                            ? 'border-[#8B5CF6] bg-[#EDE9FE] ring-2 ring-[#8B5CF6]/15'
-                            : 'border-[#E6E0F5] bg-[#FAF8FF] hover:bg-white hover:border-[#D4C9EE]'
+                            ? 'border-[#0057FF] bg-[#E0ECFF] ring-2 ring-[#0057FF]/15'
+                            : 'border-[#CBD5E1] bg-[#F3F6FC] hover:bg-white hover:border-[#0057FF]'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
+                          <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
                             {opt.label}
                           </p>
                           {isSelected ? (
-                            <span className="w-4 h-4 rounded-full bg-[#8B5CF6] text-white inline-flex items-center justify-center">
+                            <span className="w-4 h-4 rounded-full bg-[#0057FF] text-white inline-flex items-center justify-center shrink-0">
                               <Check className="w-2.5 h-2.5" />
                             </span>
                           ) : null}
                         </div>
-                        <p className="text-[11px] text-[#6B6480] mt-1.5 leading-relaxed">
+                        <p className="text-[11px] text-[#334155] mt-1 leading-relaxed">
                           {opt.desc}
                         </p>
                       </button>
@@ -285,10 +305,26 @@ export const BusinessRegisterPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* مشخصات هویتی و تماس */}
-              <div className="pt-4 border-t border-[#E6E0F5] space-y-4">
-                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                  ۲. نام تجاری و اطلاعات مدیر مسئول
+              {/* ۲. عکس پروفایل با ابعاد استاندارد ۱:۱ */}
+              <div className="pt-4 border-t border-[#CBD5E1]">
+                <ProfilePhotoUploader
+                  value={onboardingDraft.avatarUrl}
+                  businessName={onboardingDraft.businessName}
+                  label="۲. انتخاب عکس پروفایل سالن / متخصص (با ابعاد استاندارد ۱:۱)"
+                  onChange={(newUrl) => {
+                    updateOnboardingDraft({ avatarUrl: newUrl });
+                    showToast(
+                      'تصویر پروفایل با ابعاد استاندارد تنظیم و ذخیره شد.',
+                      'info'
+                    );
+                  }}
+                />
+              </div>
+
+              {/* ۳. مشخصات هویتی و تماس */}
+              <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
+                <h2 className="text-sm font-extrabold text-[#061138]">
+                  ۳. نام سالن و اطلاعات تماس
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
@@ -301,6 +337,7 @@ export const BusinessRegisterPage: React.FC = () => {
                       id="reg-business-name"
                       value={onboardingDraft.businessName}
                       hasError={Boolean(errors.businessName)}
+                      placeholder="مثلاً سالن زیبایی ارکیده"
                       onChange={(e) =>
                         updateOnboardingDraft({ businessName: e.target.value })
                       }
@@ -309,7 +346,7 @@ export const BusinessRegisterPage: React.FC = () => {
 
                   <FormField
                     id="reg-category"
-                    label="محور اصلی خدمات"
+                    label="تخصص اصلی مجموعه"
                     required
                   >
                     <Select
@@ -329,7 +366,7 @@ export const BusinessRegisterPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <FormField
                     id="reg-owner-name"
-                    label="نام و نام خانوادگی مدیر / متخصص مسئول"
+                    label="نام و نام خانوادگی مدیر / متخصص"
                     required
                     error={errors.ownerName}
                   >
@@ -362,9 +399,8 @@ export const BusinessRegisterPage: React.FC = () => {
 
                   <FormField
                     id="reg-instagram"
-                    label="آدرس یا شناسه اینستاگرام"
+                    label="پیج اینستاگرام"
                     optionalLabel="اختیاری"
-                    hint="نمایش در پروفایل عمومی و پنل"
                   >
                     <Input
                       id="reg-instagram"
@@ -381,12 +417,12 @@ export const BusinessRegisterPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* موقعیت مکانی و پیوند اختصاصی */}
-              <div className="pt-4 border-t border-[#E6E0F5] space-y-4">
-                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                  ۳. نشانی، موقعیت روی نقشه و پیوند اختصاصی پروفایل
+              {/* ۴. نشانی و آدرس اینترنتی صفحه سالن به زبان ساده */}
+              <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
+                <h2 className="text-sm font-extrabold text-[#061138]">
+                  ۴. نشانی سالن و لینک اختصاصی صفحه شما
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
                     id="reg-city"
                     label="شهر"
@@ -405,66 +441,99 @@ export const BusinessRegisterPage: React.FC = () => {
 
                   <FormField
                     id="reg-neighborhood"
-                    label="محله یا محدوده"
+                    label="محله یا خیابان اصلی"
                     optionalLabel="پیشنهادی"
                   >
                     <Input
                       id="reg-neighborhood"
+                      placeholder="مثلاً چهارباغ بالا، مرداویج..."
                       value={onboardingDraft.neighborhood}
                       onChange={(e) =>
                         updateOnboardingDraft({ neighborhood: e.target.value })
                       }
                     />
                   </FormField>
+                </div>
 
-                  <FormField
-                    id="reg-slug"
-                    label="شناسه پیوند اختصاصی (Slug)"
-                    hint="فقط حروف انگلیسی کوچک و خط تیره"
-                    required
-                    error={errors.slug}
-                  >
+                {/* فیلد آدرس اینترنتی صفحه سالن با توضیح کاملاً قابل فهم برای عموم */}
+                <div className="p-4 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <label
+                        htmlFor="reg-slug"
+                        className="block text-xs sm:text-sm font-extrabold text-[#061138]"
+                      >
+                        آدرس اینترنتی صفحه سالن شما (به انگلیسی){' '}
+                        <span className="text-[#0057FF]">*</span>
+                      </label>
+                      <p className="text-[11px] text-[#334155] mt-0.5">
+                        این آدرس کوتاه اختصاصی سالن شماست تا در بیو اینستاگرام بگذارید یا برای مشتری بفرستید (مثلاً: royal-salon).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const suggested = suggestSlugFromName(
+                          onboardingDraft.businessName
+                        );
+                        updateOnboardingDraft({ slug: suggested });
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-[#CBD5E1] hover:border-[#0057FF] text-[11px] font-extrabold text-[#0057FF] cursor-pointer transition-colors"
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      <span>ساخت خودکار از نام سالن</span>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <Input
                       id="reg-slug"
                       dir="ltr"
+                      placeholder="royal-salon"
                       value={onboardingDraft.slug}
                       hasError={Boolean(errors.slug)}
                       onChange={(e) =>
-                        updateOnboardingDraft({ slug: e.target.value })
+                        updateOnboardingDraft({
+                          slug: e.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9-]/g, '-'),
+                        })
                       }
                     />
-                  </FormField>
+                    <div
+                      dir="ltr"
+                      className="px-3.5 py-2.5 rounded-xl bg-white border border-[#CBD5E1] text-xs font-mono text-[#334155] shrink-0"
+                    >
+                      timeto.ir/{isPro ? 'pro' : 'salon'}/
+                      <strong className="text-[#0057FF]">
+                        {onboardingDraft.slug || 'royal-salon'}
+                      </strong>
+                    </div>
+                  </div>
+                  {errors.slug ? (
+                    <p className="text-xs font-bold text-[#EF4444]">
+                      {errors.slug}
+                    </p>
+                  ) : null}
                 </div>
 
-                {/* انتخاب موقعیت روی نقشه */}
+                {/* انتخاب موقعیت روی نقشه (بدون دکمه‌های انتخاب سریع اضافی) */}
                 <LocationMapPicker
                   city={onboardingDraft.city}
                   neighborhood={onboardingDraft.neighborhood}
                   address={onboardingDraft.address}
-                  lat={onboardingDraft.mapLat ?? 35.8058}
-                  lng={onboardingDraft.mapLng ?? 51.4018}
-                  onSelectLocation={({
-                    lat,
-                    lng,
-                    neighborhood,
-                    suggestedAddress,
-                  }) => {
+                  lat={onboardingDraft.mapLat ?? 32.6288}
+                  lng={onboardingDraft.mapLng ?? 51.6621}
+                  onSelectLocation={({ lat, lng }) => {
                     updateOnboardingDraft({
                       mapLat: lat,
                       mapLng: lng,
-                      ...(neighborhood ? { neighborhood } : {}),
-                      ...(suggestedAddress
-                        ? { address: suggestedAddress }
-                        : {}),
                     });
-                    showToast(
-                      'موقعیت مکانی روی نقشه ثبت شد و در پیش‌نویس پروفایل قرار گرفت.',
-                      'info'
-                    );
+                    showToast('موقعیت سالن روی نقشه ثبت شد.', 'info');
                   }}
                 />
 
-                <FormField id="reg-address" label="نشانی کامل پستی" required>
+                <FormField id="reg-address" label="نشانی دقیق پستی" required>
                   <Input
                     id="reg-address"
                     value={onboardingDraft.address}
@@ -476,7 +545,7 @@ export const BusinessRegisterPage: React.FC = () => {
 
                 <FormField
                   id="reg-desc"
-                  label="معرفی کوتاه کسب‌وکار برای نمایش در پروفایل عمومی"
+                  label="معرفی کوتاه سالن (یک جمله برای نمایش به مشتریان)"
                   optionalLabel="اختیاری"
                 >
                   <Textarea
@@ -492,12 +561,12 @@ export const BusinessRegisterPage: React.FC = () => {
                 </FormField>
               </div>
 
-              <div className="pt-5 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs text-[#6B6480]">
-                  گام بعدی: افزودن فهرست خدمات، تعرفه‌ها و ساعات کاری
+              <div className="pt-4 border-t border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-medium text-[#334155]">
+                  گام بعدی: ثبت خدمات، تعرفه‌ها و ساعات کاری
                 </span>
                 <Button type="submit" variant="primary" size="lg">
-                  <span>ذخیره و ادامه به تعریف خدمات</span>
+                  <span>ذخیره و گام بعدی</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </div>
@@ -506,7 +575,7 @@ export const BusinessRegisterPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="نام تجاری، آدرس اینستاگرام، نشانی پستی و موقعیت پین‌شده روی نقشه مستقیماً در پروفایل عمومی و پنل مدیریت کسب‌وکار شما نمایش داده می‌شوند." />
+          <OnboardingDraftSummarySidebar stepHint="عکس پروفایل، نام سالن و لینک اختصاصی شما بلافاصله در ویترین آنلاین تایم تو (Timeto) قابل مشاهده خواهد بود." />
         </div>
       </div>
     </div>
@@ -553,7 +622,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
       ],
     });
     setSrvTitle('');
-    showToast('خدمت جدید به فهرست راه‌اندازی اضافه شد.');
+    showToast('خدمت جدید اضافه شد.');
   };
 
   const handleRemoveService = (id: string) => {
@@ -577,7 +646,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
     });
     setStaffName('');
     setStaffRole('');
-    showToast('متخصص جدید به فهرست راه‌اندازی اضافه شد.');
+    showToast('متخصص جدید به تیم اضافه شد.');
   };
 
   const handleToggleDay = (index: number) => {
@@ -600,41 +669,33 @@ export const BusinessOnboardingStepPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        kicker="راه‌اندازی کسب‌وکار · گام ۲ از ۵"
-        title="تعریف خدمات، متخصصان و ساعات کاری"
-        subtitle="خدماتی که مشتریان در صفحه شما رزرو می‌کنند، اعضای تیم و برنامه هفتگی پذیرش را تنظیم کنید."
-        routePattern="/business/onboarding"
-        breadcrumbs={[
-          { label: 'ثبت‌نام کسب‌وکار', href: '/business/register' },
-          { label: 'تکمیل خدمات و برنامه کاری' },
-        ]}
+      <OnboardingProgressHeader
+        currentStep={2}
+        stepTitle="تعریف خدمات، متخصصان و ساعات کاری"
       />
 
-      <OnboardingProgressHeader currentStep={2} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
-        <div className="lg:col-span-8 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-8 space-y-5">
           {/* الف) مدیریت خدمات اولیه */}
           <Card className="space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3.5">
+            <div className="flex items-center justify-between border-b border-[#CBD5E1] pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                  ۱. فهرست خدمات و تعرفه‌های اولیه
+                <h2 className="text-base font-extrabold text-[#061138]">
+                  ۱. خدمات و تعرفه‌های قابل رزرو
                 </h2>
-                <p className="text-xs text-[#6B6480] mt-0.5">
-                  حداقل ۲ خدمت اصلی با زمان تقریبی و تعرفه شفاف تعریف کنید
+                <p className="text-xs text-[#334155] mt-0.5">
+                  در هر زمان از طریق پنل مدیریت هم می‌توانید خدمات را ویرایش یا اضافه کنید
                 </p>
               </div>
               <StatusBadge
-                label={`${toPersianDigits(onboardingDraft.services.length)} خدمت ثبت‌شده`}
+                label={`${toPersianDigits(onboardingDraft.services.length)} خدمت`}
                 tone="primary"
               />
             </div>
 
             <form
               onSubmit={handleAddService}
-              className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-3.5"
+              className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-3"
             >
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
                 <div className="sm:col-span-2">
@@ -674,10 +735,10 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                 </FormField>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <div className="flex items-center gap-2 text-xs text-[#6B6480]">
-                  <Clock className="w-3.5 h-3.5 text-[#6B6480]" />
-                  <label htmlFor="onb-srv-dur" className="font-semibold">
-                    مدت زمان ارائه خدمت (دقیقه):
+                <div className="flex items-center gap-2 text-xs text-[#334155]">
+                  <Clock className="w-3.5 h-3.5 text-[#0057FF]" />
+                  <label htmlFor="onb-srv-dur" className="font-bold">
+                    مدت زمان (دقیقه):
                   </label>
                   <input
                     id="onb-srv-dur"
@@ -685,28 +746,28 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                     dir="ltr"
                     value={srvDuration}
                     onChange={(e) => setSrvDuration(e.target.value)}
-                    className="w-20 rounded-lg border border-[#D4C9EE] bg-white px-2.5 py-1 text-xs font-bold text-center tabular-nums"
+                    className="w-20 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1 text-xs font-extrabold text-center tabular-nums"
                   />
                 </div>
                 <Button type="submit" variant="primary" size="sm">
                   <Plus className="w-4 h-4" />
-                  <span>افزودن خدمت به فهرست</span>
+                  <span>افزودن خدمت</span>
                 </Button>
               </div>
             </form>
 
-            <div className="divide-y divide-[#E6E0F5]">
+            <div className="divide-y divide-[#E2E8F0]">
               {onboardingDraft.services.map((srv) => (
                 <div
                   key={srv.id}
-                  className="py-3.5 flex items-center justify-between gap-3 text-xs sm:text-sm"
+                  className="py-3 flex items-center justify-between gap-3 text-xs sm:text-sm"
                 >
                   <div className="space-y-0.5">
-                    <p className="font-extrabold text-[#1E1B2E]">{srv.title}</p>
-                    <p className="text-xs text-[#6B6480] tabular-nums">
+                    <p className="font-extrabold text-[#061138]">{srv.title}</p>
+                    <p className="text-xs text-[#334155] tabular-nums">
                       {srv.category} ·{' '}
                       {formatDurationMinutes(srv.durationMinutes)} ·{' '}
-                      <span className="font-bold text-[#8B5CF6]">
+                      <span className="font-extrabold text-[#0057FF]">
                         {formatPriceToman(srv.priceToman)}
                       </span>
                     </p>
@@ -727,14 +788,13 @@ export const BusinessOnboardingStepPage: React.FC = () => {
 
           {/* ب) مدیریت پرسنل */}
           <Card className="space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3.5">
+            <div className="flex items-center justify-between border-b border-[#CBD5E1] pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                  ۲. متخصصان و ارائه‌دهندگان خدمت
+                <h2 className="text-base font-extrabold text-[#061138]">
+                  ۲. متخصصان و اعضای تیم
                 </h2>
-                <p className="text-xs text-[#6B6480] mt-0.5">
-                  معرفی اعضای تیم به مشتریان امکان می‌دهد متخصص دلخواه خود را
-                  مستقیماً انتخاب کنند
+                <p className="text-xs text-[#334155] mt-0.5">
+                  معرفی اعضای تیم برای انتخاب مستقیم توسط مشتری
                 </p>
               </div>
               <StatusBadge
@@ -747,7 +807,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               onSubmit={handleAddStaff}
               className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
             >
-              <FormField id="onb-staff-name" label="نام و نام خانوادگی متخصص">
+              <FormField id="onb-staff-name" label="نام متخصص">
                 <Input
                   id="onb-staff-name"
                   value={staffName}
@@ -755,7 +815,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                   placeholder="مثلاً نازنین کریمی"
                 />
               </FormField>
-              <FormField id="onb-staff-role" label="سمت / تخصص">
+              <FormField id="onb-staff-role" label="تخصص / لاین">
                 <Input
                   id="onb-staff-role"
                   value={staffRole}
@@ -769,17 +829,17 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               </Button>
             </form>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {onboardingDraft.staff.map((stf) => (
                 <div
                   key={stf.id}
-                  className="p-3.5 rounded-xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-between text-xs"
+                  className="p-3 rounded-xl border border-[#CBD5E1] bg-[#F3F6FC] flex items-center justify-between text-xs"
                 >
                   <div>
-                    <p className="font-extrabold text-[#1E1B2E]">
+                    <p className="font-extrabold text-[#061138]">
                       {stf.fullName}
                     </p>
-                    <p className="text-[#6B6480] mt-0.5">{stf.roleTitle}</p>
+                    <p className="text-[#334155] mt-0.5">{stf.roleTitle}</p>
                   </div>
                   <button
                     type="button"
@@ -790,7 +850,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                         ),
                       })
                     }
-                    className="text-[#EF4444] font-semibold hover:underline cursor-pointer"
+                    className="text-[#EF4444] font-bold hover:underline cursor-pointer"
                   >
                     حذف
                   </button>
@@ -801,14 +861,13 @@ export const BusinessOnboardingStepPage: React.FC = () => {
 
           {/* ج) ساعات کاری */}
           <Card className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E0F5] pb-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                  ۳. روزها و ساعات کاری هفتگی
+                <h2 className="text-base font-extrabold text-[#061138]">
+                  ۳. برنامه کاری هفتگی
                 </h2>
-                <p className="text-xs text-[#6B6480] mt-0.5">
-                  روزهای باز بودن سالن و ساعت شروع و پایان پذیرش را برای هر روز
-                  تنظیم کنید
+                <p className="text-xs text-[#334155] mt-0.5">
+                  روزها و ساعات پذیرش نوبت آنلاین
                 </p>
               </div>
               <StatusBadge
@@ -819,24 +878,24 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               />
             </div>
 
-            <div className="divide-y divide-[#E6E0F5]">
+            <div className="divide-y divide-[#E2E8F0]">
               {onboardingDraft.workingHours.map((wh, index) => (
                 <div
                   key={wh.dayName}
-                  className="py-3.5 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm"
+                  className="py-3 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm"
                 >
-                  <label className="inline-flex items-center gap-2.5 font-bold text-[#1E1B2E] cursor-pointer">
+                  <label className="inline-flex items-center gap-2.5 font-extrabold text-[#061138] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={wh.isOpen}
                       onChange={() => handleToggleDay(index)}
-                      className="accent-[#8B5CF6] w-4 h-4"
+                      className="accent-[#0057FF] w-4 h-4"
                     />
                     <span>{wh.dayName}</span>
                   </label>
                   {wh.isOpen ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-[#6B6480]">از ساعت</span>
+                      <span className="text-xs text-[#334155]">از</span>
                       <input
                         type="text"
                         value={wh.openTime}
@@ -844,9 +903,9 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                           handleTimeChange(index, 'openTime', e.target.value)
                         }
                         aria-label={`ساعت شروع ${wh.dayName}`}
-                        className="w-20 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#8B5CF6] text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
+                        className="w-20 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] text-center tabular-nums"
                       />
-                      <span className="text-xs text-[#6B6480]">تا</span>
+                      <span className="text-xs text-[#334155]">تا</span>
                       <input
                         type="text"
                         value={wh.closeTime}
@@ -854,7 +913,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                           handleTimeChange(index, 'closeTime', e.target.value)
                         }
                         aria-label={`ساعت پایان ${wh.dayName}`}
-                        className="w-20 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#8B5CF6] text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
+                        className="w-20 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] text-center tabular-nums"
                       />
                     </div>
                   ) : (
@@ -864,16 +923,16 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="pt-5 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
+            <div className="pt-4 border-t border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3">
               <Link to="/business/register">
                 <Button variant="outline">
                   <ArrowRight className="w-4 h-4" />
-                  <span>بازگشت به مشخصات پایه</span>
+                  <span>گام قبل</span>
                 </Button>
               </Link>
               <Link to="/business/preview">
                 <Button variant="primary" size="lg">
-                  <span>مشاهده پیش‌نمایش پروفایل</span>
+                  <span>مشاهده پیش‌نمایش صفحه</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
@@ -882,7 +941,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="ساعات کاری که در این بخش ویرایش می‌کنید، مستقیماً در پیش‌نمایش پروفایل عمومی و بخش «ساعات کاری هفتگی» پنل کسب‌وکار ثبت می‌شوند." />
+          <OnboardingDraftSummarySidebar stepHint="ساعات کاری و خدماتی که وارد می‌کنید، بلافاصله تقویم رزرو آنلاین شما را برای مشتریان فعال می‌کند." />
         </div>
       </div>
     </div>
@@ -897,22 +956,14 @@ export const BusinessPreviewStepPage: React.FC = () => {
 
   return (
     <div>
-      <PageHeader
-        kicker="راه‌اندازی کسب‌وکار · گام ۳ از ۵"
-        title="پیش‌نمایش زنده صفحه اختصاصی شما"
-        subtitle="نمای پروفایل عمومی کسب‌وکار شما در BeautyHub بر اساس اطلاعاتی که وارد کرده‌اید."
-        routePattern="/business/preview"
-        breadcrumbs={[
-          { label: 'ثبت‌نام کسب‌وکار', href: '/business/register' },
-          { label: 'پیش‌نمایش پروفایل' },
-        ]}
+      <OnboardingProgressHeader
+        currentStep={3}
+        stepTitle="پیش‌نمایش پروفایل عمومی سالن شما"
       />
 
-      <OnboardingProgressHeader currentStep={3} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
-        <div className="lg:col-span-8 space-y-6">
-          <Card padding="lg" className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-8 space-y-5">
+          <Card padding="lg" className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-center">
               <div className="sm:col-span-5">
                 <VisualMediaIllustration
@@ -922,72 +973,76 @@ export const BusinessPreviewStepPage: React.FC = () => {
                   }
                   title={onboardingDraft.businessName}
                   city={onboardingDraft.city}
+                  imageUrl={onboardingDraft.avatarUrl}
                 />
               </div>
               <div className="sm:col-span-7 space-y-2.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge label="پیش‌نمایش پروفایل" tone="primary" />
+                  <StatusBadge label="آماده انتشار" tone="success" />
                   <span
                     dir="ltr"
-                    className="text-xs font-mono text-[#8B5CF6] bg-[#FAF8FF] px-2 py-0.5 rounded border border-[#E6E0F5]"
+                    className="text-xs font-mono font-bold text-[#0057FF] bg-[#F3F6FC] px-2.5 py-0.5 rounded-lg border border-[#CBD5E1]"
                   >
-                    /{isPro ? 'pro' : 'salon'}/{onboardingDraft.slug}
+                    timeto.ir/{isPro ? 'pro' : 'salon'}/{onboardingDraft.slug}
                   </span>
                   {onboardingDraft.instagramHandle?.trim() ? (
                     <span
                       dir="ltr"
-                      className="inline-flex items-center gap-1 text-xs font-mono font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2.5 py-0.5 rounded-lg"
+                      className="inline-flex items-center gap-1 text-xs font-mono font-bold text-[#061138] bg-[#E0ECFF] px-2.5 py-0.5 rounded-lg"
                     >
-                      <Instagram className="w-3.5 h-3.5" />
+                      <Instagram className="w-3.5 h-3.5 text-[#0057FF]" />
                       {onboardingDraft.instagramHandle}
                     </span>
                   ) : null}
                 </div>
-                <h2 className="text-xl font-extrabold text-[#1E1B2E]">
+                <h2 className="text-xl font-extrabold text-[#061138]">
                   {onboardingDraft.businessName}
                 </h2>
-                <p className="text-xs text-[#6B6480] leading-relaxed">
+                <p className="text-xs text-[#334155] leading-relaxed">
                   {onboardingDraft.shortDescription}
                 </p>
-                <p className="text-xs text-[#6B6480]">
-                  نشانی: {onboardingDraft.city}، {onboardingDraft.neighborhood}{' '}
-                  — {onboardingDraft.address}
+                <p className="text-xs text-[#334155]">
+                  <strong className="text-[#061138]">نشانی:</strong>{' '}
+                  {onboardingDraft.city}، {onboardingDraft.neighborhood} —{' '}
+                  {onboardingDraft.address}
                 </p>
-                <p className="text-xs text-[#6B6480]">
-                  مدیر مسئول: {onboardingDraft.ownerName}
+                <p className="text-xs text-[#334155]">
+                  <strong className="text-[#061138]">مدیر مسئول:</strong>{' '}
+                  {onboardingDraft.ownerName}
                 </p>
               </div>
             </div>
 
-            {/* نمایش نقشه موقعیت انتخاب‌شده در پیش‌نمایش */}
             <LocationMapPicker
               city={onboardingDraft.city}
               neighborhood={onboardingDraft.neighborhood}
               address={onboardingDraft.address}
-              lat={onboardingDraft.mapLat ?? 35.8058}
-              lng={onboardingDraft.mapLng ?? 51.4018}
+              lat={onboardingDraft.mapLat ?? 32.6288}
+              lng={onboardingDraft.mapLng ?? 51.6621}
               readOnly
             />
 
-            <div className="pt-5 border-t border-[#E6E0F5] space-y-3">
-              <h3 className="text-sm font-extrabold text-[#1E1B2E]">
-                خدمات قابل رزرو در پروفایل (
-                {toPersianDigits(onboardingDraft.services.length)} خدمت):
+            <div className="pt-4 border-t border-[#CBD5E1] space-y-3">
+              <h3 className="text-sm font-extrabold text-[#061138]">
+                خدمات قابل رزرو (
+                {toPersianDigits(onboardingDraft.services.length)} مورد):
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {onboardingDraft.services.map((srv) => (
                   <div
                     key={srv.id}
-                    className="p-3.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-center justify-between text-xs"
+                    className="p-3 rounded-xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between text-xs"
                   >
                     <div>
-                      <p className="font-bold text-[#1E1B2E]">{srv.title}</p>
-                      <p className="text-[11px] text-[#6B6480] mt-0.5 tabular-nums">
+                      <p className="font-extrabold text-[#061138]">
+                        {srv.title}
+                      </p>
+                      <p className="text-[11px] text-[#334155] mt-0.5 tabular-nums">
                         {srv.category} ·{' '}
                         {formatDurationMinutes(srv.durationMinutes)}
                       </p>
                     </div>
-                    <span className="font-extrabold text-[#8B5CF6] tabular-nums">
+                    <span className="font-extrabold text-[#0057FF] tabular-nums">
                       {formatPriceToman(srv.priceToman)}
                     </span>
                   </div>
@@ -995,16 +1050,16 @@ export const BusinessPreviewStepPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-5 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
+            <div className="pt-4 border-t border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3">
               <Link to="/business/onboarding">
                 <Button variant="outline">
                   <ArrowRight className="w-4 h-4" />
-                  <span>ویرایش خدمات و ساعات کاری</span>
+                  <span>ویرایش خدمات</span>
                 </Button>
               </Link>
               <Link to="/business/verification">
                 <Button variant="primary" size="lg">
-                  <span>تایید پیش‌نمایش و گام بعدی</span>
+                  <span>تایید پیش‌نمایش و ادامه</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
               </Link>
@@ -1013,70 +1068,50 @@ export const BusinessPreviewStepPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="این کارت دقیقاً همان ساختاری است که مشتریان هنگام جست‌وجو و ورود به صفحه اختصاصی شما مشاهده می‌کنند. در صورت نیاز به اصلاح نام یا تعرفه‌ها می‌توانید به گام قبل بازگردید." />
+          <OnboardingDraftSummarySidebar stepHint="مشتریان دقیقاً همین ویترین را هنگام رزرو نوبت مشاهده می‌کنند." />
         </div>
       </div>
     </div>
   );
 };
 
-/** ۴. اطلاعات احراز هویت و مجوز صنفی (/business/verification) */
+/** ۴. تکمیل پرونده و کد ملی اختیاری (/business/verification) */
 export const BusinessVerificationStepPage: React.FC = () => {
   const { onboardingDraft, updateOnboardingDraft, submitBusinessOnboarding } =
     usePrototypeData();
 
   return (
     <div>
-      <PageHeader
-        kicker="راه‌اندازی کسب‌وکار · گام ۴ از ۵"
-        title="ثبت اطلاعات احراز هویت و مجوز صنفی"
-        subtitle="ثبت شناسه صنفی یا گواهینامه مهارت جهت بررسی و اعطای نشان «مرکز تاییدشده» در BeautyHub"
-        routePattern="/business/verification"
-        breadcrumbs={[
-          { label: 'ثبت‌نام کسب‌وکار', href: '/business/register' },
-          { label: 'احراز مدارک' },
-        ]}
+      <OnboardingProgressHeader
+        currentStep={4}
+        stepTitle="تکمیل پرونده و دریافت نشان «مرکز تاییدشده» (اختیاری)"
       />
 
-      <OnboardingProgressHeader currentStep={4} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-8">
           <Card padding="lg" className="space-y-5">
-            <div className="p-4 rounded-xl bg-[#FFFBEB] border border-[#F59E0B]/30 flex items-start gap-3 text-xs text-[#92400E]">
-              <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-[#F59E0B]" />
+            <div className="p-4 rounded-2xl bg-[#E0ECFF]/65 border border-[#0057FF]/30 flex items-start gap-3 text-xs text-[#061138]">
+              <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5 text-[#0057FF]" />
               <div className="space-y-1">
-                <p className="font-extrabold">راهنمای بررسی مدارک کسب‌وکار</p>
-                <p className="leading-relaxed">
-                  اطلاعات ثبت‌شده در این بخش توسط واحد پشتیبانی بررسی می‌شود تا
-                  نشان «مرکز تاییدشده» در کنار نام سالن شما نمایش داده شود.
+                <p className="font-extrabold">
+                  تکمیل این بخش اختیاری است و مانع شروع فعالیت شما نمی‌شود
+                </p>
+                <p className="text-[#334155] leading-relaxed">
+                  درج کد ملی یا شماره پروانه کسب صرفاً برای اعطای نشان سبز «مرکز تاییدشده» در کنار نام سالن شماست. می‌توانید همین حالا بدون پر کردن این موارد به مرحله بعد بروید.
                 </p>
               </div>
             </div>
 
             <FormField
-              id="ver-license"
-              label="شماره پروانه کسب یا گواهینامه مهارت فنی‌وحرفه‌ای"
-              optionalLabel="اختیاری در ثبت اولیه"
-            >
-              <Input
-                id="ver-license"
-                dir="ltr"
-                value={onboardingDraft.licenseCode}
-                onChange={(e) =>
-                  updateOnboardingDraft({ licenseCode: e.target.value })
-                }
-              />
-            </FormField>
-
-            <FormField
               id="ver-nid"
-              label="کد شناسایی ده رقمی مدیر مسئول"
-              optionalLabel="اختیاری در ثبت اولیه"
+              label="کد ملی مدیر مسئول (اختیاری)"
+              optionalLabel="اختیاری"
+              hint="ده رقم بدون خط تیره — صرفاً جهت احراز هویت مدیر سالن"
             >
               <Input
                 id="ver-nid"
                 dir="ltr"
+                placeholder="مثلاً 1270000000 (اختیاری)"
                 value={onboardingDraft.nationalIdNumber}
                 onChange={(e) =>
                   updateOnboardingDraft({ nationalIdNumber: e.target.value })
@@ -1084,127 +1119,287 @@ export const BusinessVerificationStepPage: React.FC = () => {
               />
             </FormField>
 
-            <div className="pt-5 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
+            <FormField
+              id="ver-license"
+              label="شماره پروانه کسب یا مدرک فنی‌وحرفه‌ای (اختیاری)"
+              optionalLabel="اختیاری"
+              hint="در صورت نداشتن پروانه کسب، این فیلد را خالی بگذارید"
+            >
+              <Input
+                id="ver-license"
+                dir="ltr"
+                placeholder="مثلاً SNF-1405-88412 (اختیاری)"
+                value={onboardingDraft.licenseCode}
+                onChange={(e) =>
+                  updateOnboardingDraft({ licenseCode: e.target.value })
+                }
+              />
+            </FormField>
+
+            <div className="pt-4 border-t border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3">
               <Link to="/business/preview">
                 <Button variant="outline">
                   <ArrowRight className="w-4 h-4" />
-                  <span>بازگشت به پیش‌نمایش</span>
+                  <span>بازگشت</span>
                 </Button>
               </Link>
-              <Link
-                to="/business/ready"
-                onClick={() => {
-                  void submitBusinessOnboarding();
-                }}
-              >
-                <Button variant="primary" size="lg">
-                  <span>تکمیل فرآیند راه‌اندازی</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-              </Link>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to="/business/ready"
+                  onClick={() => {
+                    void submitBusinessOnboarding();
+                  }}
+                >
+                  <Button variant="secondary" size="md">
+                    رد کردن این مرحله و ادامه
+                  </Button>
+                </Link>
+                <Link
+                  to="/business/ready"
+                  onClick={() => {
+                    void submitBusinessOnboarding();
+                  }}
+                >
+                  <Button variant="primary" size="lg">
+                    <span>ثبت و انتخاب پلن شروع</span>
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </div>
             </div>
           </Card>
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="کسب‌وکارهای دارای نشان «تاییدشده» در صدر نتایج جست‌وجوی شهر نمایش داده می‌شوند و اعتماد مشتریان برای رزرو نوبت اول را افزایش می‌دهند." />
+          <OnboardingDraftSummarySidebar stepHint="کد ملی و شماره مجوز کاملاً اختیاری هستند و هر زمان از داخل پنل کسب‌وکار نیز قابل تکمیل خواهند بود." />
         </div>
       </div>
     </div>
   );
 };
 
-/** ۵. تکمیل راه‌اندازی (/business/ready) */
+/** ۵. تکمیل راه‌اندازی و انتخاب پلن اشتراک یا شروع رایگان (/business/ready) */
 export const BusinessReadyStepPage: React.FC = () => {
-  const { onboardingDraft } = usePrototypeData();
+  const navigate = useNavigate();
+  const {
+    onboardingDraft,
+    updateOnboardingDraft,
+    plans,
+    activePlanId,
+    setActivePlanId,
+    showToast,
+  } = usePrototypeData();
+
+  const selectedPlanId =
+    onboardingDraft.selectedPlanId || activePlanId || 'plan-professional';
+  const isPro =
+    onboardingDraft.businessType === BusinessType.IndependentSpecialist;
+
+  const handleChoosePlanAndEnter = (planId: string, planName: string) => {
+    setActivePlanId(planId);
+    updateOnboardingDraft({ selectedPlanId: planId });
+    showToast(
+      planId === 'plan-free-start'
+        ? 'پروفایل سالن شما با «پلن شروع رایگان» فعال شد.'
+        : `پلن «${planName}» (همراه با ۱۴ روز تست رایگان) برای سالن شما فعال شد.`
+    );
+    navigate('/app');
+  };
 
   return (
-    <div>
-      <PageHeader
-        kicker="راه‌اندازی کسب‌وکار · گام پایانی"
-        title="راه‌اندازی کسب‌وکار با موفقیت تکمیل شد"
-        subtitle="خلاصه وضعیت آماده‌سازی پروفایل و دسترسی مستقیم به پیشخوان مدیریت روزانه سالن"
-        routePattern="/business/ready"
-        breadcrumbs={[
-          { label: 'ثبت‌نام کسب‌وکار', href: '/business/register' },
-          { label: 'پایان راه‌اندازی' },
-        ]}
+    <div className="space-y-6">
+      <OnboardingProgressHeader
+        currentStep={5}
+        stepTitle="تبریک! سالن شما آماده است — نحوه شروع فعالیت را انتخاب کنید"
       />
 
-      <OnboardingProgressHeader currentStep={5} />
-
-      <div className="max-w-3xl mx-auto">
-        <Card padding="lg" className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#E6E0F5]">
-            <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 text-[#10B981] inline-flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-6 h-6" />
+      {/* بنر موفقیت ثبت سالن */}
+      <Card padding="lg" className="border-2 border-[#10B981]/40 bg-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 text-[#10B981] inline-flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge label="پروفایل آماده پذیرش نوبت" tone="success" />
+                <span
+                  dir="ltr"
+                  className="text-xs font-mono font-bold text-[#0057FF] bg-[#F3F6FC] px-2.5 py-0.5 rounded-lg border border-[#CBD5E1]"
+                >
+                  timeto.ir/{isPro ? 'pro' : 'salon'}/{onboardingDraft.slug}
+                </span>
               </div>
-              <div>
-                <StatusBadge label="آماده پذیرش نوبت آنلاین" tone="success" />
-                <h2 className="text-xl font-extrabold text-[#1E1B2E] mt-1.5">
-                  پروفایل «{onboardingDraft.businessName}» آماده است
-                </h2>
-                <p className="text-xs text-[#6B6480] mt-1">
-                  دوره آزمایشی ۱۴ روزه فعال شد · مدیر مسئول:{' '}
-                  {onboardingDraft.ownerName}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* چک‌لیست تکمیل‌شده راه‌اندازی */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1">
-              <p className="text-xs text-[#6B6480]">پروفایل و نشانی</p>
-              <p className="text-sm font-extrabold text-[#1E1B2E]">
-                {onboardingDraft.city}، {onboardingDraft.neighborhood}
-              </p>
-              <p className="text-[11px] text-[#10B981] font-semibold">
-                ✓ مشخصات پایه تکمیل شد
-              </p>
-            </div>
-            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1">
-              <p className="text-xs text-[#6B6480]">خدمات و تعرفه‌ها</p>
-              <p className="text-sm font-extrabold text-[#1E1B2E] tabular-nums">
-                {toPersianDigits(onboardingDraft.services.length)} خدمت فعال
-              </p>
-              <p className="text-[11px] text-[#10B981] font-semibold">
-                ✓ آماده رزرو آنلاین
-              </p>
-            </div>
-            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1">
-              <p className="text-xs text-[#6B6480]">اعضای تیم و تقویم</p>
-              <p className="text-sm font-extrabold text-[#1E1B2E] tabular-nums">
-                {toPersianDigits(onboardingDraft.staff.length)} متخصص ثبت‌شده
-              </p>
-              <p className="text-[11px] text-[#10B981] font-semibold">
-                ✓ برنامه هفتگی تنظیم شد
+              <h2 className="text-lg sm:text-xl font-extrabold text-[#061138] mt-1.5">
+                «{onboardingDraft.businessName}» با موفقیت در تایم تو ثبت شد
+              </h2>
+              <p className="text-xs text-[#334155] mt-1">
+                {toPersianDigits(onboardingDraft.services.length)} خدمت فعال ·{' '}
+                {toPersianDigits(onboardingDraft.staff.length)} متخصص · مدیر:{' '}
+                {onboardingDraft.ownerName}
               </p>
             </div>
           </div>
 
-          <p className="text-xs text-[#6B6480] leading-relaxed bg-[#FAF8FF] p-3.5 rounded-xl border border-[#E6E0F5]">
-            اکنون می‌توانید وارد پیشخوان مدیریت کسب‌وکار شوید و تقویم، نوبت‌ها،
-            خدمات و گزارش‌های سالن را مدیریت کنید.
-          </p>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            <Link to="/salon/royal-golzar">
-              <Button variant="outline">
-                <span>مشاهده پروفایل عمومی</span>
-                <ExternalLink className="w-4 h-4" />
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Link
+              to={`/${isPro ? 'pro' : 'salon'}/${onboardingDraft.slug || 'royal-golzar'}`}
+            >
+              <Button variant="outline" size="sm">
+                <span>مشاهده صفحه سالن</span>
+                <ExternalLink className="w-3.5 h-3.5" />
               </Button>
             </Link>
             <Link to="/app">
-              <Button variant="primary" size="lg">
+              <Button variant="primary" size="sm">
                 <Building2 className="w-4 h-4" />
-                <span>ورود به پیشخوان کسب‌وکار</span>
-                <ArrowLeft className="w-4 h-4" />
+                <span>ورود مستقیم به پیشخوان</span>
               </Button>
             </Link>
           </div>
-        </Card>
+        </div>
+      </Card>
+
+      {/* بخش چرا ارتقا به پلن حرفه‌ای؟ + انتخاب بین شروع رایگان یا خرید اشتراک */}
+      <div className="space-y-4">
+        <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+                <Sparkles className="w-4 h-4" />
+                <span>چرا ۸۵٪ مدیران سالن در اصفهان پلن «حرفه‌ای» را انتخاب می‌کنند؟</span>
+              </span>
+              <h3 className="text-base sm:text-lg font-extrabold text-white">
+                تفاوت واقعی پلن رایگان با پلن حرفه‌ای در رشد درآمد سالن شما
+              </h3>
+            </div>
+            <span className="px-3.5 py-1.5 rounded-full bg-white/10 border border-[#00E5FF]/40 text-xs font-extrabold text-[#00E5FF] self-start md:self-auto">
+              ۱۴ روز تست رایگان پلن حرفه‌ای بدون پیش‌پرداخت
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+              <div className="flex items-center gap-2 text-[#00E5FF] font-extrabold text-xs">
+                <MessageSquareText className="w-4 h-4 shrink-0" />
+                <span>۷۰٪ کاهش کنسلی و نوبت سوخته</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                ارسال خودکار پیامک تایید و یادآوری ۲۴ ساعت قبل از نوبت به موبایل مشتری تا هیچ ساعتی خالی نماند.
+              </p>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+              <div className="flex items-center gap-2 text-[#00E5FF] font-extrabold text-xs">
+                <TrendingUp className="w-4 h-4 shrink-0" />
+                <span>۲.۴ برابر جذب مشتری جدید</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                دریافت نشان «مرکز تاییدشده» و نمایش در رتبه‌های اول جست‌وجوی محله‌های اصفهان.
+              </p>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">
+              <div className="flex items-center gap-2 text-[#00E5FF] font-extrabold text-xs">
+                <Users className="w-4 h-4 shrink-0" />
+                <span>تقویم مجزا برای تمام پرسنل</span>
+              </div>
+              <p className="text-xs text-slate-200 leading-relaxed">
+                مدیریت هم‌زمان تا ۸ متخصص با گزارش دقیق درآمد هر لاین و باشگاه مشتریان پیامکی.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* کارت‌های انتخاب پلن در پایان ثبت‌نام */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+          {plans.map((plan) => {
+            const isSelected = selectedPlanId === plan.id;
+            const isFree = plan.monthlyPriceToman === 0;
+            return (
+              <Card
+                key={plan.id}
+                className={`rounded-3xl flex flex-col justify-between space-y-5 transition-all ${
+                  plan.isRecommended
+                    ? 'border-2 border-[#0057FF] ring-4 ring-[#0057FF]/10 bg-white'
+                    : isSelected
+                    ? 'border-2 border-[#061138] bg-white'
+                    : 'border border-[#CBD5E1] bg-white'
+                }`}
+              >
+                <div className="space-y-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-base font-extrabold text-[#061138]">
+                      {plan.name}
+                    </h3>
+                    {plan.isRecommended ? (
+                      <span className="px-3 py-1 rounded-full bg-[#0057FF] text-white text-[11px] font-extrabold">
+                        پیشنهاد ویژه شروع
+                      </span>
+                    ) : isFree ? (
+                      <span className="px-2.5 py-1 rounded-full bg-[#F3F6FC] text-[#334155] text-[11px] font-bold border border-[#CBD5E1]">
+                        بدون هزینه
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <p className="text-xs text-[#334155] leading-relaxed">
+                    {plan.audience}
+                  </p>
+
+                  <div className="py-3 border-y border-[#E2E8F0]">
+                    <span className="text-2xl font-extrabold text-[#061138] tabular-nums">
+                      {formatPriceToman(plan.monthlyPriceToman)}
+                    </span>
+                    <span className="text-xs text-[#334155] mr-1.5">
+                      {isFree ? ' (همیشگی)' : '/ ماهانه (۱۴ روز اول رایگان)'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1">
+                      <span className="text-[#334155]">ظرفیت متخصصان:</span>
+                      <span className="font-extrabold text-[#061138]">
+                        {plan.staffLimit}
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-[#334155]">پیامک یادآور نوبت:</span>
+                      <span className="font-extrabold text-[#0057FF] tabular-nums">
+                        {toPersianDigits(plan.smsQuotaMonthly)} پیامک در ماه
+                      </span>
+                    </div>
+                  </div>
+
+                  <ul className="space-y-2 pt-1">
+                    {plan.features.map((feat, idx) => (
+                      <li
+                        key={idx}
+                        className="flex items-start gap-2 text-xs text-[#061138]"
+                      >
+                        <Check className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Button
+                  variant={plan.isRecommended ? 'primary' : 'outline'}
+                  size="lg"
+                  fullWidth
+                  onClick={() => handleChoosePlanAndEnter(plan.id, plan.name)}
+                >
+                  <span>
+                    {isFree
+                      ? 'شروع با پلن رایگان و ورود به پنل'
+                      : `فعال‌سازی ${plan.name} و ورود به پنل`}
+                  </span>
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -13,6 +13,13 @@ import {
 } from './config/env';
 import { checkDatabaseHealth, getOrCreatePool } from './db/pool';
 import { createApiV1Router } from './routes/apiV1';
+import {
+  maskApiKeyForDisplay,
+  resolveEffectiveSmsConfig,
+  sendOtpSmsViaGateway,
+  setRuntimeSmsOverride,
+  SmsProviderType,
+} from './services/smsGateway';
 
 export function createApiApp(
   customEnv?: ServerEnvConfig,
@@ -67,12 +74,16 @@ export function createApiApp(
 
     const statusCode = isHealthy ? 200 : 503;
 
+    const effectiveSms = customEnv
+      ? config.sms
+      : resolveEffectiveSmsConfig(config.sms);
+
     const smsConfigured =
       config.nodeEnv === 'production'
-        ? config.sms.provider !== 'disabled' &&
-          config.sms.provider !== 'console' &&
-          Boolean(config.sms.apiKey)
-        : config.sms.provider !== 'disabled';
+        ? effectiveSms.provider !== 'disabled' &&
+          effectiveSms.provider !== 'console' &&
+          Boolean(effectiveSms.apiKey)
+        : effectiveSms.provider !== 'disabled';
 
     res.status(statusCode).json({
       ok: isHealthy,
@@ -89,7 +100,7 @@ export function createApiApp(
         message: dbHealth.message,
       },
       smsGateway: {
-        provider: config.sms.provider,
+        provider: effectiveSms.provider,
         configured: smsConfigured,
       },
       paymentGateway: {
@@ -99,6 +110,223 @@ export function createApiApp(
       timestamp: new Date().toISOString(),
     });
   });
+
+  /**
+   * بررسی دسترسی مدیر کل برای تنظیمات پیامک در حالت Real
+   */
+  const ensureSmsAdminAccess = async (
+    req: Request,
+    res: Response
+  ): Promise<boolean> => {
+    const config = customEnv ?? loadServerEnv();
+    if (config.dataMode === 'mock') {
+      return true;
+    }
+
+    const rawToken = extractSessionTokenFromRequest(req);
+    if (!rawToken) {
+      res.status(401).json({
+        ok: false,
+        errorCode: 'AUTHENTICATION_REQUIRED',
+        message: 'برای تغییر تنظیمات پیامک، ابتدا وارد حساب مدیر کل شوید.',
+      });
+      return false;
+    }
+
+    let sessionSecret: string;
+    try {
+      sessionSecret =
+        config.sessionSecret ?? resolveSessionSecret(process.env);
+    } catch {
+      res.status(500).json({
+        ok: false,
+        errorCode: 'SESSION_SECRET_NOT_CONFIGURED',
+        message: 'کلید SESSION_SECRET تنظیم نشده است.',
+      });
+      return false;
+    }
+
+    const verifiedToken = verifySignedSessionToken(rawToken, sessionSecret);
+    if (!verifiedToken) {
+      res.status(401).json({
+        ok: false,
+        errorCode: 'INVALID_SESSION',
+        message: 'نشست کاربری معتبر نیست.',
+      });
+      return false;
+    }
+
+    const pool = customPool ?? getOrCreatePool(config);
+    if (!pool) {
+      res.status(503).json({
+        ok: false,
+        errorCode: 'REAL_MODE_DATABASE_UNAVAILABLE',
+        message: 'اتصال به دیتابیس برقرار نیست.',
+      });
+      return false;
+    }
+
+    const lookup = await resolveAuthenticatedSessionFromDb(
+      pool,
+      verifiedToken.sessionId,
+      verifiedToken.tokenHash
+    );
+    if (lookup.status !== 'ACTIVE' || !lookup.user.isPlatformAdmin) {
+      res.status(403).json({
+        ok: false,
+        errorCode: 'ADMIN_ACCESS_DENIED',
+        message: 'فقط مدیر کل پلتفرم مجاز به تغییر تنظیمات پیامک است.',
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  /**
+   * دریافت وضعیت فعلی درگاه پیامکی (ملی‌پیامک و سایر درگاه‌ها)
+   * GET /api/v1/sms-gateway/status
+   */
+  app.get('/api/v1/sms-gateway/status', async (req: Request, res: Response) => {
+    const allowed = await ensureSmsAdminAccess(req, res);
+    if (!allowed) return;
+
+    const config = customEnv ?? loadServerEnv();
+    const effective = resolveEffectiveSmsConfig(config.sms);
+    const isReady =
+      effective.provider === 'melipayamak'
+        ? Boolean(effective.apiKey && effective.template)
+        : effective.provider !== 'disabled';
+
+    res.status(200).json({
+      ok: true,
+      provider: effective.provider,
+      configured: isReady,
+      maskedApiKey: maskApiKeyForDisplay(effective.apiKey),
+      template: effective.template ?? '',
+      sender: effective.sender ?? '',
+      apiUrl: effective.apiUrl ?? '',
+    });
+  });
+
+  /**
+   * ذخیره و فعال‌سازی آنی تنظیمات ملی‌پیامک بدون نیاز به ری‌استارت سرور
+   * POST /api/v1/sms-gateway/configure
+   */
+  app.post(
+    '/api/v1/sms-gateway/configure',
+    async (req: Request, res: Response) => {
+      const allowed = await ensureSmsAdminAccess(req, res);
+      if (!allowed) return;
+
+      const providerRaw = String(
+        req.body?.provider ?? 'melipayamak'
+      ).toLowerCase() as SmsProviderType;
+      const apiKeyRaw = String(req.body?.apiKey ?? '').trim();
+      const templateRaw = String(req.body?.template ?? '').trim();
+      const senderRaw = String(req.body?.sender ?? '').trim();
+
+      if (providerRaw === 'melipayamak' && (!apiKeyRaw || !templateRaw)) {
+        res.status(400).json({
+          ok: false,
+          errorCode: 'MISSING_MELIPAYAMAK_CREDENTIALS',
+          message:
+            'لطفاً هم «کلید وب‌سرویس (API Key)» و هم «کد الگوی تاییدشده (bodyId)» ملی‌پیامک را وارد کنید.',
+        });
+        return;
+      }
+
+      const currentEffective = resolveEffectiveSmsConfig(
+        (customEnv ?? loadServerEnv()).sms
+      );
+
+      const finalApiKey =
+        apiKeyRaw === '__KEEP_EXISTING__' && currentEffective.apiKey
+          ? currentEffective.apiKey
+          : apiKeyRaw;
+
+      const updated = setRuntimeSmsOverride({
+        provider: providerRaw,
+        apiKey: finalApiKey,
+        template: templateRaw,
+        sender: senderRaw || null,
+      });
+
+      res.status(200).json({
+        ok: true,
+        provider: updated?.provider ?? providerRaw,
+        configured: Boolean(updated?.apiKey && updated?.template),
+        maskedApiKey: maskApiKeyForDisplay(updated?.apiKey ?? null),
+        template: updated?.template ?? '',
+        sender: updated?.sender ?? '',
+        message:
+          'تنظیمات درگاه ملی‌پیامک با موفقیت ذخیره و به صورت آنی روی سرور فعال شد.',
+      });
+    }
+  );
+
+  /**
+   * ارسال پیامک تست زنده از طریق درگاه ملی‌پیامک برای اطمینان از صحت اتصال
+   * POST /api/v1/sms-gateway/test-send
+   */
+  app.post(
+    '/api/v1/sms-gateway/test-send',
+    async (req: Request, res: Response) => {
+      const allowed = await ensureSmsAdminAccess(req, res);
+      if (!allowed) return;
+
+      const phone = String(req.body?.phone ?? '').trim();
+      if (!/^09\d{9}$/.test(phone)) {
+        res.status(400).json({
+          ok: false,
+          errorCode: 'INVALID_IRAN_MOBILE_PHONE',
+          message:
+            'لطفاً یک شماره موبایل معتبر ۱۱ رقمی (مثلاً 09123456789) برای دریافت پیامک تست وارد کنید.',
+        });
+        return;
+      }
+
+      const config = customEnv ?? loadServerEnv();
+      const effectiveSms = resolveEffectiveSmsConfig(config.sms);
+      const testOtpCode = String(Math.floor(100000 + Math.random() * 900000));
+
+      const delivery = await sendOtpSmsViaGateway(
+        phone,
+        testOtpCode,
+        effectiveSms,
+        effectiveSms.provider === 'melipayamak' ? 'production' : config.nodeEnv
+      );
+
+      if (!delivery.sent) {
+        res.status(400).json({
+          ok: false,
+          sent: false,
+          provider: delivery.provider,
+          errorCode: delivery.errorCode ?? 'SMS_DELIVERY_FAILED',
+          providerStatusText: delivery.providerStatusText ?? '',
+          message:
+            delivery.errorCode === 'SMS_INVALID_API_KEY'
+              ? 'کلید وب‌سرویس (API Key) ملی‌پیامک معتبر نیست. مطمئن شوید توکن وب‌سرویس اشتراکی کنسول (console.melipayamak.com) را وارد کرده‌اید.'
+              : delivery.errorCode === 'SMS_TEMPLATE_INVALID_OR_UNAPPROVED'
+                ? 'کد الگوی پیامک (bodyId) باید یک عدد صحیح مثبت و تاییدشده در بخش «وب‌سرویس خدماتی -> الگوها» باشد.'
+                : delivery.errorCode === 'SMS_ARGS_MISMATCH'
+                  ? 'متن الگوی پیامک در ملی‌پیامک باید دقیقاً شامل یک متغیر {0} برای کد تایید باشد.'
+                  : delivery.errorCode === 'SMS_INSUFFICIENT_CREDIT'
+                    ? 'اعتبار حساب ملی‌پیامک شما برای ارسال پیامک کافی نیست.'
+                    : `ارسال پیامک تست انجام نشد (${delivery.errorCode ?? 'خطای وب‌سرویس'}). ${delivery.providerStatusText || ''}`,
+        });
+        return;
+      }
+
+      res.status(200).json({
+        ok: true,
+        sent: true,
+        provider: delivery.provider,
+        providerMessageId: delivery.providerMessageId,
+        message: `پیامک تست با موفقیت به شماره ${phone} ارسال شد (کد پیگیری: ${delivery.providerMessageId ?? 'ثبت‌شده'}).`,
+      });
+    }
+  );
 
   /**
    * گارد امنیتی درخواست‌های نوشتن (POST / PUT / PATCH / DELETE) در مسیرهای /api/v1/*

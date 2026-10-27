@@ -194,7 +194,7 @@ export const BusinessSidebar: React.FC = () => {
         })}
       </nav>
 
-      {/* دکمه‌های اقدام سریع پایین سایدبار */}
+      {/* دکمه‌های اقدام سریع و خروج از پیشخوان در پایین سایدبار */}
       <div className="p-4 border-t border-[#CBD5E1] bg-[#F3F6FC] space-y-2">
         <Link
           to="/app/calendar"
@@ -204,11 +204,10 @@ export const BusinessSidebar: React.FC = () => {
           <span>ثبت نوبت و تقویم</span>
         </Link>
         <Link
-          to="/app/staff"
-          className="w-full py-2 px-3.5 rounded-full bg-[#E0ECFF] hover:bg-[#CCE0FF] text-[#0057FF] text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+          to="/"
+          className="w-full py-2 px-3.5 rounded-full bg-white hover:bg-[#FEF2F2] border border-[#CBD5E1] hover:border-[#EF4444]/40 text-[#DC2626] text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors"
         >
-          <Plus className="w-3.5 h-3.5" />
-          <span>افزودن متخصص</span>
+          <span>خروج از پیشخوان و بازگشت به سایت</span>
         </Link>
       </div>
     </aside>

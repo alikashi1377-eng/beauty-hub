@@ -73,6 +73,7 @@ export interface SpecialistItem {
   isActive?: boolean;
   city?: string;
   startingPriceToman?: number;
+  avatarUrl?: string;
 }
 
 export interface WorkingHourItem {
@@ -127,6 +128,7 @@ export interface BusinessItem {
   instagramHandle?: string;
   mapLat?: number;
   mapLng?: number;
+  avatarUrl?: string;
 }
 
 export interface AppointmentItem {
@@ -206,6 +208,7 @@ export interface OnboardingDraft {
   ownerName: string;
   phone: string;
   instagramHandle?: string;
+  avatarUrl?: string;
   city: string;
   neighborhood: string;
   address: string;
@@ -227,6 +230,7 @@ export interface OnboardingDraft {
   workingHours: WorkingHourItem[];
   licenseCode: string;
   nationalIdNumber: string;
+  selectedPlanId?: string;
 }
 
 export interface BookingDraft {

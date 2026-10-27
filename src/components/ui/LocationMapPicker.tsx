@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, Navigation, Compass } from 'lucide-react';
+import { MapPin, Compass } from 'lucide-react';
 import { toPersianDigits } from '../../utils/formatters';
 
 interface LocationPreset {
@@ -151,19 +151,19 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
   };
 
   return (
-    <div className="rounded-3xl border border-[#E6E0F5] bg-[#FAF8FF] p-3.5 space-y-3">
+    <div className="rounded-3xl border border-[#CBD5E1] bg-[#F3F6FC] p-3.5 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-1.5 font-bold text-[#1E1B2E]">
-          <MapPin className="w-4 h-4 text-[#8B5CF6]" />
+        <div className="flex items-center gap-1.5 font-extrabold text-[#061138]">
+          <MapPin className="w-4 h-4 text-[#0057FF]" />
           <span>
             {readOnly
               ? 'موقعیت مکانی روی نقشه'
-              : 'تعیین موقعیت روی نقشه (با کلیک روی نقشه یا انتخاب محله)'}
+              : 'تعیین موقعیت سالن روی نقشه (روی نقطه مورد نظر کلیک کنید)'}
           </span>
         </div>
         <span
           dir="ltr"
-          className="text-[11px] font-mono font-semibold text-[#7C3AED] bg-white px-2.5 py-0.5 rounded-full border border-[#E6E0F5]"
+          className="text-[11px] font-mono font-bold text-[#0057FF] bg-white px-2.5 py-0.5 rounded-full border border-[#CBD5E1]"
         >
           {lat.toFixed(4)}, {lng.toFixed(4)}
         </span>
@@ -185,12 +185,10 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
             onSelectLocation?.({
               lat: first.lat,
               lng: first.lng,
-              neighborhood: first.neighborhood,
-              suggestedAddress: first.sampleAddress,
             });
           }
         }}
-        className={`relative w-full h-44 sm:h-48 rounded-2xl overflow-hidden border border-[#E6E0F5] bg-[#F3EEFF] select-none ${
+        className={`relative w-full h-44 sm:h-48 rounded-2xl overflow-hidden border border-[#CBD5E1] bg-[#E2E8F0] select-none ${
           readOnly ? 'cursor-default' : 'cursor-crosshair group'
         }`}
       >
@@ -200,17 +198,17 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
           preserveAspectRatio="none"
           aria-hidden="true"
         >
-          <rect width="600" height="240" fill="#F3EEFF" />
+          <rect width="600" height="240" fill="#E8EEF7" />
           <rect x="40" y="25" width="120" height="70" rx="10" fill="#D1FAE5" />
           <rect x="420" y="135" width="135" height="75" rx="12" fill="#D1FAE5" />
-          <rect x="180" y="25" width="140" height="65" rx="6" fill="#E6E0F5" />
-          <rect x="340" y="25" width="210" height="65" rx="6" fill="#E6E0F5" />
-          <rect x="40" y="120" width="190" height="90" rx="6" fill="#E6E0F5" />
-          <rect x="250" y="120" width="150" height="90" rx="6" fill="#E6E0F5" />
+          <rect x="180" y="25" width="140" height="65" rx="6" fill="#CBD5E1" />
+          <rect x="340" y="25" width="210" height="65" rx="6" fill="#CBD5E1" />
+          <rect x="40" y="120" width="190" height="90" rx="6" fill="#CBD5E1" />
+          <rect x="250" y="120" width="150" height="90" rx="6" fill="#CBD5E1" />
           <path d="M 0 105 L 600 105" stroke="#FFFFFF" strokeWidth="14" />
           <path
             d="M 0 105 L 600 105"
-            stroke="#8B5CF6"
+            stroke="#0057FF"
             strokeWidth="2"
             strokeDasharray="8 8"
           />
@@ -220,8 +218,8 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
           <path d="M 0 175 L 600 175" stroke="#FFFFFF" strokeWidth="7" />
         </svg>
 
-        <div className="absolute top-2.5 right-2.5 px-3 py-1 rounded-full bg-white/95 backdrop-blur-xs border border-[#E6E0F5] text-[11px] font-bold text-[#1E1B2E] inline-flex items-center gap-1 shadow-2xs">
-          <Compass className="w-3.5 h-3.5 text-[#8B5CF6]" />
+        <div className="absolute top-2.5 right-2.5 px-3 py-1 rounded-full bg-white/95 backdrop-blur-xs border border-[#CBD5E1] text-[11px] font-bold text-[#061138] inline-flex items-center gap-1 shadow-2xs">
+          <Compass className="w-3.5 h-3.5 text-[#0057FF]" />
           <span>
             {city}
             {neighborhood ? ` · ${neighborhood}` : ''}
@@ -233,10 +231,10 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
           style={{ left: `${normX}%`, top: `${normY}%` }}
         >
           <div className="flex flex-col items-center">
-            <div className="px-2.5 py-1 rounded-full bg-[#1E1B2E] text-white text-[10px] font-bold shadow-md whitespace-nowrap mb-1">
+            <div className="px-2.5 py-1 rounded-full bg-[#061138] text-white text-[10px] font-bold shadow-md whitespace-nowrap mb-1">
               {neighborhood || city}
             </div>
-            <div className="w-7 h-7 rounded-full bg-[#8B5CF6] text-white border-2 border-white shadow-md flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full bg-[#0057FF] text-white border-2 border-white shadow-md flex items-center justify-center">
               <MapPin className="w-4 h-4" />
             </div>
             <div className="w-2.5 h-1 rounded-full bg-black/30 mt-0.5" />
@@ -244,54 +242,18 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
         </div>
 
         {!readOnly ? (
-          <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full bg-[#1E1B2E]/85 text-white text-[10px] font-medium">
+          <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full bg-[#061138]/90 text-white text-[10px] font-bold">
             برای جابه‌جایی پین روی نقشه کلیک کنید
           </div>
         ) : null}
       </div>
 
-      {!readOnly && onSelectLocation ? (
-        <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-[#6B6480]">
-            انتخاب سریع محله‌های پرتردد {city}:
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {presets.map((p) => {
-              const isSelected =
-                Math.abs(lat - p.lat) < 0.001 && Math.abs(lng - p.lng) < 0.001;
-              return (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() =>
-                    onSelectLocation({
-                      lat: p.lat,
-                      lng: p.lng,
-                      neighborhood: p.neighborhood,
-                      suggestedAddress: p.sampleAddress,
-                    })
-                  }
-                  className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer inline-flex items-center gap-1 ${
-                    isSelected
-                      ? 'bg-[#8B5CF6] text-white'
-                      : 'bg-white border border-[#E6E0F5] text-[#1E1B2E] hover:border-[#8B5CF6]'
-                  }`}
-                >
-                  <Navigation className="w-3 h-3" />
-                  <span>{p.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-
       {address ? (
-        <div className="pt-2 border-t border-[#E6E0F5] flex items-start justify-between gap-2 text-xs text-[#6B6480]">
+        <div className="pt-2 border-t border-[#CBD5E1] flex items-start justify-between gap-2 text-xs text-[#334155]">
           <span>
-            <strong className="text-[#1E1B2E]">نشانی:</strong> {address}
+            <strong className="text-[#061138]">نشانی:</strong> {address}
           </span>
-          <span className="text-[11px] text-[#6B6480] shrink-0 tabular-nums">
+          <span className="text-[11px] text-[#334155] shrink-0 tabular-nums">
             ({toPersianDigits(lat.toFixed(2))}°N)
           </span>
         </div>

@@ -54,6 +54,8 @@ import {
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
+import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
+import { MelipayamakQuickSetupCard } from '../../components/ui/MelipayamakQuickSetupCard';
 
 /** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — بازطراحی کامل مطابق Capture2.PNG (Salonia) و Capture8.PNG (Zolmilon) */
 export const BusinessDashboardPage: React.FC = () => {
@@ -701,12 +703,12 @@ export const BusinessDashboardPage: React.FC = () => {
                     },
                   ]
               ).map((apt) => (
-                <div key={apt.id} className="relative flex items-start gap-3">
+                <div key={apt.id} className="relative flex items-start gap-3 min-w-0">
                   <span className="relative z-10 w-10 py-1 rounded-full bg-[#8B5CF6] text-white text-[10px] font-extrabold text-center tabular-nums shrink-0 mt-1">
                     {apt.timeSlot}
                   </span>
-                  <div className="flex-1 p-3.5 rounded-2xl bg-[#EDE9FE]/80 border border-[#EDE9FE] flex items-center justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0">
+                  <div className="flex-1 min-w-0 p-3.5 rounded-2xl bg-[#EDE9FE]/80 border border-[#EDE9FE] flex items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0 flex-1">
                       <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
                         {apt.serviceTitle}
                       </p>
@@ -2192,12 +2194,13 @@ export const BusinessProfileEditPage: React.FC = () => {
   const currentBiz = currentBusiness ?? businesses[0];
 
   const [name, setName] = useState(currentBiz?.name ?? '');
+  const [avatarUrl, setAvatarUrl] = useState(currentBiz?.avatarUrl ?? '');
   const [instagramHandle, setInstagramHandle] = useState(
     currentBiz?.instagramHandle ?? ''
   );
   const [address, setAddress] = useState(currentBiz?.address ?? '');
-  const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 35.7596);
-  const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.4072);
+  const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 32.6362);
+  const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.665);
   const [shortDesc, setShortDesc] = useState(
     currentBiz?.shortDescription ?? ''
   );
@@ -2219,6 +2222,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     const cleanedInsta = instagramHandle.trim();
     updateBusinessProfile(currentBiz.id, {
       name,
+      avatarUrl: avatarUrl || undefined,
       instagramHandle: cleanedInsta,
       address,
       mapLat,
@@ -2228,6 +2232,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     });
     updateOnboardingDraft({
       businessName: name,
+      avatarUrl,
       instagramHandle: cleanedInsta,
       address,
       mapLat,
@@ -2262,6 +2267,12 @@ export const BusinessProfileEditPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <Card padding="lg" className="lg:col-span-7">
           <form onSubmit={handleSave} className="space-y-4">
+            <ProfilePhotoUploader
+              value={avatarUrl}
+              onChange={(url) => setAvatarUrl(url)}
+              label="تصویر پروفایل یا لوگوی سالن (برش خودکار مربع ۴۰۰×۴۰۰)"
+            />
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField id="prof-name" label="نام سالن یا مرکز زیبایی" required>
                 <Input
@@ -2755,15 +2766,11 @@ export const BusinessSubscriptionPage: React.FC = () => {
     plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         kicker="مالی · اشتراک ماهانه"
-        title="مدیریت اشتراک کسب‌وکار"
-        subtitle={
-          dataMode === 'real'
-            ? 'مشاهده پلن اشتراک کسب‌وکار؛ رزرو آنلاین بدون نیاز به پیش‌پرداخت فعال است.'
-            : 'مشاهده پلن فعال، سهمیه پیامک ماهانه و مقایسه امکانات پلن‌های BeautyHub'
-        }
+        title="مدیریت اشتراک و ارتقای کسب‌وکار"
+        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP برای کاهش کنسلی نوبت‌ها و جذب مشتریان جدید در اصفهان"
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -2772,18 +2779,18 @@ export const BusinessSubscriptionPage: React.FC = () => {
       />
 
       {currentPlan ? (
-        <Card variant="dark" className="mb-7 space-y-3">
+        <Card variant="dark" className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <span className="text-xs font-bold text-[#EDE9FE]">
-                پلن فعال فعلی کسب‌وکار:
+              <span className="text-xs font-bold text-[#00E5FF]">
+                پلن فعال فعلی کسب‌وکار شما:
               </span>
               <h2 className="text-xl font-extrabold text-white">
                 {currentPlan.name}
               </h2>
-              <p className="text-xs text-[#EDE9FE]/85 tabular-nums">
-                ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک ماهانه:{' '}
-                {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
+              <p className="text-xs text-slate-200 tabular-nums">
+                ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک یادآور
+                ماهانه: {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2797,6 +2804,36 @@ export const BusinessSubscriptionPage: React.FC = () => {
         </Card>
       ) : null}
 
+      {/* راهنمای ارزش ارتقا برای صاحب سالن */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
+          <p className="text-xs font-extrabold text-[#059669]">
+            ۱. کاهش ۷۰٪ عدم حضور مشتری
+          </p>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            ارسال خودکار پیامک تایید و یادآور ۲۴ ساعت قبل از نوبت از طریق
+            خط خدماتی.
+          </p>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
+          <p className="text-xs font-extrabold text-[#0057FF]">
+            ۲. اولویت نمایش در جست‌وجوی اصفهان
+          </p>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            درج نشان «سالن برگزیده» و جایگاه بالاتر در لیست جست‌وجوی محله و
+            خدمات.
+          </p>
+        </div>
+        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
+          <p className="text-xs font-extrabold text-[#D97706]">
+            ۳. تقویم مجزا برای تمام متخصصان
+          </p>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            مدیریت همزمان شیفت‌ها، مرخصی‌ها و گزارش مالی تفکیکی هر پرسنل سالن.
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {plans.map((plan) => {
           const isCurrent = plan.id === activePlanId;
@@ -2804,30 +2841,54 @@ export const BusinessSubscriptionPage: React.FC = () => {
             <Card
               key={plan.id}
               className={`space-y-5 flex flex-col justify-between ${
-                isCurrent ? 'border-2 border-[#8B5CF6] shadow-sm' : ''
+                isCurrent
+                  ? 'border-2 border-[#0057FF] shadow-sm'
+                  : plan.isRecommended
+                    ? 'border-[#0057FF]/50'
+                    : ''
               }`}
             >
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-extrabold text-[#1E1B2E]">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-base font-extrabold text-[#061138]">
                     {plan.name}
                   </h3>
                   {isCurrent ? (
                     <StatusBadge label="پلن فعال شما" tone="success" />
+                  ) : plan.isRecommended ? (
+                    <StatusBadge label="پیشنهاد ویژه" tone="primary" />
                   ) : null}
                 </div>
-                <p className="text-xl font-extrabold text-[#8B5CF6] tabular-nums">
-                  {formatPriceToman(plan.monthlyPriceToman)}
-                  <span className="text-xs font-normal text-[#6B6480]">
+                <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
+                  {plan.monthlyPriceToman === 0
+                    ? 'رایگان'
+                    : formatPriceToman(plan.monthlyPriceToman)}
+                  <span className="text-xs font-normal text-[#64748B]">
                     {' '}
-                    / ماهانه
+                    {plan.monthlyPriceToman > 0 ? '/ ماهانه' : '(همیشگی)'}
                   </span>
                 </p>
-                <p className="text-xs text-[#6B6480]">{plan.audience}</p>
-                <ul className="space-y-2 pt-3 border-t border-[#E6E0F5] text-xs text-[#1E1B2E]">
+                <p className="text-xs text-[#334155] leading-relaxed">
+                  {plan.audience}
+                </p>
+                <div className="pt-2 border-t border-[#E2E8F0] space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">ظرفیت متخصصان:</span>
+                    <span className="font-bold text-[#061138]">
+                      {plan.staffLimit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#64748B]">سهمیه پیامک ماهانه:</span>
+                    <span className="font-bold text-[#061138] tabular-nums">
+                      {toPersianDigits(plan.smsQuotaMonthly)} پیامک
+                    </span>
+                  </div>
+                </div>
+                <ul className="space-y-2 pt-3 border-t border-[#E2E8F0] text-xs text-[#061138]">
                   {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2">
-                      <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                    <li key={f} className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0 mt-0.5" />
                       <span>{f}</span>
                     </li>
                   ))}
@@ -2839,18 +2900,15 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 fullWidth
                 disabled={isCurrent}
                 onClick={() => {
-                  if (dataMode === 'real') {
-                    showToast(
-                      'درگاه پرداخت آنلاین هنوز فعال نشده است؛ ارتقای پلن پس از اتصال درگاه بانکی امکان‌پذیر خواهد بود.',
-                      'info'
-                    );
-                    return;
-                  }
                   setActivePlanId(plan.id);
                   showToast(`پلن کسب‌وکار به «${plan.name}» تغییر یافت.`);
                 }}
               >
-                {isCurrent ? 'پلن انتخاب‌شده' : `ارتقا به ${plan.name}`}
+                {isCurrent
+                  ? 'پلن فعال فعلی شما'
+                  : plan.monthlyPriceToman === 0
+                    ? 'تغییر به پلن پایه رایگان'
+                    : `ارتقا و فعال‌سازی ${plan.name}`}
               </Button>
             </Card>
           );
@@ -2860,113 +2918,135 @@ export const BusinessSubscriptionPage: React.FC = () => {
   );
 };
 
-/** ۱۳. تنظیمات پنل کسب‌وکار (/app/settings) */
+/** ۱۳. تنظیمات پنل کسب‌وکار و اتصال سریع ملی‌پیامک (/app/settings) */
 export const BusinessSettingsPage: React.FC = () => {
   const { showToast } = usePrototypeData();
-  const [activeTab, setActiveTab] = useState('booking_rules');
+  const [activeTab, setActiveTab] = useState('notifications');
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        kicker="تنظیمات · پیکربندی سالن"
-        title="تنظیمات پنل کسب‌وکار"
-        subtitle="مدیریت قوانین نوبت‌دهی، فاصله استراحت بین نوبت‌ها و ترجیحات اطلاع‌رسانی پیامکی"
+        kicker="تنظیمات · پیکربندی سالن و درگاه پیامک"
+        title="تنظیمات پنل کسب‌وکار و اتصال ملی‌پیامک"
+        subtitle="اتصال ۱ دقیقه‌ای پنل پیامک ملی‌پیامک (MelliPayamak)، مدیریت قوانین نوبت‌دهی و یادآورهای پیامکی"
         routePattern="/app/settings"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'تنظیمات پنل' },
+          { label: 'تنظیمات و پیامک' },
         ]}
       />
 
-      <div className="max-w-2xl space-y-5">
+      <div className="max-w-3xl space-y-5">
         <Tabs
           activeTab={activeTab}
           onChange={setActiveTab}
           tabs={[
+            { id: 'notifications', label: 'اتصال ملی‌پیامک و اعلان‌ها' },
             { id: 'booking_rules', label: 'قوانین رزرو و لغو' },
-            { id: 'notifications', label: 'اعلان‌ها و پیامک' },
             { id: 'security', label: 'امنیت و دسترسی' },
           ]}
         />
 
-        <Card padding="lg" className="space-y-5">
-          {activeTab === 'booking_rules' ? (
-            <>
-              <FormField
-                id="set-buffer"
-                label="فاصله استراحت بین دو نوبت متوالی"
-                hint="این زمان برای آماده‌سازی میز کار بین دو مراجع در نظر گرفته می‌شود"
-              >
-                <Select
-                  id="set-buffer"
-                  defaultValue="15"
-                  options={[
-                    { value: '0', label: 'بدون فاصله' },
-                    { value: '15', label: '۱۵ دقیقه' },
-                    { value: '30', label: '۳۰ دقیقه' },
-                  ]}
-                />
-              </FormField>
+        {activeTab === 'notifications' ? (
+          <div className="space-y-5">
+            <MelipayamakQuickSetupCard />
 
-              <FormField
-                id="set-cancel"
-                label="حداقل زمان مجاز برای لغو نوبت توسط مشتری"
-              >
-                <Select
-                  id="set-cancel"
-                  defaultValue="24"
-                  options={[
-                    { value: '12', label: '۱۲ ساعت پیش از نوبت' },
-                    { value: '24', label: '۲۴ ساعت پیش از نوبت' },
-                    { value: '48', label: '۴۸ ساعت پیش از نوبت' },
-                  ]}
-                />
-              </FormField>
-            </>
-          ) : activeTab === 'notifications' ? (
-            <div className="space-y-3 text-xs sm:text-sm text-[#1E1B2E]">
-              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E0F5] cursor-pointer">
-                <span className="font-bold">
-                  ارسال پیامک تایید بلافاصله پس از ثبت نوبت
-                </span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="accent-[#8B5CF6] w-4 h-4"
-                />
-              </label>
-              <label className="flex items-center justify-between py-2.5 border-b border-[#E6E0F5] cursor-pointer">
-                <span className="font-bold">
-                  ارسال یادآور ۲۴ ساعت مانده به زمان مراجعه
-                </span>
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="accent-[#8B5CF6] w-4 h-4"
-                />
-              </label>
-            </div>
-          ) : (
-            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-start gap-3 text-xs text-[#6B6480]">
-              <ShieldCheck className="w-5 h-5 text-[#8B5CF6] shrink-0 mt-0.5" />
-              <p className="leading-relaxed">
-                سطوح دسترسی مدیر سالن، منشی و متخصصان از طریق احراز هویت پیامکی
-                محافظت می‌شود.
-              </p>
-            </div>
-          )}
-
-          <div className="pt-2">
-            <Button
-              variant="primary"
-              onClick={() =>
-                showToast('تنظیمات پنل کسب‌وکار با موفقیت ذخیره شد.')
-              }
-            >
-              ذخیره تنظیمات
-            </Button>
+            <Card padding="lg" className="space-y-4">
+              <h3 className="text-sm font-extrabold text-[#061138]">
+                ترجیحات ارسال پیامک خودکار به مشتریان سالن
+              </h3>
+              <div className="space-y-3 text-xs sm:text-sm text-[#061138]">
+                <label className="flex items-center justify-between py-2.5 border-b border-[#E2E8F0] cursor-pointer">
+                  <span className="font-bold">
+                    ارسال پیامک تایید بلافاصله پس از ثبت نوبت
+                  </span>
+                  <input
+                    type="checkbox"
+                    defaultChecked
+                    className="accent-[#0057FF] w-4 h-4"
+                  />
+                </label>
+                <label className="flex items-center justify-between py-2.5 border-b border-[#E2E8F0] cursor-pointer">
+                  <span className="font-bold">
+                    ارسال یادآور ۲۴ ساعت مانده به زمان مراجعه
+                  </span>
+                  <input
+                    type="checkbox"
+                    defaultChecked
+                    className="accent-[#0057FF] w-4 h-4"
+                  />
+                </label>
+              </div>
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    showToast('ترجیحات اطلاع‌رسانی پیامکی ذخیره شد.')
+                  }
+                >
+                  ذخیره ترجیحات اعلان
+                </Button>
+              </div>
+            </Card>
           </div>
-        </Card>
+        ) : (
+          <Card padding="lg" className="space-y-5">
+            {activeTab === 'booking_rules' ? (
+              <>
+                <FormField
+                  id="set-buffer"
+                  label="فاصله استراحت بین دو نوبت متوالی"
+                  hint="این زمان برای آماده‌سازی میز کار بین دو مراجع در نظر گرفته می‌شود"
+                >
+                  <Select
+                    id="set-buffer"
+                    defaultValue="15"
+                    options={[
+                      { value: '0', label: 'بدون فاصله' },
+                      { value: '15', label: '۱۵ دقیقه' },
+                      { value: '30', label: '۳۰ دقیقه' },
+                    ]}
+                  />
+                </FormField>
+
+                <FormField
+                  id="set-cancel"
+                  label="حداقل زمان مجاز برای لغو نوبت توسط مشتری"
+                >
+                  <Select
+                    id="set-cancel"
+                    defaultValue="24"
+                    options={[
+                      { value: '12', label: '۱۲ ساعت پیش از نوبت' },
+                      { value: '24', label: '۲۴ ساعت پیش از نوبت' },
+                      { value: '48', label: '۴۸ ساعت پیش از نوبت' },
+                    ]}
+                  />
+                </FormField>
+              </>
+            ) : (
+              <div className="p-4 rounded-xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-start gap-3 text-xs text-[#334155]">
+                <ShieldCheck className="w-5 h-5 text-[#0057FF] shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  سطوح دسترسی مدیر سالن، منشی و متخصصان از طریق احراز هویت پیامکی
+                  محافظت می‌شود.
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                onClick={() =>
+                  showToast('تنظیمات پنل کسب‌وکار با موفقیت ذخیره شد.')
+                }
+              >
+                ذخیره تنظیمات
+              </Button>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );

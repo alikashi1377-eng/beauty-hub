@@ -245,42 +245,42 @@ export const HomePage: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-10 sm:space-y-12">
-      {/* ۱. بخش Hero با تصویر بک‌گراند تمام‌عرض، متن کوتاه و تمرکز کامل روی جست‌وجو و دسته‌بندی‌ها */}
-      <section className="relative rounded-[32px] overflow-hidden border border-[#1E293B] bg-[#061138] shadow-[0_22px_55px_-18px_rgba(6,17,56,0.55)]">
-        {/* تصویر پس‌زمینه با کنتراست بالا و گرادینت تیره خوانا */}
-        <div className="absolute inset-0">
+    <div className="space-y-8 sm:space-y-11">
+      {/* ۱. بخش Hero بهینه‌شده با ارتفاع متوازن، تصویر بک‌گراند خوانا و جست‌وجوی هوشمند شناور */}
+      <section className="relative rounded-[28px] sm:rounded-[32px] border border-[#1E293B] bg-[#061138] shadow-[0_20px_48px_-18px_rgba(6,17,56,0.55)]">
+        {/* لایه تصویر پس‌زمینه با overflow-hidden مجزا تا منوی نتایج جست‌وجو بریده نشود */}
+        <div className="absolute inset-0 rounded-[28px] sm:rounded-[32px] overflow-hidden pointer-events-none">
           <img
             src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1400&q=85"
             alt="سالن زیبایی لوکس در تایم تو"
-            className="w-full h-full object-cover object-center opacity-45"
+            className="w-full h-full object-cover object-center opacity-40"
           />
-          <div className="absolute inset-0 bg-gradient-to-l from-[#061138]/95 via-[#061138]/85 to-[#061138]/65" />
+          <div className="absolute inset-0 bg-gradient-to-l from-[#061138]/95 via-[#061138]/85 to-[#061138]/70" />
         </div>
 
-        <div className="relative z-10 px-4 py-7 sm:px-10 sm:py-12 lg:py-14 max-w-3xl mx-auto text-center space-y-5">
-          {/* نشان موقعیت مکانی و شعار کوتاه */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/12 backdrop-blur-md border border-[#00E5FF]/35 text-xs font-extrabold text-[#00E5FF]">
+        <div className="relative z-20 px-4 py-5 sm:px-8 sm:py-8 lg:py-9 max-w-3xl mx-auto text-center space-y-3.5 sm:space-y-4">
+          {/* نشان موقعیت مکانی جمع‌وجور */}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/12 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] sm:text-xs font-extrabold text-[#00E5FF]">
             <MapPin className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
             <span>تایم تو (Timeto) · رزرو آنلاین سالن و متخصص در اصفهان</span>
           </div>
 
-          <div className="space-y-2">
-            <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-extrabold text-white leading-tight">
+          <div className="space-y-1.5">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-tight tracking-tight">
               وقت زیبایی تو، به انتخاب تو
             </h1>
-            <p className="text-xs sm:text-sm text-slate-200 font-medium max-w-xl mx-auto">
-              جست‌وجوی سریع سالن، متخصص و نوبت آزاد بدون تماس تلفنی
+            <p className="text-xs sm:text-sm text-slate-200 font-medium max-w-lg mx-auto">
+              مقایسه تعرفه‌ها، مشاهده نمونه کارها و رزرو آنی نوبت بدون تماس تلفنی
             </p>
           </div>
 
-          {/* باکس جست‌وجوی هوشمند (Smart Live Search) */}
-          <div className="relative z-30 text-right max-w-2xl mx-auto">
+          {/* باکس جست‌وجوی هوشمند (Smart Live Search) با پنل شناور مطلق */}
+          <div className="relative z-30 text-right max-w-2xl mx-auto pt-0.5">
             <form
               onSubmit={handleHeroSearch}
-              className="p-1.5 sm:p-2 rounded-2xl sm:rounded-full bg-white border-2 border-[#00E5FF]/60 focus-within:border-[#0057FF] flex items-center gap-1.5 sm:gap-2 shadow-[0_14px_35px_-8px_rgba(0,0,0,0.45)] transition-colors"
+              className="p-1.5 rounded-2xl sm:rounded-full bg-white border-2 border-[#00E5FF]/60 focus-within:border-[#0057FF] flex items-center gap-1.5 sm:gap-2 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.45)] transition-colors"
             >
-              <div className="flex-1 flex items-center gap-2 pr-3 pl-1 py-1.5 min-w-0">
+              <div className="flex-1 flex items-center gap-2 pr-3 pl-1 py-1 min-w-0">
                 <Search className="w-4 h-4 text-[#0057FF] shrink-0" />
                 <label htmlFor="hero-search" className="sr-only">
                   جست‌وجوی سالن، متخصص، خدمت یا محله
@@ -311,15 +311,15 @@ export const HomePage: React.FC = () => {
 
               <button
                 type="submit"
-                className="px-5 sm:px-7 py-2.5 rounded-xl sm:rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold shrink-0 cursor-pointer transition-colors shadow-[0_6px_18px_-4px_rgba(0,87,255,0.55)]"
+                className="px-4 sm:px-6 py-2 rounded-xl sm:rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold shrink-0 cursor-pointer transition-colors shadow-[0_6px_18px_-4px_rgba(0,87,255,0.55)]"
               >
                 جست‌وجو
               </button>
             </form>
 
-            {/* پنل شناور نتایج جست‌وجوی هوشمند زنده */}
+            {/* پنل شناور نتایج جست‌وجوی هوشمند زنده (بدون تغییر ارتفاع هیرو) */}
             {isSearchFocused ? (
-              <div className="mt-2 rounded-3xl border border-[#CBD5E1] bg-white p-4 shadow-2xl space-y-3">
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-3xl border border-[#CBD5E1] bg-white p-4 shadow-2xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
                   <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#0057FF]">
                     <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
@@ -1360,16 +1360,61 @@ export const PricingPage: React.FC = () => {
   const { plans } = usePrototypeData();
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10">
       <PageHeader
         kicker="ویژه مدیران سالن و متخصصان"
-        title="پلن‌های اشتراک و پنل مدیریت کسب‌وکار"
-        subtitle="رزرو نوبت برای مراجعان کاملاً رایگان است. سالن‌های زیبایی و متخصصان می‌توانند متناسب با اندازه تیم خود یکی از پلن‌های زیر را انتخاب کنند."
+        title="پلن‌های اشتراک و پنل مدیریت کسب‌وکار Timeto"
+        subtitle="ثبت‌نام اولیه و راه‌اندازی ویترین آنلاین سالن کاملاً رایگان است. هر زمان که به پیامک یادآور خودکار، تقویم چندمتخصصه و جایگاه ویژه در جست‌وجو نیاز داشتید، پلن خود را ارتقا دهید."
         breadcrumbs={[
           { label: 'صفحه اصلی', href: '/' },
           { label: 'تعرفه کسب‌وکارها' },
         ]}
       />
+
+      {/* بخش ارزش خرید: چرا ارتقا به پلن حرفه‌ای ارزش دارد؟ */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ECFDF5] text-[#059669] text-xs font-extrabold">
+            <CalendarCheck className="w-4 h-4" />
+            <span>کاهش ۷۰٪ کنسلی و عدم حضور</span>
+          </div>
+          <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+            پیامک تایید و یادآور خودکار به مشتری
+          </h2>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            با ارسال خودکار پیامک در لحظه رزرو و ۲۴ ساعت قبل از نوبت، تایم‌های
+            خالی و فراموشی نوبت مشتریان به حداقل می‌رسد.
+          </p>
+        </div>
+
+        <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
+            <TrendingUp className="w-4 h-4" />
+            <span>۲.۴ برابر جذب مشتری جدید</span>
+          </div>
+          <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+            اولویت نمایش در نتایج جست‌وجوی اصفهان
+          </h2>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            سالن‌های دارای پلن حرفه‌ای و VIP با نشان تایید ویژه در صدر نتایج
+            جست‌وجوی محله و خدمات به مراجعان نمایش داده می‌شوند.
+          </p>
+        </div>
+
+        <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] text-xs font-extrabold">
+            <ShieldCheck className="w-4 h-4" />
+            <span>نظم مالی و تقویم چندمتخصصه</span>
+          </div>
+          <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+            تقویم مجزا برای هر لاین و پرسنل
+          </h2>
+          <p className="text-xs text-[#334155] leading-relaxed">
+            بدون تداخل ساعت کاری، برای هر متخصص تقویم مجزا، پرونده وفاداری
+            مشتریان و گزارش سهم درآمدی دقیق داشته باشید.
+          </p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {plans.map((plan) => (

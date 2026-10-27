@@ -235,11 +235,13 @@ export const BusinessCard: React.FC<{
       ? `/pro/${business.slug}`
       : `/salon/${business.slug}`;
 
-  const photoUrl = getBeautyPhotoUrl(
-    business.name,
-    business.typeLabel,
-    business.type === BusinessType.MenBarbershop ? 'barber' : undefined
-  );
+  const photoUrl =
+    business.avatarUrl ||
+    getBeautyPhotoUrl(
+      business.name,
+      business.typeLabel,
+      business.type === BusinessType.MenBarbershop ? 'barber' : undefined
+    );
 
   if (compact) {
     return (
@@ -508,10 +510,9 @@ export const ProfessionalCard: React.FC<{
   const handleToggleFavorite = onToggleFavorite ?? toggleFavoriteSpecialist;
 
   const targetUrl = `/pro/${specialist.slug}`;
-  const portraitUrl = getSpecialistAvatarUrl(
-    specialist.fullName,
-    specialist.roleTitle
-  );
+  const portraitUrl =
+    specialist.avatarUrl ||
+    getSpecialistAvatarUrl(specialist.fullName, specialist.roleTitle);
 
   return (
     <Card

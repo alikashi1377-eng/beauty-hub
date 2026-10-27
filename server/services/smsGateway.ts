@@ -298,6 +298,66 @@ export function resolveSmsConfig(
   };
 }
 
+let runtimeSmsOverride: SmsConfig | null = null;
+
+export function setRuntimeSmsOverride(input: {
+  provider?: SmsProviderType;
+  apiKey?: string | null;
+  sender?: string | null;
+  template?: string | null;
+  apiUrl?: string | null;
+} | null): SmsConfig | null {
+  if (!input) {
+    runtimeSmsOverride = null;
+    return null;
+  }
+
+  const provider: SmsProviderType = input.provider ?? 'melipayamak';
+  const rawKey = stripSurroundingQuotes(input.apiKey ?? '');
+  const rawSender = stripSurroundingQuotes(input.sender ?? '');
+  const rawTemplate = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(input.template ?? '')
+  );
+  const rawUrl = stripSurroundingQuotes(input.apiUrl ?? '');
+
+  if (provider === 'melipayamak') {
+    const { extractedKey, extractedEndpoint } =
+      normalizeMelipayamakApiKey(rawKey);
+    runtimeSmsOverride = {
+      provider: 'melipayamak',
+      apiKey: extractedKey || null,
+      sender: rawSender || null,
+      template: rawTemplate || null,
+      apiUrl: rawUrl || extractedEndpoint || null,
+    };
+    return runtimeSmsOverride;
+  }
+
+  runtimeSmsOverride = {
+    provider,
+    apiKey: rawKey || null,
+    sender: rawSender || null,
+    template: rawTemplate || null,
+    apiUrl: rawUrl || null,
+  };
+  return runtimeSmsOverride;
+}
+
+export function getRuntimeSmsOverride(): SmsConfig | null {
+  return runtimeSmsOverride;
+}
+
+export function resolveEffectiveSmsConfig(baseConfig: SmsConfig): SmsConfig {
+  return runtimeSmsOverride ?? baseConfig;
+}
+
+export function maskApiKeyForDisplay(apiKey: string | null): string | null {
+  if (!apiKey) return null;
+  const trimmed = apiKey.trim();
+  if (trimmed.length <= 8) return '****';
+  return `${trimmed.slice(0, 4)}••••${trimmed.slice(-4)}`;
+}
+
 /**
  * ارسال واقعی پیامک کد یک‌بارمصرف (OTP) از طریق درگاه پیامکی تنظیم‌شده
  * - در محیط Production:

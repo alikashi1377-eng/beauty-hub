@@ -44,6 +44,7 @@ import {
   updateSpecialistInDb,
   verifyOtpInDb,
 } from '../repositories/beautyhubRepository';
+import { resolveEffectiveSmsConfig } from '../services/smsGateway';
 import { AppointmentStatus, ApprovalStatus } from '../../src/types';
 
 function handleRealModeRouteError(res: Response, err: unknown): void {
@@ -1170,7 +1171,9 @@ export function createApiV1Router(
       const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
       const result = await requestOtpInDb(pool, phone, ip, {
         nodeEnv: config.nodeEnv,
-        smsConfig: config.sms,
+        smsConfig: customEnv
+          ? config.sms
+          : resolveEffectiveSmsConfig(config.sms),
         otpHmacSecret: config.otpHmacSecret ?? undefined,
       });
       if (!result.allowed) {

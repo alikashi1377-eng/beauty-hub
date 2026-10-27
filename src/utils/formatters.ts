@@ -169,6 +169,64 @@ export function filterBusinesses(
   return sorted;
 }
 
+const PERSIAN_TO_LATIN_MAP: Record<string, string> = {
+  آ: 'a',
+  ا: 'a',
+  ب: 'b',
+  پ: 'p',
+  ت: 't',
+  ث: 's',
+  ج: 'j',
+  چ: 'ch',
+  ح: 'h',
+  خ: 'kh',
+  د: 'd',
+  ذ: 'z',
+  ر: 'r',
+  ز: 'z',
+  ژ: 'zh',
+  س: 's',
+  ش: 'sh',
+  ص: 's',
+  ض: 'z',
+  ط: 't',
+  ظ: 'z',
+  ع: 'a',
+  غ: 'gh',
+  ف: 'f',
+  ق: 'gh',
+  ک: 'k',
+  ك: 'k',
+  گ: 'g',
+  ل: 'l',
+  م: 'm',
+  ن: 'n',
+  و: 'v',
+  ه: 'h',
+  ی: 'i',
+  ي: 'i',
+  ئ: 'y',
+  ' ': '-',
+  '‌': '-',
+};
+
+export function suggestSlugFromName(name: string): string {
+  const cleaned = name
+    .trim()
+    .toLowerCase()
+    .replace(/سالن زیبایی|آرایشگاه مردانه|مرکز تخصصی|استودیو/g, '')
+    .trim();
+  const transliterated = Array.from(cleaned)
+    .map((ch) => {
+      if (/[a-z0-9-]/.test(ch)) return ch;
+      return PERSIAN_TO_LATIN_MAP[ch] ?? '';
+    })
+    .join('')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return transliterated.length >= 3 ? `${transliterated}-salon` : 'my-beauty-salon';
+}
+
 export function validateBusinessRegistrationDraft(input: {
   businessName: string;
   ownerName: string;
@@ -193,7 +251,7 @@ export function validateBusinessRegistrationDraft(input: {
   }
   if (!input.slug || !/^[a-z0-9-]+$/.test(input.slug.trim())) {
     errors.slug =
-      'شناسه پیوند (Slug) فقط می‌تواند شامل حروف کوچک انگلیسی، عدد و خط تیره باشد.';
+      'آدرس اینترنتی صفحه سالن فقط می‌تواند شامل حروف کوچک انگلیسی، عدد و خط تیره باشد (مثال: royal-salon).';
   }
 
   return {
