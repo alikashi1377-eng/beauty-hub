@@ -346,7 +346,14 @@ export const CustomerLoginPage: React.FC = () => {
         setResetOtpSent(false);
         setOtpCode('');
         setNewPassword('');
-        navigate('/me', { replace: true });
+        const isSuperAdmin = normalizedPhone === '09138201042';
+        if (safeRedirectPath) {
+          navigate(safeRedirectPath, { replace: true });
+        } else if (isSuperAdmin) {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/me', { replace: true });
+        }
       }
     } catch (err) {
       setError(
@@ -376,7 +383,7 @@ export const CustomerLoginPage: React.FC = () => {
               ورود یا عضویت در Timeto
             </h1>
             <p className="text-xs sm:text-sm text-[#475569] leading-relaxed">
-              با کد تایید پیامکی (خوانش خودکار از پیامک) یا رمز عبور ثابت وارد حساب کاربری، پنل سالن یا پنل مدیریت کلان شوید.
+              با کد تایید پیامکی (خوانش خودکار از پیامک) یا رمز عبور ثابت وارد حساب کاربری یا پیشخوان مدیریت سالن خود شوید.
             </p>
           </div>
 
@@ -489,7 +496,7 @@ export const CustomerLoginPage: React.FC = () => {
                       inputMode="tel"
                       maxLength={11}
                       dir="ltr"
-                      placeholder="09138201042"
+                      placeholder="09123456789"
                       value={phone}
                       onChange={(e) =>
                         setPhone(normalizeIranMobileInput(e.target.value))
@@ -578,7 +585,7 @@ export const CustomerLoginPage: React.FC = () => {
                     inputMode="tel"
                     maxLength={11}
                     dir="ltr"
-                    placeholder="09138201042"
+                    placeholder="09123456789"
                     value={phone}
                     hasError={Boolean(error)}
                     onChange={(e) => setPhone(normalizeIranMobileInput(e.target.value))}

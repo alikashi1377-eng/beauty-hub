@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 
 import { TimetoLogo } from '../ui/TimetoLogo';
+import { usePrototypeData } from '../../context/PrototypeDataContext';
+import { toPersianDigits } from '../../utils/formatters';
 
 export interface AdminNavItem {
   to: string;
@@ -68,6 +70,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 
 export const AdminSidebar: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { adminNotifications } = usePrototypeData();
+  const unreadCount = adminNotifications.filter((n) => !n.isRead).length;
 
   return (
     <>
@@ -81,6 +85,11 @@ export const AdminSidebar: React.FC = () => {
         >
           {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           <span>منوی مدیریت</span>
+          {unreadCount > 0 ? (
+            <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+              {toPersianDigits(unreadCount)}
+            </span>
+          ) : null}
         </button>
       </div>
 
@@ -93,15 +102,22 @@ export const AdminSidebar: React.FC = () => {
               end={item.end}
               onClick={() => setMobileOpen(false)}
               className={({ isActive }) =>
-                `flex items-center gap-2 p-2.5 rounded-2xl text-xs ${
+                `flex items-center justify-between gap-2 p-2.5 rounded-2xl text-xs ${
                   isActive
                     ? 'bg-[#0057FF] text-white font-bold shadow-[0_4px_12px_rgba(0,87,255,0.4)]'
                     : 'bg-white/10 text-slate-200'
                 }`
               }
             >
-              {item.icon}
-              <span>{item.label}</span>
+              <span className="inline-flex items-center gap-2">
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+              {item.to === '/admin' && unreadCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+                  {toPersianDigits(unreadCount)}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </div>
@@ -131,15 +147,22 @@ export const AdminSidebar: React.FC = () => {
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-colors ${
+                `flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-colors ${
                   isActive
                     ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
                     : 'text-slate-300 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
-              {item.icon}
-              <span>{item.label}</span>
+              <span className="inline-flex items-center gap-2.5">
+                {item.icon}
+                <span>{item.label}</span>
+              </span>
+              {item.to === '/admin' && unreadCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+                  {toPersianDigits(unreadCount)}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>

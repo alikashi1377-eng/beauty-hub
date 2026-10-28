@@ -105,15 +105,17 @@ export const AdminDashboardPage: React.FC = () => {
         ]}
       />
 
-      {/* بنر اعلان ثبت کسب‌وکارهای جدید (فقط قابل مشاهده برای مدیر کل) */}
+      {/* بنر اعلان هوشمند مدیریت کلان (ثبت سالن جدید و فیش‌های واریزی — فقط قابل مشاهده برای مدیر کل) */}
       {adminNotifications.length > 0 ? (
         <Card className="border-2 border-[#F59E0B] bg-[#FFFBEB] space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#FDE68A] pb-2.5">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-[#D97706] shrink-0" />
               <h2 className="text-sm font-extrabold text-[#92400E]">
-                اعلان‌های مدیریتی: ثبت کسب‌وکارهای جدید (
-                {toPersianDigits(unreadNotifications.length || adminNotifications.length)}{' '}
+                مرکز اعلان‌های آنی مدیر کل: کسب‌وکارهای جدید و سفارش‌های مالی (
+                {toPersianDigits(
+                  unreadNotifications.length || adminNotifications.length
+                )}{' '}
                 مورد)
               </h2>
             </div>
@@ -125,8 +127,8 @@ export const AdminDashboardPage: React.FC = () => {
               علامت‌گذاری همه به‌عنوان خوانده‌شده
             </button>
           </div>
-          <div className="space-y-2 max-h-56 overflow-y-auto">
-            {adminNotifications.slice(0, 6).map((notif) => (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {adminNotifications.slice(0, 8).map((notif) => (
               <div
                 key={notif.id}
                 className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
@@ -136,32 +138,63 @@ export const AdminDashboardPage: React.FC = () => {
                 }`}
               >
                 <div className="space-y-1">
-                  <p className="font-extrabold text-[#061138]">
-                    {notif.title} · شهر {notif.city}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        notif.type === 'NEW_PAYMENT_ORDER'
+                          ? 'bg-[#EFF6FF] text-[#0057FF]'
+                          : 'bg-[#FEF3C7] text-[#92400E]'
+                      }`}
+                    >
+                      {notif.type === 'NEW_PAYMENT_ORDER'
+                        ? 'فیش / سفارش مالی'
+                        : 'ثبت کسب‌وکار جدید'}
+                    </span>
+                    <p className="font-extrabold text-[#061138]">
+                      {notif.title} · شهر {notif.city}
+                    </p>
+                  </div>
                   <p className="text-[#334155]">
-                    مالک: <strong>{notif.ownerName}</strong> · شماره تماس:{' '}
-                    <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">
-                      {notif.ownerPhone}
-                    </span>{' '}
+                    {notif.message || (
+                      <>
+                        مالک: <strong>{notif.ownerName}</strong> · شماره تماس:{' '}
+                        <span
+                          dir="ltr"
+                          className="font-mono font-extrabold text-[#0057FF]"
+                        >
+                          {notif.ownerPhone}
+                        </span>
+                      </>
+                    )}{' '}
                     · زمان ثبت: {notif.createdAtJalali}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      if (notif.businessId) {
-                        updateBusinessApproval(notif.businessId, 'APPROVED');
-                      }
-                      markAdminNotificationRead(notif.id);
-                    }}
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>تایید و انتشار سالن</span>
-                  </Button>
+                  {notif.type === 'NEW_PAYMENT_ORDER' ? (
+                    <Link
+                      to="/admin/payments"
+                      onClick={() => markAdminNotificationRead(notif.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0057FF] text-white text-xs font-extrabold hover:bg-[#0046CC]"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>بررسی و تایید تراکنش</span>
+                    </Link>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        if (notif.businessId) {
+                          updateBusinessApproval(notif.businessId, 'APPROVED');
+                        }
+                        markAdminNotificationRead(notif.id);
+                      }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>تایید و انتشار سالن</span>
+                    </Button>
+                  )}
                   {!notif.isRead ? (
                     <Button
                       type="button"
@@ -2500,10 +2533,15 @@ export const AdminSettingsPage: React.FC = () => {
     setAccountPassword,
     businesses,
     adminUsers,
+    adminNotificationSettings,
+    updateAdminNotificationSettings,
     showToast,
   } = usePrototypeData();
   const [adminNewPassword, setAdminNewPassword] = useState('');
   const [isSavingAdminPass, setIsSavingAdminPass] = useState(false);
+  const [notifyPhoneInput, setNotifyPhoneInput] = useState(
+    adminNotificationSettings.adminPhone || '09138201042'
+  );
 
   const realBusinessesCount = businesses.filter((b) => !b.isSampleShowcase).length;
 
@@ -2866,6 +2904,72 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 ذخیره رمز عبور مدیر کل
               </Button>
             </form>
+          </Card>
+
+          <Card padding="lg" className="space-y-4 border-2 border-[#F59E0B]/40 bg-[#FFFBEB]/60">
+            <div className="space-y-1">
+              <h3 className="text-sm font-extrabold text-[#061138]">
+                اطلاع‌رسانی هوشمند به مدیر کل (پیامک و پنل)
+              </h3>
+              <p className="text-xs text-[#64748B] leading-relaxed">
+                به‌محض ثبت‌نام کسب‌وکار جدید یا ثبت فیش واریزی اشتراک/تبلیغات، هم در بالای پنل مدیریت اعلان دریافت می‌کنید و هم پیامک هشدار به شماره موبایل مدیر کل ارسال می‌شود.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <FormField
+                id="adm-notify-phone"
+                label="شماره موبایل انحصاری مدیر کل (دریافت پیامک و ورود به /admin)"
+              >
+                <Input
+                  id="adm-notify-phone"
+                  dir="ltr"
+                  value={notifyPhoneInput}
+                  onChange={(e) => setNotifyPhoneInput(e.target.value)}
+                  placeholder="09138201042"
+                />
+              </FormField>
+
+              <label className="flex items-center gap-2 text-xs font-bold text-[#061138] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={adminNotificationSettings.smsOnNewBusiness}
+                  onChange={(e) =>
+                    updateAdminNotificationSettings({
+                      smsOnNewBusiness: e.target.checked,
+                    })
+                  }
+                  className="rounded border-[#CBD5E1] text-[#0057FF]"
+                />
+                <span>ارسال پیامک آنی هنگام ثبت‌نام سالن جدید</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-xs font-bold text-[#061138] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={adminNotificationSettings.smsOnNewPaymentOrder}
+                  onChange={(e) =>
+                    updateAdminNotificationSettings({
+                      smsOnNewPaymentOrder: e.target.checked,
+                    })
+                  }
+                  className="rounded border-[#CBD5E1] text-[#0057FF]"
+                />
+                <span>اعلان فوری هنگام ثبت سفارش پلن یا تبلیغ</span>
+              </label>
+
+              <Button
+                type="button"
+                variant="secondary"
+                fullWidth
+                onClick={() =>
+                  updateAdminNotificationSettings({
+                    adminPhone: notifyPhoneInput.trim() || '09138201042',
+                  })
+                }
+              >
+                ذخیره تنظیمات اطلاع‌رسانی مدیر
+              </Button>
+            </div>
           </Card>
 
           <Card padding="lg" className="space-y-2.5 bg-[#ECFDF5] border border-[#10B981]/40 text-xs text-[#065F46]">

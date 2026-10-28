@@ -42,12 +42,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
   const isAdminPanel = pathname === '/admin' || pathname.startsWith('/admin/');
   const isAuthorizedPlatformAdmin =
-    dataMode === 'mock' ||
-    (!isLoadingInitialData &&
-      dataMode === 'real' &&
-      Boolean(
-        authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
-      ));
+    !isLoadingInitialData &&
+    Boolean(
+      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
+    );
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
 

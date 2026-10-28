@@ -158,7 +158,11 @@ export interface SmsMessageLogItem {
 
 export interface AdminNotificationItem {
   id: string;
-  type: 'NEW_BUSINESS' | 'NEW_PAYMENT_ORDER' | 'SMS_TOPUP_REQUEST';
+  type:
+    | 'NEW_BUSINESS'
+    | 'NEW_PAYMENT_ORDER'
+    | 'SMS_TOPUP_REQUEST'
+    | 'NEW_BOOKING';
   title: string;
   message: string;
   businessId?: string;
@@ -166,8 +170,18 @@ export interface AdminNotificationItem {
   ownerName?: string;
   ownerPhone?: string;
   city?: string;
+  amountToman?: number;
+  orderId?: string;
   createdAtJalali: string;
   isRead: boolean;
+}
+
+export interface AdminNotificationSettings {
+  adminPhone: string;
+  smsOnNewBusiness: boolean;
+  smsOnNewPaymentOrder: boolean;
+  smsOnNewBooking: boolean;
+  inAppNotificationsEnabled: boolean;
 }
 
 export type SponsoredPlacementSlot =

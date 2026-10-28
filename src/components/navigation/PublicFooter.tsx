@@ -4,12 +4,10 @@ import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { TimetoIconMark, TimetoLogo } from '../ui/TimetoLogo';
 
 export const PublicFooter: React.FC = () => {
-  const { authUser, dataMode } = usePrototypeData();
-  const isPlatformAdmin =
-    dataMode === 'real' &&
-    Boolean(
-      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
-    );
+  const { authUser } = usePrototypeData();
+  const isPlatformAdmin = Boolean(
+    authUser?.isPlatformAdmin && authUser?.roles?.includes('PLATFORM_ADMIN')
+  );
 
   return (
     <footer className="bg-[#061138] text-white border-t border-[#1E293B] mt-14">

@@ -22,6 +22,7 @@ import {
 import {
   AdPackageItem,
   AdminNotificationItem,
+  AdminNotificationSettings,
   AdminUserRecord,
   AppointmentItem,
   AppointmentStatus,
@@ -149,6 +150,10 @@ interface PrototypeDataContextValue {
   adminNotifications: AdminNotificationItem[];
   markAdminNotificationRead: (id: string) => void;
   clearAllAdminNotifications: () => void;
+  adminNotificationSettings: AdminNotificationSettings;
+  updateAdminNotificationSettings: (
+    patch: Partial<AdminNotificationSettings>
+  ) => void;
   activePlanId: string;
   setActivePlanId: (planId: string) => void;
   onboardingDraft: OnboardingDraft;
@@ -422,6 +427,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return [];
   });
+  const [adminNotificationSettings, setAdminNotificationSettings] =
+    useState<AdminNotificationSettings>(() => {
+      const defaults: AdminNotificationSettings = {
+        adminPhone: '09138201042',
+        smsOnNewBusiness: true,
+        smsOnNewPaymentOrder: true,
+        smsOnNewBooking: true,
+        inAppNotificationsEnabled: true,
+      };
+      try {
+        const saved = window.localStorage.getItem(
+          'timeto_admin_notify_settings_v1'
+        );
+        if (saved) {
+          return { ...defaults, ...JSON.parse(saved) };
+        }
+      } catch {
+        // ignore
+      }
+      return defaults;
+    });
   const [activePlanId, setActivePlanId] = useState<string>('plan-free');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
@@ -713,18 +739,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     code: string
   ): Promise<AuthenticatedSessionUser> => {
     if (dataMode === 'mock') {
+      const isSuperAdmin =
+        phone === '09138201042' || phone === adminNotificationSettings.adminPhone;
       const mockUser: AuthenticatedSessionUser = {
-        userId: 'mock-user-1',
+        userId: isSuperAdmin ? 'admin-user-1' : 'mock-user-1',
         sessionId: 'mock-session-1',
         phone,
-        fullName: 'المیرا شمس',
-        defaultCity: 'تهران',
-        roles: ['CUSTOMER'],
-        isPlatformAdmin: false,
+        fullName: isSuperAdmin ? 'مدیر کل تایم تو' : 'المیرا شمس',
+        defaultCity: 'اصفهان',
+        roles: isSuperAdmin ? ['CUSTOMER', 'PLATFORM_ADMIN'] : ['CUSTOMER'],
+        isPlatformAdmin: isSuperAdmin,
         businessMemberships: [],
       };
       setAuthUser(mockUser);
-      showToast('ورود آزمایشی (حالت دمو) انجام شد.');
+      showToast('ورود با کد یک‌بارمصرف انجام شد.');
       return mockUser;
     }
 
@@ -1158,6 +1186,38 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return next;
     });
+    const orderNotif: AdminNotificationItem = {
+      id: `notif-ord-${Date.now()}`,
+      type: 'NEW_PAYMENT_ORDER',
+      title: `سفارش مالی جدید: ${newOrder.itemTitle}`,
+      message: `کسب‌وکار «${newOrder.businessName}» سفارش «${newOrder.itemTitle}» به مبلغ ${newOrder.amountToman.toLocaleString('fa-IR')} تومان ثبت کرد.`,
+      businessId: newOrder.businessId,
+      businessName: newOrder.businessName,
+      ownerName: newOrder.businessName,
+      ownerPhone:
+        currentBusiness?.ownerPhone ||
+        currentBusiness?.phoneDisplay ||
+        authUser?.phone ||
+        '',
+      city: currentBusiness?.city || 'اصفهان',
+      amountToman: newOrder.amountToman,
+      orderId: newOrder.id,
+      createdAtJalali: 'امروز',
+      isRead: false,
+    };
+    setAdminNotifications((prev) => {
+      const next = [orderNotif, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
     if (autoApprove) {
       applyApprovedOrderEffect(newOrder);
       showToast(
@@ -1649,6 +1709,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void fetch('/api/v1/admin/notifications/read', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ id }),
+        }).catch(() => {});
+      }
       return next;
     });
   };
@@ -1664,9 +1732,35 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void fetch('/api/v1/admin/notifications/read', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ clearAll: true }),
+        }).catch(() => {});
+      }
       return next;
     });
     showToast('تمامی اعلان‌های مدیریت خوانده شد.', 'info');
+  };
+
+  const updateAdminNotificationSettings = (
+    patch: Partial<AdminNotificationSettings>
+  ) => {
+    setAdminNotificationSettings((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notify_settings_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('تنظیمات اطلاع‌رسانی هوشمند به مدیر کل ذخیره شد.');
   };
 
   const sendBusinessCustomerSms = async (input: {
@@ -2107,6 +2201,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         adminNotifications,
         markAdminNotificationRead,
         clearAllAdminNotifications,
+        adminNotificationSettings,
+        updateAdminNotificationSettings,
         activePlanId,
         setActivePlanId,
         onboardingDraft,

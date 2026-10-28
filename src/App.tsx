@@ -96,10 +96,6 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
     );
   }
 
-  if (dataMode === 'mock') {
-    return <>{children}</>;
-  }
-
   if (!authUser) {
     return (
       <Navigate

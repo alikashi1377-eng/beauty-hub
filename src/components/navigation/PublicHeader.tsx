@@ -22,13 +22,19 @@ export const PublicHeader: React.FC = () => {
     ownedBusinessId,
     favoriteBusinessIds,
     favoriteSpecialistIds,
+    adminNotifications,
   } = usePrototypeData();
 
   const totalFavs = favoriteBusinessIds.length + favoriteSpecialistIds.length;
   const isBusinessOwner =
     Boolean(ownedBusinessId) ||
     Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
-  const isPlatformAdmin = Boolean(authUser?.isPlatformAdmin);
+  const isPlatformAdmin = Boolean(
+    authUser?.isPlatformAdmin && authUser?.roles?.includes('PLATFORM_ADMIN')
+  );
+  const unreadAdminCount = isPlatformAdmin
+    ? adminNotifications.filter((n) => !n.isRead).length
+    : 0;
 
   const navItems = [
     { to: '/search', label: 'جست‌وجوی سالن‌ها' },
@@ -109,7 +115,12 @@ export const PublicHeader: React.FC = () => {
               className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-[#061138] bg-[#00E5FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>پنل ادمین</span>
+              <span>پنل مدیریت کلان</span>
+              {unreadAdminCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+                  {toPersianDigits(unreadAdminCount)}
+                </span>
+              ) : null}
             </Link>
           ) : null}
 
@@ -169,6 +180,22 @@ export const PublicHeader: React.FC = () => {
           </div>
 
           <div className="pt-3 border-t border-white/15 space-y-2">
+            {isPlatformAdmin ? (
+              <Link
+                to="/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center justify-center gap-2 text-xs font-extrabold text-[#061138] px-3 py-2.5 rounded-full bg-[#00E5FF] shadow-sm"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>ورود به پنل مدیریت کلان</span>
+                {unreadAdminCount > 0 ? (
+                  <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+                    {toPersianDigits(unreadAdminCount)} جدید
+                  </span>
+                ) : null}
+              </Link>
+            ) : null}
+
             <p className="text-[11px] font-bold text-slate-400 px-1">
               حساب مشتری
             </p>
