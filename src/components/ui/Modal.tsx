@@ -9,6 +9,7 @@ export interface ModalProps {
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  size?: 'md' | 'lg';
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,6 +19,7 @@ export const Modal: React.FC<ModalProps> = ({
   description,
   children,
   footer,
+  size = 'md',
 }) => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -38,7 +40,11 @@ export const Modal: React.FC<ModalProps> = ({
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      <div className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl bg-white border border-[#E6E0F5] shadow-[0_24px_60px_-15px_rgba(30,27,46,0.28)] overflow-hidden my-auto">
+      <div
+        className={`w-full ${
+          size === 'lg' ? 'max-w-3xl' : 'max-w-lg'
+        } max-h-[90vh] flex flex-col rounded-3xl bg-white border border-[#E6E0F5] shadow-[0_24px_60px_-15px_rgba(30,27,46,0.28)] overflow-hidden my-auto`}
+      >
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#E6E0F5] bg-[#FAF8FF] shrink-0">
           <div className="min-w-0">
             <h2

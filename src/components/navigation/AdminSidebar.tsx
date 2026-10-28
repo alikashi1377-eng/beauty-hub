@@ -8,6 +8,7 @@ import {
   CreditCard,
   Receipt,
   PieChart,
+  MessageSquare,
   Settings,
   Menu,
   X,
@@ -57,6 +58,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     icon: <Receipt className="w-4 h-4" />,
   },
   {
+    to: '/admin/support',
+    label: 'تیکت‌ها و پشتیبانی',
+    icon: <MessageSquare className="w-4 h-4" />,
+  },
+  {
     to: '/admin/reports',
     label: 'گزارش‌های تحلیلی',
     icon: <PieChart className="w-4 h-4" />,
@@ -70,8 +76,9 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 
 export const AdminSidebar: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { adminNotifications } = usePrototypeData();
+  const { adminNotifications, supportTickets } = usePrototypeData();
   const unreadCount = adminNotifications.filter((n) => !n.isRead).length;
+  const openTicketsCount = supportTickets.filter((t) => t.status === 'OPEN').length;
 
   return (
     <>
@@ -85,9 +92,9 @@ export const AdminSidebar: React.FC = () => {
         >
           {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           <span>منوی مدیریت</span>
-          {unreadCount > 0 ? (
+          {unreadCount + openTicketsCount > 0 ? (
             <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
-              {toPersianDigits(unreadCount)}
+              {toPersianDigits(unreadCount + openTicketsCount)}
             </span>
           ) : null}
         </button>
@@ -116,6 +123,11 @@ export const AdminSidebar: React.FC = () => {
               {item.to === '/admin' && unreadCount > 0 ? (
                 <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
                   {toPersianDigits(unreadCount)}
+                </span>
+              ) : null}
+              {item.to === '/admin/support' && openTicketsCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums">
+                  {toPersianDigits(openTicketsCount)}
                 </span>
               ) : null}
             </NavLink>
@@ -161,6 +173,11 @@ export const AdminSidebar: React.FC = () => {
               {item.to === '/admin' && unreadCount > 0 ? (
                 <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
                   {toPersianDigits(unreadCount)}
+                </span>
+              ) : null}
+              {item.to === '/admin/support' && openTicketsCount > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums">
+                  {toPersianDigits(openTicketsCount)}
                 </span>
               ) : null}
             </NavLink>

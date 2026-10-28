@@ -31,6 +31,28 @@ export const PublicFooter: React.FC = () => {
                 نسخه وب‌اپلیکیشن (PWA) قابل نصب روی آیفون و اندروید بدون نیاز به آپدیت دستی
               </span>
             </div>
+            <div className="pt-2 flex flex-wrap items-center gap-2.5 text-xs">
+              <a
+                href="https://www.instagram.com/timeto24_app?srtk=bTUwbmx6NTRnMThk"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#E1306C] to-[#833AB4] text-white font-extrabold hover:opacity-95 transition-opacity"
+              >
+                <span>اینستاگرام:</span>
+                <span dir="ltr" className="font-mono">
+                  @timeto24_app
+                </span>
+              </a>
+              <a
+                href="tel:09138201042"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[#00E5FF] font-extrabold transition-colors"
+              >
+                <span>پشتیبانی مستقیم:</span>
+                <span dir="ltr" className="font-mono">
+                  09138201042
+                </span>
+              </a>
+            </div>
           </div>
 
           <div className="lg:col-span-3 space-y-2.5">

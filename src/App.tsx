@@ -67,6 +67,7 @@ import {
   AdminReportsPage,
   AdminSettingsPage,
   AdminSubscriptionsPage,
+  AdminSupportPage,
   AdminUsersPage,
 } from './pages/admin/AdminPages';
 import { NotFoundState } from './components/ui/StateViews';
@@ -273,6 +274,14 @@ export default function App() {
               element={
                 <RequirePlatformAdmin>
                   <AdminReportsPage />
+                </RequirePlatformAdmin>
+              }
+            />
+            <Route
+              path="/admin/support"
+              element={
+                <RequirePlatformAdmin>
+                  <AdminSupportPage />
                 </RequirePlatformAdmin>
               }
             />

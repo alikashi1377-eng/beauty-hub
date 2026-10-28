@@ -7,7 +7,6 @@ import {
   Building2,
   CreditCard,
   Layers,
-  TrendingUp,
   MessageSquare,
   Send,
   Copy,
@@ -16,6 +15,24 @@ import {
   Sparkles,
   Edit3,
   Megaphone,
+  Eye,
+  ChevronDown,
+  ChevronUp,
+  ArrowUp,
+  ArrowDown,
+  Trash2,
+  Gem,
+  Scissors,
+  Droplets,
+  UserCheck,
+  Award,
+  HeartHandshake,
+  MapPin,
+  Clock,
+  Users,
+  Phone,
+  Instagram,
+  Headphones,
 } from 'lucide-react';
 import {
   AdPackageItem,
@@ -28,7 +45,6 @@ import {
 } from '../../types';
 import {
   formatPriceToman,
-  getSubscriptionStatusMeta,
   toPersianDigits,
 } from '../../utils/formatters';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
@@ -46,37 +62,306 @@ import {
   Pagination,
 } from '../../components/ui/MarketplaceComponents';
 
-/** ۱. داشبورد مدیریت پلتفرم (/admin) — بازطراحی کامل مطابق Capture6.PNG و Capture7.PNG */
+/** نقشه آیکون‌های دسته‌بندی خدمات (هماهنگ با صفحه اول) */
+const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType<{ className?: string }>> = {
+  Sparkles,
+  Gem,
+  Scissors,
+  Droplets,
+  Eye,
+  UserCheck,
+  Award,
+  HeartHandshake,
+};
+
+/** مودال بررسی کامل پنل ایجادشده توسط صاحب کسب‌وکار (نمایش تمام جزئیات، خدمات، متخصصان، ساعات کاری و زمان ثبت درخواست) */
+const BusinessFullInspectModal: React.FC<{
+  business: BusinessItem | null;
+  onClose: () => void;
+  onApprove: (businessId: string) => void;
+  onReject: (businessId: string) => void;
+}> = ({ business, onClose, onApprove, onReject }) => {
+  const { services, specialists } = usePrototypeData();
+  if (!business) return null;
+
+  const bizServices = services.filter((s) => s.businessId === business.id);
+  const bizSpecialists = specialists.filter((sp) => sp.businessId === business.id);
+  const bizHours = business.workingHours || [];
+
+  return (
+    <Modal
+      isOpen={Boolean(business)}
+      onClose={onClose}
+      title={`بررسی کامل پنل سالن: ${business.name}`}
+      description={`زمان ثبت درخواست: ${business.createdAtJalali || 'ثبت‌شده در سامانه'} · وضعیت فعلی: ${
+        business.approvalStatus === 'APPROVED'
+          ? 'تاییدشده'
+          : business.approvalStatus === 'PENDING_REVIEW'
+          ? 'در انتظار بررسی مدیر'
+          : 'ردشده'
+      }`}
+      size="lg"
+    >
+      <div className="space-y-5 text-xs">
+        {/* ۱. خلاصه اطلاعات مالک، تماس، موقعیت و پلن */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
+          <div className="space-y-1.5">
+            <p className="text-[#64748B] font-bold">نام سالن و تخصص اصلی:</p>
+            <p className="text-sm font-extrabold text-[#061138]">
+              {business.name} ({business.typeLabel})
+            </p>
+            <p className="text-[#334155]">
+              نام مالک / مدیر:{' '}
+              <strong className="text-[#061138]">
+                {business.ownerName || 'صاحب کسب‌وکار'}
+              </strong>
+            </p>
+            <p className="text-[#334155] flex items-center gap-1.5">
+              <Phone className="w-3.5 h-3.5 text-[#0057FF]" />
+              <span>شماره تماس مالک:</span>
+              <a
+                href={`tel:${business.ownerPhone || business.phoneDisplay}`}
+                dir="ltr"
+                className="font-mono font-extrabold text-[#0057FF] underline"
+              >
+                {business.ownerPhone || business.phoneDisplay}
+              </a>
+            </p>
+            {business.instagramHandle ? (
+              <p className="text-[#334155] flex items-center gap-1.5">
+                <Instagram className="w-3.5 h-3.5 text-[#E1306C]" />
+                <span>اینستاگرام:</span>
+                <span dir="ltr" className="font-mono font-bold text-[#061138]">
+                  {business.instagramHandle}
+                </span>
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[#64748B] font-bold">موقعیت مکانی و زمان ثبت:</p>
+            <p className="font-extrabold text-[#061138]">
+              {business.city} · محله {business.neighborhood}
+            </p>
+            <p className="text-[#334155] leading-relaxed">{business.address}</p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="px-2.5 py-1 rounded-lg bg-[#E0ECFF] text-[#0057FF] font-extrabold">
+                پلن: {business.subscriptionPlan}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#92400E] font-bold">
+                زمان درخواست: {business.createdAtJalali || 'ثبت جدید'}
+              </span>
+            </div>
+            {business.mapLat && business.mapLng ? (
+              <a
+                href={`https://www.google.com/maps?q=${business.mapLat},${business.mapLng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[#0057FF] font-extrabold hover:underline pt-1"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                <span>مشاهده لوکیشن دقیق روی گوگل‌مپ</span>
+              </a>
+            ) : null}
+          </div>
+        </div>
+
+        {/* بیوگرافی و معرفی سالن */}
+        {business.aboutText || business.shortDescription ? (
+          <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] space-y-1">
+            <p className="font-extrabold text-[#061138]">معرفی و توضیحات ثبت‌شده توسط سالن:</p>
+            <p className="text-[#334155] leading-relaxed">
+              {business.aboutText || business.shortDescription}
+            </p>
+          </div>
+        ) : null}
+
+        {/* ۲. خدمات تعریف‌شده توسط سالن */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="font-extrabold text-[#061138] flex items-center gap-1.5 text-sm">
+              <Scissors className="w-4 h-4 text-[#0057FF]" />
+              <span>
+                خدمات تعریف‌شده در پنل سالن ({toPersianDigits(bizServices.length)} خدمت)
+              </span>
+            </h4>
+          </div>
+          {bizServices.length === 0 ? (
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B]">
+              هنوز خدمتی توسط این سالن ثبت نشده است.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto p-1">
+              {bizServices.map((srv) => (
+                <div
+                  key={srv.id}
+                  className="p-3 rounded-xl bg-white border border-[#CBD5E1] flex items-center justify-between gap-2"
+                >
+                  <div>
+                    <p className="font-extrabold text-[#061138]">{srv.title}</p>
+                    <p className="text-[11px] text-[#64748B]">
+                      دسته: {srv.category} · زمان:{' '}
+                      {toPersianDigits(srv.durationMinutes)} دقیقه
+                    </p>
+                  </div>
+                  <span className="font-extrabold text-[#0057FF] tabular-nums shrink-0">
+                    {formatPriceToman(srv.priceToman)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ۳. متخصصان و پرسنل تعریف‌شده */}
+        <div className="space-y-2">
+          <h4 className="font-extrabold text-[#061138] flex items-center gap-1.5 text-sm">
+            <Users className="w-4 h-4 text-[#0057FF]" />
+            <span>
+              متخصصان و پرسنل سالن ({toPersianDigits(bizSpecialists.length)} نفر)
+            </span>
+          </h4>
+          {bizSpecialists.length === 0 ? (
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B]">
+              هنوز متخصصی برای این سالن ثبت نشده است.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {bizSpecialists.map((sp) => (
+                <div
+                  key={sp.id}
+                  className="p-3 rounded-xl bg-white border border-[#CBD5E1] flex items-center justify-between gap-2"
+                >
+                  <div>
+                    <p className="font-extrabold text-[#061138]">{sp.fullName}</p>
+                    <p className="text-[11px] text-[#64748B]">{sp.roleTitle}</p>
+                  </div>
+                  <StatusBadge
+                    label={sp.isActive ? 'فعال' : 'غیرفعال'}
+                    tone={sp.isActive ? 'success' : 'neutral'}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ۴. برنامه ساعات کاری */}
+        {bizHours.length > 0 ? (
+          <div className="space-y-2">
+            <h4 className="font-extrabold text-[#061138] flex items-center gap-1.5 text-sm">
+              <Clock className="w-4 h-4 text-[#0057FF]" />
+              <span>برنامه ساعات کاری سالن</span>
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {bizHours.map((wh) => (
+                <div
+                  key={wh.dayName}
+                  className={`p-2.5 rounded-xl border text-center ${
+                    !wh.isOpen
+                      ? 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'
+                      : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#061138]'
+                  }`}
+                >
+                  <p className="font-extrabold">{wh.dayName}</p>
+                  <p className="text-[11px] mt-0.5 tabular-nums">
+                    {!wh.isOpen
+                      ? 'تعطیل'
+                      : `${toPersianDigits(wh.openTime)} تا ${toPersianDigits(wh.closeTime)}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* دکمه‌های اقدام مستقیم مدیر کل */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#E2E8F0]">
+          <Link
+            to={`/salons/${business.id}`}
+            target="_blank"
+            className="text-xs font-extrabold text-[#0057FF] hover:underline"
+          >
+            مشاهده صفحه عمومی سالن در سایت ↗
+          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              بستن پنجره
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onReject(business.id);
+                onClose();
+              }}
+              className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>رد صلاحیت سالن</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                onApprove(business.id);
+                onClose();
+              }}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>تایید و انتشار سالن</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+/** ۱. داشبورد مدیریت پلتفرم (/admin) — فقط داده‌های واقعی + مرکز اعلان جمع‌شونده و خودکار */
 export const AdminDashboardPage: React.FC = () => {
   const {
-    dataMode,
     businesses,
     categories,
+    appointments,
+    paymentOrders,
+    supportTickets,
     updateBusinessApproval,
     adminNotifications,
     markAdminNotificationRead,
     clearAllAdminNotifications,
   } = usePrototypeData();
   const [chartRange, setChartRange] = useState<'7d' | '30d' | '1y'>('7d');
-  const [showSampleSalons, setShowSampleSalons] = useState(false);
+  const [isNotifCollapsed, setIsNotifCollapsed] = useState(false);
+  const [inspectingBusiness, setInspectingBusiness] =
+    useState<BusinessItem | null>(null);
 
+  // در پنل مدیریت کلان، سالن‌های نمونه نمایشی به‌طور کامل کنار گذاشته می‌شوند و فقط کسب‌وکارهای واقعی نمایش می‌یابند
   const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
-  const visibleBusinesses = showSampleSalons ? businesses : realBusinesses;
 
   const pendingCount = realBusinesses.filter(
     (b) => b.approvalStatus === 'PENDING_REVIEW'
   ).length;
-  const activeSubscriptionsCount =
-    dataMode === 'real'
-      ? realBusinesses.filter(
-          (b) =>
-            b.subscriptionStatus === 'ACTIVE' ||
-            b.subscriptionStatus === 'TRIAL'
-        ).length
-      : 4;
+
+  const activeSubscriptionsCount = realBusinesses.filter(
+    (b) =>
+      b.subscriptionStatus === 'ACTIVE' || b.subscriptionStatus === 'TRIAL'
+  ).length;
+
+  const realAppointments = appointments.filter((a) =>
+    realBusinesses.some((b) => b.id === a.businessId)
+  );
+
+  const approvedRevenueToman = paymentOrders
+    .filter((o) => o.status === 'APPROVED')
+    .reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
+
+  const openTicketsCount = supportTickets.filter(
+    (t) => t.status === 'OPEN'
+  ).length;
 
   // اولویت نمایش با کسب‌وکارهای در انتظار بررسی
-  const sortedBusinesses = [...visibleBusinesses].sort((a, b) => {
+  const sortedBusinesses = [...realBusinesses].sort((a, b) => {
     if (
       a.approvalStatus === 'PENDING_REVIEW' &&
       b.approvalStatus !== 'PENDING_REVIEW'
@@ -90,6 +375,7 @@ export const AdminDashboardPage: React.FC = () => {
     return 0;
   });
 
+  // فقط اعلان‌های خوانده‌نشده در نوار بالا نمایش داده می‌شوند تا به‌محض تایید/رد یا بستن، از صفحه جمع شوند
   const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
 
   return (
@@ -97,7 +383,7 @@ export const AdminDashboardPage: React.FC = () => {
       <PageHeader
         kicker="پنل مدیریت کلان · Timeto (تایم تو)"
         title="داشبورد مدیریت پلتفرم"
-        subtitle="بررسی کسب‌وکارهای در انتظار تایید، پایش آمار رزروهای شبکه و مدیریت اشتراک‌ها"
+        subtitle="بررسی کسب‌وکارهای واقعی ثبت‌نام‌شده، مشاهده کامل پنل هر سالن، پایش آمار واقعی رزروها و مدیریت اشتراک‌ها"
         routePattern="/admin"
         breadcrumbs={[
           { label: 'پنل مدیریت پلتفرم' },
@@ -105,114 +391,180 @@ export const AdminDashboardPage: React.FC = () => {
         ]}
       />
 
-      {/* بنر اعلان هوشمند مدیریت کلان (ثبت سالن جدید و فیش‌های واریزی — فقط قابل مشاهده برای مدیر کل) */}
-      {adminNotifications.length > 0 ? (
+      {/* بنر اعلان هوشمند مدیریت کلان (فقط موارد بررسی‌نشده + قابلیت جمع‌شدن و حذف خودکار پس از تایید/رد) */}
+      {unreadNotifications.length > 0 ? (
         <Card className="border-2 border-[#F59E0B] bg-[#FFFBEB] space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#FDE68A] pb-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-[#D97706] shrink-0" />
               <h2 className="text-sm font-extrabold text-[#92400E]">
-                مرکز اعلان‌های آنی مدیر کل: کسب‌وکارهای جدید و سفارش‌های مالی (
-                {toPersianDigits(
-                  unreadNotifications.length || adminNotifications.length
-                )}{' '}
-                مورد)
+                اعلان‌های جدید در انتظار اقدام مدیر کل (
+                {toPersianDigits(unreadNotifications.length)} مورد)
               </h2>
             </div>
-            <button
-              type="button"
-              onClick={clearAllAdminNotifications}
-              className="text-xs font-extrabold text-[#B45309] hover:underline cursor-pointer"
-            >
-              علامت‌گذاری همه به‌عنوان خوانده‌شده
-            </button>
-          </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {adminNotifications.slice(0, 8).map((notif) => (
-              <div
-                key={notif.id}
-                className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
-                  notif.isRead
-                    ? 'bg-white/70 border-[#E2E8F0] text-[#475569]'
-                    : 'bg-white border-[#F59E0B] text-[#061138] shadow-2xs'
-                }`}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsNotifCollapsed((prev) => !prev)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-[#F59E0B]/50 text-xs font-extrabold text-[#92400E] hover:bg-[#FEF3C7] cursor-pointer"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                        notif.type === 'NEW_PAYMENT_ORDER'
-                          ? 'bg-[#EFF6FF] text-[#0057FF]'
-                          : 'bg-[#FEF3C7] text-[#92400E]'
-                      }`}
-                    >
-                      {notif.type === 'NEW_PAYMENT_ORDER'
-                        ? 'فیش / سفارش مالی'
-                        : 'ثبت کسب‌وکار جدید'}
-                    </span>
-                    <p className="font-extrabold text-[#061138]">
-                      {notif.title} · شهر {notif.city}
-                    </p>
-                  </div>
-                  <p className="text-[#334155]">
-                    {notif.message || (
-                      <>
-                        مالک: <strong>{notif.ownerName}</strong> · شماره تماس:{' '}
-                        <span
-                          dir="ltr"
-                          className="font-mono font-extrabold text-[#0057FF]"
-                        >
-                          {notif.ownerPhone}
-                        </span>
-                      </>
-                    )}{' '}
-                    · زمان ثبت: {notif.createdAtJalali}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {notif.type === 'NEW_PAYMENT_ORDER' ? (
-                    <Link
-                      to="/admin/payments"
-                      onClick={() => markAdminNotificationRead(notif.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0057FF] text-white text-xs font-extrabold hover:bg-[#0046CC]"
-                    >
-                      <CreditCard className="w-3.5 h-3.5" />
-                      <span>بررسی و تایید تراکنش</span>
-                    </Link>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        if (notif.businessId) {
-                          updateBusinessApproval(notif.businessId, 'APPROVED');
-                        }
-                        markAdminNotificationRead(notif.id);
-                      }}
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>تایید و انتشار سالن</span>
-                    </Button>
-                  )}
-                  {!notif.isRead ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => markAdminNotificationRead(notif.id)}
-                    >
-                      خوانده شد
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+                {isNotifCollapsed ? (
+                  <>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>باز کردن لیست اعلان‌ها</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                    <span>جمع کردن کادر اعلان</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={clearAllAdminNotifications}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#92400E] text-white text-xs font-extrabold hover:bg-[#78350F] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>بستن همه اعلان‌ها</span>
+              </button>
+            </div>
           </div>
+
+          {!isNotifCollapsed ? (
+            <div className="space-y-2 max-h-64 overflow-y-auto pt-2 border-t border-[#FDE68A]">
+              {unreadNotifications.map((notif) => {
+                const targetBiz = notif.businessId
+                  ? businesses.find((b) => b.id === notif.businessId) || null
+                  : null;
+                return (
+                  <div
+                    key={notif.id}
+                    className="p-3 rounded-2xl border bg-white border-[#F59E0B] text-[#061138] shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            notif.type === 'NEW_PAYMENT_ORDER'
+                              ? 'bg-[#EFF6FF] text-[#0057FF]'
+                              : notif.type === 'NEW_SUPPORT_TICKET'
+                              ? 'bg-[#F3E8FF] text-[#7E22CE]'
+                              : 'bg-[#FEF3C7] text-[#92400E]'
+                          }`}
+                        >
+                          {notif.type === 'NEW_PAYMENT_ORDER'
+                            ? 'فیش / سفارش مالی'
+                            : notif.type === 'NEW_SUPPORT_TICKET'
+                            ? 'تیکت پشتیبانی جدید'
+                            : 'ثبت کسب‌وکار جدید'}
+                        </span>
+                        <p className="font-extrabold text-[#061138]">
+                          {notif.title} · {notif.city}
+                        </p>
+                      </div>
+                      <p className="text-[#334155]">
+                        {notif.message || (
+                          <>
+                            فرستنده: <strong>{notif.ownerName}</strong> · شماره تماس:{' '}
+                            <span
+                              dir="ltr"
+                              className="font-mono font-extrabold text-[#0057FF]"
+                            >
+                              {notif.ownerPhone}
+                            </span>
+                          </>
+                        )}{' '}
+                        · زمان ثبت: <strong>{notif.createdAtJalali}</strong>
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {notif.type === 'NEW_PAYMENT_ORDER' ? (
+                        <Link
+                          to="/admin/payments"
+                          onClick={() => markAdminNotificationRead(notif.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0057FF] text-white text-xs font-extrabold hover:bg-[#0046CC]"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>بررسی و تایید تراکنش</span>
+                        </Link>
+                      ) : notif.type === 'NEW_SUPPORT_TICKET' ? (
+                        <Link
+                          to="/admin/support"
+                          onClick={() => markAdminNotificationRead(notif.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#7E22CE] text-white text-xs font-extrabold hover:bg-[#6B21A8]"
+                        >
+                          <Headphones className="w-3.5 h-3.5" />
+                          <span>مشاهده و پاسخ به تیکت</span>
+                        </Link>
+                      ) : (
+                        <>
+                          {targetBiz ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setInspectingBusiness(targetBiz)}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>مشاهده کامل پنل سالن</span>
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              if (notif.businessId) {
+                                updateBusinessApproval(
+                                  notif.businessId,
+                                  'APPROVED'
+                                );
+                              }
+                              markAdminNotificationRead(notif.id);
+                            }}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>تایید</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (notif.businessId) {
+                                updateBusinessApproval(
+                                  notif.businessId,
+                                  'REJECTED'
+                                );
+                              }
+                              markAdminNotificationRead(notif.id);
+                            }}
+                            className="text-[#EF4444] hover:bg-[#FEF2F2]"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>رد</span>
+                          </Button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => markAdminNotificationRead(notif.id)}
+                        title="بستن این اعلان"
+                        className="p-1.5 rounded-lg text-[#64748B] hover:text-[#061138] hover:bg-[#F1F5F9] cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </Card>
       ) : null}
 
-      {/* بنر دسترسی سریع به تنظیمات پیامک ملی‌پیامک */}
+      {/* بنر دسترسی سریع به تنظیمات پیامک ملی‌پیامک و تیکت‌های پشتیبانی */}
       <div className="rounded-3xl bg-[#061138] text-white p-4 sm:p-5 border border-[#1E293B] flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-2xl bg-[#0057FF] flex items-center justify-center shrink-0">
@@ -220,37 +572,45 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
           <div className="space-y-0.5">
             <p className="text-xs sm:text-sm font-extrabold text-white">
-              اتصال مستقیم و ۱ دقیقه‌ای پنل پیامک ملی‌پیامک (MelliPayamak)
+              تنظیمات مدیر کل، نام کاربری/رمز عبور و اتصال پیامک ملی‌پیامک
             </p>
             <p className="text-[11px] sm:text-xs text-slate-300">
-              کلید وب‌سرویس و کد الگوی پیامک (bodyId) خود را بدون درگیری با تنظیمات پیچیده وارد و در لحظه تست کنید.
+              تنظیم نام کاربری و رمز عبور مدیریت، درگاه پیامک و پاسخگویی به تیکت‌های پشتیبانی ({toPersianDigits(openTicketsCount)} تیکت باز)
             </p>
           </div>
         </div>
-        <Link to="/admin/settings">
-          <Button variant="accent" size="sm">
-            <span>راه‌اندازی و تست پیامک</span>
-          </Button>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/admin/support">
+            <Button variant="secondary" size="sm">
+              <Headphones className="w-4 h-4" />
+              <span>تیکت‌های پشتیبانی ({toPersianDigits(openTicketsCount)})</span>
+            </Button>
+          </Link>
+          <Link to="/admin/settings">
+            <Button variant="accent" size="sm">
+              <span>تنظیمات مدیر و پیامک</span>
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (KPI Strip) با آیکون کادردار و روند هفتگی — دقیقاً مطابق Capture6.PNG */}
+      {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (فقط بر اساس آمار واقعی دیتابیس) */}
       <div className="rounded-3xl bg-white border border-[#E6E0F5] p-5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-[#E6E0F5] shadow-2xs">
-        {/* ستون ۱: کل رزروها و دسته‌بندی‌ها */}
+        {/* ستون ۱: کل رزروهای واقعی و دسته‌بندی‌ها */}
         <div className="flex items-start justify-between gap-4 pt-2 md:pt-0">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              کل رزروها و دسته‌بندی‌های فعال
+              کل رزروهای واقعی و دسته‌بندی‌های فعال
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
-              ۱,۲۸۴ رزرو
+              {toPersianDigits(realAppointments.length)} رزرو ثبت‌شده
             </p>
             <div className="flex items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                ↗ +۱۴.۶٪ این هفته
+                آمار واقعی سامانه
               </span>
               <span className="text-[#6B6480] tabular-nums">
-                ({toPersianDigits(categories.length)} سرفصل)
+                ({toPersianDigits(categories.length)} سرفصل فعال)
               </span>
             </div>
           </div>
@@ -259,7 +619,7 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۲: مراکز در انتظار تایید */}
+        {/* ستون ۲: مراکز واقعی در انتظار تایید */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
@@ -273,7 +633,7 @@ export const AdminDashboardPage: React.FC = () => {
                 اولویت بررسی
               </span>
               <span className="text-[#6B6480] tabular-nums">
-                از مجموع {toPersianDigits(businesses.length)} مرکز
+                از مجموع {toPersianDigits(realBusinesses.length)} مرکز واقعی ثبت‌نام‌شده
               </span>
             </div>
           </div>
@@ -282,21 +642,26 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۳: درآمد اشتراک‌ها */}
+        {/* ستون ۳: درآمد واقعی اشتراک‌ها و تبلیغات */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              درآمد ماهانه اشتراک‌ها ({toPersianDigits(activeSubscriptionsCount)}{' '}
-              اشتراک فعال)
+              مجموع واریزی‌های تاییدشده ({toPersianDigits(activeSubscriptionsCount)}{' '}
+              سالن فعال)
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
-              {formatPriceToman(6640000)}
+              {approvedRevenueToman > 0
+                ? formatPriceToman(approvedRevenueToman)
+                : '۰ تومان'}
             </p>
             <div className="flex items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                ↗ +۱۰.۲٪ این هفته
+                {toPersianDigits(
+                  paymentOrders.filter((o) => o.status === 'APPROVED').length
+                )}{' '}
+                تراکنش موفق
               </span>
-              <span className="text-[#6B6480]">نرخ تمدید ۸۹٪</span>
+              <span className="text-[#6B6480]">بدون احتساب نمونه‌ها</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-center shrink-0">
@@ -305,21 +670,25 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ۲. نمودار تحلیلی دوخطی (Order / Booking Analytics) با ستون هایلایت و تولتیپ شناور — دقیقاً مطابق Capture6.PNG */}
+      {/* ۲. نمودار تحلیلی رزروها و عملکرد واقعی پلتفرم */}
       <Card className="rounded-3xl p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <h2 className="text-base sm:text-lg font-extrabold text-[#1E1B2E]">
-              آمار رزروها و عملکرد مالی پلتفرم (Booking Analytics)
+              نمودار روند ثبت‌نام سالن‌ها و رزروهای واقعی (Booking Analytics)
             </h2>
             <div className="flex flex-wrap items-center gap-4 text-xs text-[#6B6480]">
               <span className="inline-flex items-center gap-1.5 font-bold">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
-                <span>دوره جاری (این ماه)</span>
+                <span>
+                  مراکز واقعی ثبت‌شده: {toPersianDigits(realBusinesses.length)} سالن
+                </span>
               </span>
               <span className="inline-flex items-center gap-1.5 font-medium text-[#6B6480]">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#A78BFA]/70" />
-                <span>دوره مشابه قبل</span>
+                <span>
+                  نوبت‌های ثبت‌شده: {toPersianDigits(realAppointments.length)} مورد
+                </span>
               </span>
             </div>
           </div>
@@ -355,7 +724,6 @@ export const AdminDashboardPage: React.FC = () => {
               </linearGradient>
             </defs>
 
-            {/* خطوط افقی راهنما */}
             {[35, 80, 125, 170].map((y, idx) => (
               <g key={y}>
                 <line
@@ -372,12 +740,11 @@ export const AdminDashboardPage: React.FC = () => {
                   textAnchor="end"
                   className="fill-[#6B6480] text-[10px] font-bold"
                 >
-                  {['۱۰۰', '۷۵', '۵۰', '۲۵'][idx]}
+                  {['۴۰', '۳۰', '۲۰', '۱۰'][idx]}
                 </text>
               </g>
             ))}
 
-            {/* ستون عمودی هایلایت روز پنجشنبه — مطابق Capture6.PNG */}
             <rect
               x="505"
               y="20"
@@ -387,9 +754,8 @@ export const AdminDashboardPage: React.FC = () => {
               fill="url(#adm-bar-highlight)"
             />
 
-            {/* خط نقطه‌چین ماه قبل */}
             <path
-              d="M65,148 C145,130 215,142 295,112 C375,82 455,118 533,88 C605,60 650,92 685,78"
+              d="M65,155 C145,148 215,150 295,135 C375,120 455,130 533,108 C605,95 650,110 685,98"
               fill="none"
               stroke="#A78BFA"
               strokeOpacity="0.7"
@@ -398,52 +764,50 @@ export const AdminDashboardPage: React.FC = () => {
               strokeLinecap="round"
             />
 
-            {/* خط اصلی دوره جاری */}
             <path
-              d="M65,132 C145,98 215,122 295,84 C375,46 455,96 533,46 C605,18 650,64 685,42"
+              d="M65,145 C145,132 215,138 295,115 C375,92 455,110 533,76 C605,64 650,82 685,68"
               fill="none"
               stroke="#8B5CF6"
               strokeWidth="3.5"
               strokeLinecap="round"
             />
 
-            {/* نقطه فعال روی پنجشنبه + تولتیپ شناور سفید مطابق Capture6.PNG */}
             <circle
               cx="533"
-              cy="46"
+              cy="76"
               r="6"
               fill="#FFFFFF"
               stroke="#8B5CF6"
               strokeWidth="3.5"
             />
-            <g transform="translate(455, -4)">
+            <g transform="translate(445, 22)">
               <rect
                 x="0"
                 y="0"
-                width="156"
-                height="38"
+                width="176"
+                height="40"
                 rx="12"
                 fill="#1E1B2E"
               />
               <text
-                x="78"
+                x="88"
                 y="16"
                 textAnchor="middle"
                 className="fill-white text-[10px] font-extrabold"
               >
-                پنجشنبه · اوج رزرو هفتگی
+                وضعیت شبکه واقعی (اصفهان و درچه)
               </text>
               <text
-                x="78"
-                y="30"
+                x="88"
+                y="31"
                 textAnchor="middle"
                 className="fill-amber-300 text-[11px] font-extrabold"
               >
-                ۶۴,۸۰۰,۰۰۰ تومان
+                {toPersianDigits(realBusinesses.length)} سالن ·{' '}
+                {toPersianDigits(realAppointments.length)} رزرو
               </text>
             </g>
 
-            {/* برچسب روزهای هفته */}
             {[
               { x: 65, label: 'شنبه' },
               { x: 170, label: 'یکشنبه' },
@@ -475,42 +839,27 @@ export const AdminDashboardPage: React.FC = () => {
           <div>
             <h2 className="text-base font-extrabold text-[#1E1B2E]">
               صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده (
-              {toPersianDigits(sortedBusinesses.length)} مورد)
+              {toPersianDigits(sortedBusinesses.length)} مرکز واقعی)
             </h2>
             <p className="text-xs text-[#6B6480]">
-              به‌طور پیش‌فرض فقط کسب‌وکارهای واقعی ثبت‌نام‌شده نمایش داده می‌شوند و نمونه‌های نمایشی پنهان شده‌اند
+              اطلاعات خلاصه در جدول نمایش داده شده است؛ با زدن «مشاهده کامل پنل سالن» تمام جزئیات، خدمات، متخصصان و زمان درخواست را ببینید
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowSampleSalons((p) => !p)}
-            className="px-3 py-1.5 rounded-xl border border-[#CBD5E1] bg-white text-xs font-bold text-[#334155] hover:border-[#0057FF] cursor-pointer"
-          >
-            {showSampleSalons
-              ? 'پنهان کردن سالن‌های نمونه نمایشی'
-              : 'نمایش سالن‌های نمونه نمایشی'}
-          </button>
         </div>
 
         <ResponsiveTable
           keyExtractor={(b) => b.id}
           data={sortedBusinesses}
+          emptyMessage="هنوز کسب‌وکار جدیدی خارج از نمونه‌های نمایشی ثبت‌نام نکرده است. به‌محض ثبت سالن توسط صاحبان کسب‌وکار، مشخصات کامل آن در این جدول قرار می‌گیرد."
           columns={[
             {
               key: 'name',
-              header: 'نام کسب‌وکار و مسیر ↕',
+              header: 'نام کسب‌وکار و زمان ثبت',
               render: (b) => (
                 <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-extrabold text-[#1E1B2E]">{b.name}</p>
-                    {b.isSampleShowcase ? (
-                      <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold">
-                        نمونه
-                      </span>
-                    ) : null}
-                  </div>
-                  <p dir="ltr" className="text-[11px] font-mono text-[#6B6480]">
-                    /{b.slug}
+                  <p className="font-extrabold text-[#1E1B2E]">{b.name}</p>
+                  <p className="text-[11px] text-[#6B6480]">
+                    زمان درخواست: {b.createdAtJalali || 'ثبت‌شده در سامانه'}
                   </p>
                 </div>
               ),
@@ -534,7 +883,7 @@ export const AdminDashboardPage: React.FC = () => {
             },
             {
               key: 'type',
-              header: 'نوع فعالیت / شهر و محله ↕',
+              header: 'نوع فعالیت / شهر و محله',
               render: (b) => (
                 <div className="text-xs space-y-0.5">
                   <span className="font-bold text-[#1E1B2E] block">
@@ -568,9 +917,17 @@ export const AdminDashboardPage: React.FC = () => {
             },
             {
               key: 'actions',
-              header: 'تایید / رد سریع',
+              header: 'مشاهده کامل پنل / تایید و رد',
               render: (b) => (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setInspectingBusiness(b)}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>مشاهده کامل پنل سالن</span>
+                  </Button>
                   <Button
                     variant="primary"
                     size="sm"
@@ -593,10 +950,16 @@ export const AdminDashboardPage: React.FC = () => {
           ]}
         />
       </div>
+
+      <BusinessFullInspectModal
+        business={inspectingBusiness}
+        onClose={() => setInspectingBusiness(null)}
+        onApprove={(id) => updateBusinessApproval(id, 'APPROVED')}
+        onReject={(id) => updateBusinessApproval(id, 'REJECTED')}
+      />
     </div>
   );
 };
-
 
 /** ۲. مدیریت کسب‌وکارها (/admin/businesses) */
 export const AdminBusinessesPage: React.FC = () => {
@@ -610,12 +973,12 @@ export const AdminBusinessesPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<ApprovalStatus | 'ALL'>(
     'ALL'
   );
-  const [showSampleSalons, setShowSampleSalons] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [inspectingBusiness, setInspectingBusiness] =
+    useState<BusinessItem | null>(null);
 
-  const sourceBusinesses = showSampleSalons
-    ? businesses
-    : businesses.filter((b) => !b.isSampleShowcase);
+  // فقط کسب‌وکارهای واقعی (بدون نمونه‌های نمایشی)
+  const sourceBusinesses = businesses.filter((b) => !b.isSampleShowcase);
 
   const filtered = sourceBusinesses.filter((b) => {
     const q = searchQuery.trim();
@@ -636,25 +999,14 @@ export const AdminBusinessesPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="نظارت و عملیات · مراکز زیبایی ثبت‌نام‌شده"
+        kicker="نظارت و عملیات · مراکز زیبایی ثبت‌نام‌شده واقعی"
         title="بررسی، تایید و مدیریت کسب‌وکارهای عضو"
-        subtitle="مشاهده اطلاعات کامل صاحب کسب‌وکار، شماره موبایل کامل، شارژ فوری پیامک و تایید یا رد پروفایل سالن‌ها"
+        subtitle="مشاهده خلاصه اطلاعات در جدول و بررسی کامل تمام بخش‌های پنل ایجادشده توسط صاحب کسب‌وکار (خدمات، متخصصان، ساعات کاری و لوکیشن)"
         routePattern="/admin/businesses"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
           { label: 'کسب‌وکارها' },
         ]}
-        actions={
-          <button
-            type="button"
-            onClick={() => setShowSampleSalons((p) => !p)}
-            className="px-3.5 py-2 rounded-xl border border-[#CBD5E1] bg-white text-xs font-extrabold text-[#061138] hover:border-[#0057FF] cursor-pointer"
-          >
-            {showSampleSalons
-              ? 'پنهان کردن سالن‌های نمونه نمایشی'
-              : 'نمایش سالن‌های نمونه نمایشی'}
-          </button>
-        }
       />
 
       <Card className="mb-6 space-y-4">
@@ -734,26 +1086,25 @@ export const AdminBusinessesPage: React.FC = () => {
       <ResponsiveTable
         keyExtractor={(b) => b.id}
         data={filtered}
+        emptyMessage="هیچ کسب‌وکار واقعی با این فیلتر یافت نشد."
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار و پلن',
+            header: 'عنوان کسب‌وکار و زمان ثبت',
             render: (b) => (
               <div className="space-y-0.5">
                 <span className="font-extrabold text-[#1E1B2E] block">
                   {b.name}
                 </span>
                 <span className="text-[11px] text-[#0057FF] font-bold block">
-                  {b.subscriptionPlan} · ارسال پیامک:{' '}
-                  {toPersianDigits(b.smsSentCount ?? 0)} عدد (شارژ اضافه:{' '}
-                  {toPersianDigits(b.extraSmsBalance ?? 0)})
+                  {b.subscriptionPlan} · ثبت: {b.createdAtJalali || 'جدید'}
                 </span>
               </div>
             ),
           },
           {
             key: 'owner',
-            header: 'مشخصات کامل مالک و شماره تماس',
+            header: 'مشخصات مالک و شماره تماس',
             render: (b) => (
               <div className="space-y-0.5 text-xs">
                 <span className="font-bold text-[#061138] block">
@@ -770,14 +1121,14 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'city',
-            header: 'شهر، محله و نشانی',
+            header: 'شهر و محله',
             render: (b) => (
               <div className="text-xs space-y-0.5 max-w-xs">
                 <span className="font-bold text-[#1E1B2E] block">
                   {b.city}، {b.neighborhood}
                 </span>
                 <span className="text-[11px] text-[#64748B] line-clamp-1">
-                  {b.address}
+                  {b.typeLabel}
                 </span>
               </div>
             ),
@@ -806,9 +1157,17 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'عملیات بررسی و شارژ پیامک',
+            header: 'مشاهده کامل پنل و عملیات مدیر',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setInspectingBusiness(b)}
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>مشاهده کامل پنل سالن</span>
+                </Button>
                 <Button
                   variant="primary"
                   size="sm"
@@ -844,6 +1203,13 @@ export const AdminBusinessesPage: React.FC = () => {
             ),
           },
         ]}
+      />
+
+      <BusinessFullInspectModal
+        business={inspectingBusiness}
+        onClose={() => setInspectingBusiness(null)}
+        onApprove={(id) => updateBusinessApproval(id, 'APPROVED')}
+        onReject={(id) => updateBusinessApproval(id, 'REJECTED')}
       />
 
       <ConfirmationDialog
@@ -977,20 +1343,28 @@ export const AdminUsersPage: React.FC = () => {
   );
 };
 
-/** ۴. مدیریت دسته‌بندی‌ها (/admin/categories) */
+/** ۴. مدیریت دسته‌بندی‌ها (/admin/categories) — همراه با آیکون‌های اصلی، ویرایش، حذف و جابه‌جایی اولویت نمایش */
 export const AdminCategoriesPage: React.FC = () => {
-  const { categories, addCategory, updateCategory } = usePrototypeData();
+  const {
+    categories,
+    addCategory,
+    updateCategory,
+    deleteCategory,
+    reorderCategory,
+  } = usePrototypeData();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCat, setEditingCat] = useState<CategoryItem | null>(null);
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [subtitle, setSubtitle] = useState('');
+  const [iconName, setIconName] = useState('Sparkles');
 
   const openAdd = () => {
     setEditingCat(null);
     setTitle('');
     setSlug('');
     setSubtitle('');
+    setIconName('Sparkles');
     setModalOpen(true);
   };
 
@@ -999,6 +1373,7 @@ export const AdminCategoriesPage: React.FC = () => {
     setTitle(cat.title);
     setSlug(cat.slug);
     setSubtitle(cat.subtitle);
+    setIconName(cat.iconName || 'Sparkles');
     setModalOpen(true);
   };
 
@@ -1010,6 +1385,7 @@ export const AdminCategoriesPage: React.FC = () => {
         title: title.trim(),
         slug: slug.trim(),
         subtitle: subtitle.trim(),
+        iconName,
       });
     } else {
       addCategory({
@@ -1018,18 +1394,18 @@ export const AdminCategoriesPage: React.FC = () => {
         subtitle: subtitle.trim() || 'دسته‌بندی خدمات زیبایی',
         serviceCount: 12,
         targetAudience: 'سالن‌ها و متخصصان زیبایی',
-        iconName: 'Sparkles',
+        iconName,
       });
     }
     setModalOpen(false);
   };
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        kicker="ساختار بازارچه · طبقه‌بندی خدمات"
-        title="مدیریت دسته‌بندی‌های خدمات"
-        subtitle="افزودن و ویرایش سرفصل‌های استاندارد خدمات زیبایی در پلتفرم"
+        kicker="ساختار بازارچه · طبقه‌بندی خدمات و اولویت نمایش در صفحه اول"
+        title="مدیریت دسته‌بندی‌های خدمات و چیدمان آیکون‌ها"
+        subtitle="تمامی دسته‌بندی‌های اصلی (آرایش و میکاپ، ناخن، مو و رنگ، پوست و فیشیال، ابرو و مژه، آرایشگاه مردانه و...) همراه با آیکون و قابلیت تغییر اولویت (بالا / پایین)"
         routePattern="/admin/categories"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -1038,7 +1414,7 @@ export const AdminCategoriesPage: React.FC = () => {
         actions={
           <Button variant="primary" size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4" />
-            <span>افزودن دسته‌بندی</span>
+            <span>افزودن دسته‌بندی جدید</span>
           </Button>
         }
       />
@@ -1048,11 +1424,51 @@ export const AdminCategoriesPage: React.FC = () => {
         data={categories}
         columns={[
           {
-            key: 'title',
-            header: 'عنوان دسته‌بندی',
-            render: (c) => (
-              <span className="font-extrabold text-[#1E1B2E]">{c.title}</span>
+            key: 'order',
+            header: 'اولویت نمایش',
+            render: (c, idx) => (
+              <div className="flex items-center gap-1.5">
+                <span className="w-6 h-6 rounded-lg bg-[#F1F5F9] text-[#061138] font-extrabold text-xs inline-flex items-center justify-center tabular-nums">
+                  {toPersianDigits((idx ?? 0) + 1)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => reorderCategory(c.id, 'UP')}
+                  disabled={idx === 0}
+                  title="انتقال به اولویت بالاتر"
+                  className="p-1 rounded-lg border border-[#CBD5E1] bg-white hover:border-[#0057FF] disabled:opacity-35 cursor-pointer"
+                >
+                  <ArrowUp className="w-3.5 h-3.5 text-[#061138]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => reorderCategory(c.id, 'DOWN')}
+                  disabled={idx === categories.length - 1}
+                  title="انتقال به اولویت پایین‌تر"
+                  className="p-1 rounded-lg border border-[#CBD5E1] bg-white hover:border-[#0057FF] disabled:opacity-35 cursor-pointer"
+                >
+                  <ArrowDown className="w-3.5 h-3.5 text-[#061138]" />
+                </button>
+              </div>
             ),
+          },
+          {
+            key: 'title',
+            header: 'آیکون و عنوان دسته‌بندی',
+            render: (c) => {
+              const IconComp =
+                CATEGORY_ICON_COMPONENTS[c.iconName] || Sparkles;
+              return (
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-[#E0ECFF] text-[#0057FF] flex items-center justify-center shrink-0">
+                    <IconComp className="w-4 h-4" />
+                  </div>
+                  <span className="font-extrabold text-[#1E1B2E]">
+                    {c.title}
+                  </span>
+                </div>
+              );
+            },
           },
           {
             key: 'slug',
@@ -1074,21 +1490,23 @@ export const AdminCategoriesPage: React.FC = () => {
             ),
           },
           {
-            key: 'count',
-            header: 'تعداد خدمات',
-            render: (c) => (
-              <span className="tabular-nums font-bold text-[#8B5CF6]">
-                {toPersianDigits(c.serviceCount)} خدمت
-              </span>
-            ),
-          },
-          {
             key: 'action',
-            header: 'ویرایش',
+            header: 'عملیات ویرایش / حذف',
             render: (c) => (
-              <Button variant="outline" size="sm" onClick={() => openEdit(c)}>
-                ویرایش
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => openEdit(c)}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>ویرایش</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => deleteCategory(c.id)}
+                  className="text-[#EF4444] hover:bg-[#FEF2F2]"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             ),
           },
         ]}
@@ -1098,7 +1516,7 @@ export const AdminCategoriesPage: React.FC = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={
-          editingCat ? 'ویرایش دسته‌بندی' : 'افزودن دسته‌بندی جدید'
+          editingCat ? 'ویرایش دسته‌بندی و آیکون' : 'افزودن دسته‌بندی جدید'
         }
       >
         <form onSubmit={handleSave} className="space-y-4">
@@ -1107,6 +1525,7 @@ export const AdminCategoriesPage: React.FC = () => {
               id="cat-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              placeholder="مثلاً آرایش و میکاپ"
             />
           </FormField>
           <FormField id="cat-slug" label="شناسه انگلیسی (Slug)" required>
@@ -1115,6 +1534,24 @@ export const AdminCategoriesPage: React.FC = () => {
               dir="ltr"
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
+              placeholder="makeup"
+            />
+          </FormField>
+          <FormField id="cat-icon" label="انتخاب آیکون نمایشی در صفحه اول">
+            <Select
+              id="cat-icon"
+              value={iconName}
+              onChange={(e) => setIconName(e.target.value)}
+              options={[
+                { value: 'Sparkles', label: '✨ درخشش (آرایش و میکاپ)' },
+                { value: 'Gem', label: '💎 نگین (ناخن و مانیکور)' },
+                { value: 'Scissors', label: '✂️ قیچی (مو، رنگ و کوتاهی)' },
+                { value: 'Droplets', label: '💧 قطره (پوست و فیشیال)' },
+                { value: 'Eye', label: '👁️ چشم (ابرو و مژه)' },
+                { value: 'UserCheck', label: '🧔 پیرایش (آرایشگاه مردانه)' },
+                { value: 'Award', label: '🏆 تاج (پکیج عروس VIP)' },
+                { value: 'HeartHandshake', label: '🌿 اسپا و مراقبت بدن' },
+              ]}
             />
           </FormField>
           <FormField id="cat-sub" label="توضیح کوتاه خدمات زیرمجموعه">
@@ -1122,6 +1559,7 @@ export const AdminCategoriesPage: React.FC = () => {
               id="cat-sub"
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
+              placeholder="میکاپ تخصصی، گریم عروس، شینیون..."
             />
           </FormField>
           <div className="flex justify-end gap-2 pt-2">
@@ -1141,6 +1579,7 @@ export const AdminCategoriesPage: React.FC = () => {
     </div>
   );
 };
+
 
 /** ۵. مدیریت اشتراک‌ها و جایگاه‌های تبلیغاتی (/admin/subscriptions) */
 export const AdminSubscriptionsPage: React.FC = () => {
@@ -1524,8 +1963,8 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* بخش ۲: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل) */}
-      <Card className="bg-[#061138] text-white border-[#1E293B] space-y-4">
+      {/* بخش ۲: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل — با کنتراست بالا و خوانایی کامل) */}
+      <Card variant="dark" className="space-y-4 border-2 border-[#0057FF]/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <span className="text-xs font-extrabold text-[#00E5FF]">
@@ -1544,30 +1983,30 @@ export const AdminSubscriptionsPage: React.FC = () => {
           {adPackages.map((pkg, idx) => (
             <div
               key={pkg.id}
-              className="p-4 rounded-2xl bg-white/10 border border-white/15 flex flex-col justify-between space-y-3"
+              className="p-4 rounded-2xl bg-white text-[#061138] border border-[#CBD5E1] shadow-2xs flex flex-col justify-between space-y-3"
             >
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-extrabold text-[#00E5FF]">
+                  <span className="font-extrabold text-[#0057FF] text-sm">
                     {toPersianDigits(idx + 1)}. {pkg.title}
                   </span>
-                  <span className="px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-slate-200">
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[10px] font-extrabold text-[#0057FF] shrink-0">
                     {pkg.badge}
                   </span>
                 </div>
-                <p className="text-slate-200 leading-relaxed">
+                <p className="text-[#334155] leading-relaxed font-medium">
                   {pkg.description}
                 </p>
-                <p className="font-extrabold text-white pt-1 tabular-nums text-sm">
+                <p className="font-extrabold text-[#061138] pt-1.5 border-t border-[#E2E8F0] tabular-nums text-sm">
                   {formatPriceToman(pkg.priceToman)}
                   {pkg.slot !== 'SMS_ADDON' ? (
-                    <span className="text-[11px] font-normal text-slate-300">
+                    <span className="text-[11px] font-bold text-[#64748B]">
                       {' '}
                       / ماهانه ({formatPriceToman(pkg.weeklyPriceToman ?? 190000)}{' '}
                       هفتگی)
                     </span>
                   ) : (
-                    <span className="text-[11px] font-normal text-emerald-300">
+                    <span className="text-[11px] font-extrabold text-[#059669]">
                       {' '}
                       / بسته {toPersianDigits(pkg.smsCount ?? 200)} پیامک
                     </span>
@@ -1576,7 +2015,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
               </div>
               <Button
                 type="button"
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 fullWidth
                 onClick={() => openEditAdPkgModal(pkg)}
@@ -1589,26 +2028,25 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* بخش ۳: جدول کنترل کامل جایگاه، رتبه و مدت زمان تبلیغ هر کسب‌وکار */}
+      {/* بخش ۳: جدول کنترل کامل جایگاه، رتبه و مدت زمان تبلیغ هر کسب‌وکار واقعی */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold text-[#061138]">
-              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش، پلن و شارژ پیامک هر کسب‌وکار
+              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش، پلن و شارژ پیامک کسب‌وکارهای واقعی
             </h2>
             <p className="text-xs text-[#64748B]">
               تعیین کنید کدام سالن در صدر جست‌وجو یا بنر صفحه اول باشد، در چه
               رتبه‌ای قرار بگیرد، چند روز اعتبار تبلیغاتی یا پیامک اضافه داشته باشد
             </p>
           </div>
-          {businesses.length > 0 ? (
+          {businesses.filter((b) => !b.isSampleShowcase).length > 0 ? (
             <Button
               type="button"
               variant="primary"
               size="sm"
               onClick={() => {
-                const target =
-                  businesses.find((b) => !b.isSampleShowcase) ?? businesses[0];
+                const target = businesses.find((b) => !b.isSampleShowcase);
                 if (target) openManageBizModal(target);
               }}
             >
@@ -1620,7 +2058,8 @@ export const AdminSubscriptionsPage: React.FC = () => {
 
         <ResponsiveTable
           keyExtractor={(b) => b.id}
-          data={businesses}
+          data={businesses.filter((b) => !b.isSampleShowcase)}
+          emptyMessage="هنوز کسب‌وکار واقعی ثبت‌نام‌شده‌ای وجود ندارد. به‌محض ثبت سالن جدید، می‌توانید پلن، پیامک و جایگاه تبلیغاتی آن را در این بخش تنظیم کنید."
           columns={[
             {
               key: 'name',
@@ -1631,11 +2070,6 @@ export const AdminSubscriptionsPage: React.FC = () => {
                     <span className="font-extrabold text-[#061138] block">
                       {b.name}
                     </span>
-                    {b.isSampleShowcase ? (
-                      <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold">
-                        نمونه
-                      </span>
-                    ) : null}
                   </div>
                   <span className="text-[11px] text-[#64748B] block">
                     {b.city} · {b.neighborhood} · تماس:{' '}
@@ -2457,21 +2891,41 @@ export const AdminPaymentsPage: React.FC = () => {
   );
 };
 
-/** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) */
+/** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) — فقط بر اساس آمار واقعی دیتابیس (بدون نمونه‌های نمایشی) */
 export const AdminReportsPage: React.FC = () => {
-  const cityBreakdown = [
-    { city: 'اصفهان — چهارباغ بالا و نظر شرقی', pct: 35, count: '۳ مرکز فعال' },
-    { city: 'درچه (اصفهان)', pct: 25, count: '۲ مرکز فعال' },
-    { city: 'اصفهان — مرداویج و شیخ صدوق', pct: 25, count: '۲ مرکز فعال' },
-    { city: 'اصفهان — جلفا و سپاهان‌شهر', pct: 15, count: '۱ مرکز فعال' },
-  ];
+  const { businesses, appointments, paymentOrders, supportTickets } =
+    usePrototypeData();
+
+  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+  const realAppointments = appointments.filter((a) =>
+    realBusinesses.some((b) => b.id === a.businessId)
+  );
+  const approvedOrders = paymentOrders.filter((o) => o.status === 'APPROVED');
+  const totalRevenueToman = approvedOrders.reduce(
+    (sum, o) => sum + (Number(o.amountToman) || 0),
+    0
+  );
+
+  // محاسبه واقعی توزیع کسب‌وکارها بر اساس شهر و محله
+  const locationMap: Record<string, number> = {};
+  for (const b of realBusinesses) {
+    const key = `${b.city} — ${b.neighborhood || 'مرکز شهر'}`;
+    locationMap[key] = (locationMap[key] || 0) + 1;
+  }
+  const totalReal = realBusinesses.length;
+  const cityBreakdown = Object.entries(locationMap).map(([city, count]) => ({
+    city,
+    countNum: count,
+    pct: totalReal > 0 ? Math.round((count / totalReal) * 100) : 0,
+    countLabel: `${toPersianDigits(count)} مرکز واقعی`,
+  }));
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="گزارش‌های کلان · آمار پلتفرم در اصفهان و درچه"
-        title="گزارش‌های تحلیلی کلان پلتفرم"
-        subtitle="آمار توزیع کسب‌وکارها در محله‌های اصفهان و درچه، رشد نوبت‌دهی و نرخ تمدید اشتراک"
+        kicker="گزارش‌های کلان · آمار واقعی پلتفرم در اصفهان و درچه"
+        title="گزارش‌های تحلیلی کلان پلتفرم (داده‌های واقعی)"
+        subtitle="آمار واقعی توزیع کسب‌وکارهای ثبت‌نام‌شده، تعداد رزروهای ثبت‌شده و مجموع تراکنش‌های تاییدشده (بدون احتساب سالن‌های نمونه)"
         routePattern="/admin/reports"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -2482,43 +2936,70 @@ export const AdminReportsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="space-y-4">
           <h2 className="text-sm font-extrabold text-[#061138]">
-            توزیع کسب‌وکارهای عضو در محله‌های اصفهان و درچه
+            توزیع جغرافیایی کسب‌وکارهای واقعی ثبت‌نام‌شده ({toPersianDigits(totalReal)} مرکز)
           </h2>
-          <div className="space-y-3.5">
-            {cityBreakdown.map((item) => (
-              <div key={item.city} className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="font-bold text-[#1E1B2E]">{item.city}</span>
-                  <span className="font-bold text-[#6B6480] tabular-nums">
-                    {toPersianDigits(item.pct)}٪ ({item.count})
-                  </span>
+          {cityBreakdown.length === 0 ? (
+            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#64748B] leading-relaxed">
+              هنوز کسب‌وکار واقعی خارج از نمونه‌های نمایشی ثبت نشده است. به‌محض ثبت اولین سالن، نمودار تفکیک محله‌های اصفهان و درچه به‌صورت خودکار محاسبه می‌شود.
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {cityBreakdown.map((item) => (
+                <div key={item.city} className="space-y-1.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="font-bold text-[#1E1B2E]">{item.city}</span>
+                    <span className="font-bold text-[#6B6480] tabular-nums">
+                      {toPersianDigits(item.pct)}٪ ({item.countLabel})
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
+                    <div
+                      className="h-full bg-[#8B5CF6] rounded-full"
+                      style={{ width: `${item.pct}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
-                  <div
-                    className="h-full bg-[#8B5CF6] rounded-full"
-                    style={{ width: `${item.pct}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card className="space-y-4 flex flex-col justify-between">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-              شاخص ماندگاری و تمدید اشتراک ماهانه
+              خلاصه عملکرد واقعی مالی و عملیاتی پلتفرم
             </h2>
-            <p className="text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
-              {toPersianDigits(89)}٪
-            </p>
-            <p className="text-xs text-[#6B6480] leading-relaxed">
-              میانگین نرخ تمدید اشتراک سالن‌ها پس از پایان دوره آزمایشی ۱۴ روزه.
-            </p>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1">
+                <span className="text-[#6B6480] block">مجموع درآمد تاییدشده:</span>
+                <span className="text-base font-extrabold text-[#8B5CF6] tabular-nums block">
+                  {totalRevenueToman > 0
+                    ? formatPriceToman(totalRevenueToman)
+                    : '۰ تومان'}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-1">
+                <span className="text-[#64748B] block">کل نوبت‌های واقعی:</span>
+                <span className="text-base font-extrabold text-[#061138] tabular-nums block">
+                  {toPersianDigits(realAppointments.length)} نوبت
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 space-y-1">
+                <span className="text-[#047857] block">تراکنش‌های موفق:</span>
+                <span className="text-base font-extrabold text-[#065F46] tabular-nums block">
+                  {toPersianDigits(approvedOrders.length)} سفارش
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-1">
+                <span className="text-[#1D4ED8] block">تیکت‌های پشتیبانی:</span>
+                <span className="text-base font-extrabold text-[#0057FF] tabular-nums block">
+                  {toPersianDigits(supportTickets.length)} تیکت
+                </span>
+              </div>
+            </div>
           </div>
           <div className="p-3.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] text-xs text-[#6B6480]">
-            بیشترین تقاضای رزرو آنلاین در ماه جاری: لاین «مو و رنگ» و «ناخن و
-            مانیکور».
+            تمامی اعداد این صفحه مستقیماً از دیتابیس واقعی استخراج شده‌اند و سالن‌های نمونه نمایشی در این آمار لحاظ نشده‌اند.
           </div>
         </Card>
       </div>
@@ -2526,7 +3007,258 @@ export const AdminReportsPage: React.FC = () => {
   );
 };
 
-/** ۸. تنظیمات کلان سامانه، رمز عبور مدیر کل و اتصال آسان ملی‌پیامک (/admin/settings) */
+/** ۸. مدیریت تیکت‌ها و سوالات پشتیبانی مشتریان و صاحبان کسب‌وکار (/admin/support) */
+export const AdminSupportPage: React.FC = () => {
+  const { supportTickets, replySupportTicket } = usePrototypeData();
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'ANSWERED'>(
+    'ALL'
+  );
+  const [roleFilter, setRoleFilter] = useState<
+    'ALL' | 'CUSTOMER' | 'BUSINESS_OWNER'
+  >('ALL');
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
+
+  const filteredTickets = supportTickets.filter((t) => {
+    const matchStatus = statusFilter === 'ALL' || t.status === statusFilter;
+    const matchRole = roleFilter === 'ALL' || t.senderRole === roleFilter;
+    return matchStatus && matchRole;
+  });
+
+  const openCount = supportTickets.filter((t) => t.status === 'OPEN').length;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        kicker="پشتیبانی و ارتباط با کاربران · خط ویژه 09138201042"
+        title="مدیریت تیکت‌ها و سوالات پشتیبانی (مشتریان و سالن‌داران)"
+        subtitle="مشاهده سوالات ثبت‌شده در بخش پشتیبانی سایت با تفکیک دقیق «مشتری عادی» یا «صاحب کسب‌وکار (همراه با نام سالن)» و ارسال پاسخ مستقیم"
+        routePattern="/admin/support"
+        breadcrumbs={[
+          { label: 'پنل مدیریت', href: '/admin' },
+          { label: 'تیکت‌ها و پشتیبانی' },
+        ]}
+      />
+
+      {/* نوار فیلتر وضعیت و نقش فرستنده */}
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'ALL', label: `همه تیکت‌ها (${toPersianDigits(supportTickets.length)})` },
+              { id: 'OPEN', label: `در انتظار پاسخ (${toPersianDigits(openCount)})` },
+              {
+                id: 'ANSWERED',
+                label: `پاسخ داده‌شده (${toPersianDigits(
+                  supportTickets.length - openCount
+                )})`,
+              },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() =>
+                  setStatusFilter(tab.id as 'ALL' | 'OPEN' | 'ANSWERED')
+                }
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                  statusFilter === tab.id
+                    ? 'bg-[#0057FF] text-white'
+                    : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-[#64748B]">فیلتر فرستنده:</span>
+            {[
+              { id: 'ALL', label: 'همه فرستنده‌ها' },
+              { id: 'BUSINESS_OWNER', label: 'فقط صاحبان کسب‌وکار (سالن‌داران)' },
+              { id: 'CUSTOMER', label: 'فقط مشتریان عادی' },
+            ].map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() =>
+                  setRoleFilter(
+                    r.id as 'ALL' | 'CUSTOMER' | 'BUSINESS_OWNER'
+                  )
+                }
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                  roleFilter === r.id
+                    ? 'bg-[#061138] text-white'
+                    : 'bg-white text-[#475569] border border-[#CBD5E1]'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* لیست تیکت‌ها و فرم پاسخگویی */}
+      {filteredTickets.length === 0 ? (
+        <Card className="p-8 text-center space-y-2">
+          <Headphones className="w-8 h-8 text-[#0057FF] mx-auto" />
+          <p className="text-sm font-extrabold text-[#061138]">
+            هیچ تیکت پشتیبانی با این فیلتر وجود ندارد
+          </p>
+          <p className="text-xs text-[#64748B]">
+            هر زمان مشتری یا صاحب یکی از سالن‌ها در صفحه «پشتیبانی (/help)» سوال یا تیکتی ثبت کند، بلافاصله در این صفحه قابل مشاهده و پاسخگویی خواهد بود.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredTickets.map((ticket) => {
+            const isOpenReply =
+              expandedTicketId === ticket.id || ticket.status === 'OPEN';
+            const draftValue =
+              replyDrafts[ticket.id] !== undefined
+                ? replyDrafts[ticket.id]
+                : ticket.adminReply || '';
+
+            return (
+              <Card
+                key={ticket.id}
+                className={`space-y-4 border-2 ${
+                  ticket.status === 'OPEN'
+                    ? 'border-[#F59E0B] bg-[#FFFBEB]/40'
+                    : 'border-[#CBD5E1] bg-white'
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E2E8F0] pb-3">
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* نشان واضح تفکیک مشتری یا صاحب کسب‌وکار */}
+                      {ticket.senderRole === 'BUSINESS_OWNER' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F3E8FF] text-[#6B21A8] border border-[#D8B4FE] text-xs font-extrabold">
+                          <Building2 className="w-3.5 h-3.5" />
+                          <span>
+                            صاحب کسب‌وکار:{' '}
+                            {ticket.businessName || 'سالن زیبایی'}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] border border-[#BFDBFE] text-xs font-extrabold">
+                          <Users className="w-3.5 h-3.5" />
+                          <span>مشتری / مراجعه‌کننده</span>
+                        </span>
+                      )}
+
+                      <StatusBadge
+                        label={
+                          ticket.status === 'ANSWERED'
+                            ? 'پاسخ داده‌شده توسط مدیر'
+                            : 'در انتظار پاسخ شما'
+                        }
+                        tone={ticket.status === 'ANSWERED' ? 'success' : 'warning'}
+                      />
+
+                      <span className="text-xs text-[#64748B] tabular-nums">
+                        زمان ثبت: {ticket.createdAtJalali}
+                      </span>
+                    </div>
+
+                    <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                      موضوع: {ticket.subject}
+                    </h3>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-bold text-[#334155]">
+                      فرستنده: <strong className="text-[#061138]">{ticket.senderName}</strong>
+                    </span>
+                    <a
+                      href={`tel:${ticket.senderPhone}`}
+                      dir="ltr"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-[#061138] text-white font-mono font-extrabold"
+                    >
+                      <Phone className="w-3 h-3 text-[#00E5FF]" />
+                      <span>{ticket.senderPhone}</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* متن پیام کاربر */}
+                <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-xs text-[#061138] leading-relaxed">
+                  <p className="font-bold text-[#64748B] mb-1">متن پیام / سوال:</p>
+                  <p>{ticket.message}</p>
+                </div>
+
+                {/* پاسخ قبلی مدیر در صورت وجود */}
+                {ticket.adminReply ? (
+                  <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/40 text-xs text-[#065F46] space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-extrabold text-[#047857]">
+                        پاسخ ثبت‌شده مدیریت ({ticket.repliedAtJalali || 'ثبت‌شده'}):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedTicketId(
+                            expandedTicketId === ticket.id ? null : ticket.id
+                          )
+                        }
+                        className="text-[11px] font-extrabold text-[#0057FF] hover:underline cursor-pointer"
+                      >
+                        ویرایش پاسخ
+                      </button>
+                    </div>
+                    <p className="leading-relaxed">{ticket.adminReply}</p>
+                  </div>
+                ) : null}
+
+                {/* فرم ارسال / ویرایش پاسخ مدیر */}
+                {isOpenReply ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!draftValue.trim()) return;
+                      replySupportTicket(ticket.id, draftValue.trim());
+                      setExpandedTicketId(null);
+                    }}
+                    className="space-y-2.5 pt-2 border-t border-[#E2E8F0]"
+                  >
+                    <label
+                      htmlFor={`reply-${ticket.id}`}
+                      className="block text-xs font-extrabold text-[#061138]"
+                    >
+                      ثبت پاسخ مدیر کل (در صفحه پشتیبانی برای کاربر نمایش داده می‌شود):
+                    </label>
+                    <textarea
+                      id={`reply-${ticket.id}`}
+                      rows={3}
+                      value={draftValue}
+                      onChange={(e) =>
+                        setReplyDrafts((prev) => ({
+                          ...prev,
+                          [ticket.id]: e.target.value,
+                        }))
+                      }
+                      placeholder="پاسخ راهنمایی یا نتیجه بررسی خود را برای این کاربر یا صاحب سالن بنویسید..."
+                      className="w-full rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 text-xs text-[#061138] focus:outline-none focus:border-[#0057FF]"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button type="submit" variant="primary" size="sm">
+                        <Send className="w-3.5 h-3.5" />
+                        <span>ارسال و ذخیره پاسخ پشتیبانی</span>
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** ۹. تنظیمات کلان سامانه، نام کاربری و رمز عبور مدیر کل و اتصال آسان ملی‌پیامک (/admin/settings) */
 export const AdminSettingsPage: React.FC = () => {
   const {
     authUser,
@@ -2537,6 +3269,12 @@ export const AdminSettingsPage: React.FC = () => {
     updateAdminNotificationSettings,
     showToast,
   } = usePrototypeData();
+  const [adminUsernameInput, setAdminUsernameInput] = useState(
+    adminNotificationSettings.adminUsername || 'admin'
+  );
+  const [adminDisplayNameInput, setAdminDisplayNameInput] = useState(
+    adminNotificationSettings.adminDisplayName || 'مدیر کل پلتفرم تایم تو'
+  );
   const [adminNewPassword, setAdminNewPassword] = useState('');
   const [isSavingAdminPass, setIsSavingAdminPass] = useState(false);
   const [notifyPhoneInput, setNotifyPhoneInput] = useState(
@@ -2584,13 +3322,28 @@ export const AdminSettingsPage: React.FC = () => {
     };
   }, []);
 
-  const handleSaveAdminPassword = async (e: React.FormEvent) => {
+  const handleSaveAdminCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingAdminPass(true);
     try {
-      const ok = await setAccountPassword(adminNewPassword);
-      if (ok) {
-        setAdminNewPassword('');
+      // ۱. ذخیره نام کاربری، نام نمایشی و شماره موبایل مدیر کل
+      updateAdminNotificationSettings({
+        adminUsername: adminUsernameInput.trim() || 'admin',
+        adminDisplayName:
+          adminDisplayNameInput.trim() || 'مدیر کل پلتفرم تایم تو',
+        adminPhone: notifyPhoneInput.trim() || '09138201042',
+      });
+
+      // ۲. در صورتی که رمز عبور جدید هم وارد شده باشد، آن را نیز آپدیت کن
+      if (adminNewPassword.trim()) {
+        const ok = await setAccountPassword(adminNewPassword.trim());
+        if (ok) {
+          setAdminNewPassword('');
+        }
+      } else {
+        showToast(
+          `نام کاربری (${adminUsernameInput.trim() || 'admin'}) و مشخصات مدیر کل ذخیره شد.`
+        );
       }
     } finally {
       setIsSavingAdminPass(false);
@@ -2705,9 +3458,9 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
   return (
     <div className="space-y-7">
       <PageHeader
-        kicker="پیکربندی سامانه · تنظیمات مدیر کل، امنیت و درگاه پیامک"
-        title="تنظیمات کلان، رمز عبور مدیر کل و اتصال ملی‌پیامک"
-        subtitle="مدیریت رمز عبور ثابت مدیر کل، بررسی پایداری دیتابیس PostgreSQL و فعال‌سازی مستقیم وب‌سرویس خدماتی ملی‌پیامک"
+        kicker="پیکربندی سامانه · تنظیمات نام کاربری، رمز عبور مدیر کل و درگاه پیامک"
+        title="تنظیمات کلان، نام کاربری / رمز عبور مدیر کل و اتصال ملی‌پیامک"
+        subtitle="تنظیم نام کاربری و رمز عبور ثابت مدیریت برای ورود سریع در /login، مدیریت اطلاع‌رسانی 09138201042 و فعال‌سازی وب‌سرویس ملی‌پیامک"
         routePattern="/admin/settings"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -2717,7 +3470,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ستون اصلی: راه‌اندازی ۱ دقیقه‌ای ملی‌پیامک */}
-        <Card padding="lg" className="lg:col-span-8 space-y-6 border-2 border-[#0057FF]/25">
+        <Card padding="lg" className="lg:col-span-7 space-y-6 border-2 border-[#0057FF]/25">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-[#061138] text-[#00E5FF] flex items-center justify-center shrink-0">
@@ -2842,7 +3595,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   dir="ltr"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder={authUser?.phone || 'شماره موبایل ۱۱ رقمی'}
+                  placeholder={authUser?.phone || '09138201042'}
                 />
               </div>
               <Button
@@ -2878,47 +3631,51 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
           </div>
         </Card>
 
-        {/* ستون کناری: رمز عبور ثابت مدیر کل + وضعیت پایداری دیتابیس PostgreSQL + متغیرهای لیارا */}
-        <div className="lg:col-span-4 space-y-6">
-          <Card padding="lg" className="space-y-4 border-2 border-[#0057FF]/25">
-            <div className="space-y-1">
-              <h3 className="text-sm font-extrabold text-[#061138]">
-                تنظیم یا تغییر رمز عبور ثابت مدیر کل
-              </h3>
-              <p className="text-xs text-[#64748B]">
-                حساب فعال: <strong dir="ltr">{authUser?.phone || 'مدیر کل'}</strong>. با تنظیم رمز عبور ثابت می‌توانید بدون نیاز به پیامک وارد پنل مدیریت کلان شوید.
-              </p>
-            </div>
-            <form onSubmit={handleSaveAdminPassword} className="space-y-3">
-              <FormField id="adm-fixed-pass" label="رمز عبور جدید مدیر کل (حداقل ۶ کاراکتر)" required>
-                <Input
-                  id="adm-fixed-pass"
-                  type="password"
-                  dir="ltr"
-                  placeholder="رمز عبور جدید..."
-                  value={adminNewPassword}
-                  onChange={(e) => setAdminNewPassword(e.target.value)}
-                />
-              </FormField>
-              <Button type="submit" variant="primary" fullWidth isLoading={isSavingAdminPass}>
-                ذخیره رمز عبور مدیر کل
-              </Button>
-            </form>
-          </Card>
-
-          <Card padding="lg" className="space-y-4 border-2 border-[#F59E0B]/40 bg-[#FFFBEB]/60">
-            <div className="space-y-1">
-              <h3 className="text-sm font-extrabold text-[#061138]">
-                اطلاع‌رسانی هوشمند به مدیر کل (پیامک و پنل)
+        {/* ستون کناری: نام کاربری و رمز عبور ثابت مدیر کل + اطلاع‌رسانی + لیارا */}
+        <div className="lg:col-span-5 space-y-6">
+          <Card padding="lg" className="space-y-4 border-2 border-[#0057FF]/30 bg-white">
+            <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
+              <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                تنظیم نام کاربری، شماره موبایل و رمز عبور مدیر کل
               </h3>
               <p className="text-xs text-[#64748B] leading-relaxed">
-                به‌محض ثبت‌نام کسب‌وکار جدید یا ثبت فیش واریزی اشتراک/تبلیغات، هم در بالای پنل مدیریت اعلان دریافت می‌کنید و هم پیامک هشدار به شماره موبایل مدیر کل ارسال می‌شود.
+                در صفحه ورود (<code dir="ltr">/login</code>) از تب «ورود با نام کاربری یا رمز عبور» می‌توانید هم با <strong>نام کاربری</strong> و هم با <strong>شماره موبایل مدیر کل</strong> وارد پنل مدیریت شوید.
               </p>
             </div>
-            <div className="space-y-3">
+
+            <form onSubmit={handleSaveAdminCredentials} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField
+                  id="adm-username"
+                  label="نام کاربری مدیر کل (Username)"
+                  required
+                >
+                  <Input
+                    id="adm-username"
+                    dir="ltr"
+                    value={adminUsernameInput}
+                    onChange={(e) => setAdminUsernameInput(e.target.value)}
+                    placeholder="admin"
+                  />
+                </FormField>
+
+                <FormField
+                  id="adm-display-name"
+                  label="عنوان نمایشی مدیر در پنل"
+                >
+                  <Input
+                    id="adm-display-name"
+                    value={adminDisplayNameInput}
+                    onChange={(e) => setAdminDisplayNameInput(e.target.value)}
+                    placeholder="مدیر کل پلتفرم تایم تو"
+                  />
+                </FormField>
+              </div>
+
               <FormField
                 id="adm-notify-phone"
-                label="شماره موبایل انحصاری مدیر کل (دریافت پیامک و ورود به /admin)"
+                label="شماره موبایل انحصاری مدیر کل و پشتیبانی"
+                required
               >
                 <Input
                   id="adm-notify-phone"
@@ -2929,6 +3686,42 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 />
               </FormField>
 
+              <FormField
+                id="adm-fixed-pass"
+                label="رمز عبور جدید مدیر کل (حداقل ۶ کاراکتر — در صورت عدم تغییر خالی بگذارید)"
+              >
+                <Input
+                  id="adm-fixed-pass"
+                  type="password"
+                  dir="ltr"
+                  placeholder="رمز عبور جدید..."
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                />
+              </FormField>
+
+              <Button
+                type="submit"
+                variant="primary"
+                fullWidth
+                isLoading={isSavingAdminPass}
+              >
+                <Check className="w-4 h-4" />
+                <span>ذخیره نام کاربری، موبایل و رمز عبور مدیر کل</span>
+              </Button>
+            </form>
+          </Card>
+
+          <Card padding="lg" className="space-y-4 border-2 border-[#F59E0B]/40 bg-[#FFFBEB]/60">
+            <div className="space-y-1">
+              <h3 className="text-sm font-extrabold text-[#061138]">
+                تنظیمات اعلان هوشمند مدیر کل
+              </h3>
+              <p className="text-xs text-[#64748B] leading-relaxed">
+                به‌محض ثبت‌نام کسب‌وکار جدید، ثبت فیش واریزی یا ارسال تیکت پشتیبانی، در بالای پنل مدیریت اعلان دریافت می‌کنید.
+              </p>
+            </div>
+            <div className="space-y-3">
               <label className="flex items-center gap-2 text-xs font-bold text-[#061138] cursor-pointer">
                 <input
                   type="checkbox"
@@ -2940,7 +3733,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   }
                   className="rounded border-[#CBD5E1] text-[#0057FF]"
                 />
-                <span>ارسال پیامک آنی هنگام ثبت‌نام سالن جدید</span>
+                <span>اعلان و پیامک آنی هنگام ثبت‌نام سالن جدید</span>
               </label>
 
               <label className="flex items-center gap-2 text-xs font-bold text-[#061138] cursor-pointer">
@@ -2956,19 +3749,6 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 />
                 <span>اعلان فوری هنگام ثبت سفارش پلن یا تبلیغ</span>
               </label>
-
-              <Button
-                type="button"
-                variant="secondary"
-                fullWidth
-                onClick={() =>
-                  updateAdminNotificationSettings({
-                    adminPhone: notifyPhoneInput.trim() || '09138201042',
-                  })
-                }
-              >
-                ذخیره تنظیمات اطلاع‌رسانی مدیر
-              </Button>
             </div>
           </Card>
 
@@ -2982,7 +3762,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
             </p>
           </Card>
 
-          <Card padding="lg" className="space-y-3 bg-[#061138] text-white border-[#1E293B]">
+          <Card variant="dark" padding="lg" className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-extrabold text-[#00E5FF]">
                 متغیرهای آماده برای پنل لیارا (Liara)
@@ -3008,3 +3788,4 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
     </div>
   );
 };
+

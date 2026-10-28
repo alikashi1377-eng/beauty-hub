@@ -4,7 +4,7 @@ export interface TableColumn<T> {
   key: string;
   header: string;
   align?: 'right' | 'left' | 'center';
-  render: (row: T) => React.ReactNode;
+  render: (row: T, index: number) => React.ReactNode;
 }
 
 export interface ResponsiveTableProps<T> {
@@ -12,6 +12,7 @@ export interface ResponsiveTableProps<T> {
   data: T[];
   keyExtractor: (row: T) => string;
   caption?: string;
+  emptyMessage?: string;
 }
 
 export function ResponsiveTable<T>({
@@ -19,7 +20,16 @@ export function ResponsiveTable<T>({
   data,
   keyExtractor,
   caption,
+  emptyMessage,
 }: ResponsiveTableProps<T>) {
+  if (data.length === 0 && emptyMessage) {
+    return (
+      <div className="w-full rounded-3xl border border-[#E6E0F5] bg-white p-6 text-center text-xs font-bold text-[#64748B]">
+        {emptyMessage}
+      </div>
+    );
+  }
+
   return (
     <div className="w-full">
       <div className="hidden md:block overflow-x-auto rounded-3xl border border-[#E6E0F5] bg-white shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]">
@@ -45,7 +55,7 @@ export function ResponsiveTable<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E6E0F5]">
-            {data.map((row) => (
+            {data.map((row, rowIndex) => (
               <tr
                 key={keyExtractor(row)}
                 className="hover:bg-[#F3EEFF]/60 transition-colors"
@@ -61,7 +71,7 @@ export function ResponsiveTable<T>({
                         : 'text-right'
                     }`}
                   >
-                    {col.render(row)}
+                    {col.render(row, rowIndex)}
                   </td>
                 ))}
               </tr>
@@ -71,7 +81,7 @@ export function ResponsiveTable<T>({
       </div>
 
       <div className="md:hidden space-y-3">
-        {data.map((row) => (
+        {data.map((row, rowIndex) => (
           <div
             key={keyExtractor(row)}
             className="rounded-3xl border border-[#E6E0F5] bg-white p-4 space-y-2.5 shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]"
@@ -83,7 +93,7 @@ export function ResponsiveTable<T>({
               >
                 <span className="font-medium text-[#6B6480]">{col.header}</span>
                 <div className="text-[#1E1B2E] font-medium">
-                  {col.render(row)}
+                  {col.render(row, rowIndex)}
                 </div>
               </div>
             ))}
@@ -93,3 +103,4 @@ export function ResponsiveTable<T>({
     </div>
   );
 }
+

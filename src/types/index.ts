@@ -156,13 +156,30 @@ export interface SmsMessageLogItem {
   status: 'SENT' | 'DELIVERED' | 'SIMULATED';
 }
 
+export interface SupportTicketItem {
+  id: string;
+  senderRole: 'CUSTOMER' | 'BUSINESS_OWNER';
+  senderName: string;
+  senderPhone: string;
+  businessId?: string;
+  businessName?: string;
+  categoryLabel: string;
+  subject: string;
+  message: string;
+  createdAtJalali: string;
+  status: 'OPEN' | 'ANSWERED' | 'CLOSED';
+  adminReply?: string;
+  repliedAtJalali?: string;
+}
+
 export interface AdminNotificationItem {
   id: string;
   type:
     | 'NEW_BUSINESS'
     | 'NEW_PAYMENT_ORDER'
     | 'SMS_TOPUP_REQUEST'
-    | 'NEW_BOOKING';
+    | 'NEW_BOOKING'
+    | 'NEW_SUPPORT_TICKET';
   title: string;
   message: string;
   businessId?: string;
@@ -172,12 +189,15 @@ export interface AdminNotificationItem {
   city?: string;
   amountToman?: number;
   orderId?: string;
+  ticketId?: string;
   createdAtJalali: string;
   isRead: boolean;
 }
 
 export interface AdminNotificationSettings {
   adminPhone: string;
+  adminUsername?: string;
+  adminDisplayName?: string;
   smsOnNewBusiness: boolean;
   smsOnNewPaymentOrder: boolean;
   smsOnNewBooking: boolean;

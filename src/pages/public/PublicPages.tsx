@@ -39,6 +39,7 @@ import { Input, Textarea } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { FormField } from '../../components/ui/FormField';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 import {
   VisualMediaIllustration,
   getBeautyPhotoUrl,
@@ -1769,9 +1770,29 @@ export const AboutPage: React.FC = () => {
 
 /** ۶. صفحه راهنما و پشتیبانی (/help) */
 export const HelpPage: React.FC = () => {
-  const { showToast } = usePrototypeData();
+  const {
+    authUser,
+    currentBusiness,
+    ownedBusinessId,
+    supportTickets,
+    submitSupportTicket,
+  } = usePrototypeData();
+  const [senderRole, setSenderRole] = useState<'CUSTOMER' | 'BUSINESS_OWNER'>(
+    ownedBusinessId || authUser?.roles?.includes('BUSINESS_OWNER')
+      ? 'BUSINESS_OWNER'
+      : 'CUSTOMER'
+  );
+  const [senderName, setSenderName] = useState(
+    authUser?.fullName || currentBusiness?.ownerName || ''
+  );
+  const [senderPhone, setSenderPhone] = useState(
+    authUser?.phone || currentBusiness?.ownerPhone || ''
+  );
+  const [businessNameInput, setBusinessNameInput] = useState(
+    currentBusiness?.name || ''
+  );
   const [ticketTitle, setTicketTitle] = useState('');
-  const [ticketCategory, setTicketCategory] = useState('customer');
+  const [ticketCategory, setTicketCategory] = useState('پیگیری نوبت و رزرو مشتری');
   const [ticketMessage, setTicketMessage] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -1786,54 +1807,154 @@ export const HelpPage: React.FC = () => {
     },
     {
       q: 'چطور سالن زیبایی یا آرایشگاه خود را ثبت کنم؟',
-      a: 'از طریق دکمه «ثبت کسب‌وکار» در بالای سایت، مشخصات سالن، خدمات، متخصصان و ساعات کاری خود را ثبت کنید تا صفحه اختصاصی شما آماده شود.',
+      a: 'از طریق دکمه «ثبت سالن زیبایی» در بالای سایت، مشخصات سالن، خدمات، متخصصان و ساعات کاری خود را ثبت کنید تا صفحه اختصاصی شما پس از تایید منتشر شود.',
     },
   ];
 
   const handleSupportSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!senderPhone.trim() || !/^09\d{9}$/.test(senderPhone.trim())) {
+      setFormError('لطفاً شماره موبایل ۱۱ رقمی خود را جهت دریافت پاسخ وارد کنید.');
+      return;
+    }
     if (!ticketTitle.trim() || !ticketMessage.trim()) {
       setFormError('لطفاً موضوع و شرح پیام خود را کامل وارد کنید.');
       return;
     }
     setFormError('');
+    submitSupportTicket({
+      senderRole,
+      senderName: senderName.trim() || 'کاربر تایم تو',
+      senderPhone: senderPhone.trim(),
+      businessName:
+        senderRole === 'BUSINESS_OWNER'
+          ? businessNameInput.trim() || currentBusiness?.name || 'کسب‌وکار عضو'
+          : undefined,
+      categoryLabel: ticketCategory,
+      subject: ticketTitle.trim(),
+      message: ticketMessage.trim(),
+    });
     setTicketTitle('');
     setTicketMessage('');
-    showToast('پیام شما برای تیم پشتیبانی ثبت شد.');
   };
 
   return (
     <div className="space-y-8">
       <PageHeader
-        kicker="پشتیبانی و راهنمای کاربری"
-        title="مرکز راهنما و پرسش‌های متداول"
-        subtitle="پاسخ به پرسش‌های رایج مراجعان و راهنمای مدیریت پنل برای صاحبان کسب‌وکار"
-        breadcrumbs={[{ label: 'صفحه اصلی', href: '/' }, { label: 'راهنما' }]}
+        kicker="پشتیبانی مستقیم و راهنمای کاربری"
+        title="مرکز پشتیبانی، ثبت تیکت و پرسش‌های متداول"
+        subtitle="ارتباط مستقیم با مدیریت پلتفرم Timeto، ثبت تیکت برای مشتریان و صاحبان سالن‌ها و دریافت پاسخ مستقیم"
+        breadcrumbs={[{ label: 'صفحه اصلی', href: '/' }, { label: 'پشتیبانی و راهنما' }]}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-7 space-y-4">
-          <h2 className="text-base font-extrabold text-[#1E1B2E]">
-            پرسش‌های پرتکرار
+      {/* نوار ارتباط مستقیم تلفنی و اینستاگرام */}
+      <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 border border-[#1E293B] flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <span className="text-xs font-extrabold text-[#00E5FF]">
+            پشتیبانی تلفنی و صفحه رسمی اینستاگرام Timeto
+          </span>
+          <h2 className="text-base sm:text-lg font-extrabold text-white">
+            نیاز به راهنمایی فوری برای ثبت سالن، ارتقای پلن یا پیگیری نوبت دارید؟
           </h2>
-          {faqs.map((item, index) => (
-            <Card key={index} className="rounded-3xl space-y-2">
-              <h3 className="text-sm font-extrabold text-[#1E1B2E]">{item.q}</h3>
-              <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed">
-                {item.a}
-              </p>
-            </Card>
-          ))}
+          <p className="text-xs text-slate-300">
+            می‌توانید مستقیم با شماره پشتیبانی تماس بگیرید یا در تیکت زیر پیام بگذارید تا پاسخ مدیر را همین‌جا مشاهده کنید.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="tel:09138201042"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs sm:text-sm font-extrabold transition-colors"
+          >
+            <span>تماس با پشتیبانی:</span>
+            <span dir="ltr" className="font-mono text-[#00E5FF]">
+              09138201042
+            </span>
+          </a>
+          <a
+            href="https://www.instagram.com/timeto24_app?srtk=bTUwbmx6NTRnMThk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#E1306C] to-[#833AB4] text-white text-xs sm:text-sm font-extrabold hover:opacity-95 transition-opacity"
+          >
+            <span>پیج اینستاگرام:</span>
+            <span dir="ltr" className="font-mono">
+              @timeto24_app
+            </span>
+          </a>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-7 space-y-6">
+          <div className="space-y-4">
+            <h2 className="text-base font-extrabold text-[#1E1B2E]">
+              پرسش‌های پرتکرار
+            </h2>
+            {faqs.map((item, index) => (
+              <Card key={index} className="rounded-3xl space-y-2">
+                <h3 className="text-sm font-extrabold text-[#1E1B2E]">{item.q}</h3>
+                <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed">
+                  {item.a}
+                </p>
+              </Card>
+            ))}
+          </div>
+
+          {/* نمایش تیکت‌های ثبت‌شده و پاسخ مدیریت */}
+          {supportTickets.length > 0 ? (
+            <div className="space-y-3 pt-2">
+              <h2 className="text-base font-extrabold text-[#061138]">
+                پیگیری تیکت‌های ارسالی و پاسخ مدیریت ({toPersianDigits(supportTickets.length)} مورد)
+              </h2>
+              {supportTickets.map((tck) => (
+                <Card key={tck.id} className="space-y-3 border-2 border-[#E2E8F0]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-extrabold text-[#0057FF]">
+                        {tck.id}
+                      </span>
+                      <span className="text-xs font-extrabold text-[#061138]">
+                        {tck.subject}
+                      </span>
+                    </div>
+                    <StatusBadge
+                      label={
+                        tck.status === 'ANSWERED'
+                          ? 'پاسخ داده شده توسط مدیریت'
+                          : tck.status === 'CLOSED'
+                            ? 'بسته شده'
+                            : 'در انتظار پاسخ مدیریت'
+                      }
+                      tone={tck.status === 'ANSWERED' ? 'success' : 'warning'}
+                    />
+                  </div>
+                  <p className="text-xs text-[#334155] leading-relaxed">
+                    {tck.message}
+                  </p>
+                  {tck.adminReply ? (
+                    <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/40 space-y-1 text-xs">
+                      <p className="font-extrabold text-[#047857]">
+                        پاسخ مدیریت پلتفرم Timeto ({tck.repliedAtJalali || 'امروز'}):
+                      </p>
+                      <p className="text-[#065F46] leading-relaxed font-medium">
+                        {tck.adminReply}
+                      </p>
+                    </div>
+                  ) : null}
+                </Card>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="lg:col-span-5">
-          <Card className="rounded-3xl space-y-4">
+          <Card className="rounded-3xl space-y-4 border-2 border-[#0057FF]/25">
             <div className="space-y-1 border-b border-[#E6E0F5] pb-3">
               <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                ارسال پیام به پشتیبانی
+                ثبت تیکت و سوال مستقیم از مدیریت
               </h2>
-              <p className="text-xs text-[#6B6480]">
-                سوال یا درخواست خود را برای تیم پشتیبانی BeautyHub ارسال کنید
+              <p className="text-xs text-[#6B648B]">
+                مشخص کنید مشتری هستید یا صاحب کسب‌وکار؛ پیام شما مستقیماً در پنل مدیر کل نمایش داده می‌شود.
               </p>
             </div>
 
@@ -1842,22 +1963,84 @@ export const HelpPage: React.FC = () => {
               className="space-y-3.5"
               noValidate
             >
-              <FormField id="help-cat" label="موضوع درخواست">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-extrabold text-[#061138]">
+                  ارسال‌کننده پیام:
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1]">
+                  <button
+                    type="button"
+                    onClick={() => setSenderRole('CUSTOMER')}
+                    className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-colors ${
+                      senderRole === 'CUSTOMER'
+                        ? 'bg-[#0057FF] text-white'
+                        : 'text-[#334155] hover:text-[#061138]'
+                    }`}
+                  >
+                    مشتری / مراجعه‌کننده
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSenderRole('BUSINESS_OWNER')}
+                    className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-colors ${
+                      senderRole === 'BUSINESS_OWNER'
+                        ? 'bg-[#0057FF] text-white'
+                        : 'text-[#334155] hover:text-[#061138]'
+                    }`}
+                  >
+                    صاحب کسب‌وکار / سالن
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField id="help-sender-name" label="نام و نام خانوادگی" required>
+                  <Input
+                    id="help-sender-name"
+                    value={senderName}
+                    onChange={(e) => setSenderName(e.target.value)}
+                    placeholder="نام شما..."
+                  />
+                </FormField>
+                <FormField id="help-sender-phone" label="شماره موبایل (۱۱ رقمی)" required>
+                  <Input
+                    id="help-sender-phone"
+                    dir="ltr"
+                    value={senderPhone}
+                    onChange={(e) => setSenderPhone(e.target.value)}
+                    placeholder="09131234567"
+                  />
+                </FormField>
+              </div>
+
+              {senderRole === 'BUSINESS_OWNER' ? (
+                <FormField id="help-biz-name" label="نام سالن یا کسب‌وکار شما" required>
+                  <Input
+                    id="help-biz-name"
+                    value={businessNameInput}
+                    onChange={(e) => setBusinessNameInput(e.target.value)}
+                    placeholder="مثلاً سالن زیبایی ارکیده"
+                  />
+                </FormField>
+              ) : null}
+
+              <FormField id="help-cat" label="دسته موضوعی تیکت">
                 <Select
                   id="help-cat"
                   value={ticketCategory}
                   onChange={(e) => setTicketCategory(e.target.value)}
                   options={[
-                    { value: 'customer', label: 'پیگیری نوبت و رزرو مشتری' },
-                    { value: 'business', label: 'راه‌اندازی و پنل کسب‌وکار' },
-                    { value: 'subscription', label: 'پلن‌های اشتراک و مالی' },
+                    { value: 'پیگیری نوبت و رزرو مشتری', label: 'پیگیری نوبت و رزرو مشتری' },
+                    { value: 'راه‌اندازی و تایید پنل کسب‌وکار', label: 'راه‌اندازی و تایید پنل کسب‌وکار' },
+                    { value: 'پلن‌های اشتراک، تبلیغات و مالی', label: 'پلن‌های اشتراک، تبلیغات و مالی' },
+                    { value: 'سایر موارد و پیشنهادات', label: 'سایر موارد و پیشنهادات' },
                   ]}
                 />
               </FormField>
 
               <FormField
                 id="help-title"
-                label="عنوان پیام"
+                label="عنوان تیکت / سوال"
                 required
                 error={formError}
               >
@@ -1866,11 +2049,11 @@ export const HelpPage: React.FC = () => {
                   value={ticketTitle}
                   hasError={Boolean(formError)}
                   onChange={(e) => setTicketTitle(e.target.value)}
-                  placeholder="مثلاً راهنمای تغییر ساعت کاری سالن..."
+                  placeholder="مثلاً درخواست بررسی و تایید سالن یا سوال درباره پلن..."
                 />
               </FormField>
 
-              <FormField id="help-msg" label="شرح پیام" required>
+              <FormField id="help-msg" label="شرح کامل پیام" required>
                 <Textarea
                   id="help-msg"
                   rows={4}
@@ -1882,7 +2065,7 @@ export const HelpPage: React.FC = () => {
               </FormField>
 
               <Button type="submit" variant="primary" fullWidth>
-                ارسال پیام پشتیبانی
+                ارسال تیکت به مدیریت کلان
               </Button>
             </form>
           </Card>

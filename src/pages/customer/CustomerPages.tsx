@@ -262,25 +262,30 @@ export const CustomerLoginPage: React.FC = () => {
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedPhone = normalizeIranMobileInput(phone);
-    if (!isValidIranMobile(normalizedPhone)) {
-      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09131234567).');
+    const rawIdentifier = toEnglishDigitsClient(phone).trim();
+    const isPhoneCandidate = /^0?9\d+$/.test(rawIdentifier.replace(/\D/g, ''));
+    const finalIdentifier = isPhoneCandidate
+      ? normalizeIranMobileInput(rawIdentifier)
+      : rawIdentifier;
+
+    if (!finalIdentifier || (isPhoneCandidate && !isValidIranMobile(finalIdentifier))) {
+      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر یا نام کاربری خود را وارد کنید.');
       return;
     }
-    if (password.trim().length < 6) {
-      setError('رمز عبور باید حداقل ۶ کاراکتر باشد.');
+    if (password.trim().length < 4) {
+      setError('رمز عبور باید حداقل ۴ کاراکتر باشد.');
       return;
     }
     setError('');
     setIsSubmitting(true);
     try {
-      const user = await loginWithPassword(normalizedPhone, password);
+      const user = await loginWithPassword(finalIdentifier, password);
       navigateAfterLogin(user);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'شماره موبایل یا رمز عبور صحیح نیست.'
+          : 'شماره موبایل / نام کاربری یا رمز عبور صحیح نیست.'
       );
     } finally {
       setIsSubmitting(false);
@@ -575,20 +580,19 @@ export const CustomerLoginPage: React.FC = () => {
               <form onSubmit={handlePasswordLogin} className="space-y-4" noValidate>
                 <FormField
                   id="login-pass-phone"
-                  label="شماره تلفن همراه (۱۱ رقم با 09)"
+                  label="شماره تلفن همراه یا نام کاربری"
                   required
                   error={error}
                 >
                   <Input
                     id="login-pass-phone"
-                    type="tel"
-                    inputMode="tel"
-                    maxLength={11}
+                    type="text"
+                    maxLength={32}
                     dir="ltr"
                     placeholder="09123456789"
                     value={phone}
                     hasError={Boolean(error)}
-                    onChange={(e) => setPhone(normalizeIranMobileInput(e.target.value))}
+                    onChange={(e) => setPhone(toEnglishDigitsClient(e.target.value))}
                   />
                 </FormField>
 

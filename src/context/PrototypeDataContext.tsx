@@ -43,6 +43,7 @@ import {
   SpecialistItem,
   SubscriptionPlanItem,
   SubscriptionStatus,
+  SupportTicketItem,
   WorkingHourItem,
 } from '../types';
 import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
@@ -110,6 +111,8 @@ interface PrototypeDataContextValue {
   categories: CategoryItem[];
   addCategory: (item: Omit<CategoryItem, 'id'>) => void;
   updateCategory: (id: string, patch: Partial<CategoryItem>) => void;
+  deleteCategory: (id: string) => void;
+  reorderCategory: (id: string, direction: 'UP' | 'DOWN') => void;
   gallery: GalleryItem[];
   addGalleryItem: (item: Omit<GalleryItem, 'id'>) => void;
   removeGalleryItem: (id: string) => void;
@@ -153,6 +156,22 @@ interface PrototypeDataContextValue {
   adminNotificationSettings: AdminNotificationSettings;
   updateAdminNotificationSettings: (
     patch: Partial<AdminNotificationSettings>
+  ) => void;
+  supportTickets: SupportTicketItem[];
+  submitSupportTicket: (input: {
+    senderName?: string;
+    senderPhone?: string;
+    categoryLabel: string;
+    subject: string;
+    message: string;
+    senderRole?: 'CUSTOMER' | 'BUSINESS_OWNER';
+    businessId?: string;
+    businessName?: string;
+  }) => SupportTicketItem;
+  replySupportTicket: (
+    ticketId: string,
+    replyText: string,
+    status?: 'ANSWERED' | 'CLOSED'
   ) => void;
   activePlanId: string;
   setActivePlanId: (planId: string) => void;
@@ -338,8 +357,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
   const [appointments, setAppointments] =
     useState<AppointmentItem[]>(SAMPLE_APPOINTMENTS);
-  const [categories, setCategories] =
-    useState<CategoryItem[]>(SAMPLE_CATEGORIES);
+  const mergeCategoriesWithDefaults = (
+    incoming: CategoryItem[]
+  ): CategoryItem[] => {
+    try {
+      const savedRaw = window.localStorage.getItem('timeto_custom_categories_v2');
+      if (savedRaw) {
+        const savedList: CategoryItem[] = JSON.parse(savedRaw);
+        if (Array.isArray(savedList) && savedList.length > 0) {
+          const bySlug = new Set(savedList.map((c) => c.slug));
+          const extras = incoming.filter((c) => !bySlug.has(c.slug));
+          return [...savedList, ...extras];
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    const result: CategoryItem[] = [...SAMPLE_CATEGORIES];
+    for (const dbCat of incoming) {
+      const idx = result.findIndex(
+        (c) => c.slug === dbCat.slug || c.title === dbCat.title
+      );
+      if (idx >= 0) {
+        result[idx] = {
+          ...result[idx],
+          ...dbCat,
+          iconName: dbCat.iconName || result[idx].iconName || 'Sparkles',
+        };
+      } else {
+        result.push(dbCat);
+      }
+    }
+    return result;
+  };
+
+  const [categories, setCategories] = useState<CategoryItem[]>(() =>
+    mergeCategoriesWithDefaults(SAMPLE_CATEGORIES)
+  );
   const [gallery, setGallery] = useState<GalleryItem[]>(SAMPLE_GALLERY);
   const [campaigns, setCampaigns] =
     useState<MarketingCampaignItem[]>(SAMPLE_CAMPAIGNS);
@@ -431,6 +486,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     useState<AdminNotificationSettings>(() => {
       const defaults: AdminNotificationSettings = {
         adminPhone: '09138201042',
+        adminUsername: 'admin',
+        adminDisplayName: 'مدیر کل تایم تو',
         smsOnNewBusiness: true,
         smsOnNewPaymentOrder: true,
         smsOnNewBooking: true,
@@ -448,6 +505,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return defaults;
     });
+  const [supportTickets, setSupportTickets] = useState<SupportTicketItem[]>(
+    () => {
+      try {
+        const saved = window.localStorage.getItem('timeto_support_tickets_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    }
+  );
   const [activePlanId, setActivePlanId] = useState<string>('plan-free');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
@@ -551,11 +622,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
         setBusinesses(mergeBusinessOverrides(adminRes.data.businesses));
-        setCategories(
-          adminRes.data.categories.length > 0
-            ? adminRes.data.categories
-            : SAMPLE_CATEGORIES
-        );
+        setCategories(mergeCategoriesWithDefaults(adminRes.data.categories));
         if (
           adminRes.data.plans.length > 0 &&
           !window.localStorage.getItem('timeto_custom_plans_v2')
@@ -602,11 +669,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       if (response.mode === 'real' && response.data) {
         setDataMode('real');
         setDatabaseError(null);
-        setCategories(
-          response.data.categories.length > 0
-            ? response.data.categories
-            : SAMPLE_CATEGORIES
-        );
+        setCategories(mergeCategoriesWithDefaults(response.data.categories));
         setBusinesses(mergeBusinessOverrides(response.data.businesses));
         setServices(() => {
           const map = new Map<string, ServiceItem>();
@@ -769,29 +832,45 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const loginWithPassword = async (
-    phone: string,
+    phoneOrUsername: string,
     password: string
   ): Promise<AuthenticatedSessionUser> => {
+    const trimmedInput = phoneOrUsername.trim();
+    const configuredUsername = (
+      adminNotificationSettings.adminUsername || 'admin'
+    )
+      .trim()
+      .toLowerCase();
+    const resolvedPhone =
+      trimmedInput.toLowerCase() === configuredUsername ||
+      trimmedInput.toLowerCase() === 'admin'
+        ? adminNotificationSettings.adminPhone || '09138201042'
+        : trimmedInput;
+
     if (dataMode === 'mock') {
       try {
         const storedRaw =
           window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
         const stored = JSON.parse(storedRaw);
-        const savedPass = stored[phone];
+        const savedPass = stored[resolvedPhone] || stored[trimmedInput];
         if (savedPass && savedPass !== password) {
-          throw new Error('شماره موبایل یا رمز عبور وارد شده صحیح نیست.');
+          throw new Error('شماره موبایل / نام کاربری یا رمز عبور وارد شده صحیح نیست.');
         }
       } catch (err) {
         if (err instanceof Error && err.message.includes('صحیح نیست')) {
           throw err;
         }
       }
-      const isSuperAdmin = phone === '09138201042';
+      const isSuperAdmin =
+        resolvedPhone === '09138201042' ||
+        resolvedPhone === adminNotificationSettings.adminPhone;
       const mockUser: AuthenticatedSessionUser = {
         userId: isSuperAdmin ? 'admin-user-1' : 'mock-user-1',
         sessionId: 'mock-session-pass-1',
-        phone,
-        fullName: isSuperAdmin ? 'مدیر کل تایم تو' : 'المیرا شمس',
+        phone: resolvedPhone,
+        fullName: isSuperAdmin
+          ? adminNotificationSettings.adminDisplayName || 'مدیر کل تایم تو'
+          : 'المیرا شمس',
         defaultCity: 'اصفهان',
         roles: isSuperAdmin ? ['CUSTOMER', 'PLATFORM_ADMIN'] : ['CUSTOMER'],
         isPlatformAdmin: isSuperAdmin,
@@ -802,7 +881,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return mockUser;
     }
 
-    const res = await realApiClient.loginWithPassword(phone, password);
+    const res = await realApiClient.loginWithPassword(resolvedPhone, password);
     setAuthUser(res.user);
     setBookingDraft((prev) => ({
       ...prev,
@@ -1251,6 +1330,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
+    // علامت‌گذاری خودکار اعلان مربوط به این سفارش مالی به عنوان خوانده‌شده
+    setAdminNotifications((prev) => {
+      const next = prev.map((n) =>
+        n.orderId === orderId ? { ...n, isRead: true } : n
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
     if (target && decision === 'APPROVED') {
       applyApprovedOrderEffect(target);
       showToast(
@@ -1536,54 +1631,95 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast('وضعیت نوبت بروزرسانی شد.');
   };
 
+  const persistCategories = (next: CategoryItem[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_custom_categories_v2',
+        JSON.stringify(next)
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const addCategory = (item: Omit<CategoryItem, 'id'>) => {
+    const localNew: CategoryItem = { ...item, id: `cat-${Date.now()}` };
+    setCategories((prev) => {
+      const next = [localNew, ...prev];
+      persistCategories(next);
+      return next;
+    });
+
     if (dataMode === 'real') {
       void realApiClient
         .createCategory(item)
         .then((res) => {
-          setCategories((prev) => [res.item, ...prev]);
-          showToast(`دسته‌بندی «${res.item.title}» در پایگاه داده ثبت شد.`);
+          setCategories((prev) => {
+            const next = prev.map((c) => (c.id === localNew.id ? res.item : c));
+            persistCategories(next);
+            return next;
+          });
+          showToast(`دسته‌بندی «${res.item.title}» ذخیره شد.`);
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ثبت دسته‌بندی در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          showToast(`دسته‌بندی «${item.title}» به فهرست اضافه شد.`);
         });
       return;
     }
 
-    setCategories((prev) => [{ ...item, id: `cat-${Date.now()}` }, ...prev]);
     showToast(`دسته‌بندی «${item.title}» به فهرست اضافه شد.`);
   };
 
   const updateCategory = (id: string, patch: Partial<CategoryItem>) => {
+    setCategories((prev) => {
+      const next = prev.map((c) => (c.id === id ? { ...c, ...patch } : c));
+      persistCategories(next);
+      return next;
+    });
+
     if (dataMode === 'real') {
       void realApiClient
         .updateCategory(id, patch)
         .then((res) => {
-          setCategories((prev) =>
-            prev.map((c) => (c.id === id ? res.item : c))
-          );
-          showToast('دسته‌بندی در پایگاه داده ویرایش شد.');
+          setCategories((prev) => {
+            const next = prev.map((c) => (c.id === id ? res.item : c));
+            persistCategories(next);
+            return next;
+          });
+          showToast('دسته‌بندی با موفقیت ویرایش شد.');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ویرایش دسته‌بندی در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          showToast('دسته‌بندی با موفقیت ویرایش شد.');
         });
       return;
     }
 
-    setCategories((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...patch } : c))
-    );
     showToast('دسته‌بندی ویرایش شد.');
+  };
+
+  const deleteCategory = (id: string) => {
+    setCategories((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      persistCategories(next);
+      return next;
+    });
+    showToast('دسته‌بندی انتخاب‌شده حذف شد.', 'warning');
+  };
+
+  const reorderCategory = (id: string, direction: 'UP' | 'DOWN') => {
+    setCategories((prev) => {
+      const idx = prev.findIndex((c) => c.id === id);
+      if (idx < 0) return prev;
+      const targetIdx = direction === 'UP' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[targetIdx];
+      next[targetIdx] = temp;
+      persistCategories(next);
+      return next;
+    });
+    showToast('اولویت نمایش دسته‌بندی بروزرسانی شد.', 'info');
   };
 
   const addGalleryItem = (item: Omit<GalleryItem, 'id'>) => {
@@ -1760,7 +1896,145 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return next;
     });
-    showToast('تنظیمات اطلاع‌رسانی هوشمند به مدیر کل ذخیره شد.');
+    showToast('تنظیمات مدیر کل و اطلاع‌رسانی ذخیره شد.');
+  };
+
+  const submitSupportTicket = (input: {
+    senderName?: string;
+    senderPhone?: string;
+    categoryLabel: string;
+    subject: string;
+    message: string;
+    senderRole?: 'CUSTOMER' | 'BUSINESS_OWNER';
+    businessId?: string;
+    businessName?: string;
+  }): SupportTicketItem => {
+    const isBizRole =
+      input.senderRole === 'BUSINESS_OWNER' ||
+      Boolean(input.businessId) ||
+      Boolean(ownedBusinessId) ||
+      Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
+
+    const matchedBiz =
+      businesses.find((b) => b.id === (input.businessId || ownedBusinessId)) ||
+      (isBizRole ? currentBusiness : null);
+
+    const newTicket: SupportTicketItem = {
+      id: `TCK-${Math.floor(1000 + Math.random() * 9000)}`,
+      senderRole: isBizRole ? 'BUSINESS_OWNER' : 'CUSTOMER',
+      senderName:
+        input.senderName?.trim() ||
+        matchedBiz?.ownerName ||
+        authUser?.fullName ||
+        'کاربر تایم تو',
+      senderPhone:
+        input.senderPhone?.trim() ||
+        matchedBiz?.ownerPhone ||
+        authUser?.phone ||
+        'ثبت‌نشده',
+      businessId: matchedBiz?.id || input.businessId,
+      businessName: input.businessName || matchedBiz?.name,
+      categoryLabel: input.categoryLabel,
+      subject: input.subject.trim(),
+      message: input.message.trim(),
+      createdAtJalali: 'امروز',
+      status: 'OPEN',
+    };
+
+    setSupportTickets((prev) => {
+      const next = [newTicket, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_support_tickets_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    const ticketNotif: AdminNotificationItem = {
+      id: `notif-tck-${Date.now()}`,
+      type: 'NEW_SUPPORT_TICKET',
+      title: `تیکت پشتیبانی جدید: ${newTicket.subject}`,
+      message: `${
+        newTicket.senderRole === 'BUSINESS_OWNER'
+          ? `صاحب کسب‌وکار «${newTicket.businessName || newTicket.senderName}»`
+          : `مشتری (${newTicket.senderName})`
+      } — تماس: ${newTicket.senderPhone}`,
+      businessId: newTicket.businessId,
+      businessName: newTicket.businessName,
+      ownerName: newTicket.senderName,
+      ownerPhone: newTicket.senderPhone,
+      city: matchedBiz?.city || 'اصفهان',
+      ticketId: newTicket.id,
+      createdAtJalali: 'امروز',
+      isRead: false,
+    };
+
+    setAdminNotifications((prev) => {
+      const next = [ticketNotif, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    showToast(
+      `تیکت شما با کد ${newTicket.id} برای مدیریت کلان ارسال شد و پاسخ آن در همین بخش درج خواهد شد.`
+    );
+    return newTicket;
+  };
+
+  const replySupportTicket = (
+    ticketId: string,
+    replyText: string,
+    status: 'ANSWERED' | 'CLOSED' = 'ANSWERED'
+  ) => {
+    setSupportTickets((prev) => {
+      const next = prev.map((t) =>
+        t.id === ticketId
+          ? {
+              ...t,
+              adminReply: replyText.trim(),
+              repliedAtJalali: 'امروز',
+              status,
+            }
+          : t
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_support_tickets_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    setAdminNotifications((prev) => {
+      const next = prev.map((n) =>
+        n.ticketId === ticketId ? { ...n, isRead: true } : n
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    showToast('پاسخ شما برای تیکت پشتیبانی ثبت شد.');
   };
 
   const sendBusinessCustomerSms = async (input: {
@@ -2178,6 +2452,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         categories,
         addCategory,
         updateCategory,
+        deleteCategory,
+        reorderCategory,
         gallery,
         addGalleryItem,
         removeGalleryItem,
@@ -2203,6 +2479,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         clearAllAdminNotifications,
         adminNotificationSettings,
         updateAdminNotificationSettings,
+        supportTickets,
+        submitSupportTicket,
+        replySupportTicket,
         activePlanId,
         setActivePlanId,
         onboardingDraft,
