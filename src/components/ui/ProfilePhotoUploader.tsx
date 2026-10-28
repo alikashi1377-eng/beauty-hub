@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Camera, ImagePlus, Trash2, CheckCircle2 } from 'lucide-react';
+import { getBeautyPhotoUrl } from './VisualMediaIllustration';
 
 export interface ProfilePhotoUploaderProps {
   value?: string;
@@ -11,19 +12,19 @@ export interface ProfilePhotoUploaderProps {
 const PRESET_SALON_AVATARS = [
   {
     label: 'سالن لوکس مدرن',
-    url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=400&h=400&q=80',
+    url: getBeautyPhotoUrl('سالن زیبایی ارکیده', 'مو و رنگ'),
   },
   {
     label: 'استودیو پوست و میکاپ',
-    url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=400&h=400&q=80',
+    url: getBeautyPhotoUrl('استودیو پوست سارا', 'فیشیال و پوست', 'botanical'),
   },
   {
     label: 'مرکز تخصصی ناخن',
-    url: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=400&h=400&q=80',
+    url: getBeautyPhotoUrl('مرکز ناخن نیلوفر', 'ناخن و مژه', 'atelier'),
   },
   {
     label: 'آرایشگاه مردانه VIP',
-    url: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=400&h=400&q=80',
+    url: getBeautyPhotoUrl('پیرایش مردانه آرش', 'پیرایش مردانه', 'barber'),
   },
 ];
 

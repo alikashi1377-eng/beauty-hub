@@ -155,8 +155,7 @@ export const HomePage: React.FC = () => {
       startingPrice: '۶۲۰,۰۰۰ تومان',
       badge: 'پذیرش VIP تک‌نفره',
       href: '/pro/sara-rad',
-      imageUrl:
-        'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=600&q=80',
+      imageUrl: getBeautyPhotoUrl('استودیو پوست سارا راد', 'پوست و فیشیال', 'botanical'),
     },
     {
       id: 'biz-1',
@@ -168,8 +167,7 @@ export const HomePage: React.FC = () => {
       startingPrice: '۴۸۰,۰۰۰ تومان',
       badge: 'پرمخاطب‌ترین در اصفهان',
       href: '/salon/royal-golzar',
-      imageUrl:
-        'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
+      imageUrl: getBeautyPhotoUrl('سالن زیبایی رویال گلزار', 'مو و رنگ'),
     },
     {
       id: 'biz-4',
@@ -181,8 +179,7 @@ export const HomePage: React.FC = () => {
       startingPrice: '۳۹۰,۰۰۰ تومان',
       badge: 'پک بهداشتی اختصاصی',
       href: '/salon/niloofar-abi',
-      imageUrl:
-        'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=600&q=80',
+      imageUrl: getBeautyPhotoUrl('مرکز ناخن نیلوفر آبی', 'ناخن و مژه', 'atelier'),
     },
   ];
 

@@ -12,6 +12,54 @@ export function toPersianDigits(input: number | string): string {
   return String(input).replace(/\d/g, (digit) => PERSIAN_DIGITS[Number(digit)] ?? digit);
 }
 
+export function toEnglishDigitsClient(input: string | number): string {
+  return String(input)
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+/**
+ * نرمال‌سازی ورودی شماره موبایل ایران به فرمت استاندارد ۱۱ رقمی 09xxxxxxxxx
+ */
+export function normalizeIranMobileInput(raw: string): string {
+  const digits = toEnglishDigitsClient(raw).replace(/\D/g, '');
+  if (digits.startsWith('989') && digits.length >= 12) {
+    return `0${digits.slice(2, 12)}`;
+  }
+  if (digits.startsWith('9') && !digits.startsWith('09') && digits.length <= 10) {
+    return `0${digits}`.slice(0, 11);
+  }
+  return digits.slice(0, 11);
+}
+
+export function isValidIranMobile(phone: string): boolean {
+  const clean = normalizeIranMobileInput(phone);
+  return /^09\d{9}$/.test(clean);
+}
+
+/**
+ * سقف مجاز ثبت متخصص بر اساس پلن انتخابی یا فعال سالن:
+ * - پلن رایگان (plan-free-start): ۱ متخصص (فقط خود مدیر/متخصص)
+ * - پلن حرفه‌ای (plan-professional): تا ۳ متخصص
+ * - پلن VIP (plan-vip-brand): تا ۸ متخصص
+ */
+export function getPlanStaffLimitCount(planIdOrName?: string): number {
+  const val = (planIdOrName || '').toLowerCase();
+  if (val.includes('vip') || val.includes('برند') || val.includes('8') || val.includes('۸')) {
+    return 8;
+  }
+  if (
+    val.includes('pro') ||
+    val.includes('حرفه‌ای') ||
+    val.includes('حرفه ای') ||
+    val.includes('3') ||
+    val.includes('۳')
+  ) {
+    return 3;
+  }
+  return 1;
+}
+
 export function formatPriceToman(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
     return 'رایگان';

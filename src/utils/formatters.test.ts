@@ -303,4 +303,38 @@ test('computeSelectedServicesSummary aggregates multiple selected services, comb
   );
 });
 
+test('normalizeIranMobileInput, isValidIranMobile, getPlanStaffLimitCount, and VPN-free SVG Data URI photos work accurately', async () => {
+  const {
+    normalizeIranMobileInput,
+    isValidIranMobile,
+    getPlanStaffLimitCount,
+  } = await import('./formatters');
+  const { getBeautyPhotoUrl, getSpecialistAvatarUrl } = await import(
+    '../components/ui/VisualMediaIllustration'
+  );
+
+  // تبدیل اعداد فارسی و حذف کاراکترهای غیرعددی در موبایل
+  assert.equal(normalizeIranMobileInput('۰۹۱۳ ۸۲۰ ۱۰۴۲'), '09138201042');
+  assert.equal(normalizeIranMobileInput('+989131234567'), '09131234567');
+  assert.equal(isValidIranMobile('09138201042'), true);
+  assert.equal(isValidIranMobile('۰۹۱۳۱۲۳۴۵۶۷'), true);
+  assert.equal(isValidIranMobile('0913123'), false);
+  assert.equal(isValidIranMobile('08131234567'), false);
+
+  // بررسی سقف متخصصان در پلن رایگان (۱ نفر)، حرفه‌ای (۳ نفر) و VIP (۸ نفر)
+  assert.equal(getPlanStaffLimitCount('plan-free-start'), 1);
+  assert.equal(getPlanStaffLimitCount('شروع رایگان (پایه)'), 1);
+  assert.equal(getPlanStaffLimitCount('plan-professional'), 3);
+  assert.equal(getPlanStaffLimitCount('حرفه‌ای (پرفروش)'), 3);
+  assert.equal(getPlanStaffLimitCount('plan-vip-multi'), 8);
+  assert.equal(getPlanStaffLimitCount('VIP چندشعبه‌ای'), 8);
+
+  // بررسی تصاویر نمونه ۱۰۰٪ داخلی و بدون نیاز به فیلترشکن (SVG Data URI)
+  const salonPhoto = getBeautyPhotoUrl('سالن زیبایی رویال گلزار', 'مو و رنگ');
+  const avatarPhoto = getSpecialistAvatarUrl('مهسا کیانی', 'متخصص رنگ مو');
+  assert.equal(salonPhoto.startsWith('data:image/svg+xml;utf8,'), true);
+  assert.equal(avatarPhoto.startsWith('data:image/svg+xml;utf8,'), true);
+  assert.equal(salonPhoto.includes('unsplash.com'), false);
+});
+
 

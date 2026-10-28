@@ -23,6 +23,7 @@ import {
   BusinessItem,
   CategoryItem,
   SubscriptionPlanItem,
+  SubscriptionStatus,
   SponsoredPlacementSlot,
 } from '../../types';
 import {
@@ -999,6 +1000,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
   const [bizSponsoredLabel, setBizSponsoredLabel] = useState('');
   const [bizExtraSms, setBizExtraSms] = useState('0');
   const [bizPlanName, setBizPlanName] = useState('');
+  const [bizTrialDays, setBizTrialDays] = useState('0');
 
   const openEditPlanModal = (plan: SubscriptionPlanItem) => {
     setEditingPlan(plan);
@@ -1063,6 +1065,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
     setBizSponsoredLabel(biz.sponsoredLabel || 'پیشنهاد ویژه رزرو آنلاین');
     setBizExtraSms(String(biz.extraSmsBalance ?? 0));
     setBizPlanName(biz.subscriptionPlan);
+    setBizTrialDays(String(biz.trialDaysRemaining ?? 0));
   };
 
   const handleSaveBizPlacement = (e: React.FormEvent) => {
@@ -1070,6 +1073,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
     if (!managingBiz) return;
     const daysNum = Math.max(0, Number(bizSponsoredDays) || 0);
     const orderNum = Math.max(1, Number(bizSponsoredOrder) || 1);
+    const trialNum = Math.max(0, Number(bizTrialDays) || 0);
     updateBusinessProfile(managingBiz.id, {
       isSponsored: bizSponsoredActive && daysNum > 0,
       featured:
@@ -1084,9 +1088,14 @@ export const AdminSubscriptionsPage: React.FC = () => {
       sponsoredLabel: bizSponsoredLabel.trim() || 'پیشنهاد ویژه',
       extraSmsBalance: Math.max(0, Number(bizExtraSms) || 0),
       subscriptionPlan: bizPlanName || managingBiz.subscriptionPlan,
+      trialDaysRemaining: trialNum,
+      subscriptionStatus:
+        trialNum > 0 ? SubscriptionStatus.Trial : SubscriptionStatus.Active,
     });
     showToast(
-      `تنظیمات جایگاه تبلیغاتی، رتبه نمایش و اشتراک «${managingBiz.name}» ذخیره شد.`
+      `تنظیمات جایگاه تبلیغاتی، دوره تست (${toPersianDigits(
+        trialNum
+      )} روز) و اشتراک «${managingBiz.name}» ذخیره شد.`
     );
     setManagingBiz(null);
   };
@@ -1428,13 +1437,18 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'plan',
-              header: 'پلن و پیامک اضافه',
+              header: 'پلن، دوره تست و پیامک',
               render: (b) => (
-                <div className="space-y-0.5">
+                <div className="space-y-1">
                   <span className="font-bold text-[#0057FF] block">
                     {b.subscriptionPlan}
                   </span>
-                  <span className="text-[11px] text-[#64748B] tabular-nums">
+                  {b.trialDaysRemaining && b.trialDaysRemaining > 0 ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#D97706] border border-[#F59E0B]/40 text-[11px] font-extrabold tabular-nums">
+                      تست تاییدشده مدیریت: {toPersianDigits(b.trialDaysRemaining)} روز باقی‌مانده
+                    </span>
+                  ) : null}
+                  <span className="text-[11px] text-[#64748B] tabular-nums block">
                     شارژ پیامک اضافه:{' '}
                     {toPersianDigits(b.extraSmsBalance ?? 0)} عدد
                   </span>
@@ -1853,6 +1867,51 @@ export const AdminSubscriptionsPage: React.FC = () => {
                 onChange={(e) => setBizExtraSms(e.target.value)}
               />
             </FormField>
+          </div>
+
+          {/* اعطای دوره تست رایگان با تایید مستقیم مدیر کل + شمارنده روز */}
+          <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#F59E0B]/40 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-extrabold text-[#92400E]">
+                  ۵. اعطای دوره تست رایگان (صرفاً با تایید مدیر کل)
+                </p>
+                <p className="text-[11px] text-[#B45309]">
+                  اگر صاحب سالن درخواست تست داده است، تعداد روز تست را مشخص کنید تا در پنل او روزشمار باقی‌مانده نمایش داده شود (۰ = بدون دوره تست)
+                </p>
+              </div>
+              <input
+                type="number"
+                dir="ltr"
+                min={0}
+                max={60}
+                value={bizTrialDays}
+                onChange={(e) => setBizTrialDays(e.target.value)}
+                className="w-20 rounded-xl border border-[#F59E0B] bg-white px-2.5 py-1.5 text-xs font-extrabold text-center text-[#92400E] tabular-nums"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { d: 0, label: '۰ روز (غیرفعال)' },
+                { d: 3, label: '۳ روز تست' },
+                { d: 5, label: '۵ روز تست' },
+                { d: 7, label: '۷ روز تست' },
+                { d: 14, label: '۱۴ روز تست' },
+              ].map((item) => (
+                <button
+                  key={item.d}
+                  type="button"
+                  onClick={() => setBizTrialDays(String(item.d))}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                    Number(bizTrialDays) === item.d
+                      ? 'bg-[#D97706] text-white'
+                      : 'bg-white text-[#92400E] border border-[#F59E0B]/40 hover:bg-[#FEF3C7]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">

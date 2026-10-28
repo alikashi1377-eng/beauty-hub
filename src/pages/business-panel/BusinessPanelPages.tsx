@@ -29,10 +29,12 @@ import {
   ServiceItem,
   SpecialistItem,
 } from '../../types';
+import { SAMPLE_CATEGORIES } from '../../mocks/sampleData';
 import {
   formatDurationMinutes,
   formatPriceToman,
   getAppointmentStatusMeta,
+  getPlanStaffLimitCount,
   getUpcomingJalaliDays,
   toPersianDigits,
   validateServiceForm,
@@ -72,11 +74,26 @@ export const BusinessDashboardPage: React.FC = () => {
     services,
     specialists,
     customers,
+    plans,
+    adPackages,
+    activePlanId,
+    setActivePlanId,
     updateAppointmentStatus,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
+  const [dashboardCheckout, setDashboardCheckout] =
+    useState<CheckoutItemPayload | null>(null);
+
+  const activePlanObj =
+    plans.find(
+      (p) =>
+        p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
+    ) || plans[0];
+  const currentStaffLimit = getPlanStaffLimitCount(
+    currentBiz?.subscriptionPlan || activePlanId
+  );
 
   const pendingAppointments = appointments.filter(
     (a) => a.status === AppointmentStatus.Pending
@@ -194,6 +211,123 @@ export const BusinessDashboardPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* داشبورد اختصاصی ارتقای پلن، وضعیت دوره تست تاییدشده ادمین و خرید تبلیغات ویژه (Boost) */}
+      <Card className="rounded-3xl bg-[#061138] text-white border border-[#1E293B] p-5 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-[#0057FF] text-white text-xs font-extrabold">
+                پلن فعال: {currentBiz?.subscriptionPlan || activePlanObj?.name || 'شروع رایگان (پایه)'}
+              </span>
+              <span className="px-3 py-1 rounded-full bg-white/10 text-[#00E5FF] text-xs font-extrabold tabular-nums">
+                ظرفیت متخصصان: {toPersianDigits(bizSpecialists.length)} از{' '}
+                {toPersianDigits(currentStaffLimit)} نفر مجاز
+              </span>
+              {currentBiz?.trialDaysRemaining &&
+              currentBiz.trialDaysRemaining > 0 ? (
+                <span className="px-3 py-1 rounded-full bg-[#F59E0B] text-[#061138] text-xs font-extrabold tabular-nums">
+                  دوره تست تاییدشده مدیریت: {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
+                </span>
+              ) : null}
+              {currentBiz?.isSponsored ? (
+                <span className="px-3 py-1 rounded-full bg-[#10B981] text-white text-xs font-extrabold tabular-nums">
+                  ★ تبلیغ ویژه فعال ({toPersianDigits(currentBiz.sponsoredDaysRemaining ?? 30)} روز باقی‌مانده)
+                </span>
+              ) : null}
+            </div>
+            <h2 className="text-sm sm:text-base font-extrabold text-white">
+              داشبورد ارتقای پلن اشتراک و تبلیغات جایگاه ویژه (Boost)
+            </h2>
+            <p className="text-xs text-slate-300">
+              برای افزایش ظرفیت متخصصان (تا ۳ یا ۸ نفر)، فعال‌سازی پیامک خودکار یا قرارگیری در صدر جست‌وجو و بنر صفحه اول، بسته مورد نظر را انتخاب کنید.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {plans
+              .filter((p) => p.monthlyPriceToman > 0)
+              .map((pl) => (
+                <Button
+                  key={pl.id}
+                  type="button"
+                  variant={pl.isRecommended ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() =>
+                    setDashboardCheckout({
+                      itemType: 'PLAN',
+                      itemId: pl.id,
+                      itemTitle: `اشتراک ماهانه «${pl.name}»`,
+                      baseAmountToman: pl.monthlyPriceToman,
+                    })
+                  }
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>ارتقا به {pl.name}</span>
+                </Button>
+              ))}
+            <Link to="/app/subscription">
+              <Button variant="outline" size="sm" className="bg-white/10 text-white border-white/25 hover:bg-white/20">
+                <Megaphone className="w-3.5 h-3.5 text-[#00E5FF]" />
+                <span>خرید تبلیغ صدر جست‌وجو / بنر</span>
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* کارت‌های سریع خرید جایگاه تبلیغاتی مستقیم از پیشخوان */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-white/15 text-xs">
+          {adPackages.slice(0, 3).map((pkg) => (
+            <div
+              key={pkg.id}
+              className="p-3.5 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0 space-y-0.5">
+                <p className="font-extrabold text-[#00E5FF] truncate">
+                  {pkg.title}
+                </p>
+                <p className="text-[11px] text-slate-200 tabular-nums">
+                  {formatPriceToman(pkg.priceToman)}
+                  {pkg.slot !== 'SMS_ADDON' ? ' / ۳۰ روزه' : ` / ${toPersianDigits(pkg.smsCount ?? 200)} پیامک`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setDashboardCheckout({
+                    itemType:
+                      pkg.slot === 'SMS_ADDON' ? 'SMS_PACK' : 'AD_PACKAGE',
+                    itemId: pkg.id,
+                    itemTitle: pkg.title,
+                    baseAmountToman: pkg.priceToman,
+                    weeklyAmountToman: pkg.weeklyPriceToman,
+                    defaultPlacement:
+                      pkg.slot !== 'SMS_ADDON' ? pkg.slot : undefined,
+                    defaultDurationDays: 30,
+                    smsCount: pkg.smsCount,
+                  })
+                }
+                className="px-3 py-1.5 rounded-full bg-[#00E5FF] text-[#061138] font-extrabold text-[11px] shrink-0 cursor-pointer hover:bg-white transition-colors"
+              >
+                خرید و فعال‌سازی
+              </button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <EasyCheckoutModal
+        isOpen={Boolean(dashboardCheckout)}
+        onClose={() => setDashboardCheckout(null)}
+        item={dashboardCheckout}
+        businessId={currentBiz?.id || 'biz-1'}
+        businessName={currentBiz?.name || 'سالن زیبایی شما'}
+        onPaymentSuccess={() => {
+          if (dashboardCheckout?.itemType === 'PLAN') {
+            setActivePlanId(dashboardCheckout.itemId);
+          }
+        }}
+      />
 
       {/* چیدمان ۳ ستونی دسکتاپ: ستون میانی (KPIهای موج‌دار + نمودارها + جدول زمان‌بندی) + ستون چپ (برنامه امروز + تقویم ماهانه) — مطابق Capture2.PNG و Capture8.PNG */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -1650,12 +1784,34 @@ export const BusinessServicesPage: React.FC = () => {
               id="srv-form-cat"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              options={categories.map((c) => ({
+              options={(categories.length > 0
+                ? categories
+                : SAMPLE_CATEGORIES
+              ).map((c) => ({
                 value: c.title,
                 label: c.title,
               }))}
             />
           </FormField>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(categories.length > 0 ? categories : SAMPLE_CATEGORIES).map(
+              (c) => (
+                <button
+                  key={c.slug}
+                  type="button"
+                  onClick={() => setCategory(c.title)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer border transition-colors ${
+                    category === c.title
+                      ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]'
+                      : 'bg-[#FAF8FF] text-[#1E1B2E] border-[#E6E0F5]'
+                  }`}
+                >
+                  {c.title}
+                </button>
+              )
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <FormField
@@ -1736,8 +1892,12 @@ export const BusinessStaffPage: React.FC = () => {
     currentBusiness,
     businesses,
     specialists,
+    plans,
+    activePlanId,
+    setActivePlanId,
     addSpecialist,
     updateSpecialist,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [modalOpen, setModalOpen] = useState(false);
@@ -1745,8 +1905,39 @@ export const BusinessStaffPage: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [roleTitle, setRoleTitle] = useState('');
   const [specialtiesText, setSpecialtiesText] = useState('');
+  const [upgradeModalPlan, setUpgradeModalPlan] =
+    useState<CheckoutItemPayload | null>(null);
+
+  const staffLimitCount = getPlanStaffLimitCount(
+    currentBiz?.subscriptionPlan || activePlanId
+  );
+  const bizSpecialistsList = currentBiz
+    ? specialists.filter((s) => s.businessId === currentBiz.id)
+    : specialists;
+  const effectiveStaffList =
+    bizSpecialistsList.length > 0 ? bizSpecialistsList : specialists;
+  const isLimitReached = effectiveStaffList.length >= staffLimitCount;
 
   const openAdd = () => {
+    if (isLimitReached) {
+      showToast(
+        `ظرفیت متخصصان در پلن فعلی شما (${toPersianDigits(
+          staffLimitCount
+        )} نفر) تکمیل است. برای افزودن متخصص جدید، پلن خود را به حرفه‌ای یا VIP ارتقا دهید.`,
+        'warning'
+      );
+      const nextPlan =
+        plans.find((p) => p.id === 'plan-professional') || plans[1];
+      if (nextPlan) {
+        setUpgradeModalPlan({
+          itemType: 'PLAN',
+          itemId: nextPlan.id,
+          itemTitle: `ارتقا به پلن «${nextPlan.name}»`,
+          baseAmountToman: nextPlan.monthlyPriceToman,
+        });
+      }
+      return;
+    }
     setEditingStaff(null);
     setFullName('');
     setRoleTitle('');
@@ -1795,11 +1986,13 @@ export const BusinessStaffPage: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         kicker="کسب‌وکار · اعضای تیم"
         title="مدیریت متخصصان و پرسنل"
-        subtitle="مدیریت اعضای تیم، مهارت‌های تخصصی و وضعیت فعال بودن تقویم پذیرش هر متخصص"
+        subtitle={`ظرفیت مجاز پلن فعلی شما: حداکثر ${toPersianDigits(
+          staffLimitCount
+        )} متخصص (${toPersianDigits(effectiveStaffList.length)} نفر ثبت‌شده)`}
         routePattern="/app/staff"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1808,9 +2001,27 @@ export const BusinessStaffPage: React.FC = () => {
         actions={
           <Button variant="primary" size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4" />
-            <span>افزودن متخصص جدید</span>
+            <span>
+              {isLimitReached
+                ? 'ارتقای پلن برای افزودن متخصص جدید'
+                : 'افزودن متخصص جدید'}
+            </span>
           </Button>
         }
+      />
+
+      <EasyCheckoutModal
+        isOpen={Boolean(upgradeModalPlan)}
+        onClose={() => setUpgradeModalPlan(null)}
+        item={upgradeModalPlan}
+        businessId={currentBiz?.id || 'biz-1'}
+        businessName={currentBiz?.name || 'سالن زیبایی شما'}
+        onPaymentSuccess={() => {
+          if (upgradeModalPlan?.itemId) {
+            setActivePlanId(upgradeModalPlan.itemId);
+          }
+          setUpgradeModalPlan(null);
+        }}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

@@ -33,6 +33,9 @@ import {
   formatDurationMinutes,
   formatPriceToman,
   getUpcomingJalaliDays,
+  isValidIranMobile,
+  normalizeIranMobileInput,
+  toEnglishDigitsClient,
   toPersianDigits,
 } from '../../utils/formatters';
 import { realApiClient } from '../../services/apiClient';
@@ -132,7 +135,7 @@ const BookingFlowStepIndicator: React.FC<{
   );
 };
 
-/** ۱. صفحه ورود مشتری / کاربر با کد یک‌بارمصرف پیامکی (/login) */
+/** ۱. صفحه ورود مشتری / مدیر سالن / مدیر کل با کد پیامکی خودکار (WebOTP) یا رمز عبور ثابت (/login) */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -141,11 +144,16 @@ export const CustomerLoginPage: React.FC = () => {
     authUser,
     requestOtpLogin,
     verifyOtpLogin,
+    loginWithPassword,
+    setAccountPassword,
     logoutUser,
-    showToast,
   } = usePrototypeData();
+
+  const [authMethod, setAuthMethod] = useState<'otp' | 'password'>('otp');
   const [phone, setPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -156,21 +164,74 @@ export const CustomerLoginPage: React.FC = () => {
       ? rawRedirect
       : '';
 
-  const handleRequestOtpOrSimulatedLogin = async (e: React.FormEvent) => {
+  const navigateAfterLogin = (user: {
+    isPlatformAdmin?: boolean;
+    roles: string[];
+  }) => {
+    if (safeRedirectPath) {
+      navigate(safeRedirectPath, { replace: true });
+    } else if (user.isPlatformAdmin && user.roles.includes('PLATFORM_ADMIN')) {
+      navigate('/admin', { replace: true });
+    } else if (user.roles.includes('BUSINESS_OWNER')) {
+      navigate('/app', { replace: true });
+    } else {
+      navigate('/me', { replace: true });
+    }
+  };
+
+  const verifyOtpCodeDirect = async (targetPhone: string, code6: string) => {
+    if (!/^\d{6}$/.test(code6)) return;
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const user = await verifyOtpLogin(targetPhone, code6);
+      navigateAfterLogin(user);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'کد واردشده معتبر نیست.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // خواندن خودکار پیامک کد تایید (WebOTP API) روی موبایل به محض دریافت پیامک
+  useEffect(() => {
+    if (step !== 'otp' || authMethod !== 'otp') return;
+    if (typeof window === 'undefined' || !('OTPCredential' in window)) return;
+
+    const ac = new AbortController();
+    navigator.credentials
+      .get({
+        // @ts-expect-error WebOTP API transport option
+        otp: { transport: ['sms'] },
+        signal: ac.signal,
+      })
+      .then((cred: unknown) => {
+        const otpCred = cred as { code?: string } | null;
+        if (otpCred?.code) {
+          const clean = toEnglishDigitsClient(otpCred.code).replace(/\D/g, '').slice(0, 6);
+          if (clean.length === 6) {
+            setOtpCode(clean);
+            void verifyOtpCodeDirect(phone.trim(), clean);
+          }
+        }
+      })
+      .catch(() => {
+        // نادیده گرفتن در صورت لغو یا عدم پشتیبانی مرورگر
+      });
+
+    return () => ac.abort();
+  }, [step, authMethod, phone]);
+
+  const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedPhone = phone.trim();
-    if (!/^09\d{9}$/.test(normalizedPhone)) {
-      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09123456789).');
+    const normalizedPhone = normalizeIranMobileInput(phone);
+    if (!isValidIranMobile(normalizedPhone)) {
+      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09131234567).');
       return;
     }
     setError('');
-
-    if (dataMode === 'mock') {
-      showToast('ورود به حساب کاربری با موفقیت انجام شد.');
-      navigate(safeRedirectPath || '/me');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       await requestOtpLogin(normalizedPhone);
@@ -188,93 +249,218 @@ export const CustomerLoginPage: React.FC = () => {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedCode = otpCode.trim();
+    const trimmedCode = toEnglishDigitsClient(otpCode).replace(/\D/g, '').slice(0, 6);
     if (!/^\d{6}$/.test(trimmedCode)) {
       setError('کد تایید باید یک عدد ۶ رقمی معتبر باشد.');
+      return;
+    }
+    await verifyOtpCodeDirect(phone.trim(), trimmedCode);
+  };
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const normalizedPhone = normalizeIranMobileInput(phone);
+    if (!isValidIranMobile(normalizedPhone)) {
+      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09131234567).');
+      return;
+    }
+    if (password.trim().length < 6) {
+      setError('رمز عبور باید حداقل ۶ کاراکتر باشد.');
       return;
     }
     setError('');
     setIsSubmitting(true);
     try {
-      const user = await verifyOtpLogin(phone.trim(), trimmedCode);
-      if (safeRedirectPath) {
-        navigate(safeRedirectPath, { replace: true });
-      } else if (user.isPlatformAdmin && user.roles.includes('PLATFORM_ADMIN')) {
-        navigate('/admin', { replace: true });
-      } else if (user.roles.includes('BUSINESS_OWNER')) {
-        navigate('/app', { replace: true });
-      } else {
-        navigate('/me', { replace: true });
-      }
+      const user = await loginWithPassword(normalizedPhone, password);
+      navigateAfterLogin(user);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'کد واردشده معتبر نیست.'
+        err instanceof Error
+          ? err.message
+          : 'شماره موبایل یا رمز عبور صحیح نیست.'
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleSaveFixedPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const ok = await setAccountPassword(newPassword);
+    if (ok) {
+      setNewPassword('');
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto my-4 sm:my-8 space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center rounded-[32px] border border-[#CBD5E1] bg-white p-6 sm:p-10 shadow-[0_14px_45px_-20px_rgba(6,17,56,0.14)]">
-        {/* ستون فرم ورود با موبایل */}
-        <div className="lg:col-span-6 space-y-6">
+        {/* ستون فرم ورود دوگانه (کد پیامکی خودکار + رمز عبور ثابت) */}
+        <div className="lg:col-span-6 space-y-5">
           <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
-              <span>ورود امن با کد تایید پیامکی</span>
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-bold">
+                <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
+                <span>ورود هوشمند با پیامک خودکار یا رمز ثابت</span>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#10B981]/30 text-[11px] font-extrabold">
+                حفظ نشست ۳۰ روزه
+              </span>
+            </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-[#061138]">
               ورود یا عضویت در Timeto
             </h1>
             <p className="text-xs sm:text-sm text-[#475569] leading-relaxed">
-              شماره موبایل خود را وارد کنید تا کد تایید ۶ رقمی برایتان پیامک شود
-              و وارد حساب کاربری، پنل سالن یا پنل مدیریت شوید.
+              با کد تایید پیامکی (خوانش خودکار از پیامک) یا رمز عبور ثابت وارد حساب کاربری، پنل سالن یا پنل مدیریت کلان شوید.
             </p>
           </div>
 
+          {/* تب انتخاب روش ورود: کد پیامکی یا رمز عبور ثابت */}
+          <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1]">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMethod('otp');
+                setError('');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                authMethod === 'otp'
+                  ? 'bg-[#0057FF] text-white shadow-2xs'
+                  : 'text-[#334155] hover:text-[#061138]'
+              }`}
+            >
+              کد یک‌بارمصرف پیامکی
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMethod('password');
+                setError('');
+              }}
+              className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
+                authMethod === 'password'
+                  ? 'bg-[#061138] text-[#00E5FF] shadow-2xs'
+                  : 'text-[#334155] hover:text-[#061138]'
+              }`}
+            >
+              ورود با رمز عبور ثابت
+            </button>
+          </div>
+
           {authUser ? (
-            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#BBF7D0] flex items-center justify-between gap-3 text-xs text-[#059669]">
-              <div>
-                <p className="font-bold">
-                  کاربر فعال: {authUser.fullName} ({authUser.phone})
-                </p>
-                <p className="text-[11px] text-[#059669] mt-0.5">
-                  شما هم‌اکنون وارد حساب خود شده‌اید.
-                </p>
+            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#BBF7D0] space-y-3 text-xs text-[#059669]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-extrabold text-[#061138]">
+                    کاربر فعال: {authUser.fullName} ({authUser.phone})
+                  </p>
+                  <p className="text-[11px] text-[#059669] mt-0.5">
+                    نشست ۳۰ روزه شما فعال است و نیازی به ورود مجدد ندارید.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void logoutUser()}
+                >
+                  خروج از حساب
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void logoutUser()}
+
+              {/* تعریف یا تغییر رمز عبور ثابت برای ورود بدون پیامک در دفعات بعد */}
+              <form
+                onSubmit={handleSaveFixedPassword}
+                className="pt-3 border-t border-[#A7F3D0] flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
               >
-                خروج از حساب
-              </Button>
+                <Input
+                  type="password"
+                  dir="ltr"
+                  placeholder="تعریف رمز عبور ثابت (حداقل ۶ کاراکتر)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+                <Button type="submit" variant="primary" size="sm" className="shrink-0">
+                  ذخیره رمز ثابت
+                </Button>
+              </form>
             </div>
           ) : null}
 
-          {step === 'phone' || dataMode === 'mock' ? (
+          {authMethod === 'password' ? (
+            <form onSubmit={handlePasswordLogin} className="space-y-4" noValidate>
+              <FormField
+                id="login-pass-phone"
+                label="شماره تلفن همراه (۱۱ رقم با 09)"
+                required
+                error={error}
+              >
+                <Input
+                  id="login-pass-phone"
+                  type="tel"
+                  inputMode="tel"
+                  maxLength={11}
+                  dir="ltr"
+                  placeholder="09138201042"
+                  value={phone}
+                  hasError={Boolean(error)}
+                  onChange={(e) => setPhone(normalizeIranMobileInput(e.target.value))}
+                />
+              </FormField>
+
+              <FormField
+                id="login-fixed-password"
+                label="رمز عبور ثابت"
+                hint="اگر قبلاً در حساب خود رمز عبور ثابت تعریف کرده‌اید، بدون نیاز به پیامک وارد شوید"
+                required
+              >
+                <Input
+                  id="login-fixed-password"
+                  type="password"
+                  dir="ltr"
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </FormField>
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
+                isLoading={isSubmitting}
+              >
+                <span>ورود مستقیم با رمز عبور</span>
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            </form>
+          ) : step === 'phone' ? (
             <form
-              onSubmit={handleRequestOtpOrSimulatedLogin}
+              onSubmit={handleRequestOtp}
               className="space-y-4"
               noValidate
             >
               <FormField
                 id="login-phone"
-                label="شماره تلفن همراه"
-                hint="شماره ۱۱ رقمی با پیش‌شماره ۰۹"
+                label="شماره تلفن همراه (۱۱ رقم با 09)"
+                hint="شماره ۱۱ رقمی با پیش‌شماره 09 (تبدیل خودکار اعداد فارسی)"
                 error={error}
                 required
               >
                 <Input
                   id="login-phone"
+                  type="tel"
+                  inputMode="tel"
+                  maxLength={11}
                   dir="ltr"
-                  placeholder="09123456789"
+                  placeholder="09131234567"
                   value={phone}
                   hasError={Boolean(error)}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) =>
+                    setPhone(normalizeIranMobileInput(e.target.value))
+                  }
                 />
               </FormField>
 
@@ -294,17 +480,28 @@ export const CustomerLoginPage: React.FC = () => {
               <FormField
                 id="login-otp-code"
                 label={`کد تایید ۶ رقمی ارسال‌شده به ${phone}`}
-                hint="کد ۶ رقمی پیامک‌شده را وارد کنید"
+                hint="به محض دریافت پیامک، کد به صورت خودکار جایگذاری و تایید می‌شود"
                 error={error}
                 required
               >
                 <Input
                   id="login-otp-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   dir="ltr"
                   maxLength={6}
                   value={otpCode}
                   hasError={Boolean(error)}
-                  onChange={(e) => setOtpCode(e.target.value)}
+                  onChange={(e) => {
+                    const clean = toEnglishDigitsClient(e.target.value)
+                      .replace(/\D/g, '')
+                      .slice(0, 6);
+                    setOtpCode(clean);
+                    if (clean.length === 6 && dataMode === 'real') {
+                      void verifyOtpCodeDirect(phone.trim(), clean);
+                    }
+                  }}
                   placeholder="123456"
                 />
               </FormField>
@@ -339,7 +536,7 @@ export const CustomerLoginPage: React.FC = () => {
           <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center gap-2.5 text-xs text-[#334155]">
             <ShieldCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
             <span>
-              تمامی ورودها (مراجعان، مدیران سالن و مدیر کل پلتفرم) صرفاً از طریق کد یک‌بارمصرف پیامکی (OTP) محافظت می‌شوند.
+              پس از یک‌بار ورود، نشست شما تا ۳۰ روز روی این دستگاه فعال می‌ماند و همچنین می‌توانید رمز عبور ثابت برای ورود فوری بدون پیامک تعریف کنید.
             </span>
           </div>
 
@@ -354,7 +551,7 @@ export const CustomerLoginPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ویترین برند Timeto */}
+        {/* ستون ویترین برند Timeto (تصاویر ۱۰۰٪ بدون نیاز به فیلترشکن) */}
         <div className="lg:col-span-6 rounded-3xl bg-[#061138] border border-[#1E293B] p-6 flex flex-col items-center text-center space-y-5 text-white">
           <div className="relative w-full max-w-[320px] h-[230px] flex items-center justify-center pt-2">
             <div
@@ -364,7 +561,7 @@ export const CustomerLoginPage: React.FC = () => {
               }}
             >
               <img
-                src="https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=400&q=80"
+                src={getBeautyPhotoUrl('کلینیک پوست و فیشیال', 'پوست و فیشیال')}
                 alt="پوست و فیشیال"
                 className="w-full h-full object-cover"
               />
@@ -376,14 +573,14 @@ export const CustomerLoginPage: React.FC = () => {
               }}
             >
               <img
-                src="https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=400&q=80"
+                src={getBeautyPhotoUrl('استودیو تخصصی ناخن', 'ناخن')}
                 alt="طراحی ناخن"
                 className="w-full h-full object-cover"
               />
             </div>
             <div className="relative z-10 w-36 sm:w-40 h-48 rounded-3xl overflow-hidden border-4 border-[#00E5FF] shadow-xl">
               <img
-                src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80"
+                src={getBeautyPhotoUrl('سالن زیبایی رویال گلزار', 'مو و رنگ')}
                 alt="استایل مو"
                 className="w-full h-full object-cover"
               />

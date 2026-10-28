@@ -80,12 +80,42 @@ export class ApiClientError extends Error {
   }
 }
 
+const SESSION_STORAGE_KEY = 'timeto_session_token_v1';
+
+export function getSavedSessionToken(): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveSessionTokenToStorage(token?: string | null): void {
+  try {
+    if (typeof window === 'undefined') return;
+    if (token && token.trim()) {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, token.trim());
+    } else {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const savedToken = getSavedSessionToken();
+  const authHeaders: Record<string, string> = savedToken
+    ? { Authorization: `Bearer ${savedToken}` }
+    : {};
+
   const response = await fetch(url, {
     ...init,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...(init?.headers ?? {}),
     },
   });
@@ -108,9 +138,13 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
  */
 export const realApiClient = {
   async fetchBootstrap(): Promise<ApiBootstrapResponse> {
+    const savedToken = getSavedSessionToken();
     const res = await fetch('/api/v1/bootstrap', {
       credentials: 'include',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(savedToken ? { Authorization: `Bearer ${savedToken}` } : {}),
+      },
     });
     const body = (await res.json().catch(() => ({}))) as ApiBootstrapResponse;
     if (!res.ok || body.ok === false) {
@@ -154,7 +188,7 @@ export const realApiClient = {
     user: AuthenticatedSessionUser;
     message: string;
   }> {
-    return requestJson<{
+    const res = await requestJson<{
       ok: boolean;
       userId: string;
       sessionToken: string;
@@ -165,15 +199,58 @@ export const realApiClient = {
       method: 'POST',
       body: JSON.stringify({ phone, code }),
     });
+    if (res.sessionToken) {
+      saveSessionTokenToStorage(res.sessionToken);
+    }
+    return res;
+  },
+
+  async loginWithPassword(
+    phone: string,
+    password: string
+  ): Promise<{
+    userId: string;
+    sessionToken: string;
+    expiresAt: string;
+    user: AuthenticatedSessionUser;
+    message: string;
+  }> {
+    const res = await requestJson<{
+      ok: boolean;
+      userId: string;
+      sessionToken: string;
+      expiresAt: string;
+      user: AuthenticatedSessionUser;
+      message: string;
+    }>('/api/v1/auth/password/login', {
+      method: 'POST',
+      body: JSON.stringify({ phone, password }),
+    });
+    if (res.sessionToken) {
+      saveSessionTokenToStorage(res.sessionToken);
+    }
+    return res;
+  },
+
+  async setAccountPassword(password: string): Promise<{ message: string }> {
+    return requestJson<{ ok: boolean; message: string }>(
+      '/api/v1/auth/password/set',
+      {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      }
+    );
   },
 
   async logout(): Promise<void> {
+    saveSessionTokenToStorage(null);
     await requestJson('/api/v1/auth/logout', {
       method: 'POST',
     });
   },
 
   async logoutAll(): Promise<void> {
+    saveSessionTokenToStorage(null);
     await requestJson('/api/v1/auth/logout-all', {
       method: 'POST',
     });

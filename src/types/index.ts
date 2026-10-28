@@ -131,6 +131,7 @@ export interface BusinessItem {
   sponsoredOrder?: number;
   sponsoredDaysRemaining?: number;
   sponsoredExpiresJalali?: string;
+  trialDaysRemaining?: number;
   extraSmsBalance?: number;
   instagramHandle?: string;
   mapLat?: number;

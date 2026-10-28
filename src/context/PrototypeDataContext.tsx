@@ -42,6 +42,7 @@ import {
   SubscriptionStatus,
   WorkingHourItem,
 } from '../types';
+import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
 import { computeSelectedServicesSummary } from '../utils/formatters';
 
 export interface ToastNotice {
@@ -61,6 +62,11 @@ interface PrototypeDataContextValue {
     phone: string,
     code: string
   ) => Promise<AuthenticatedSessionUser>;
+  loginWithPassword: (
+    phone: string,
+    password: string
+  ) => Promise<AuthenticatedSessionUser>;
+  setAccountPassword: (password: string) => Promise<boolean>;
   logoutUser: () => Promise<void>;
   updateCustomerProfile: (patch: {
     fullName?: string;
@@ -151,8 +157,7 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   ownerName: 'مریم فرهادی',
   phone: '09131234567',
   instagramHandle: '@orkideh.beauty',
-  avatarUrl:
-    'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=400&h=400&q=80',
+  avatarUrl: getBeautyPhotoUrl('سالن زیبایی ارکیده نقره‌ای', 'مو و رنگ'),
   city: 'اصفهان',
   neighborhood: 'چهارباغ بالا',
   address: 'اصفهان، چهارباغ بالا، روبه‌روی مجتمع پارک، ساختمان ارکیده، طبقه دوم',
@@ -182,11 +187,6 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
       fullName: 'مریم فرهادی',
       roleTitle: 'مدیر و متخصص ارشد مو',
     },
-    {
-      id: 'onb-stf-2',
-      fullName: 'سحر کاظمی',
-      roleTitle: 'متخصص طراحی و سلامت ناخن',
-    },
   ],
   workingHours: [
     { dayName: 'شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
@@ -199,7 +199,7 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   ],
   licenseCode: '',
   nationalIdNumber: '',
-  selectedPlanId: 'plan-professional',
+  selectedPlanId: 'plan-free-start',
 };
 
 const INITIAL_BOOKING_DRAFT: BookingDraft = {
@@ -333,7 +333,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return SAMPLE_PAYMENT_ORDERS;
   });
-  const [activePlanId, setActivePlanId] = useState<string>('plan-professional');
+  const [activePlanId, setActivePlanId] = useState<string>('plan-free-start');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
   );
@@ -350,6 +350,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const dismissToast = () => setToast(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => {
+      setToast(null);
+    }, 3200);
+    return () => window.clearTimeout(timer);
+  }, [toast?.id]);
 
   const currentBusiness: BusinessItem | null = React.useMemo(() => {
     if (dataMode === 'real') {
@@ -428,7 +436,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
         setBusinesses(mergeBusinessOverrides(adminRes.data.businesses));
-        setCategories(adminRes.data.categories);
+        setCategories(
+          adminRes.data.categories.length > 0
+            ? adminRes.data.categories
+            : SAMPLE_CATEGORIES
+        );
         if (
           adminRes.data.plans.length > 0 &&
           !window.localStorage.getItem('timeto_custom_plans_v2')
@@ -454,7 +466,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       if (response.mode === 'real' && response.data) {
         setDataMode('real');
         setDatabaseError(null);
-        setCategories(response.data.categories);
+        setCategories(
+          response.data.categories.length > 0
+            ? response.data.categories
+            : SAMPLE_CATEGORIES
+        );
         setBusinesses(mergeBusinessOverrides(response.data.businesses));
         setServices(response.data.services);
         setSpecialists(response.data.specialists);
@@ -592,6 +608,91 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     await loadAuthenticatedRoleData(res.user);
     showToast(res.message, 'success');
     return res.user;
+  };
+
+  const loginWithPassword = async (
+    phone: string,
+    password: string
+  ): Promise<AuthenticatedSessionUser> => {
+    if (dataMode === 'mock') {
+      try {
+        const storedRaw =
+          window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+        const stored = JSON.parse(storedRaw);
+        const savedPass = stored[phone];
+        if (savedPass && savedPass !== password) {
+          throw new Error('شماره موبایل یا رمز عبور وارد شده صحیح نیست.');
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('صحیح نیست')) {
+          throw err;
+        }
+      }
+      const isSuperAdmin = phone === '09138201042';
+      const mockUser: AuthenticatedSessionUser = {
+        userId: isSuperAdmin ? 'admin-user-1' : 'mock-user-1',
+        sessionId: 'mock-session-pass-1',
+        phone,
+        fullName: isSuperAdmin ? 'مدیر کل تایم تو' : 'المیرا شمس',
+        defaultCity: 'اصفهان',
+        roles: isSuperAdmin ? ['CUSTOMER', 'PLATFORM_ADMIN'] : ['CUSTOMER'],
+        isPlatformAdmin: isSuperAdmin,
+        businessMemberships: [],
+      };
+      setAuthUser(mockUser);
+      showToast('ورود با رمز عبور ثابت انجام شد (نشست ۳۰ روزه فعال است).');
+      return mockUser;
+    }
+
+    const res = await realApiClient.loginWithPassword(phone, password);
+    setAuthUser(res.user);
+    setBookingDraft((prev) => ({
+      ...prev,
+      customerName: res.user.fullName || prev.customerName,
+      customerPhone: res.user.phone || prev.customerPhone,
+    }));
+    await loadAuthenticatedRoleData(res.user);
+    showToast(res.message, 'success');
+    return res.user;
+  };
+
+  const setAccountPassword = async (password: string): Promise<boolean> => {
+    if (password.trim().length < 6) {
+      showToast('رمز عبور باید حداقل ۶ کاراکتر باشد.', 'warning');
+      return false;
+    }
+    if (dataMode === 'real') {
+      try {
+        const res = await realApiClient.setAccountPassword(password);
+        showToast(res.message, 'success');
+        return true;
+      } catch (err) {
+        showToast(
+          err instanceof Error
+            ? err.message
+            : 'خطا در ثبت رمز عبور در پایگاه داده',
+          'danger'
+        );
+        return false;
+      }
+    }
+
+    if (authUser?.phone) {
+      try {
+        const storedRaw =
+          window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+        const stored = JSON.parse(storedRaw);
+        stored[authUser.phone] = password;
+        window.localStorage.setItem(
+          'timeto_local_passwords_v1',
+          JSON.stringify(stored)
+        );
+      } catch {
+        // ignore
+      }
+    }
+    showToast('رمز عبور ثابت شما ذخیره شد؛ از این پس بدون نیاز به پیامک هم می‌توانید وارد شوید.');
+    return true;
   };
 
   const logoutUser = async (): Promise<void> => {
@@ -1403,8 +1504,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         'پذیرش منظم آنلاین با کادر مجرب و رعایت کامل استانداردهای بهداشتی.',
       verifiedBadge: true,
       approvalStatus: 'APPROVED',
-      subscriptionPlan: chosenPlan?.name ?? 'حرفه‌ای (پرفروش)',
-      subscriptionStatus: SubscriptionStatus.Trial,
+      subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان (پایه)',
+      subscriptionStatus: SubscriptionStatus.Active,
       workingHours: onboardingDraft.workingHours,
       visualTheme: 'violet',
       featured: true,
@@ -1548,6 +1649,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ownedBusinessId,
         requestOtpLogin,
         verifyOtpLogin,
+        loginWithPassword,
+        setAccountPassword,
         logoutUser,
         updateCustomerProfile,
         refreshRealData,

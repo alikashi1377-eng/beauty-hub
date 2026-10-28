@@ -1293,6 +1293,244 @@ export function createApiV1Router(
     }
   });
 
+  /**
+   * ۱۴-الف. ورود با رمز عبور ثابت (برای مدیر کل پلتفرم، مدیران سالن و کاربران دارای رمز عبور)
+   * POST /api/v1/auth/password/login
+   */
+  router.post('/auth/password/login', async (req: Request, res: Response) => {
+    const { pool } = await resolvePoolOrFail(res);
+    if (!pool) return;
+
+    try {
+      const rawPhone = String(req.body?.phone || '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/\D/g, '');
+      const password = String(req.body?.password || '').trim();
+
+      if (!/^09\d{9}$/.test(rawPhone)) {
+        res.status(400).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'INVALID_IRAN_MOBILE_PHONE',
+          message: 'شماره موبایل واردشده معتبر نیست (فرمت صحیح: 09123456789).',
+        });
+        return;
+      }
+
+      if (!password || password.length < 4) {
+        res.status(400).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'INVALID_PASSWORD',
+          message: 'رمز عبور باید حداقل ۴ کاراکتر باشد.',
+        });
+        return;
+      }
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_passwords (
+          user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          password_hash TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      const candidateHash = crypto
+        .createHash('sha256')
+        .update(`timeto-pwd-v1:${rawPhone}:${password}`, 'utf8')
+        .digest('hex');
+
+      const userLookup = await pool.query(
+        `
+        SELECT
+          u.id,
+          u.phone,
+          u.is_active,
+          up.password_hash AS user_pwd_hash,
+          pa.password_hash AS admin_pwd_hash
+        FROM users u
+        LEFT JOIN user_passwords up ON up.user_id = u.id
+        LEFT JOIN platform_admins pa ON pa.user_id = u.id AND pa.is_active = TRUE
+        WHERE u.phone = $1
+        LIMIT 1
+        `,
+        [rawPhone]
+      );
+
+      if (!userLookup.rowCount || !userLookup.rows[0]) {
+        res.status(401).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'INVALID_CREDENTIALS',
+          message:
+            'کاربری با این شماره یافت نشد یا هنوز رمز عبوری تنظیم نکرده‌اید. لطفاً یک بار با «کد یک‌بارمصرف پیامکی» وارد شوید و رمز خود را تنظیم کنید.',
+        });
+        return;
+      }
+
+      const uRow = userLookup.rows[0];
+      if (!uRow.is_active) {
+        res.status(403).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'USER_ACCOUNT_DISABLED',
+          message: 'حساب کاربری غیرفعال است.',
+        });
+        return;
+      }
+
+      const storedHash = String(uRow.user_pwd_hash || uRow.admin_pwd_hash || '');
+      const envAdminDefaultPwd = (process.env.ADMIN_DEFAULT_PASSWORD || '').trim();
+      const ownerPhone = (
+        process.env.INITIAL_ADMIN_PHONE || '09138201042'
+      ).trim();
+
+      const matchesStored = storedHash === candidateHash;
+      const matchesEnvAdminPwd =
+        rawPhone === ownerPhone &&
+        envAdminDefaultPwd.length >= 4 &&
+        password === envAdminDefaultPwd;
+
+      if (!matchesStored && !matchesEnvAdminPwd) {
+        res.status(401).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'INVALID_CREDENTIALS',
+          message:
+            'رمز عبور واردشده صحیح نیست (اگر قبلاً رمز عبور تنظیم نکرده‌اید، ابتدا یک بار با کد پیامکی وارد شوید و رمز عبور ثابت تعریف کنید).',
+        });
+        return;
+      }
+
+      const userId = String(uRow.id);
+      const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1').slice(
+        0,
+        45
+      );
+      const ua = String(req.headers['user-agent'] || 'web').slice(0, 500);
+      const config = customEnv ?? loadServerEnv();
+      const sessionSecret =
+        config.sessionSecret ??
+        process.env.SESSION_SECRET ??
+        'timeto-fallback-session-secret';
+
+      const rawSessionSecretPart = crypto.randomBytes(32).toString('hex');
+      const refreshTokenHash = crypto
+        .createHash('sha256')
+        .update(rawSessionSecretPart, 'utf8')
+        .digest('hex');
+
+      const sessionInsertRes = await pool.query(
+        `
+        INSERT INTO user_sessions (
+          user_id,
+          refresh_token_hash,
+          ip_address,
+          user_agent,
+          expires_at
+        )
+        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')
+        RETURNING id, expires_at
+        `,
+        [userId, refreshTokenHash, ip, ua]
+      );
+
+      const sessionId = String(sessionInsertRes.rows[0].id);
+      const expiresAt = new Date(
+        String(sessionInsertRes.rows[0].expires_at)
+      ).toISOString();
+
+      const payload = `v1.${sessionId}.${rawSessionSecretPart}`;
+      const sig = crypto
+        .createHmac('sha256', sessionSecret)
+        .update(payload, 'utf8')
+        .digest('hex');
+      const signedToken = `${payload}.${sig}`;
+
+      const { loadUserPermissionsByUserId } = await import('../auth/session');
+      const authUser = await loadUserPermissionsByUserId(
+        pool,
+        userId,
+        sessionId
+      );
+
+      setSessionCookie(res, signedToken, isProdMode());
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        userId,
+        sessionToken: signedToken,
+        expiresAt,
+        user: authUser,
+        message: 'ورود با رمز عبور انجام شد (نشست ۳۰ روزه فعال است).',
+      });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  /**
+   * ۱۴-ب. تنظیم یا تغییر رمز عبور ثابت برای کاربر احراز هویت‌شده
+   * POST /api/v1/auth/password/set
+   */
+  router.post(
+    '/auth/password/set',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const { pool } = await resolvePoolOrFail(res);
+      if (!pool) return;
+
+      try {
+        const password = String(req.body?.password || '').trim();
+        if (!password || password.length < 4) {
+          res.status(400).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'INVALID_PASSWORD',
+            message: 'رمز عبور باید حداقل ۴ کاراکتر باشد.',
+          });
+          return;
+        }
+
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS user_passwords (
+            user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            password_hash TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+
+        const pwdHash = crypto
+          .createHash('sha256')
+          .update(
+            `timeto-pwd-v1:${req.authUser!.phone}:${password}`,
+            'utf8'
+          )
+          .digest('hex');
+
+        await pool.query(
+          `
+          INSERT INTO user_passwords (user_id, password_hash, updated_at)
+          VALUES ($1, $2, NOW())
+          ON CONFLICT (user_id)
+          DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
+          `,
+          [req.authUser!.userId, pwdHash]
+        );
+
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          message:
+            'رمز عبور ثابت شما با موفقیت ذخیره شد. از این پس می‌توانید بدون نیاز به پیامک با همین رمز وارد شوید.',
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
   router.get('/auth/me', requireAuth, async (req: Request, res: Response) => {
     res.status(200).json({
       ok: true,

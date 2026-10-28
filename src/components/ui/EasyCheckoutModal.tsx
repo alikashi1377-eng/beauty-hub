@@ -35,7 +35,15 @@ export const EasyCheckoutModal: React.FC<{
   item: CheckoutItemPayload | null;
   businessId: string;
   businessName: string;
-}> = ({ isOpen, onClose, item, businessId, businessName }) => {
+  onPaymentSuccess?: (item: CheckoutItemPayload) => void;
+}> = ({
+  isOpen,
+  onClose,
+  item,
+  businessId,
+  businessName,
+  onPaymentSuccess,
+}) => {
   const { paymentConfig, submitPaymentOrder, showToast } = usePrototypeData();
 
   const [paymentMethod, setPaymentMethod] = useState<'BALEPAY' | 'CARD_TO_CARD'>(
@@ -52,6 +60,7 @@ export const EasyCheckoutModal: React.FC<{
   );
   const [trackingCode, setTrackingCode] = useState<string>('');
   const [instantActivate, setInstantActivate] = useState<boolean>(true);
+  const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (item) {
@@ -59,8 +68,9 @@ export const EasyCheckoutModal: React.FC<{
       setPlacementSlot(item.defaultPlacement || 'SEARCH_TOP');
       setCustomBadgeLabel(item.defaultLabel || 'پیشنهاد ویژه · رزرو آنی');
       setTrackingCode('');
+      setCompletedOrderId(null);
     }
-  }, [item]);
+  }, [item, isOpen]);
 
   if (!item) return null;
 
@@ -91,7 +101,7 @@ export const EasyCheckoutModal: React.FC<{
         1000 + Math.random() * 9000
       )}`;
 
-    submitPaymentOrder(
+    const createdOrder = submitPaymentOrder(
       {
         businessId,
         businessName,
@@ -114,17 +124,61 @@ export const EasyCheckoutModal: React.FC<{
       },
       instantActivate
     );
+    setCompletedOrderId(createdOrder.id);
+  };
+
+  const handleFinishAndClose = () => {
+    if (onPaymentSuccess && item) {
+      onPaymentSuccess(item);
+    }
+    setCompletedOrderId(null);
     onClose();
   };
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title="درگاه پرداخت سریع تایم تو (بله‌پی و کارت‌به‌کارت)"
+      onClose={completedOrderId ? handleFinishAndClose : onClose}
+      title={
+        completedOrderId
+          ? 'تشکر از پرداخت شما · فعال‌سازی موفق امکانات'
+          : 'درگاه پرداخت سریع تایم تو (بله‌پی و کارت‌به‌کارت)'
+      }
       description={`${item.itemTitle} — بدون نیاز به رمز دوم پویا در مرورگر`}
     >
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+      {completedOrderId ? (
+        <div className="space-y-4 text-xs py-2">
+          <div className="p-5 rounded-3xl bg-[#ECFDF5] border-2 border-[#10B981] text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-[#10B981] text-white inline-flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-extrabold text-[#065F46]">
+              با تشکر! پرداخت «{item.itemTitle}» با موفقیت ثبت شد
+            </h3>
+            <p className="text-xs text-[#047857] leading-relaxed">
+              کد رهگیری سفارش شما:{' '}
+              <strong dir="ltr" className="font-mono">
+                {completedOrderId}
+              </strong>{' '}
+              — تمامی قابلیت‌ها و ظرفیت‌های این بسته برای «{businessName}» باز و فعال گردید.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              fullWidth
+              onClick={handleFinishAndClose}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>ورود به پنل و استفاده از امکانات فعال‌شده</span>
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         {/* خلاصه بسته و انتخاب مدت و جایگاه برای تبلیغات */}
         <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -362,6 +416,7 @@ export const EasyCheckoutModal: React.FC<{
           </Button>
         </div>
       </form>
+      )}
     </Modal>
   );
 };
