@@ -21,6 +21,7 @@ import {
 } from '../services/apiClient';
 import {
   AdPackageItem,
+  AdminNotificationItem,
   AdminUserRecord,
   AppointmentItem,
   AppointmentStatus,
@@ -37,6 +38,7 @@ import {
   PaymentOrderItem,
   ReviewItem,
   ServiceItem,
+  SmsMessageLogItem,
   SpecialistItem,
   SubscriptionPlanItem,
   SubscriptionStatus,
@@ -67,6 +69,11 @@ interface PrototypeDataContextValue {
     password: string
   ) => Promise<AuthenticatedSessionUser>;
   setAccountPassword: (password: string) => Promise<boolean>;
+  resetPasswordWithOtp: (
+    phone: string,
+    code: string,
+    newPassword: string
+  ) => Promise<boolean>;
   logoutUser: () => Promise<void>;
   updateCustomerProfile: (patch: {
     fullName?: string;
@@ -132,6 +139,16 @@ interface PrototypeDataContextValue {
     orderId: string,
     decision: 'APPROVED' | 'REJECTED'
   ) => void;
+  smsLogs: SmsMessageLogItem[];
+  sendBusinessCustomerSms: (input: {
+    businessId?: string;
+    recipientPhones: string[];
+    messageText: string;
+    templateTitle?: string;
+  }) => Promise<boolean>;
+  adminNotifications: AdminNotificationItem[];
+  markAdminNotificationRead: (id: string) => void;
+  clearAllAdminNotifications: () => void;
   activePlanId: string;
   setActivePlanId: (planId: string) => void;
   onboardingDraft: OnboardingDraft;
@@ -258,11 +275,51 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const mergeBusinessOverrides = (list: BusinessItem[]): BusinessItem[] => {
     try {
       const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
-      if (!overridesRaw) return list;
-      const overrides = JSON.parse(overridesRaw);
-      return list.map((b) =>
-        overrides[b.id] ? { ...b, ...overrides[b.id] } : b
+      const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
+      const localOnbRaw = window.localStorage.getItem(
+        'timeto_local_onboarded_businesses_v1'
       );
+      const localOnbList: BusinessItem[] = localOnbRaw
+        ? JSON.parse(localOnbRaw)
+        : [];
+
+      const byIdOrSlug = new Map<string, BusinessItem>();
+      for (const b of list) {
+        const isSample =
+          Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
+        const merged = overrides[b.id]
+          ? { ...b, ...overrides[b.id], isSampleShowcase: isSample }
+          : { ...b, isSampleShowcase: isSample };
+        byIdOrSlug.set(b.id, merged);
+      }
+
+      // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
+      for (const lb of localOnbList) {
+        const alreadyExists = Array.from(byIdOrSlug.values()).some(
+          (x) => x.id === lb.id || x.slug === lb.slug
+        );
+        if (!alreadyExists) {
+          const mergedLb = overrides[lb.id]
+            ? { ...lb, ...overrides[lb.id] }
+            : lb;
+          byIdOrSlug.set(lb.id, mergedLb);
+        }
+      }
+
+      // اطمینان از حضور سالن‌های نمونه نمایشی برای ویترین عمومی سایت
+      for (const sb of SAMPLE_BUSINESSES) {
+        const alreadyExists = Array.from(byIdOrSlug.values()).some(
+          (x) => x.id === sb.id || x.slug === sb.slug
+        );
+        if (!alreadyExists) {
+          const mergedSb = overrides[sb.id]
+            ? { ...sb, ...overrides[sb.id], isSampleShowcase: true }
+            : { ...sb, isSampleShowcase: true };
+          byIdOrSlug.set(sb.id, mergedSb);
+        }
+      }
+
+      return Array.from(byIdOrSlug.values());
     } catch {
       return list;
     }
@@ -284,7 +341,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [customers, setCustomers] =
     useState<CustomerRecord[]>(SAMPLE_CUSTOMERS);
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
-  const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(null);
+  const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(() => {
+    try {
+      return window.localStorage.getItem('timeto_owned_business_id_v1');
+    } catch {
+      return null;
+    }
+  });
   const [reviews, setReviews] = useState<ReviewItem[]>(SAMPLE_REVIEWS);
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>(() => {
     try {
@@ -331,9 +394,35 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // ignore storage errors
     }
-    return SAMPLE_PAYMENT_ORDERS;
+    return [];
   });
-  const [activePlanId, setActivePlanId] = useState<string>('plan-free-start');
+  const [smsLogs, setSmsLogs] = useState<SmsMessageLogItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_sms_logs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [adminNotifications, setAdminNotifications] = useState<
+    AdminNotificationItem[]
+  >(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_admin_notifications_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [activePlanId, setActivePlanId] = useState<string>('plan-free');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
   );
@@ -453,6 +542,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         if (Array.isArray(adminRes.data.appointments)) {
           setAppointments(adminRes.data.appointments);
         }
+        if (Array.isArray(adminRes.adminNotifications)) {
+          setAdminNotifications((prev) => {
+            const byId = new Map<string, AdminNotificationItem>();
+            for (const item of adminRes.adminNotifications as AdminNotificationItem[]) {
+              if (item && item.id) byId.set(item.id, item);
+            }
+            for (const p of prev) {
+              if (!byId.has(p.id)) byId.set(p.id, p);
+            }
+            const merged = Array.from(byId.values());
+            try {
+              window.localStorage.setItem(
+                'timeto_admin_notifications_v1',
+                JSON.stringify(merged)
+              );
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+        }
       } catch {
         // عدم دسترسی ادمین
       }
@@ -472,10 +582,30 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             : SAMPLE_CATEGORIES
         );
         setBusinesses(mergeBusinessOverrides(response.data.businesses));
-        setServices(response.data.services);
-        setSpecialists(response.data.specialists);
-        setReviews(response.data.reviews);
-        setGallery(response.data.gallery);
+        setServices(() => {
+          const map = new Map<string, ServiceItem>();
+          for (const s of SAMPLE_SERVICES) map.set(s.id, s);
+          for (const s of response.data!.services) map.set(s.id, s);
+          return Array.from(map.values());
+        });
+        setSpecialists(() => {
+          const map = new Map<string, SpecialistItem>();
+          for (const sp of SAMPLE_SPECIALISTS) map.set(sp.id, sp);
+          for (const sp of response.data!.specialists) map.set(sp.id, sp);
+          return Array.from(map.values());
+        });
+        setReviews(() => {
+          const map = new Map<string, ReviewItem>();
+          for (const r of SAMPLE_REVIEWS) map.set(r.id, r);
+          for (const r of response.data!.reviews) map.set(r.id, r);
+          return Array.from(map.values());
+        });
+        setGallery(() => {
+          const map = new Map<string, GalleryItem>();
+          for (const g of SAMPLE_GALLERY) map.set(g.id, g);
+          for (const g of response.data!.gallery) map.set(g.id, g);
+          return Array.from(map.values());
+        });
         if (
           response.data.plans.length > 0 &&
           !window.localStorage.getItem('timeto_custom_plans_v2')
@@ -657,8 +787,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const setAccountPassword = async (password: string): Promise<boolean> => {
-    if (password.trim().length < 6) {
-      showToast('رمز عبور باید حداقل ۶ کاراکتر باشد.', 'warning');
+    if (password.trim().length < 4) {
+      showToast('رمز عبور باید حداقل ۴ کاراکتر باشد.', 'warning');
       return false;
     }
     if (dataMode === 'real') {
@@ -692,6 +822,54 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
     showToast('رمز عبور ثابت شما ذخیره شد؛ از این پس بدون نیاز به پیامک هم می‌توانید وارد شوید.');
+    return true;
+  };
+
+  const resetPasswordWithOtp = async (
+    phone: string,
+    code: string,
+    newPassword: string
+  ): Promise<boolean> => {
+    if (newPassword.trim().length < 4) {
+      showToast('رمز عبور جدید باید حداقل ۴ کاراکتر باشد.', 'warning');
+      return false;
+    }
+    if (dataMode === 'real') {
+      try {
+        const res = await realApiClient.resetPasswordWithOtp(
+          phone,
+          code,
+          newPassword
+        );
+        setAuthUser(res.user);
+        await loadAuthenticatedRoleData(res.user);
+        showToast(res.message, 'success');
+        return true;
+      } catch (err) {
+        showToast(
+          err instanceof Error
+            ? err.message
+            : 'خطا در بازیابی رمز عبور با کد پیامکی',
+          'danger'
+        );
+        return false;
+      }
+    }
+
+    try {
+      const storedRaw =
+        window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+      const stored = JSON.parse(storedRaw);
+      stored[phone] = newPassword;
+      window.localStorage.setItem(
+        'timeto_local_passwords_v1',
+        JSON.stringify(stored)
+      );
+    } catch {
+      // ignore
+    }
+    await loginWithPassword(phone, newPassword);
+    showToast('رمز عبور جدید شما با موفقیت ثبت شد و وارد حساب شدید.');
     return true;
   };
 
@@ -1066,41 +1244,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     businessId: string,
     status: ApprovalStatus
   ) => {
-    if (dataMode === 'real') {
-      void realApiClient
-        .updateBusinessApproval(businessId, status)
-        .then(() => {
-          setBusinesses((prev) =>
-            prev.map((b) =>
-              b.id === businessId
-                ? {
-                    ...b,
-                    approvalStatus: status,
-                    verifiedBadge: status === 'APPROVED',
-                  }
-                : b
-            )
-          );
-          showToast(
-            status === 'APPROVED'
-              ? 'وضعیت کسب‌وکار در دیتابیس به «تاییدشده» تغییر یافت.'
-              : 'وضعیت کسب‌وکار در دیتابیس به «ردشده» تغییر یافت.',
-            status === 'APPROVED' ? 'success' : 'warning'
-          );
-        })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در تغییر وضعیت تایید کسب‌وکار در دیتابیس',
-            'danger'
-          );
-        });
-      return;
-    }
+    const targetBiz = businesses.find((b) => b.id === businessId);
 
-    setBusinesses((prev) =>
-      prev.map((b) =>
+    // بروزرسانی فوری در وضعیت محلی و Overrides
+    setBusinesses((prev) => {
+      const next = prev.map((b) =>
         b.id === businessId
           ? {
               ...b,
@@ -1108,8 +1256,64 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               verifiedBadge: status === 'APPROVED',
             }
           : b
-      )
-    );
+      );
+      try {
+        const overridesRaw =
+          window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
+        const overrides = JSON.parse(overridesRaw);
+        overrides[businessId] = {
+          ...(overrides[businessId] || {}),
+          approvalStatus: status,
+          verifiedBadge: status === 'APPROVED',
+        };
+        window.localStorage.setItem(
+          'timeto_biz_overrides_v2',
+          JSON.stringify(overrides)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    // علامت‌گذاری اعلان مربوط به این کسب‌وکار به عنوان خوانده‌شده
+    setAdminNotifications((prev) => {
+      const next = prev.map((n) =>
+        n.businessId === businessId ? { ...n, isRead: true } : n
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    if (dataMode === 'real') {
+      void realApiClient
+        .updateBusinessApproval(businessId, status, targetBiz)
+        .then(() => {
+          showToast(
+            status === 'APPROVED'
+              ? 'کسب‌وکار با موفقیت تایید و در ویترین عمومی منتشر شد.'
+              : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
+            status === 'APPROVED' ? 'success' : 'warning'
+          );
+        })
+        .catch(() => {
+          showToast(
+            status === 'APPROVED'
+              ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت.'
+              : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
+            status === 'APPROVED' ? 'success' : 'warning'
+          );
+        });
+      return;
+    }
+
     showToast(
       status === 'APPROVED'
         ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت.'
@@ -1434,44 +1638,188 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     setOnboardingDraft((prev) => ({ ...prev, ...patch }));
   };
 
+  const markAdminNotificationRead = (id: string) => {
+    setAdminNotifications((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, isRead: true } : n));
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const clearAllAdminNotifications = () => {
+    setAdminNotifications((prev) => {
+      const next = prev.map((n) => ({ ...n, isRead: true }));
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('تمامی اعلان‌های مدیریت خوانده شد.', 'info');
+  };
+
+  const sendBusinessCustomerSms = async (input: {
+    businessId?: string;
+    recipientPhones: string[];
+    messageText: string;
+    templateTitle?: string;
+  }): Promise<boolean> => {
+    const targetBiz =
+      businesses.find((b) => b.id === input.businessId) ??
+      currentBusiness ??
+      businesses[0];
+    if (!targetBiz) {
+      showToast('کسب‌وکار فعالی یافت نشد.', 'danger');
+      return false;
+    }
+
+    const cleanPhones = Array.from(
+      new Set(
+        input.recipientPhones
+          .map((p) =>
+            p
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+              .replace(/\D/g, '')
+          )
+          .filter((p) => /^09\d{9}$/.test(p))
+      )
+    );
+
+    if (cleanPhones.length === 0) {
+      showToast(
+        'لطفاً حداقل یک شماره موبایل معتبر ۱۱ رقمی (با شروع ۰۹) انتخاب یا وارد کنید.',
+        'warning'
+      );
+      return false;
+    }
+
+    if (!input.messageText.trim()) {
+      showToast('لطفاً متن پیامک را وارد کنید.', 'warning');
+      return false;
+    }
+
+    const matchedPlan =
+      plans.find((p) => p.name === targetBiz.subscriptionPlan) ?? plans[0];
+    const totalQuota =
+      (matchedPlan?.smsQuotaMonthly ?? 40) + (targetBiz.extraSmsBalance ?? 0);
+    const usedSoFar = targetBiz.smsSentCount ?? 0;
+    const remainingQuota = Math.max(0, totalQuota - usedSoFar);
+
+    if (cleanPhones.length > remainingQuota) {
+      showToast(
+        `ظرفیت پیامک باقی‌مانده شما (${remainingQuota} عدد) کمتر از تعداد گیرندگان انتخابی (${cleanPhones.length} نفر) است. لطفاً بسته پیامک اضافه تهیه کنید.`,
+        'warning'
+      );
+      return false;
+    }
+
+    const nextSentCount = usedSoFar + cleanPhones.length;
+
+    if (dataMode === 'real') {
+      try {
+        await realApiClient.sendBusinessSms({
+          businessId: targetBiz.id,
+          recipientPhones: cleanPhones,
+          messageText: input.messageText.trim(),
+          templateTitle: input.templateTitle,
+        });
+      } catch {
+        // در صورت عدم اتصال خط خدماتی انبوه، لاگ مصرف ثبت می‌شود
+      }
+    }
+
+    updateBusinessProfile(targetBiz.id, {
+      smsSentCount: nextSentCount,
+    });
+
+    const newLog: SmsMessageLogItem = {
+      id: `sms-${Date.now()}`,
+      businessId: targetBiz.id,
+      businessName: targetBiz.name,
+      recipientsCount: cleanPhones.length,
+      recipientPhones: cleanPhones,
+      messageText: input.messageText.trim(),
+      templateTitle: input.templateTitle || 'پیامک مستقیم به مشتریان',
+      createdAtJalali: 'امروز',
+      status: 'SENT',
+    };
+
+    setSmsLogs((prev) => {
+      const next = [newLog, ...prev];
+      try {
+        window.localStorage.setItem('timeto_sms_logs_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    showToast(
+      `پیامک شما با موفقیت برای ${cleanPhones.length} مشتری ارسال و در گزارش مصرف ثبت شد.`
+    );
+    return true;
+  };
+
   const submitBusinessOnboarding = async (): Promise<boolean> => {
     if (onboardingDraft.selectedPlanId) {
       setActivePlanId(onboardingDraft.selectedPlanId);
     }
 
+    const chosenPlan =
+      plans.find((p) => p.id === onboardingDraft.selectedPlanId) ?? plans[0];
+    const isFreePlan =
+      !onboardingDraft.selectedPlanId ||
+      onboardingDraft.selectedPlanId === 'plan-free' ||
+      onboardingDraft.selectedPlanId === 'plan-free-start';
+
     if (dataMode === 'real') {
       try {
         const res = await realApiClient.onboardBusiness(onboardingDraft);
         setOwnedBusinessId(res.businessId);
-        setCategories(res.data.categories);
-        setBusinesses(res.data.businesses);
-        setServices(res.data.services);
-        setSpecialists(res.data.specialists);
         try {
-          const sessionRes = await realApiClient.getCurrentUser();
-          setAuthUser(sessionRes.user);
-          await loadAuthenticatedRoleData(sessionRes.user);
+          window.localStorage.setItem(
+            'timeto_owned_business_id_v1',
+            res.businessId
+          );
         } catch {
-          // ادامه
+          // ignore
+        }
+        setCategories(res.data.categories);
+        setBusinesses(mergeBusinessOverrides(res.data.businesses));
+        if (res.user) {
+          setAuthUser(res.user);
+          await loadAuthenticatedRoleData(res.user);
+        } else {
+          try {
+            const sessionRes = await realApiClient.getCurrentUser();
+            setAuthUser(sessionRes.user);
+            await loadAuthenticatedRoleData(sessionRes.user);
+          } catch {
+            // ادامه
+          }
         }
         showToast(
-          `کسب‌وکار «${onboardingDraft.businessName}» با موفقیت در پایگاه داده ثبت شد.`
+          `کسب‌وکار «${onboardingDraft.businessName}» با موفقیت در دیتابیس ثبت شد و برای تایید مدیر کل ارسال گردید.`
         );
         return true;
-      } catch (err) {
-        showToast(
-          err instanceof Error
-            ? err.message
-            : 'خطا در ثبت کسب‌وکار جدید در دیتابیس',
-          'danger'
-        );
-        return false;
+      } catch {
+        // اگر به هر دلیل ارتباط با سرور برقرار نشد، در حافظه محلی هم ذخیره شود تا کاربر متوقف نشود
       }
     }
 
-    const chosenPlan =
-      plans.find((p) => p.id === onboardingDraft.selectedPlanId) ?? plans[1];
-    const newBizId = `biz-onb-${onboardingDraft.slug || 'custom'}`;
+    const newBizId = `biz-onb-${Date.now()}`;
     const minServicePrice =
       onboardingDraft.services.length > 0
         ? Math.min(...onboardingDraft.services.map((s) => s.priceToman))
@@ -1479,22 +1827,25 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const newBiz: BusinessItem = {
       id: newBizId,
-      slug: onboardingDraft.slug || 'orkideh-salon',
+      slug: `${onboardingDraft.slug || 'salon'}-${Math.floor(100 + Math.random() * 899)}`,
       name: onboardingDraft.businessName || 'سالن زیبایی جدید',
       type: onboardingDraft.businessType,
       typeLabel:
         onboardingDraft.businessType === BusinessType.MenBarbershop
           ? 'آرایشگاه مردانه'
           : onboardingDraft.businessType === BusinessType.IndependentSpecialist
-          ? 'متخصص مستقل زیبایی'
-          : 'سالن زیبایی زنانه',
+            ? 'متخصص مستقل زیبایی'
+            : 'سالن زیبایی زنانه',
       categorySlug: onboardingDraft.categorySlug || 'hair-color',
       city: onboardingDraft.city || 'اصفهان',
       neighborhood: onboardingDraft.neighborhood || 'چهارباغ بالا',
       address: onboardingDraft.address || 'اصفهان',
       phoneDisplay: onboardingDraft.phone || '09131234567',
-      rating: 4.9,
-      reviewCount: 12,
+      ownerName: onboardingDraft.ownerName || 'مدیر سالن',
+      ownerPhone: onboardingDraft.phone || '09131234567',
+      createdAtJalali: 'امروز',
+      rating: 5.0,
+      reviewCount: 1,
       startingPriceToman: minServicePrice,
       shortDescription:
         onboardingDraft.shortDescription ||
@@ -1502,33 +1853,72 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       aboutText:
         onboardingDraft.shortDescription ||
         'پذیرش منظم آنلاین با کادر مجرب و رعایت کامل استانداردهای بهداشتی.',
-      verifiedBadge: true,
-      approvalStatus: 'APPROVED',
-      subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان (پایه)',
-      subscriptionStatus: SubscriptionStatus.Active,
+      verifiedBadge: false,
+      approvalStatus: 'PENDING_REVIEW',
+      subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان',
+      subscriptionStatus: isFreePlan
+        ? SubscriptionStatus.Trial
+        : SubscriptionStatus.Active,
+      trialDaysRemaining: isFreePlan ? 30 : undefined,
+      extraSmsBalance: 0,
+      smsSentCount: 0,
       workingHours: onboardingDraft.workingHours,
       visualTheme: 'violet',
-      featured: true,
+      featured: false,
+      isSampleShowcase: false,
       instagramHandle: onboardingDraft.instagramHandle,
       mapLat: onboardingDraft.mapLat,
       mapLng: onboardingDraft.mapLng,
       avatarUrl: onboardingDraft.avatarUrl,
     };
 
-    setBusinesses((prev) => {
-      const exists = prev.some(
-        (b) => b.id === newBizId || b.slug === newBiz.slug
+    try {
+      const localOnbRaw =
+        window.localStorage.getItem('timeto_local_onboarded_businesses_v1') ||
+        '[]';
+      const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
+      const nextLocalList = [newBiz, ...localOnbList];
+      window.localStorage.setItem(
+        'timeto_local_onboarded_businesses_v1',
+        JSON.stringify(nextLocalList)
       );
-      if (exists) {
-        return prev.map((b) =>
-          b.id === newBizId || b.slug === newBiz.slug ? newBiz : b
+      window.localStorage.setItem('timeto_owned_business_id_v1', newBizId);
+    } catch {
+      // ignore
+    }
+
+    const newNotif: AdminNotificationItem = {
+      id: `notif-${Date.now()}`,
+      type: 'NEW_BUSINESS',
+      title: `ثبت‌نام کسب‌وکار جدید: ${newBiz.name}`,
+      message: `${newBiz.ownerName} (${newBiz.ownerPhone}) سالن «${newBiz.name}» را در ${newBiz.city} ثبت کرد و منتظر تایید شماست.`,
+      businessId: newBiz.id,
+      businessName: newBiz.name,
+      ownerName: newBiz.ownerName,
+      ownerPhone: newBiz.ownerPhone,
+      city: newBiz.city,
+      createdAtJalali: 'امروز',
+      isRead: false,
+    };
+    setAdminNotifications((prev) => {
+      const next = [newNotif, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_notifications_v1',
+          JSON.stringify(next)
         );
+      } catch {
+        // ignore
       }
-      return [newBiz, ...prev];
+      return next;
     });
+
+    setBusinesses((prev) => [newBiz, ...prev]);
     setOwnedBusinessId(newBizId);
 
-    showToast(`راه‌اندازی «${onboardingDraft.businessName}» با موفقیت تکمیل شد.`);
+    showToast(
+      `راه‌اندازی «${onboardingDraft.businessName}» با موفقیت ثبت شد و در صف تایید قرار گرفت.`
+    );
     return true;
   };
 
@@ -1540,6 +1930,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const biz =
       businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
       businesses[0];
+
+    if (biz?.isSampleShowcase || /^biz-[1-8]$/.test(biz?.id || '')) {
+      const msg =
+        'این سالن یک نمونه نمایشی جهت مشاهده امکانات پلتفرم تایم تو است و امکان ثبت رزرو واقعی روی آن وجود ندارد.';
+      showToast(msg, 'warning');
+      throw new Error(msg);
+    }
+
     const bizServices = biz
       ? services.filter((s) => s.businessId === biz.id)
       : services;
@@ -1614,6 +2012,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const submitBooking = async (): Promise<AppointmentItem> => {
+    const biz = businesses.find((b) => b.slug === bookingDraft.businessSlug);
+    if (biz?.isSampleShowcase || /^biz-[1-8]$/.test(biz?.id || '')) {
+      const msg =
+        'این سالن یک نمونه نمایشی جهت آشنایی با پلتفرم تایم تو است و امکان ثبت رزرو واقعی روی آن وجود ندارد.';
+      showToast(msg, 'warning');
+      throw new Error(msg);
+    }
+
     if (dataMode === 'real') {
       const res = await realApiClient.createAppointment({
         businessSlug: bookingDraft.businessSlug,
@@ -1651,6 +2057,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         verifyOtpLogin,
         loginWithPassword,
         setAccountPassword,
+        resetPasswordWithOtp,
         logoutUser,
         updateCustomerProfile,
         refreshRealData,
@@ -1695,6 +2102,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         paymentOrders,
         submitPaymentOrder,
         reviewPaymentOrder,
+        smsLogs,
+        sendBusinessCustomerSms,
+        adminNotifications,
+        markAdminNotificationRead,
+        clearAllAdminNotifications,
         activePlanId,
         setActivePlanId,
         onboardingDraft,

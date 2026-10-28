@@ -190,30 +190,50 @@ export const BusinessPublicProfileView: React.FC<{
             id: 'pf-extra-1',
             title: 'استایل و براشینگ تخصصی',
             categoryLabel: 'مو و رنگ',
-            url: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=600&q=80',
+            url: getBeautyPhotoUrl('استایل و براشینگ تخصصی', 'مو و رنگ'),
           },
           {
             id: 'pf-extra-2',
             title: 'میکاپ لایت و کانتورینگ',
             categoryLabel: 'میکاپ تخصصی',
-            url: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&w=600&q=80',
+            url: getBeautyPhotoUrl('میکاپ لایت و کانتورینگ', 'میکاپ'),
           },
           {
             id: 'pf-extra-3',
             title: 'طراحی و ژلیش ناخن طبیعی',
             categoryLabel: 'طراحی ناخن',
-            url: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=600&q=80',
+            url: getBeautyPhotoUrl('طراحی و ژلیش ناخن طبیعی', 'ناخن'),
           },
           {
             id: 'pf-extra-4',
             title: 'فیشیال و پاکسازی تخصصی',
             categoryLabel: 'پوست و اسپا',
-            url: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=600&q=80',
+            url: getBeautyPhotoUrl('فیشیال و پاکسازی تخصصی', 'پوست و فیشیال'),
           },
         ].slice(0, 6);
 
   return (
     <div className="space-y-8 pb-24 lg:pb-8">
+      {business.isSampleShowcase ? (
+        <div className="p-4 rounded-3xl bg-[#FFFBEB] border-2 border-[#F59E0B] text-[#92400E] flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-2.5 text-xs sm:text-sm">
+            <Sparkles className="w-5 h-5 text-[#D97706] shrink-0 mt-0.5" />
+            <div>
+              <p className="font-extrabold">
+                پروفایل نمونه نمایشی پلتفرم Timeto (صرفاً جهت مشاهده محیط سالن‌ها)
+              </p>
+              <p className="text-xs text-[#B45309] mt-0.5">
+                این سالن یک نمونه نمایشی از امکانات ویترین آنلاین تایم تو است و امکان ثبت رزرو واقعی روی آن غیرفعال است. کسب‌وکارهای واقعی می‌توانند از بخش «ثبت سالن» پروفایل خود را رایگان ایجاد کنند.
+              </p>
+            </div>
+          </div>
+          <Link to="/business/register">
+            <Button variant="primary" size="sm">
+              <span>ثبت سالن واقعی شما ←</span>
+            </Button>
+          </Link>
+        </div>
+      ) : null}
       {/* ۱. هدر تصویری تمام‌عرض + کارت سفید روی‌هم‌افتاده (Overlapping Profile Sheet) — دقیقاً مطابق Capture4.PNG و Capture1.PNG */}
       <section className="relative">
         <div className="relative h-64 sm:h-80 lg:h-96 rounded-[32px] overflow-hidden border border-[#E6E0F5] bg-[#1E1B2E] shadow-md">
@@ -353,13 +373,28 @@ export const BusinessPublicProfileView: React.FC<{
                     {formatPriceToman(business.startingPriceToman)}
                   </strong>
                 </div>
-                <Link
-                  to={`/booking/${business.slug}`}
-                  className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)] transition-colors"
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span>رزرو آنلاین نوبت</span>
-                </Link>
+                {business.isSampleShowcase ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      showToast(
+                        'این سالن یک نمونه نمایشی جهت آشنایی با پلتفرم است و امکان ثبت رزرو روی نمونه‌های نمایشی وجود ندارد.'
+                      )
+                    }
+                    className="px-5 py-2.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B] text-xs font-extrabold inline-flex items-center gap-2 cursor-not-allowed"
+                  >
+                    <Info className="w-4 h-4" />
+                    <span>نمونه نمایشی (غیرقابل رزرو)</span>
+                  </button>
+                ) : (
+                  <Link
+                    to={`/booking/${business.slug}`}
+                    className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)] transition-colors"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    <span>رزرو آنلاین نوبت</span>
+                  </Link>
+                )}
               </div>
             </div>
           </div>
@@ -793,12 +828,18 @@ export const BusinessPublicProfileView: React.FC<{
               </div>
             </div>
 
-            <Link to={`/booking/${business.slug}`} className="block">
-              <Button variant="accent" size="lg" fullWidth>
-                <span>انتخاب خدمت و ساعت مراجعه</span>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </Link>
+            {business.isSampleShowcase ? (
+              <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-200 text-xs font-bold text-center">
+                پروفایل نمونه نمایشی (رزرو غیرفعال)
+              </div>
+            ) : (
+              <Link to={`/booking/${business.slug}`} className="block">
+                <Button variant="accent" size="lg" fullWidth>
+                  <span>انتخاب خدمت و ساعت مراجعه</span>
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              </Link>
+            )}
           </Card>
 
           {/* ویترین ۳ ستونی نمونه‌کارها در ستون کناری — مطابق Capture1.PNG و Capture4.PNG */}
@@ -888,13 +929,19 @@ export const BusinessPublicProfileView: React.FC<{
             شروع از {formatPriceToman(business.startingPriceToman)}
           </p>
         </div>
-        <Link
-          to={`/booking/${business.slug}`}
-          className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-2 shrink-0 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)]"
-        >
-          <span>رزرو آنلاین نوبت</span>
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+        {business.isSampleShowcase ? (
+          <span className="px-4 py-2 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B] text-xs font-extrabold shrink-0">
+            نمونه نمایشی
+          </span>
+        ) : (
+          <Link
+            to={`/booking/${business.slug}`}
+            className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-2 shrink-0 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)]"
+          >
+            <span>رزرو آنلاین نوبت</span>
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        )}
       </div>
     </div>
   );

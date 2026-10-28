@@ -242,6 +242,34 @@ export const realApiClient = {
     );
   },
 
+  async resetPasswordWithOtp(
+    phone: string,
+    code: string,
+    newPassword: string
+  ): Promise<{
+    userId: string;
+    sessionToken: string;
+    expiresAt: string;
+    user: AuthenticatedSessionUser;
+    message: string;
+  }> {
+    const res = await requestJson<{
+      ok: boolean;
+      userId: string;
+      sessionToken: string;
+      expiresAt: string;
+      user: AuthenticatedSessionUser;
+      message: string;
+    }>('/api/v1/auth/password/reset-with-otp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, code, newPassword }),
+    });
+    if (res.sessionToken) {
+      saveSessionTokenToStorage(res.sessionToken);
+    }
+    return res;
+  },
+
   async logout(): Promise<void> {
     saveSessionTokenToStorage(null);
     await requestJson('/api/v1/auth/logout', {
@@ -356,6 +384,7 @@ export const realApiClient = {
       users?: AdminUserRecord[];
       appointments?: AppointmentItem[];
     };
+    adminNotifications?: unknown[];
   }> {
     return requestJson<{
       ok: boolean;
@@ -366,6 +395,7 @@ export const realApiClient = {
         users?: AdminUserRecord[];
         appointments?: AppointmentItem[];
       };
+      adminNotifications?: unknown[];
     }>('/api/v1/admin/overview');
   },
 
@@ -450,13 +480,14 @@ export const realApiClient = {
 
   async updateBusinessApproval(
     businessId: string,
-    status: ApprovalStatus
+    status: ApprovalStatus,
+    businessSnapshot?: BusinessItem
   ): Promise<void> {
     await requestJson(
       `/api/v1/admin/businesses/${encodeURIComponent(businessId)}/approval`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, businessSnapshot }),
       }
     );
   },
@@ -561,11 +592,47 @@ export const realApiClient = {
   ): Promise<{
     businessId: string;
     slug: string;
+    sessionToken?: string;
+    expiresAt?: string;
+    user?: AuthenticatedSessionUser;
     data: NonNullable<ApiBootstrapResponse['data']>;
   }> {
-    return requestJson('/api/v1/businesses/onboard', {
+    const res = await requestJson<{
+      ok: boolean;
+      businessId: string;
+      slug: string;
+      sessionToken?: string;
+      expiresAt?: string;
+      user?: AuthenticatedSessionUser;
+      data: NonNullable<ApiBootstrapResponse['data']>;
+    }>('/api/v1/businesses/onboard', {
       method: 'POST',
       body: JSON.stringify(draft),
+    });
+    if (res.sessionToken) {
+      saveSessionTokenToStorage(res.sessionToken);
+    }
+    return res;
+  },
+
+  async sendBusinessSms(input: {
+    businessId: string;
+    recipientPhones: string[];
+    messageText: string;
+    templateTitle?: string;
+  }): Promise<{
+    recipientsCount: number;
+    smsSentCount: number;
+    message: string;
+  }> {
+    return requestJson<{
+      ok: boolean;
+      recipientsCount: number;
+      smsSentCount: number;
+      message: string;
+    }>('/api/v1/app/sms/send', {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
   },
 

@@ -71,6 +71,91 @@ export interface AdminOverviewPayload {
   appointments: AppointmentItem[];
 }
 
+export async function ensureExtendedMetaTables(
+  client: PoolClient | Pool
+): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS business_meta_ext (
+      business_id UUID PRIMARY KEY REFERENCES businesses(id) ON DELETE CASCADE,
+      extra_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS platform_kv_store (
+      key TEXT PRIMARY KEY,
+      value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+function mergeBusinessRowWithExtra(
+  base: BusinessItem,
+  extraRaw: unknown,
+  legacyDemoId?: unknown
+): BusinessItem {
+  const extra =
+    extraRaw && typeof extraRaw === 'object'
+      ? (extraRaw as Record<string, unknown>)
+      : {};
+  const isLegacySample =
+    Boolean(legacyDemoId) ||
+    /^biz-[1-8]$/.test(base.id) ||
+    Boolean(extra.isSampleShowcase);
+
+  return {
+    ...base,
+    isSampleShowcase: isLegacySample,
+    isSponsored:
+      extra.isSponsored !== undefined
+        ? Boolean(extra.isSponsored)
+        : base.isSponsored,
+    sponsoredLabel:
+      typeof extra.sponsoredLabel === 'string'
+        ? extra.sponsoredLabel
+        : base.sponsoredLabel,
+    sponsoredPlacement:
+      typeof extra.sponsoredPlacement === 'string'
+        ? (extra.sponsoredPlacement as BusinessItem['sponsoredPlacement'])
+        : base.sponsoredPlacement,
+    sponsoredOrder:
+      typeof extra.sponsoredOrder === 'number'
+        ? extra.sponsoredOrder
+        : base.sponsoredOrder,
+    sponsoredDaysRemaining:
+      typeof extra.sponsoredDaysRemaining === 'number'
+        ? extra.sponsoredDaysRemaining
+        : base.sponsoredDaysRemaining,
+    sponsoredExpiresJalali:
+      typeof extra.sponsoredExpiresJalali === 'string'
+        ? extra.sponsoredExpiresJalali
+        : base.sponsoredExpiresJalali,
+    trialDaysRemaining:
+      typeof extra.trialDaysRemaining === 'number'
+        ? extra.trialDaysRemaining
+        : base.trialDaysRemaining,
+    extraSmsBalance:
+      typeof extra.extraSmsBalance === 'number'
+        ? extra.extraSmsBalance
+        : base.extraSmsBalance ?? 0,
+    smsSentCount:
+      typeof extra.smsSentCount === 'number'
+        ? extra.smsSentCount
+        : base.smsSentCount ?? 0,
+    avatarUrl:
+      typeof extra.avatarUrl === 'string' && extra.avatarUrl
+        ? extra.avatarUrl
+        : base.avatarUrl,
+    ownerName:
+      typeof extra.ownerName === 'string' && extra.ownerName
+        ? extra.ownerName
+        : base.ownerName,
+    ownerPhone:
+      typeof extra.ownerPhone === 'string' && extra.ownerPhone
+        ? extra.ownerPhone
+        : base.ownerPhone,
+  };
+}
+
 export interface BusinessAvailabilityPayload {
   businessId: string;
   businessSlug: string;
@@ -502,6 +587,7 @@ export async function getBootstrapPayload(
 ): Promise<BootstrapPayload> {
   const client = await pool.connect();
   try {
+    await ensureExtendedMetaTables(client);
     const [
       catRes,
       bizRes,
@@ -528,6 +614,7 @@ export async function getBootstrapPayload(
       client.query(`
         SELECT
           b.id,
+          b.legacy_demo_id,
           COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
           b.slug,
           b.name,
@@ -551,11 +638,13 @@ export async function getBootstrapPayload(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          c.slug AS primary_category_slug
+          c.slug AS primary_category_slug,
+          bme.extra_json
         FROM businesses b
         JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         WHERE b.approval_status = 'APPROVED'
-        ORDER BY b.is_featured DESC, b.created_at ASC
+        ORDER BY b.is_featured DESC, b.created_at DESC
       `),
       client.query(`
         SELECT
@@ -675,35 +764,41 @@ export async function getBootstrapPayload(
       serviceCount: Number(r.service_count),
     }));
 
-    const businesses: BusinessItem[] = bizRes.rows.map((r) => ({
-      id: String(r.external_id),
-      slug: String(r.slug),
-      name: String(r.name),
-      type: r.type as BusinessType,
-      typeLabel: String(r.type_label),
-      categorySlug: String(r.primary_category_slug),
-      city: String(r.city),
-      neighborhood: String(r.neighborhood),
-      address: String(r.address),
-      mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
-      mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
-      rating: Number(r.rating_avg),
-      reviewCount: Number(r.review_count),
-      startingPriceToman: Number(r.starting_price_toman),
-      verifiedBadge: Boolean(r.verified_badge),
-      shortDescription: String(r.short_description),
-      aboutText: String(r.about_text),
-      phoneDisplay: String(r.phone_display),
-      instagramHandle: r.instagram_handle
-        ? String(r.instagram_handle)
-        : undefined,
-      workingHours: whByBusinessId.get(String(r.id)) ?? [],
-      visualTheme: (r.visual_theme as VisualTheme) || 'violet',
-      approvalStatus: r.approval_status as ApprovalStatus,
-      subscriptionPlan: String(r.subscription_plan),
-      subscriptionStatus: r.subscription_status as SubscriptionStatus,
-      featured: Boolean(r.is_featured),
-    }));
+    const businesses: BusinessItem[] = bizRes.rows.map((r) =>
+      mergeBusinessRowWithExtra(
+        {
+          id: String(r.external_id),
+          slug: String(r.slug),
+          name: String(r.name),
+          type: r.type as BusinessType,
+          typeLabel: String(r.type_label),
+          categorySlug: String(r.primary_category_slug),
+          city: String(r.city),
+          neighborhood: String(r.neighborhood),
+          address: String(r.address),
+          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+          rating: Number(r.rating_avg),
+          reviewCount: Number(r.review_count),
+          startingPriceToman: Number(r.starting_price_toman),
+          verifiedBadge: Boolean(r.verified_badge),
+          shortDescription: String(r.short_description),
+          aboutText: String(r.about_text),
+          phoneDisplay: String(r.phone_display),
+          instagramHandle: r.instagram_handle
+            ? String(r.instagram_handle)
+            : undefined,
+          workingHours: whByBusinessId.get(String(r.id)) ?? [],
+          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+          approvalStatus: r.approval_status as ApprovalStatus,
+          subscriptionPlan: String(r.subscription_plan),
+          subscriptionStatus: r.subscription_status as SubscriptionStatus,
+          featured: Boolean(r.is_featured),
+        },
+        r.extra_json,
+        r.legacy_demo_id
+      )
+    );
 
     const services: ServiceItem[] = srvRes.rows.map((r) => ({
       id: String(r.external_id),
@@ -847,6 +942,10 @@ export async function assertUserHasBusinessAccess(
   businessUuid: string,
   allowedRoles: BusinessMemberRole[] = ['OWNER', 'MANAGER']
 ): Promise<BusinessMemberRole> {
+  if (actorUser.isPlatformAdmin) {
+    return 'OWNER';
+  }
+
   const res = await client.query(
     `
     SELECT member_role
@@ -859,16 +958,31 @@ export async function assertUserHasBusinessAccess(
     [businessUuid, actorUser.userId]
   );
 
-  if (!res.rowCount || !res.rows[0]) {
-    throw new Error('BUSINESS_ACCESS_DENIED');
+  if (res.rowCount && res.rows[0]) {
+    const role = String(res.rows[0].member_role) as BusinessMemberRole;
+    if (allowedRoles.includes(role)) {
+      return role;
+    }
   }
 
-  const role = String(res.rows[0].member_role) as BusinessMemberRole;
-  if (!allowedRoles.includes(role)) {
-    throw new Error('BUSINESS_ACCESS_DENIED');
+  // Fallback check if user is the direct owner_user_id on the businesses table
+  const ownerRes = await client.query(
+    `SELECT 1 FROM businesses WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
+    [businessUuid, actorUser.userId]
+  );
+  if (ownerRes.rowCount && ownerRes.rows[0]) {
+    await client.query(
+      `
+      INSERT INTO business_members (business_id, user_id, member_role, is_active)
+      VALUES ($1, $2, 'OWNER', TRUE)
+      ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
+      `,
+      [businessUuid, actorUser.userId]
+    );
+    return 'OWNER';
   }
 
-  return role;
+  throw new Error('BUSINESS_ACCESS_DENIED');
 }
 
 async function resolveCategoryBySlug(
@@ -1360,6 +1474,7 @@ export async function updateBusinessProfileInDb(
 ): Promise<void> {
   const client = await pool.connect();
   try {
+    await ensureExtendedMetaTables(client);
     const biz = await resolveBusinessUuid(client, businessIdOrLegacy);
     await assertUserHasBusinessAccess(client, actorUser, biz.id, [
       'OWNER',
@@ -1393,6 +1508,14 @@ export async function updateBusinessProfileInDb(
       nextLng >= -180 &&
       nextLng <= 180;
 
+    const allowedSubStatuses = ['ACTIVE', 'TRIAL', 'EXPIRING_SOON', 'EXPIRED'];
+    const rawSubStatus = String(
+      patch.subscriptionStatus ?? current.subscription_status ?? 'ACTIVE'
+    );
+    const safeSubStatus = allowedSubStatuses.includes(rawSubStatus)
+      ? rawSubStatus
+      : 'ACTIVE';
+
     await client.query(
       `
       UPDATE businesses
@@ -1408,7 +1531,9 @@ export async function updateBusinessProfileInDb(
         map_lat = $10,
         map_lng = $11,
         subscription_plan = $12,
-        subscription_status = $13
+        subscription_status = $13,
+        is_featured = $14,
+        updated_at = NOW()
       WHERE id = $1
       `,
       [
@@ -1426,9 +1551,48 @@ export async function updateBusinessProfileInDb(
         validCoords ? nextLat : null,
         validCoords ? nextLng : null,
         patch.subscriptionPlan ?? String(current.subscription_plan),
-        patch.subscriptionStatus ?? String(current.subscription_status),
+        safeSubStatus,
+        patch.featured !== undefined
+          ? Boolean(patch.featured)
+          : patch.isSponsored !== undefined
+            ? Boolean(patch.isSponsored)
+            : Boolean(current.is_featured),
       ]
     );
+
+    const extPatch: Record<string, unknown> = {};
+    const extKeys: Array<keyof BusinessItem> = [
+      'isSponsored',
+      'sponsoredLabel',
+      'sponsoredPlacement',
+      'sponsoredOrder',
+      'sponsoredDaysRemaining',
+      'sponsoredExpiresJalali',
+      'trialDaysRemaining',
+      'extraSmsBalance',
+      'smsSentCount',
+      'avatarUrl',
+      'ownerName',
+      'ownerPhone',
+    ];
+    for (const k of extKeys) {
+      if (patch[k] !== undefined) {
+        extPatch[k] = patch[k];
+      }
+    }
+
+    if (Object.keys(extPatch).length > 0) {
+      await client.query(
+        `
+        INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+        VALUES ($1, $2::jsonb, NOW())
+        ON CONFLICT (business_id) DO UPDATE
+        SET extra_json = COALESCE(business_meta_ext.extra_json, '{}'::jsonb) || $2::jsonb,
+            updated_at = NOW()
+        `,
+        [biz.id, JSON.stringify(extPatch)]
+      );
+    }
   } finally {
     client.release();
   }
@@ -1510,6 +1674,7 @@ export async function updateBusinessApprovalInDb(
     throw new Error('INVALID_INPUT_PAYLOAD');
   }
 
+  const cleaned = (businessIdOrLegacy || '').trim();
   const res = await pool.query(
     `
     UPDATE businesses
@@ -1517,10 +1682,10 @@ export async function updateBusinessApprovalInDb(
       approval_status = $2,
       verified_badge = ($2 = 'APPROVED'),
       updated_at = NOW()
-    WHERE id::text = $1 OR legacy_demo_id = $1
+    WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
     RETURNING id
     `,
-    [businessIdOrLegacy, status]
+    [cleaned, status]
   );
   if (!res.rowCount) {
     throw new Error('BUSINESS_NOT_FOUND');
@@ -2370,25 +2535,68 @@ export async function toggleFavoriteBusinessInDb(
  */
 export async function onboardBusinessInDb(
   pool: Pool,
-  actorUser: AuthenticatedUser,
-  draft: OnboardingDraft
-): Promise<{ businessId: string; slug: string }> {
+  actorUser: AuthenticatedUser | null,
+  draft: OnboardingDraft,
+  clientMeta?: { ipAddress?: string; userAgent?: string }
+): Promise<{
+  businessId: string;
+  slug: string;
+  sessionToken?: string;
+  expiresAt?: string;
+  user?: AuthenticatedUser;
+}> {
   const businessName = (draft.businessName ?? '').trim();
-  const city = (draft.city ?? '').trim();
+  const city = (draft.city ?? 'اصفهان').trim();
   const address = (draft.address ?? '').trim();
   if (!businessName || !city || !address) {
     throw new Error('INVALID_INPUT_PAYLOAD');
   }
 
+  const rawDraftPhone = toEnglishDigits(draft.phone || actorUser?.phone || '').replace(
+    /\D/g,
+    ''
+  );
+  const normalizedPhone = /^09\d{9}$/.test(rawDraftPhone)
+    ? rawDraftPhone
+    : actorUser?.phone || '';
+  if (!normalizedPhone) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
 
-    const ownerUserId = actorUser.userId;
-    if (draft.ownerName && draft.ownerName.trim().length >= 2) {
+    let ownerUserId = actorUser?.userId || '';
+    let createdNewSessionToken: string | undefined;
+    let createdSessionExpiresAt: string | undefined;
+    let resolvedAuthUser: AuthenticatedUser | undefined;
+
+    const ownerNameClean =
+      draft.ownerName && draft.ownerName.trim().length >= 2
+        ? draft.ownerName.trim()
+        : actorUser?.fullName || 'مدیر سالن';
+
+    if (!ownerUserId) {
+      const userRes = await client.query(
+        `
+        INSERT INTO users (phone, full_name, default_city, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (phone) DO UPDATE
+        SET
+          full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), users.full_name),
+          default_city = COALESCE(NULLIF(EXCLUDED.default_city, ''), users.default_city),
+          updated_at = NOW()
+        RETURNING id
+        `,
+        [normalizedPhone, ownerNameClean, city]
+      );
+      ownerUserId = String(userRes.rows[0].id);
+    } else if (draft.ownerName && draft.ownerName.trim().length >= 2) {
       await client.query(
         `UPDATE users SET full_name = $2, default_city = COALESCE($3, default_city), updated_at = NOW() WHERE id = $1`,
-        [ownerUserId, draft.ownerName.trim(), city]
+        [ownerUserId, ownerNameClean, city]
       );
     }
 
@@ -2399,8 +2607,8 @@ export async function onboardBusinessInDb(
     const slug = `${normalizeValidSlug(draft.slug || businessName, 'salon')}-${crypto.randomBytes(2).toString('hex')}`;
 
     const typeLabelMap: Record<BusinessType, string> = {
-      [BusinessType.WomenSalon]: 'سالن زیبایی بانوان',
-      [BusinessType.MenBarbershop]: 'آرایشگاه و پیرایش مردانه',
+      [BusinessType.WomenSalon]: 'سالن زیبایی زنانه',
+      [BusinessType.MenBarbershop]: 'آرایشگاه مردانه',
       [BusinessType.IndependentSpecialist]: 'متخصص مستقل زیبایی',
     };
 
@@ -2415,6 +2623,17 @@ export async function onboardBusinessInDb(
           .update(draft.nationalIdNumber.trim())
           .digest('hex')
       : null;
+
+    const planNameMap: Record<string, string> = {
+      'plan-free': 'شروع رایگان',
+      'plan-pro': 'حرفه‌ای',
+      'plan-vip': 'کسب‌وکار پیشرفته (VIP)',
+    };
+    const chosenPlanName =
+      planNameMap[draft.selectedPlanId || 'plan-free'] || 'شروع رایگان';
+    const isFreePlan =
+      !draft.selectedPlanId || draft.selectedPlanId === 'plan-free';
+    const chosenSubStatus = isFreePlan ? 'TRIAL' : 'ACTIVE';
 
     const bizRes = await client.query(
       `
@@ -2446,7 +2665,7 @@ export async function onboardBusinessInDb(
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
         $12, $13, $14, $15, 'rose', $16, FALSE, 'PENDING_REVIEW',
-        'حرفه‌ای (رشد سالن)', 'TRIAL', $17, $18
+        $17, $18, $19, $20
       )
       RETURNING id, slug
       `,
@@ -2456,17 +2675,19 @@ export async function onboardBusinessInDb(
         slug,
         businessName,
         draft.businessType || BusinessType.WomenSalon,
-        typeLabelMap[draft.businessType] || 'سالن زیبایی بانوان',
+        typeLabelMap[draft.businessType] || 'سالن زیبایی زنانه',
         city,
-        (draft.neighborhood || '').trim(),
+        (draft.neighborhood || '').trim() || 'مرکز شهر',
         address,
         draft.mapLat ?? null,
         draft.mapLng ?? null,
-        (draft.phone || actorUser.phone).trim(),
+        toPersianDigitsServer(normalizedPhone),
         draft.instagramHandle || null,
-        (draft.shortDescription || '').trim().slice(0, 290),
-        (draft.shortDescription || '').trim(),
+        (draft.shortDescription || `${businessName} در ${city}`).trim().slice(0, 290),
+        (draft.shortDescription || `${businessName} در ${city}`).trim(),
         startingPrice,
+        chosenPlanName,
+        chosenSubStatus,
         draft.licenseCode || null,
         nationalIdHash,
       ]
@@ -2474,9 +2695,65 @@ export async function onboardBusinessInDb(
 
     const newBizId = String(bizRes.rows[0].id);
 
+    // ثبت مالک در جدول اعضای کسب‌وکار (business_members) برای دسترسی کامل به پنل کسب‌وکار (/app)
+    await client.query(
+      `
+      INSERT INTO business_members (business_id, user_id, member_role, is_active)
+      VALUES ($1, $2, 'OWNER', TRUE)
+      ON CONFLICT (business_id, user_id) DO UPDATE
+      SET member_role = 'OWNER', is_active = TRUE
+      `,
+      [newBizId, ownerUserId]
+    );
+
     await client.query(
       `INSERT INTO business_settings (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`,
       [newBizId]
+    );
+
+    // ذخیره متادیتای تکمیلی کسب‌وکار (تصویر پروفایل، شماره مالک، روزهای آزمایشی، سهمیه پیامک)
+    const extraMeta = {
+      ownerName: ownerNameClean,
+      ownerPhone: toPersianDigitsServer(normalizedPhone),
+      avatarUrl: draft.avatarUrl || undefined,
+      trialDaysRemaining: isFreePlan ? 30 : undefined,
+      extraSmsBalance: 0,
+      smsSentCount: 0,
+      isSampleShowcase: false,
+    };
+    await client.query(
+      `
+      INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT (business_id) DO UPDATE
+      SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
+      `,
+      [newBizId, JSON.stringify(extraMeta)]
+    );
+
+    // ثبت اعلان جدید برای مدیر کل پلتفرم در جدول platform_kv_store
+    const notifItem = {
+      id: `notif-${Date.now()}`,
+      type: 'NEW_BUSINESS',
+      title: `ثبت‌نام کسب‌وکار جدید: ${businessName}`,
+      message: `${ownerNameClean} (${toPersianDigitsServer(normalizedPhone)}) سالن «${businessName}» را در ${city} ثبت کرد و منتظر تایید شماست.`,
+      businessId: newBizId,
+      businessName,
+      ownerName: ownerNameClean,
+      ownerPhone: toPersianDigitsServer(normalizedPhone),
+      city,
+      createdAtJalali: 'امروز',
+      isRead: false,
+    };
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('admin_notifications', jsonb_build_array($1::jsonb), NOW())
+      ON CONFLICT (key) DO UPDATE
+      SET value_json = jsonb_build_array($1::jsonb) || COALESCE(platform_kv_store.value_json, '[]'::jsonb),
+          updated_at = NOW()
+      `,
+      [JSON.stringify(notifItem)]
     );
 
     const workingHours = Array.isArray(draft.workingHours)
@@ -2553,10 +2830,57 @@ export async function onboardBusinessInDb(
       );
     }
 
+    // اگر کاربر از قبل لاگین نبوده، یک نشست ۳۰ روزه هم برای او صادر شود تا مستقیم وارد پنل کسب‌وکار خود شود
+    if (!actorUser) {
+      const rawSessionSecretPart = crypto.randomBytes(32).toString('hex');
+      const refreshTokenHash = hashSessionSecretPart(rawSessionSecretPart);
+      const sessionInsertRes = await client.query(
+        `
+        INSERT INTO user_sessions (
+          user_id,
+          refresh_token_hash,
+          ip_address,
+          user_agent,
+          expires_at
+        )
+        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')
+        RETURNING id, expires_at
+        `,
+        [
+          ownerUserId,
+          refreshTokenHash,
+          (clientMeta?.ipAddress || '127.0.0.1').slice(0, 45),
+          (clientMeta?.userAgent || 'web').slice(0, 500),
+        ]
+      );
+      const sessionId = String(sessionInsertRes.rows[0].id);
+      createdSessionExpiresAt = new Date(
+        String(sessionInsertRes.rows[0].expires_at)
+      ).toISOString();
+      createdNewSessionToken = signSessionToken(
+        sessionId,
+        rawSessionSecretPart,
+        resolveSessionSecret()
+      );
+      resolvedAuthUser =
+        (await loadUserPermissionsByUserId(client, ownerUserId, sessionId)) ||
+        undefined;
+    } else {
+      resolvedAuthUser =
+        (await loadUserPermissionsByUserId(
+          client,
+          ownerUserId,
+          actorUser.sessionId
+        )) || actorUser;
+    }
+
     await client.query('COMMIT');
     return {
       businessId: newBizId,
       slug: String(bizRes.rows[0].slug),
+      sessionToken: createdNewSessionToken,
+      expiresAt: createdSessionExpiresAt,
+      user: resolvedAuthUser,
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -2663,6 +2987,7 @@ export async function getBusinessWorkspacePayloadInDb(
 ): Promise<BusinessWorkspacePayload> {
   const client = await pool.connect();
   try {
+    await ensureExtendedMetaTables(client);
     let targetBusinessUuid: string;
     let memberRole: BusinessMemberRole;
 
@@ -2677,16 +3002,26 @@ export async function getBusinessWorkspacePayloadInDb(
       targetBusinessUuid = biz.id;
     } else {
       const firstMembership = actorUser.businessMemberships[0];
-      if (!firstMembership) {
-        throw new Error('BUSINESS_ACCESS_DENIED');
+      if (firstMembership) {
+        memberRole = await assertUserHasBusinessAccess(
+          client,
+          actorUser,
+          firstMembership.businessUuid,
+          ['OWNER', 'MANAGER', 'STAFF']
+        );
+        targetBusinessUuid = firstMembership.businessUuid;
+      } else {
+        // Fallback: check if user owns a business directly in businesses table
+        const ownedRes = await client.query(
+          `SELECT id FROM businesses WHERE owner_user_id = $1 ORDER BY created_at DESC LIMIT 1`,
+          [actorUser.userId]
+        );
+        if (!ownedRes.rowCount || !ownedRes.rows[0]) {
+          throw new Error('BUSINESS_ACCESS_DENIED');
+        }
+        targetBusinessUuid = String(ownedRes.rows[0].id);
+        memberRole = 'OWNER';
       }
-      memberRole = await assertUserHasBusinessAccess(
-        client,
-        actorUser,
-        firstMembership.businessUuid,
-        ['OWNER', 'MANAGER', 'STAFF']
-      );
-      targetBusinessUuid = firstMembership.businessUuid;
     }
 
     const [
@@ -2703,6 +3038,7 @@ export async function getBusinessWorkspacePayloadInDb(
         `
         SELECT
           b.id,
+          b.legacy_demo_id,
           COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
           b.slug,
           b.name,
@@ -2726,9 +3062,11 @@ export async function getBusinessWorkspacePayloadInDb(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          c.slug AS primary_category_slug
+          c.slug AS primary_category_slug,
+          bme.extra_json
         FROM businesses b
         JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         WHERE b.id = $1
         LIMIT 1
         `,
@@ -2805,6 +3143,7 @@ export async function getBusinessWorkspacePayloadInDb(
           COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
           a.specialist_name_snapshot,
           a.customer_name,
+          a.customer_phone,
           a.customer_phone_masked,
           a.date_jalali,
           a.time_slot_label,
@@ -2826,6 +3165,7 @@ export async function getBusinessWorkspacePayloadInDb(
         SELECT
           COALESCE(legacy_demo_id, id::text) AS external_id,
           full_name,
+          phone,
           phone_masked,
           city,
           total_visits,
@@ -2881,35 +3221,39 @@ export async function getBusinessWorkspacePayloadInDb(
 
     const r = bizRes.rows[0];
     const business: BusinessItem | null = r
-      ? {
-          id: String(r.external_id),
-          slug: String(r.slug),
-          name: String(r.name),
-          type: r.type as BusinessType,
-          typeLabel: String(r.type_label),
-          categorySlug: String(r.primary_category_slug),
-          city: String(r.city),
-          neighborhood: String(r.neighborhood),
-          address: String(r.address),
-          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
-          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
-          rating: Number(r.rating_avg),
-          reviewCount: Number(r.review_count),
-          startingPriceToman: Number(r.starting_price_toman),
-          verifiedBadge: Boolean(r.verified_badge),
-          shortDescription: String(r.short_description),
-          aboutText: String(r.about_text),
-          phoneDisplay: String(r.phone_display),
-          instagramHandle: r.instagram_handle
-            ? String(r.instagram_handle)
-            : undefined,
-          workingHours,
-          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
-          approvalStatus: r.approval_status as ApprovalStatus,
-          subscriptionPlan: String(r.subscription_plan),
-          subscriptionStatus: r.subscription_status as SubscriptionStatus,
-          featured: Boolean(r.is_featured),
-        }
+      ? mergeBusinessRowWithExtra(
+          {
+            id: String(r.external_id),
+            slug: String(r.slug),
+            name: String(r.name),
+            type: r.type as BusinessType,
+            typeLabel: String(r.type_label),
+            categorySlug: String(r.primary_category_slug),
+            city: String(r.city),
+            neighborhood: String(r.neighborhood),
+            address: String(r.address),
+            mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+            mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+            rating: Number(r.rating_avg),
+            reviewCount: Number(r.review_count),
+            startingPriceToman: Number(r.starting_price_toman),
+            verifiedBadge: Boolean(r.verified_badge),
+            shortDescription: String(r.short_description),
+            aboutText: String(r.about_text),
+            phoneDisplay: String(r.phone_display),
+            instagramHandle: r.instagram_handle
+              ? String(r.instagram_handle)
+              : undefined,
+            workingHours,
+            visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+            approvalStatus: r.approval_status as ApprovalStatus,
+            subscriptionPlan: String(r.subscription_plan),
+            subscriptionStatus: r.subscription_status as SubscriptionStatus,
+            featured: Boolean(r.is_featured),
+          },
+          r.extra_json,
+          r.legacy_demo_id
+        )
       : null;
 
     const services: ServiceItem[] = srvRes.rows.map((row) => ({
@@ -2955,7 +3299,9 @@ export async function getBusinessWorkspacePayloadInDb(
       specialistId: String(row.specialist_external_id),
       specialistName: String(row.specialist_name_snapshot),
       customerName: String(row.customer_name),
-      customerPhoneMasked: String(row.customer_phone_masked),
+      customerPhoneMasked: toPersianDigitsServer(
+        String(row.customer_phone || row.customer_phone_masked || '')
+      ),
       dateJalali: String(row.date_jalali),
       timeSlot: String(row.time_slot_label),
       durationMinutes: Number(row.duration_minutes_snapshot),
@@ -2967,7 +3313,10 @@ export async function getBusinessWorkspacePayloadInDb(
     const customers: CustomerRecord[] = custRes.rows.map((row) => ({
       id: String(row.external_id),
       fullName: String(row.full_name),
-      phoneMasked: String(row.phone_masked),
+      phone: toPersianDigitsServer(String(row.phone || '')),
+      phoneMasked: toPersianDigitsServer(
+        String(row.phone || row.phone_masked || '')
+      ),
       city: String(row.city),
       totalVisits: Number(row.total_visits),
       lastVisitJalali: String(row.last_visit_jalali),
@@ -3023,6 +3372,7 @@ export async function getAdminOverviewPayloadInDb(
 
   const client = await pool.connect();
   try {
+    await ensureExtendedMetaTables(client);
     const [catRes, bizRes, whRes, planRes, usrRes, aptRes] = await Promise.all([
       client.query(`
         SELECT
@@ -3039,6 +3389,7 @@ export async function getAdminOverviewPayloadInDb(
       client.query(`
         SELECT
           b.id,
+          b.legacy_demo_id,
           COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
           b.slug,
           b.name,
@@ -3062,9 +3413,15 @@ export async function getAdminOverviewPayloadInDb(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          c.slug AS primary_category_slug
+          to_char(b.created_at, 'YYYY/MM/DD') AS created_date,
+          c.slug AS primary_category_slug,
+          u.full_name AS owner_full_name,
+          u.phone AS owner_phone,
+          bme.extra_json
         FROM businesses b
         JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN users u ON u.id = b.owner_user_id
+        LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         ORDER BY b.created_at DESC
       `),
       client.query(`
@@ -3097,7 +3454,7 @@ export async function getAdminOverviewPayloadInDb(
           u.id::text AS id,
           u.full_name,
           u.phone,
-          COALESCE(u.default_city, 'تهران') AS city,
+          COALESCE(u.default_city, 'اصفهان') AS city,
           u.is_active,
           to_char(u.created_at, 'YYYY/MM/DD') AS created_date,
           EXISTS (
@@ -3107,10 +3464,13 @@ export async function getAdminOverviewPayloadInDb(
           EXISTS (
             SELECT 1 FROM business_members bm
             WHERE bm.user_id = u.id AND bm.is_active = TRUE
+          ) OR EXISTS (
+            SELECT 1 FROM businesses b2
+            WHERE b2.owner_user_id = u.id
           ) AS is_business_member
         FROM users u
         ORDER BY u.created_at DESC
-        LIMIT 200
+        LIMIT 300
       `),
       client.query(`
         SELECT
@@ -3124,6 +3484,7 @@ export async function getAdminOverviewPayloadInDb(
           COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
           a.specialist_name_snapshot,
           a.customer_name,
+          a.customer_phone,
           a.customer_phone_masked,
           a.date_jalali,
           a.time_slot_label,
@@ -3163,35 +3524,48 @@ export async function getAdminOverviewPayloadInDb(
       serviceCount: Number(r.service_count),
     }));
 
-    const businesses: BusinessItem[] = bizRes.rows.map((r) => ({
-      id: String(r.external_id),
-      slug: String(r.slug),
-      name: String(r.name),
-      type: r.type as BusinessType,
-      typeLabel: String(r.type_label),
-      categorySlug: String(r.primary_category_slug),
-      city: String(r.city),
-      neighborhood: String(r.neighborhood),
-      address: String(r.address),
-      mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
-      mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
-      rating: Number(r.rating_avg),
-      reviewCount: Number(r.review_count),
-      startingPriceToman: Number(r.starting_price_toman),
-      verifiedBadge: Boolean(r.verified_badge),
-      shortDescription: String(r.short_description),
-      aboutText: String(r.about_text),
-      phoneDisplay: String(r.phone_display),
-      instagramHandle: r.instagram_handle
-        ? String(r.instagram_handle)
-        : undefined,
-      workingHours: whByBusinessId.get(String(r.id)) ?? [],
-      visualTheme: (r.visual_theme as VisualTheme) || 'violet',
-      approvalStatus: r.approval_status as ApprovalStatus,
-      subscriptionPlan: String(r.subscription_plan),
-      subscriptionStatus: r.subscription_status as SubscriptionStatus,
-      featured: Boolean(r.is_featured),
-    }));
+    const businesses: BusinessItem[] = bizRes.rows.map((r) =>
+      mergeBusinessRowWithExtra(
+        {
+          id: String(r.external_id),
+          slug: String(r.slug),
+          name: String(r.name),
+          type: r.type as BusinessType,
+          typeLabel: String(r.type_label),
+          categorySlug: String(r.primary_category_slug),
+          city: String(r.city),
+          neighborhood: String(r.neighborhood),
+          address: String(r.address),
+          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+          rating: Number(r.rating_avg),
+          reviewCount: Number(r.review_count),
+          startingPriceToman: Number(r.starting_price_toman),
+          verifiedBadge: Boolean(r.verified_badge),
+          shortDescription: String(r.short_description),
+          aboutText: String(r.about_text),
+          phoneDisplay: String(r.phone_display),
+          ownerName: r.owner_full_name ? String(r.owner_full_name) : undefined,
+          ownerPhone: r.owner_phone
+            ? toPersianDigitsServer(String(r.owner_phone))
+            : String(r.phone_display),
+          createdAtJalali: toPersianDigitsServer(
+            String(r.created_date || '1405/08/01')
+          ),
+          instagramHandle: r.instagram_handle
+            ? String(r.instagram_handle)
+            : undefined,
+          workingHours: whByBusinessId.get(String(r.id)) ?? [],
+          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+          approvalStatus: r.approval_status as ApprovalStatus,
+          subscriptionPlan: String(r.subscription_plan),
+          subscriptionStatus: r.subscription_status as SubscriptionStatus,
+          featured: Boolean(r.is_featured),
+        },
+        r.extra_json,
+        r.legacy_demo_id
+      )
+    );
 
     const plans: SubscriptionPlanItem[] = planRes.rows.map((r) => {
       const comp =
@@ -3216,19 +3590,23 @@ export async function getAdminOverviewPayloadInDb(
       };
     });
 
-    const users: AdminUserRecord[] = usrRes.rows.map((r) => ({
-      id: String(r.id),
-      fullName: String(r.full_name || 'کاربر BeautyHub'),
-      phoneMasked: maskPhoneDisplay(String(r.phone || '')),
-      roleLabel: r.is_admin
-        ? 'مدیر کل پلتفرم'
-        : r.is_business_member
-          ? 'مالک / عضو کسب‌وکار'
-          : 'مشتری',
-      city: String(r.city || 'تهران'),
-      joinedJalali: toPersianDigitsServer(String(r.created_date || '1405/08/01')),
-      isActive: Boolean(r.is_active),
-    }));
+    const users: AdminUserRecord[] = usrRes.rows.map((r) => {
+      const fullPhonePersian = toPersianDigitsServer(String(r.phone || ''));
+      return {
+        id: String(r.id),
+        fullName: String(r.full_name || 'کاربر Timeto'),
+        phone: fullPhonePersian,
+        phoneMasked: fullPhonePersian,
+        roleLabel: r.is_admin
+          ? 'مدیر کل پلتفرم'
+          : r.is_business_member
+            ? 'مالک / عضو کسب‌وکار'
+            : 'مشتری',
+        city: String(r.city || 'اصفهان'),
+        joinedJalali: toPersianDigitsServer(String(r.created_date || '1405/08/01')),
+        isActive: Boolean(r.is_active),
+      };
+    });
 
     const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
       id: String(r.external_id),

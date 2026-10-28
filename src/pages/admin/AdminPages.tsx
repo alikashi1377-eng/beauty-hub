@@ -48,16 +48,27 @@ import {
 
 /** ۱. داشبورد مدیریت پلتفرم (/admin) — بازطراحی کامل مطابق Capture6.PNG و Capture7.PNG */
 export const AdminDashboardPage: React.FC = () => {
-  const { dataMode, businesses, categories, updateBusinessApproval } =
-    usePrototypeData();
+  const {
+    dataMode,
+    businesses,
+    categories,
+    updateBusinessApproval,
+    adminNotifications,
+    markAdminNotificationRead,
+    clearAllAdminNotifications,
+  } = usePrototypeData();
   const [chartRange, setChartRange] = useState<'7d' | '30d' | '1y'>('7d');
+  const [showSampleSalons, setShowSampleSalons] = useState(false);
 
-  const pendingCount = businesses.filter(
+  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+  const visibleBusinesses = showSampleSalons ? businesses : realBusinesses;
+
+  const pendingCount = realBusinesses.filter(
     (b) => b.approvalStatus === 'PENDING_REVIEW'
   ).length;
   const activeSubscriptionsCount =
     dataMode === 'real'
-      ? businesses.filter(
+      ? realBusinesses.filter(
           (b) =>
             b.subscriptionStatus === 'ACTIVE' ||
             b.subscriptionStatus === 'TRIAL'
@@ -65,7 +76,7 @@ export const AdminDashboardPage: React.FC = () => {
       : 4;
 
   // اولویت نمایش با کسب‌وکارهای در انتظار بررسی
-  const sortedBusinesses = [...businesses].sort((a, b) => {
+  const sortedBusinesses = [...visibleBusinesses].sort((a, b) => {
     if (
       a.approvalStatus === 'PENDING_REVIEW' &&
       b.approvalStatus !== 'PENDING_REVIEW'
@@ -79,6 +90,8 @@ export const AdminDashboardPage: React.FC = () => {
     return 0;
   });
 
+  const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -91,6 +104,80 @@ export const AdminDashboardPage: React.FC = () => {
           { label: 'داشبورد کلان' },
         ]}
       />
+
+      {/* بنر اعلان ثبت کسب‌وکارهای جدید (فقط قابل مشاهده برای مدیر کل) */}
+      {adminNotifications.length > 0 ? (
+        <Card className="border-2 border-[#F59E0B] bg-[#FFFBEB] space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#FDE68A] pb-2.5">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-[#D97706] shrink-0" />
+              <h2 className="text-sm font-extrabold text-[#92400E]">
+                اعلان‌های مدیریتی: ثبت کسب‌وکارهای جدید (
+                {toPersianDigits(unreadNotifications.length || adminNotifications.length)}{' '}
+                مورد)
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={clearAllAdminNotifications}
+              className="text-xs font-extrabold text-[#B45309] hover:underline cursor-pointer"
+            >
+              علامت‌گذاری همه به‌عنوان خوانده‌شده
+            </button>
+          </div>
+          <div className="space-y-2 max-h-56 overflow-y-auto">
+            {adminNotifications.slice(0, 6).map((notif) => (
+              <div
+                key={notif.id}
+                className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                  notif.isRead
+                    ? 'bg-white/70 border-[#E2E8F0] text-[#475569]'
+                    : 'bg-white border-[#F59E0B] text-[#061138] shadow-2xs'
+                }`}
+              >
+                <div className="space-y-1">
+                  <p className="font-extrabold text-[#061138]">
+                    {notif.title} · شهر {notif.city}
+                  </p>
+                  <p className="text-[#334155]">
+                    مالک: <strong>{notif.ownerName}</strong> · شماره تماس:{' '}
+                    <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">
+                      {notif.ownerPhone}
+                    </span>{' '}
+                    · زمان ثبت: {notif.createdAtJalali}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      if (notif.businessId) {
+                        updateBusinessApproval(notif.businessId, 'APPROVED');
+                      }
+                      markAdminNotificationRead(notif.id);
+                    }}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>تایید و انتشار سالن</span>
+                  </Button>
+                  {!notif.isRead ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => markAdminNotificationRead(notif.id)}
+                    >
+                      خوانده شد
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {/* بنر دسترسی سریع به تنظیمات پیامک ملی‌پیامک */}
       <div className="rounded-3xl bg-[#061138] text-white p-4 sm:p-5 border border-[#1E293B] flex flex-wrap items-center justify-between gap-4 shadow-sm">
@@ -349,15 +436,27 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* ۳. جدول صف بررسی و تایید کسب‌وکارها با ستون‌های مرتب‌سازی — مطابق Capture6.PNG و Capture7.PNG */}
+      {/* ۳. جدول صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده واقعی */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-[#1E1B2E]">
-            صف بررسی و تایید کسب‌وکارها
-          </h2>
-          <span className="text-xs text-[#6B6480]">
-            تایید یا رد مستقیم وضعیت انتشار کسب‌وکار
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-extrabold text-[#1E1B2E]">
+              صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده (
+              {toPersianDigits(sortedBusinesses.length)} مورد)
+            </h2>
+            <p className="text-xs text-[#6B6480]">
+              به‌طور پیش‌فرض فقط کسب‌وکارهای واقعی ثبت‌نام‌شده نمایش داده می‌شوند و نمونه‌های نمایشی پنهان شده‌اند
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSampleSalons((p) => !p)}
+            className="px-3 py-1.5 rounded-xl border border-[#CBD5E1] bg-white text-xs font-bold text-[#334155] hover:border-[#0057FF] cursor-pointer"
+          >
+            {showSampleSalons
+              ? 'پنهان کردن سالن‌های نمونه نمایشی'
+              : 'نمایش سالن‌های نمونه نمایشی'}
+          </button>
         </div>
 
         <ResponsiveTable
@@ -366,10 +465,17 @@ export const AdminDashboardPage: React.FC = () => {
           columns={[
             {
               key: 'name',
-              header: 'نام کسب‌وکار ↕',
+              header: 'نام کسب‌وکار و مسیر ↕',
               render: (b) => (
-                <div>
-                  <p className="font-extrabold text-[#1E1B2E]">{b.name}</p>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-extrabold text-[#1E1B2E]">{b.name}</p>
+                    {b.isSampleShowcase ? (
+                      <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold">
+                        نمونه
+                      </span>
+                    ) : null}
+                  </div>
                   <p dir="ltr" className="text-[11px] font-mono text-[#6B6480]">
                     /{b.slug}
                   </p>
@@ -377,21 +483,32 @@ export const AdminDashboardPage: React.FC = () => {
               ),
             },
             {
-              key: 'type',
-              header: 'نوع فعالیت / شهر ↕',
+              key: 'owner',
+              header: 'نام مالک و شماره همراه کامل',
               render: (b) => (
-                <span className="font-medium text-[#6B6480]">
-                  {b.typeLabel} · {b.city}
-                </span>
+                <div className="space-y-0.5 text-xs">
+                  <span className="font-bold text-[#061138] block">
+                    {b.ownerName || 'صاحب کسب‌وکار'}
+                  </span>
+                  <span
+                    dir="ltr"
+                    className="font-mono font-extrabold text-[#0057FF] tabular-nums block"
+                  >
+                    {b.ownerPhone || b.phoneDisplay}
+                  </span>
+                </div>
               ),
             },
             {
-              key: 'price',
-              header: 'شروع تعرفه ↕',
+              key: 'type',
+              header: 'نوع فعالیت / شهر و محله ↕',
               render: (b) => (
-                <span className="font-bold text-[#1E1B2E] tabular-nums">
-                  {formatPriceToman(b.startingPriceToman)}
-                </span>
+                <div className="text-xs space-y-0.5">
+                  <span className="font-bold text-[#1E1B2E] block">
+                    {b.city} · {b.neighborhood}
+                  </span>
+                  <span className="text-[#6B6480] block">{b.typeLabel}</span>
+                </div>
               ),
             },
             {
@@ -422,15 +539,15 @@ export const AdminDashboardPage: React.FC = () => {
               render: (b) => (
                 <div className="flex items-center gap-1.5">
                   <Button
-                    variant="outline"
+                    variant="primary"
                     size="sm"
                     onClick={() => updateBusinessApproval(b.id, 'APPROVED')}
                   >
-                    <Check className="w-3.5 h-3.5 text-[#10B981]" />
+                    <Check className="w-3.5 h-3.5" />
                     <span>تایید</span>
                   </Button>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
                     onClick={() => updateBusinessApproval(b.id, 'REJECTED')}
                     className="text-[#EF4444] hover:bg-[#FEF2F2]"
@@ -450,17 +567,32 @@ export const AdminDashboardPage: React.FC = () => {
 
 /** ۲. مدیریت کسب‌وکارها (/admin/businesses) */
 export const AdminBusinessesPage: React.FC = () => {
-  const { businesses, updateBusinessApproval } = usePrototypeData();
+  const {
+    businesses,
+    updateBusinessApproval,
+    updateBusinessProfile,
+    showToast,
+  } = usePrototypeData();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ApprovalStatus | 'ALL'>(
     'ALL'
   );
+  const [showSampleSalons, setShowSampleSalons] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
 
-  const filtered = businesses.filter((b) => {
+  const sourceBusinesses = showSampleSalons
+    ? businesses
+    : businesses.filter((b) => !b.isSampleShowcase);
+
+  const filtered = sourceBusinesses.filter((b) => {
+    const q = searchQuery.trim();
     const matchQuery =
-      b.name.includes(searchQuery.trim()) ||
-      b.city.includes(searchQuery.trim());
+      !q ||
+      b.name.includes(q) ||
+      b.city.includes(q) ||
+      (b.ownerName && b.ownerName.includes(q)) ||
+      (b.ownerPhone && b.ownerPhone.includes(q)) ||
+      b.phoneDisplay.includes(q);
     const matchStatus =
       statusFilter === 'ALL' || b.approvalStatus === statusFilter;
     return matchQuery && matchStatus;
@@ -471,37 +603,48 @@ export const AdminBusinessesPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="نظارت و عملیات · مراکز زیبایی"
-        title="بررسی و تایید کسب‌وکارهای عضو"
-        subtitle="جست‌وجو، فیلتر وضعیت احراز و تایید یا رد پروفایل سالن‌ها و متخصصان مستقل"
+        kicker="نظارت و عملیات · مراکز زیبایی ثبت‌نام‌شده"
+        title="بررسی، تایید و مدیریت کسب‌وکارهای عضو"
+        subtitle="مشاهده اطلاعات کامل صاحب کسب‌وکار، شماره موبایل کامل، شارژ فوری پیامک و تایید یا رد پروفایل سالن‌ها"
         routePattern="/admin/businesses"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
           { label: 'کسب‌وکارها' },
         ]}
+        actions={
+          <button
+            type="button"
+            onClick={() => setShowSampleSalons((p) => !p)}
+            className="px-3.5 py-2 rounded-xl border border-[#CBD5E1] bg-white text-xs font-extrabold text-[#061138] hover:border-[#0057FF] cursor-pointer"
+          >
+            {showSampleSalons
+              ? 'پنهان کردن سالن‌های نمونه نمایشی'
+              : 'نمایش سالن‌های نمونه نمایشی'}
+          </button>
+        }
       />
 
       <Card className="mb-6 space-y-4">
         <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
           {[
-            { id: 'ALL', label: 'همه مراکز', count: businesses.length },
+            { id: 'ALL', label: 'همه مراکز واقعی', count: sourceBusinesses.length },
             {
               id: 'PENDING_REVIEW',
               label: 'در انتظار بررسی',
-              count: businesses.filter(
+              count: sourceBusinesses.filter(
                 (b) => b.approvalStatus === 'PENDING_REVIEW'
               ).length,
             },
             {
               id: 'APPROVED',
               label: 'تاییدشده',
-              count: businesses.filter((b) => b.approvalStatus === 'APPROVED')
+              count: sourceBusinesses.filter((b) => b.approvalStatus === 'APPROVED')
                 .length,
             },
             {
               id: 'REJECTED',
               label: 'ردشده',
-              count: businesses.filter((b) => b.approvalStatus === 'REJECTED')
+              count: sourceBusinesses.filter((b) => b.approvalStatus === 'REJECTED')
                 .length,
             },
           ].map((tab) => {
@@ -529,12 +672,12 @@ export const AdminBusinessesPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField id="adm-biz-search" label="جست‌وجوی نام کسب‌وکار یا شهر">
+          <FormField id="adm-biz-search" label="جست‌وجوی نام سالن، نام مالک، شماره موبایل یا شهر">
             <Input
               id="adm-biz-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="مثلاً رویال گلزار یا مشهد..."
+              placeholder="نام سالن، شماره موبایل (0913...) یا شهر..."
             />
           </FormField>
           <FormField id="adm-biz-status" label="فیلتر وضعیت تایید">
@@ -561,30 +704,49 @@ export const AdminBusinessesPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار',
+            header: 'عنوان کسب‌وکار و پلن',
             render: (b) => (
-              <span className="font-extrabold text-[#1E1B2E]">{b.name}</span>
+              <div className="space-y-0.5">
+                <span className="font-extrabold text-[#1E1B2E] block">
+                  {b.name}
+                </span>
+                <span className="text-[11px] text-[#0057FF] font-bold block">
+                  {b.subscriptionPlan} · ارسال پیامک:{' '}
+                  {toPersianDigits(b.smsSentCount ?? 0)} عدد (شارژ اضافه:{' '}
+                  {toPersianDigits(b.extraSmsBalance ?? 0)})
+                </span>
+              </div>
             ),
           },
           {
-            key: 'slug',
-            header: 'شناسه مسیر (Slug)',
+            key: 'owner',
+            header: 'مشخصات کامل مالک و شماره تماس',
             render: (b) => (
-              <span
-                dir="ltr"
-                className="font-mono text-xs bg-[#EDE9FE] px-2 py-0.5 rounded text-[#8B5CF6]"
-              >
-                {b.slug}
-              </span>
+              <div className="space-y-0.5 text-xs">
+                <span className="font-bold text-[#061138] block">
+                  {b.ownerName || 'صاحب کسب‌وکار'}
+                </span>
+                <span
+                  dir="ltr"
+                  className="font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded inline-block"
+                >
+                  {b.ownerPhone || b.phoneDisplay}
+                </span>
+              </div>
             ),
           },
           {
             key: 'city',
-            header: 'شهر و محله',
+            header: 'شهر، محله و نشانی',
             render: (b) => (
-              <span>
-                {b.city}، {b.neighborhood}
-              </span>
+              <div className="text-xs space-y-0.5 max-w-xs">
+                <span className="font-bold text-[#1E1B2E] block">
+                  {b.city}، {b.neighborhood}
+                </span>
+                <span className="text-[11px] text-[#64748B] line-clamp-1">
+                  {b.address}
+                </span>
+              </div>
             ),
           },
           {
@@ -611,9 +773,9 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'عملیات بررسی',
+            header: 'عملیات بررسی و شارژ پیامک',
             render: (b) => (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   variant="primary"
                   size="sm"
@@ -621,6 +783,21 @@ export const AdminBusinessesPage: React.FC = () => {
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>تایید</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const nextSms = (b.extraSmsBalance ?? 0) + 200;
+                    updateBusinessProfile(b.id, { extraSmsBalance: nextSms });
+                    showToast(
+                      `۲۰۰ پیامک اضافه برای «${b.name}» شارژ شد (موجودی اضافه: ${toPersianDigits(
+                        nextSms
+                      )}).`
+                    );
+                  }}
+                >
+                  +۲۰۰ پیامک
                 </Button>
                 <Button
                   variant="outline"
@@ -654,76 +831,38 @@ export const AdminBusinessesPage: React.FC = () => {
 
 /** ۳. مدیریت کاربران (/admin/users) */
 export const AdminUsersPage: React.FC = () => {
-  const { dataMode, adminUsers } = usePrototypeData();
+  const { adminUsers } = usePrototypeData();
   const [roleFilter, setRoleFilter] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
 
-  const sampleUsers = [
-    {
-      id: 'usr-1',
-      name: 'المیرا شمس',
-      role: 'مشتری',
-      phone: '۰۹۱۲***۴۵۸۱',
-      city: 'تهران',
-      status: 'فعال',
-    },
-    {
-      id: 'usr-2',
-      name: 'مهسا کیانی',
-      role: 'مدیر سالن',
-      phone: '۰۹۱۲***۱۰۲۰',
-      city: 'تهران',
-      status: 'فعال',
-    },
-    {
-      id: 'usr-3',
-      name: 'سارا راد',
-      role: 'متخصص مستقل',
-      phone: '۰۹۱۷***۸۸۴۰',
-      city: 'شیراز',
-      status: 'فعال',
-    },
-    {
-      id: 'usr-4',
-      name: 'کیوان رضایی',
-      role: 'مشتری',
-      phone: '۰۹۱۲***۳۳۰۹',
-      city: 'تهران',
-      status: 'فعال',
-    },
-    {
-      id: 'usr-5',
-      name: 'آرش داوودی',
-      role: 'مدیر سالن',
-      phone: '۰۹۱۲***۵۵۱۰',
-      city: 'تهران',
-      status: 'فعال',
-    },
-  ];
+  const sourceUsers = adminUsers.map((u) => ({
+    id: u.id,
+    name: u.fullName,
+    role: u.roleLabel,
+    phone: u.phone || u.phoneMasked,
+    city: u.city,
+    joinedJalali: u.joinedJalali || '—',
+    status: u.isActive ? 'فعال' : 'غیرفعال',
+  }));
 
-  const sourceUsers =
-    dataMode === 'real'
-      ? adminUsers.map((u) => ({
-          id: u.id,
-          name: u.fullName,
-          role: u.roleLabel,
-          phone: u.phoneMasked,
-          city: u.city,
-          status: u.isActive ? 'فعال' : 'غیرفعال',
-        }))
-      : sampleUsers;
-
-  const filtered =
-    roleFilter === 'ALL'
-      ? sourceUsers
-      : sourceUsers.filter((u) => u.role.includes(roleFilter));
+  const filtered = sourceUsers.filter((u) => {
+    const matchRole = roleFilter === 'ALL' || u.role.includes(roleFilter);
+    const q = searchQuery.trim();
+    const matchQuery =
+      !q ||
+      u.name.includes(q) ||
+      u.phone.includes(q) ||
+      u.city.includes(q);
+    return matchRole && matchQuery;
+  });
 
   return (
     <div>
       <PageHeader
-        kicker="نظارت و عملیات · حساب‌های کاربری"
-        title="مدیریت کاربران سامانه"
-        subtitle="فهرست مشتریان، صاحبان سالن‌ها و متخصصان مستقل همراه با فیلتر نقش و صفحه‌بندی"
+        kicker="نظارت و عملیات · حساب‌های کاربری واقعی"
+        title="مدیریت کاربران و صاحبان کسب‌وکار"
+        subtitle="مشاهده فهرست کامل کاربران ثبت‌نام‌شده همراه با شماره موبایل کامل (بدون سانسور)، نقش کاربری و تاریخ عضویت"
         routePattern="/admin/users"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -731,7 +870,15 @@ export const AdminUsersPage: React.FC = () => {
         ]}
       />
 
-      <Card className="mb-6 max-w-xs">
+      <Card className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FormField id="adm-usr-search" label="جست‌وجوی نام یا شماره موبایل کاربر">
+          <Input
+            id="adm-usr-search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="نام کاربر یا شماره موبایل (0913...)"
+          />
+        </FormField>
         <FormField id="adm-usr-role" label="فیلتر نقش کاربری">
           <Select
             id="adm-usr-role"
@@ -742,7 +889,6 @@ export const AdminUsersPage: React.FC = () => {
               { value: 'مشتری', label: 'مشتری' },
               { value: 'کسب‌وکار', label: 'مالک / عضو کسب‌وکار' },
               { value: 'مدیر', label: 'مدیر کل / مدیر سالن' },
-              { value: 'متخصص مستقل', label: 'متخصص مستقل' },
             ]}
           />
         </FormField>
@@ -754,7 +900,7 @@ export const AdminUsersPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'نام کاربر',
+            header: 'نام و نام خانوادگی کاربر',
             render: (u) => (
               <span className="font-extrabold text-[#1E1B2E]">{u.name}</span>
             ),
@@ -766,17 +912,24 @@ export const AdminUsersPage: React.FC = () => {
           },
           {
             key: 'phone',
-            header: 'شماره همراه',
+            header: 'شماره همراه کامل',
             render: (u) => (
-              <span dir="ltr" className="text-xs font-mono tabular-nums">
+              <span
+                dir="ltr"
+                className="text-xs font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2.5 py-1 rounded-lg tabular-nums"
+              >
                 {u.phone}
               </span>
             ),
           },
           {
             key: 'city',
-            header: 'شهر',
-            render: (u) => <span>{u.city}</span>,
+            header: 'شهر و تاریخ عضویت',
+            render: (u) => (
+              <span className="text-xs text-[#334155] tabular-nums">
+                {u.city} ({u.joinedJalali})
+              </span>
+            ),
           },
           {
             key: 'status',
@@ -786,7 +939,7 @@ export const AdminUsersPage: React.FC = () => {
         ]}
       />
 
-      <Pagination currentPage={page} totalPages={2} onPageChange={setPage} />
+      <Pagination currentPage={page} totalPages={1} onPageChange={setPage} />
     </div>
   );
 };
@@ -1408,13 +1561,28 @@ export const AdminSubscriptionsPage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold text-[#061138]">
-              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش و مدت زمان هر کسب‌وکار
+              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش، پلن و شارژ پیامک هر کسب‌وکار
             </h2>
             <p className="text-xs text-[#64748B]">
               تعیین کنید کدام سالن در صدر جست‌وجو یا بنر صفحه اول باشد، در چه
-              رتبه‌ای قرار بگیرد و چند روز اعتبار تبلیغاتی داشته باشد
+              رتبه‌ای قرار بگیرد، چند روز اعتبار تبلیغاتی یا پیامک اضافه داشته باشد
             </p>
           </div>
+          {businesses.length > 0 ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const target =
+                  businesses.find((b) => !b.isSampleShowcase) ?? businesses[0];
+                if (target) openManageBizModal(target);
+              }}
+            >
+              <Megaphone className="w-4 h-4" />
+              <span>انتخاب کسب‌وکار و تنظیم جایگاه / پلن / پیامک</span>
+            </Button>
+          ) : null}
         </div>
 
         <ResponsiveTable
@@ -1423,14 +1591,24 @@ export const AdminSubscriptionsPage: React.FC = () => {
           columns={[
             {
               key: 'name',
-              header: 'کسب‌وکار و محله',
+              header: 'کسب‌وکار، مالک و محله',
               render: (b) => (
                 <div className="space-y-0.5">
-                  <span className="font-extrabold text-[#061138] block">
-                    {b.name}
-                  </span>
-                  <span className="text-[11px] text-[#64748B]">
-                    {b.city} · محله {b.neighborhood}
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-[#061138] block">
+                      {b.name}
+                    </span>
+                    {b.isSampleShowcase ? (
+                      <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold">
+                        نمونه
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="text-[11px] text-[#64748B] block">
+                    {b.city} · {b.neighborhood} · تماس:{' '}
+                    <strong dir="ltr" className="font-mono text-[#0057FF]">
+                      {b.ownerPhone || b.phoneDisplay}
+                    </strong>
                   </span>
                 </div>
               ),
@@ -1450,7 +1628,8 @@ export const AdminSubscriptionsPage: React.FC = () => {
                   ) : null}
                   <span className="text-[11px] text-[#64748B] tabular-nums block">
                     شارژ پیامک اضافه:{' '}
-                    {toPersianDigits(b.extraSmsBalance ?? 0)} عدد
+                    {toPersianDigits(b.extraSmsBalance ?? 0)} عدد (ارسالی:{' '}
+                    {toPersianDigits(b.smsSentCount ?? 0)})
                   </span>
                 </div>
               ),
@@ -1723,15 +1902,39 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </form>
       </Modal>
 
-      {/* مودال ۳: مدیریت نحوه قرارگیری، رتبه و مدت زمان تبلیغ هر کسب‌وکار */}
+      {/* مودال ۳: مدیریت نحوه قرارگیری، رتبه و مدت زمان تبلیغ هر کسب‌وکار (با قابلیت انتخاب مستقیم کسب‌وکار از لیست) */}
       <Modal
         isOpen={Boolean(managingBiz)}
         onClose={() => setManagingBiz(null)}
-        title={`مدیریت تبلیغات و جایگاه: ${managingBiz?.name ?? ''}`}
-        description="تنظیم دقیق محل نمایش بنر/کارت، رتبه اولویت، تعداد روزهای باقی‌مانده و برچسب تبلیغاتی"
+        title={`مدیریت تبلیغات، پلن و پیامک: ${managingBiz?.name ?? ''}`}
+        description="کسب‌وکار مورد نظر را انتخاب کنید و محل نمایش بنر/کارت، رتبه اولویت، تعداد روزها و شارژ پیامک را تنظیم نمایید"
       >
         <form onSubmit={handleSaveBizPlacement} className="space-y-4">
-          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between">
+          {/* انتخابگر مستقیم کسب‌وکار در بالای مودال */}
+          <FormField
+            id="modal-select-business"
+            label="انتخاب کسب‌وکار جهت تنظیم تبلیغ، پلن یا شارژ پیامک"
+            required
+          >
+            <Select
+              id="modal-select-business"
+              value={managingBiz?.id || ''}
+              onChange={(e) => {
+                const chosen = businesses.find((b) => b.id === e.target.value);
+                if (chosen) {
+                  openManageBizModal(chosen);
+                }
+              }}
+              options={businesses.map((b) => ({
+                value: b.id,
+                label: `${b.name} (${b.city} - ${b.neighborhood})${
+                  b.isSampleShowcase ? ' [نمونه نمایشی]' : ''
+                }`,
+              }))}
+            />
+          </FormField>
+
+          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between gap-2">
             <div>
               <p className="text-xs font-extrabold text-[#061138]">
                 وضعیت نمایش تبلیغاتی (Sponsored Boost)
@@ -1744,7 +1947,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setBizSponsoredActive((prev) => !prev)}
-              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer shrink-0 ${
                 bizSponsoredActive
                   ? 'bg-[#10B981] text-white'
                   : 'bg-white border border-[#CBD5E1] text-[#64748B]'
@@ -1855,18 +2058,39 @@ export const AdminSubscriptionsPage: React.FC = () => {
               />
             </FormField>
 
-            <FormField
-              id="biz-extra-sms"
-              label="موجودی پیامک اضافه (مازاد بر پلن)"
-            >
-              <Input
+            <div className="space-y-2">
+              <FormField
                 id="biz-extra-sms"
-                dir="ltr"
-                type="number"
-                value={bizExtraSms}
-                onChange={(e) => setBizExtraSms(e.target.value)}
-              />
-            </FormField>
+                label="موجودی پیامک اضافه (مازاد بر پلن)"
+              >
+                <Input
+                  id="biz-extra-sms"
+                  dir="ltr"
+                  type="number"
+                  value={bizExtraSms}
+                  onChange={(e) => setBizExtraSms(e.target.value)}
+                />
+              </FormField>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-[#059669]">
+                  شارژ سریع پیامک:
+                </span>
+                {[100, 200, 500].map((pack) => (
+                  <button
+                    key={pack}
+                    type="button"
+                    onClick={() =>
+                      setBizExtraSms(
+                        String((Number(bizExtraSms) || 0) + pack)
+                      )
+                    }
+                    className="px-2 py-0.5 rounded-lg bg-[#ECFDF5] border border-[#10B981]/40 text-[#059669] text-[10px] font-extrabold hover:bg-[#10B981] hover:text-white cursor-pointer"
+                  >
+                    +{toPersianDigits(pack)} پیامک
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* اعطای دوره تست رایگان با تایید مستقیم مدیر کل + شمارنده روز */}
@@ -2269,11 +2493,19 @@ export const AdminReportsPage: React.FC = () => {
   );
 };
 
-/** ۸. تنظیمات کلان سامانه و اتصال آسان ملی‌پیامک (/admin/settings) */
+/** ۸. تنظیمات کلان سامانه، رمز عبور مدیر کل و اتصال آسان ملی‌پیامک (/admin/settings) */
 export const AdminSettingsPage: React.FC = () => {
-  const { showToast } = usePrototypeData();
-  const [brandName, setBrandName] = useState('Timeto (تایم تو)');
-  const [trialDays, setTrialDays] = useState('14');
+  const {
+    authUser,
+    setAccountPassword,
+    businesses,
+    adminUsers,
+    showToast,
+  } = usePrototypeData();
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [isSavingAdminPass, setIsSavingAdminPass] = useState(false);
+
+  const realBusinessesCount = businesses.filter((b) => !b.isSampleShowcase).length;
 
   // وضعیت درگاه ملی‌پیامک
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -2314,9 +2546,17 @@ export const AdminSettingsPage: React.FC = () => {
     };
   }, []);
 
-  const handleSaveGeneral = (e: React.FormEvent) => {
+  const handleSaveAdminPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('تنظیمات عمومی پلتفرم ذخیره شد.');
+    setIsSavingAdminPass(true);
+    try {
+      const ok = await setAccountPassword(adminNewPassword);
+      if (ok) {
+        setAdminNewPassword('');
+      }
+    } finally {
+      setIsSavingAdminPass(false);
+    }
   };
 
   const handleSaveMelipayamak = async (e: React.FormEvent) => {
@@ -2427,13 +2667,13 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
   return (
     <div className="space-y-7">
       <PageHeader
-        kicker="پیکربندی سامانه · تنظیمات پایه و درگاه پیامک"
-        title="تنظیمات کلان و اتصال سریع ملی‌پیامک"
-        subtitle="فعال‌سازی مستقیم وب‌سرویس خدماتی ملی‌پیامک (MelliPayamak) با ۳ فیلد ساده و تست زنده ارسال پیامک"
+        kicker="پیکربندی سامانه · تنظیمات مدیر کل، امنیت و درگاه پیامک"
+        title="تنظیمات کلان، رمز عبور مدیر کل و اتصال ملی‌پیامک"
+        subtitle="مدیریت رمز عبور ثابت مدیر کل، بررسی پایداری دیتابیس PostgreSQL و فعال‌سازی مستقیم وب‌سرویس خدماتی ملی‌پیامک"
         routePattern="/admin/settings"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'تنظیمات و پیامک' },
+          { label: 'تنظیمات و امنیت' },
         ]}
       />
 
@@ -2464,35 +2704,6 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
             />
           </div>
 
-          {/* راهنمای ۳ گام بسیار ساده */}
-          <div className="p-4 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-2 text-xs text-[#061138]">
-            <p className="font-extrabold text-[#0057FF] flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" />
-              <span>از کجای پنل ملی‌پیامک این ۲ مورد را بردارم؟</span>
-            </p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[#334155] leading-relaxed">
-              <li>
-                وارد{' '}
-                <strong className="text-[#061138]">
-                  console.melipayamak.com
-                </strong>{' '}
-                شوید و از منوی <strong>«وب‌سرویس خدماتی (اشتراکی)»</strong> کلید
-                یا لینک ارسال را کپی کنید و در کادر اول بگذارید (حتی اگر کل لینک{' '}
-                <code className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded">
-                  https://console.melipayamak.com/api/send/shared/...
-                </code>{' '}
-                را کپی کنید، سیستم خودش توکن را جدا می‌کند).
-              </li>
-              <li>
-                از بخش <strong>«الگوها (پترن‌ها)»</strong> کد عددی الگوی تاییدشده‌ای
-                که شامل یک متغیر{' '}
-                <code className="font-mono bg-white px-1 rounded">{'{0}'}</code>{' '}
-                است (مثلاً <code className="font-mono">184520</code>) را در کادر
-                دوم وارد کنید.
-              </li>
-            </ol>
-          </div>
-
           <form onSubmit={handleSaveMelipayamak} className="space-y-4">
             <FormField
               id="mp-api-key"
@@ -2500,7 +2711,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
               hint={
                 maskedSavedKey
                   ? `کلید فعلی ذخیره‌شده: ${maskedSavedKey} (در صورت عدم تغییر، خالی بگذارید)`
-                  : 'مثال: 8f3a9b2c... یا کل آدرس https://console.melipayamak.com/api/send/shared/...'
+                  : 'کلید دسترسی وب‌سرویس اشتراکی ملی‌پیامک خود را وارد کنید'
               }
               required={!maskedSavedKey}
             >
@@ -2511,8 +2722,8 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 onChange={(e) => setApiKeyInput(e.target.value)}
                 placeholder={
                   maskedSavedKey
-                    ? `Saved: ${maskedSavedKey} (Paste new key to replace)`
-                    : 'https://console.melipayamak.com/api/send/shared/YOUR_TOKEN'
+                    ? `Saved: ${maskedSavedKey}`
+                    : 'کلید وب‌سرویس اشتراکی ملی‌پیامک'
                 }
               />
             </FormField>
@@ -2521,7 +2732,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
               <FormField
                 id="mp-body-id"
                 label="۲. کد الگوی پیامک تاییدشده (bodyId)"
-                hint="کد عددی پترن در ملی‌پیامک (مثلاً 184520)"
+                hint="کد عددی پترن تاییدشده در ملی‌پیامک"
                 required
               >
                 <Input
@@ -2529,7 +2740,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   dir="ltr"
                   value={bodyIdInput}
                   onChange={(e) => setBodyIdInput(e.target.value)}
-                  placeholder="184520"
+                  placeholder="کد عددی الگو (bodyId)"
                 />
               </FormField>
 
@@ -2543,7 +2754,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   dir="ltr"
                   value={senderInput}
                   onChange={(e) => setSenderInput(e.target.value)}
-                  placeholder="50004001..."
+                  placeholder="شماره خط (اختیاری)"
                 />
               </FormField>
             </div>
@@ -2581,12 +2792,8 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
           <div className="pt-5 border-t border-[#E2E8F0] space-y-3">
             <h3 className="text-sm font-extrabold text-[#061138] flex items-center gap-2">
               <Send className="w-4 h-4 text-[#0057FF]" />
-              <span>تست زنده ارسال پیامک به موبایل شما</span>
+              <span>تست زنده ارسال پیامک به موبایل مدیر کل</span>
             </h3>
-            <p className="text-xs text-[#64748B]">
-              پس از ذخیره تنظیمات بالا، شماره موبایل خود را وارد کنید تا همین الان
-              یک پیامک واقعی آزمایشی برایتان ارسال شود:
-            </p>
             <form
               onSubmit={handleSendTestSms}
               className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
@@ -2597,7 +2804,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   dir="ltr"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="09123456789"
+                  placeholder={authUser?.phone || 'شماره موبایل ۱۱ رقمی'}
                 />
               </div>
               <Button
@@ -2633,8 +2840,44 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
           </div>
         </Card>
 
-        {/* ستون کناری: کپی متغیرهای لیارا + تنظیمات پایه */}
+        {/* ستون کناری: رمز عبور ثابت مدیر کل + وضعیت پایداری دیتابیس PostgreSQL + متغیرهای لیارا */}
         <div className="lg:col-span-4 space-y-6">
+          <Card padding="lg" className="space-y-4 border-2 border-[#0057FF]/25">
+            <div className="space-y-1">
+              <h3 className="text-sm font-extrabold text-[#061138]">
+                تنظیم یا تغییر رمز عبور ثابت مدیر کل
+              </h3>
+              <p className="text-xs text-[#64748B]">
+                حساب فعال: <strong dir="ltr">{authUser?.phone || 'مدیر کل'}</strong>. با تنظیم رمز عبور ثابت می‌توانید بدون نیاز به پیامک وارد پنل مدیریت کلان شوید.
+              </p>
+            </div>
+            <form onSubmit={handleSaveAdminPassword} className="space-y-3">
+              <FormField id="adm-fixed-pass" label="رمز عبور جدید مدیر کل (حداقل ۶ کاراکتر)" required>
+                <Input
+                  id="adm-fixed-pass"
+                  type="password"
+                  dir="ltr"
+                  placeholder="رمز عبور جدید..."
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                />
+              </FormField>
+              <Button type="submit" variant="primary" fullWidth isLoading={isSavingAdminPass}>
+                ذخیره رمز عبور مدیر کل
+              </Button>
+            </form>
+          </Card>
+
+          <Card padding="lg" className="space-y-2.5 bg-[#ECFDF5] border border-[#10B981]/40 text-xs text-[#065F46]">
+            <p className="font-extrabold text-[#047857] flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>تضمین حفظ ۱۰۰٪ اطلاعات در آپدیت‌های بعدی لیارا</span>
+            </p>
+            <p className="leading-relaxed">
+              تمامی اطلاعات کسب‌وکارهای ثبت‌شده ({toPersianDigits(realBusinessesCount)} مرکز واقعی)، کاربران ({toPersianDigits(adminUsers.length)} کاربر)، نوبت‌ها، پلن‌ها و جایگاه‌های تبلیغاتی در <strong>دیتابیس مستقل PostgreSQL لیارا</strong> ذخیره می‌شوند. با آپدیت کردن کد برنامه هیچ اطلاعاتی از دیتابیس پاک نخواهد شد.
+            </p>
+          </Card>
+
           <Card padding="lg" className="space-y-3 bg-[#061138] text-white border-[#1E293B]">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-extrabold text-[#00E5FF]">
@@ -2649,48 +2892,12 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 <span>کپی</span>
               </button>
             </div>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              علاوه بر فعال‌سازی آنی از فرم روبرو، می‌توانید این ۴ خط را در بخش
-              «متغیرهای محیطی (Env)» لیارا کپی کنید تا پس از ری‌استارت سرور هم
-              ثابت بماند:
-            </p>
             <pre
               dir="ltr"
               className="p-3 rounded-xl bg-black/40 border border-white/10 text-[11px] font-mono text-emerald-300 overflow-x-auto leading-relaxed"
             >
               {envSnippet}
             </pre>
-          </Card>
-
-          <Card padding="lg">
-            <form onSubmit={handleSaveGeneral} className="space-y-4">
-              <h3 className="text-sm font-extrabold text-[#061138] border-b border-[#E2E8F0] pb-2.5">
-                تنظیمات عمومی پلتفرم
-              </h3>
-              <FormField id="adm-brand" label="عنوان تجاری پلتفرم">
-                <Input
-                  id="adm-brand"
-                  value={brandName}
-                  onChange={(e) => setBrandName(e.target.value)}
-                />
-              </FormField>
-              <FormField
-                id="adm-trial"
-                label="مدت دوره آزمایشی رایگان کسب‌وکارها (روز)"
-              >
-                <Input
-                  id="adm-trial"
-                  dir="ltr"
-                  value={trialDays}
-                  onChange={(e) => setTrialDays(e.target.value)}
-                />
-              </FormField>
-              <div className="pt-1">
-                <Button type="submit" variant="outline" fullWidth>
-                  ذخیره تنظیمات عمومی
-                </Button>
-              </div>
-            </form>
           </Card>
         </div>
       </div>

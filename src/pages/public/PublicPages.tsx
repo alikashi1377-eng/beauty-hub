@@ -273,7 +273,7 @@ export const HomePage: React.FC = () => {
         {/* لایه تصویر پس‌زمینه با overflow-hidden مجزا تا منوی نتایج جست‌وجو بریده نشود */}
         <div className="absolute inset-0 rounded-[28px] sm:rounded-[32px] overflow-hidden pointer-events-none">
           <img
-            src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1400&q=85"
+            src={getBeautyPhotoUrl('سالن زیبایی لوکس در تایم تو', 'سالن زیبایی زنانه')}
             alt="سالن زیبایی لوکس در تایم تو"
             className="w-full h-full object-cover object-center opacity-40"
           />
@@ -582,7 +582,7 @@ export const HomePage: React.FC = () => {
               <img
                 src={
                   homeBannerPrimary?.avatarUrl ||
-                  'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80'
+                  getBeautyPhotoUrl('رویال گلزار', 'مو و رنگ')
                 }
                 alt={homeBannerPrimary?.name || 'پکیج استایل و احیای مو'}
                 className="w-full h-full object-cover"
@@ -612,7 +612,7 @@ export const HomePage: React.FC = () => {
                 <img
                   src={
                     homeBannerSecondary?.avatarUrl ||
-                    'https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?auto=format&fit=crop&w=400&q=80'
+                    getBeautyPhotoUrl('کلینیک سارا راد', 'پوست و فیشیال')
                   }
                   alt={homeBannerSecondary?.name || 'پیشنهاد ویژه'}
                   className="w-full h-full object-cover"

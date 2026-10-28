@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   AlertCircle,
   CreditCard,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -36,6 +38,9 @@ import {
   getAppointmentStatusMeta,
   getPlanStaffLimitCount,
   getUpcomingJalaliDays,
+  isValidIranMobile,
+  normalizeIranMobileInput,
+  toEnglishDigitsClient,
   toPersianDigits,
   validateServiceForm,
 } from '../../utils/formatters';
@@ -2204,10 +2209,10 @@ export const BusinessCustomersPage: React.FC = () => {
           },
           {
             key: 'phone',
-            header: 'شماره همراه',
+            header: 'شماره همراه (کامل)',
             render: (r) => (
-              <span dir="ltr" className="text-xs font-mono tabular-nums">
-                {r.phoneMasked}
+              <span dir="ltr" className="text-xs font-mono font-bold text-[#061138] tabular-nums">
+                {r.phone || r.phoneMasked}
               </span>
             ),
           },
@@ -2251,11 +2256,17 @@ export const BusinessCustomersPage: React.FC = () => {
         isOpen={Boolean(selectedCustomer)}
         onClose={() => setSelectedCustomer(null)}
         title={`پرونده مشتری: ${selectedCustomer?.fullName ?? ''}`}
-        description="سوابق مراجعات و یادداشت‌های تخصصی سالن"
+        description="سوابق مراجعات، شماره تماس کامل و یادداشت‌های تخصصی سالن"
       >
         {selectedCustomer ? (
           <div className="space-y-4 text-xs">
             <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-2">
+              <p>
+                <strong className="text-[#1E1B2E]">شماره همراه مشتری:</strong>{' '}
+                <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">
+                  {selectedCustomer.phone || selectedCustomer.phoneMasked}
+                </span>
+              </p>
               <p>
                 <strong className="text-[#1E1B2E]">خدمت پرتکرار:</strong>{' '}
                 {selectedCustomer.favoriteService}
@@ -2742,16 +2753,21 @@ export const BusinessWorkingHoursPage: React.FC = () => {
   );
 };
 
-/** ۱۰. تبلیغات، ارتقای جایگاه و کمپین‌ها (/app/marketing) */
+/** ۱۰. تبلیغات، ارتقای جایگاه، پنل ارسال پیامک مشتریان و کمپین‌ها (/app/marketing) */
 export const BusinessMarketingPage: React.FC = () => {
   const {
     currentBusiness,
     businesses,
+    customers,
+    plans,
+    activePlanId,
     campaigns,
     addCampaign,
     updateBusinessProfile,
     adPackages,
     paymentOrders,
+    smsLogs,
+    sendBusinessCustomerSms,
     showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -2766,8 +2782,117 @@ export const BusinessMarketingPage: React.FC = () => {
     null
   );
 
+  // استیت پنل ارسال پیامک مستقیم به مشتریان سالن
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>(() =>
+    customers.slice(0, 2).map((c) => c.id)
+  );
+  const [customPhoneInput, setCustomPhoneInput] = useState('');
+  const [customRecipients, setCustomRecipients] = useState<
+    Array<{ name: string; phone: string }>
+  >([]);
+  const [smsTemplateTitle, setSmsTemplateTitle] = useState('یادآور و دعوت مراجعه مجدد');
+  const [smsMessageText, setSmsMessageText] = useState(
+    `مشتری عزیز، از همراهی شما با ${currentBiz?.name || 'سالن زیبایی ما'} سپاسگزاریم. با کد تخفیف ۱۵٪ منتظر دیدار مجدد شما در تایم تو هستیم.`
+  );
+  const [isSendingSms, setIsSendingSms] = useState(false);
+
   const isSponsoredActive = Boolean(currentBiz?.isSponsored);
   const extraSms = currentBiz?.extraSmsBalance ?? 0;
+  const activePlanObj =
+    plans.find(
+      (p) => p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
+    ) || plans[0];
+  const planSmsQuota = activePlanObj?.smsQuotaMonthly ?? 0;
+  const smsSentSoFar = currentBiz?.smsSentCount ?? 0;
+  const totalSmsQuota = planSmsQuota + extraSms;
+  const remainingSms = Math.max(0, totalSmsQuota - smsSentSoFar);
+
+  const smsPresets = [
+    {
+      label: 'یادآور و دعوت مراجعه مجدد',
+      text: `مشتری عزیز، از همراهی شما با ${currentBiz?.name || 'سالن زیبایی ما'} سپاسگزاریم. با کد تخفیف ۱۵٪ منتظر دیدار مجدد شما در تایم تو هستیم.`,
+    },
+    {
+      label: 'تخفیف ویژه آخر هفته',
+      text: `پیشنهاد ویژه ${currentBiz?.name || 'سالن ما'}: تا ۲۰٪ تخفیف رزرو آنلاین خدمات زیبایی برای این هفته فعال شد.`,
+    },
+    {
+      label: 'تبریک و هدیه وفاداری',
+      text: `مشتری وفادار عزیز، هدیه اعتبار ویژه باشگاه مشتریان در پرونده شما در ${currentBiz?.name || 'سالن'} شارژ شد.`,
+    },
+    {
+      label: 'اطلاع‌رسانی ظرفیت خالی',
+      text: `ظرفیت نوبت‌های جدید ${currentBiz?.name || 'سالن زیبایی'} در پلتفرم Timeto باز شد. جهت رزرو سریع به پروفایل ما مراجعه فرمایید.`,
+    },
+  ];
+
+  const handleToggleCustomerRecipient = (id: string) => {
+    setSelectedCustomerIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllCustomers = () => {
+    if (selectedCustomerIds.length === customers.length) {
+      setSelectedCustomerIds([]);
+    } else {
+      setSelectedCustomerIds(customers.map((c) => c.id));
+    }
+  };
+
+  const handleAddCustomPhone = () => {
+    const clean = normalizeIranMobileInput(customPhoneInput);
+    if (!isValidIranMobile(clean)) {
+      showToast('شماره موبایل باید ۱۱ رقم معتبر با پیش‌شماره 09 باشد.');
+      return;
+    }
+    if (!customRecipients.some((r) => r.phone === clean)) {
+      setCustomRecipients((prev) => [
+        ...prev,
+        { name: `مشتری (${clean})`, phone: clean },
+      ]);
+    }
+    setCustomPhoneInput('');
+  };
+
+  const handleSendCustomerSmsBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const chosenCustomers = customers
+      .filter((c) => selectedCustomerIds.includes(c.id))
+      .map((c) => ({
+        name: c.fullName,
+        phone: c.phone || c.phoneMasked,
+      }));
+    const allRecipients = [...chosenCustomers, ...customRecipients];
+    if (allRecipients.length === 0) {
+      showToast('لطفاً حداقل یک مشتری را از لیست انتخاب کنید یا شماره موبایل وارد نمایید.');
+      return;
+    }
+    if (allRecipients.length > remainingSms) {
+      showToast(
+        `ظرفیت پیامک باقی‌مانده سالن شما (${toPersianDigits(
+          remainingSms
+        )} عدد) کمتر از تعداد گیرندگان انتخابی (${toPersianDigits(
+          allRecipients.length
+        )} نفر) است. لطفاً ابتدا بسته پیامک اضافه تهیه کنید.`
+      );
+      return;
+    }
+    setIsSendingSms(true);
+    try {
+      const ok = await sendBusinessCustomerSms({
+        businessId: currentBiz?.id,
+        recipientPhones: allRecipients.map((r) => r.phone),
+        messageText: smsMessageText,
+        templateTitle: smsTemplateTitle,
+      });
+      if (ok) {
+        setCustomRecipients([]);
+      }
+    } finally {
+      setIsSendingSms(false);
+    }
+  };
 
   const searchBoostPkg = adPackages.find((p) => p.slot === 'SEARCH_TOP') ?? {
     id: 'ad-search-pin',
@@ -2888,6 +3013,267 @@ export const BusinessMarketingPage: React.FC = () => {
           </div>
         </Card>
       ) : null}
+
+      {/* پنل اختصاصی ارسال پیامک به مشتریان سالن + گزارش دقیق مصرف و سهمیه باقی‌مانده */}
+      <Card className="border-2 border-[#0057FF]/30 bg-white space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-[#0057FF] text-white flex items-center justify-center shrink-0">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+                پنل ارسال پیامک به مشتریان سالن و گزارش سهمیه پیامک
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                مشتریان خود را به راحتی تیک بزنید، متن آماده انتخاب کنید و در لحظه پیامک بفرستید
+              </p>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() =>
+              setCheckoutItem({
+                itemType: 'SMS_PACK',
+                itemId: smsAddonPkg.id,
+                itemTitle: smsAddonPkg.title,
+                baseAmountToman: smsAddonPkg.priceToman,
+                smsCount: smsAddonPkg.smsCount ?? 200,
+              })
+            }
+          >
+            <Plus className="w-4 h-4" />
+            <span>شارژ و خرید بسته پیامک اضافه ({toPersianDigits(smsAddonPkg.smsCount ?? 200)} تایی)</span>
+          </Button>
+        </div>
+
+        {/* کارت‌های شمارنده وضعیت پیامک سالن */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-1">
+            <span className="text-[11px] font-bold text-[#64748B] block">
+              سهمیه ماهانه پلن ({activePlanObj?.name})
+            </span>
+            <p className="text-lg sm:text-xl font-extrabold text-[#061138] tabular-nums">
+              {toPersianDigits(planSmsQuota)} پیامک
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-1">
+            <span className="text-[11px] font-bold text-[#047857] block">
+              شارژ پیامک اضافه (خریداری‌شده)
+            </span>
+            <p className="text-lg sm:text-xl font-extrabold text-[#059669] tabular-nums">
+              +{toPersianDigits(extraSms)} پیامک
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] space-y-1">
+            <span className="text-[11px] font-bold text-[#B45309] block">
+              پیامک‌های ارسال‌شده تا کنون
+            </span>
+            <p className="text-lg sm:text-xl font-extrabold text-[#D97706] tabular-nums">
+              {toPersianDigits(smsSentSoFar)} پیامک
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#061138] text-white space-y-1">
+            <span className="text-[11px] font-bold text-[#00E5FF] block">
+              ظرفیت باقی‌مانده قابل ارسال
+            </span>
+            <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              {toPersianDigits(remainingSms)} پیامک
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSendCustomerSmsBatch} className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* ستون انتخاب آسان گیرندگان از لیست مشتریان */}
+          <div className="lg:col-span-5 space-y-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-[#061138]">
+                ۱. انتخاب مشتریان گیرنده ({toPersianDigits(selectedCustomerIds.length + customRecipients.length)} نفر)
+              </span>
+              <button
+                type="button"
+                onClick={handleSelectAllCustomers}
+                className="text-[11px] font-extrabold text-[#0057FF] hover:underline cursor-pointer"
+              >
+                {selectedCustomerIds.length === customers.length
+                  ? 'لغو انتخاب همه'
+                  : 'انتخاب همه مشتریان'}
+              </button>
+            </div>
+
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              {customers.map((c) => {
+                const checked = selectedCustomerIds.includes(c.id);
+                return (
+                  <label
+                    key={c.id}
+                    className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      checked
+                        ? 'bg-[#E0ECFF] border-[#0057FF] text-[#061138]'
+                        : 'bg-white border-[#E2E8F0] text-[#334155]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleToggleCustomerRecipient(c.id)}
+                        className="accent-[#0057FF] w-4 h-4 shrink-0"
+                      />
+                      <span className="font-bold truncate">{c.fullName}</span>
+                    </div>
+                    <span dir="ltr" className="font-mono text-[11px] text-[#0057FF] font-bold shrink-0">
+                      {c.phone || c.phoneMasked}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* افزودن شماره موبایل دلخواه */}
+            <div className="pt-2 border-t border-[#E2E8F0] space-y-2">
+              <label htmlFor="sms-custom-phone" className="block text-[11px] font-bold text-[#475569]">
+                افزودن شماره موبایل جدید خارج از لیست:
+              </label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id="sms-custom-phone"
+                  dir="ltr"
+                  maxLength={11}
+                  placeholder="09131234567"
+                  value={customPhoneInput}
+                  onChange={(e) =>
+                    setCustomPhoneInput(normalizeIranMobileInput(e.target.value))
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddCustomPhone}
+                >
+                  افزودن
+                </Button>
+              </div>
+              {customRecipients.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {customRecipients.map((r) => (
+                    <span
+                      key={r.phone}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-bold"
+                    >
+                      <span dir="ltr">{r.phone}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCustomRecipients((prev) =>
+                            prev.filter((item) => item.phone !== r.phone)
+                          )
+                        }
+                        className="text-[#EF4444] hover:text-[#991B1B] cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* ستون انتخاب قالب آماده و متن پیامک */}
+          <div className="lg:col-span-7 space-y-3.5">
+            <div className="space-y-1.5">
+              <span className="text-xs font-extrabold text-[#061138] block">
+                ۲. انتخاب الگوی آماده پیامک (یا نوشتن متن دلخواه):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {smsPresets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => {
+                      setSmsTemplateTitle(preset.label);
+                      setSmsMessageText(preset.text);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors border ${
+                      smsTemplateTitle === preset.label
+                        ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                        : 'bg-[#F3F6FC] text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <FormField id="sms-msg-body" label="متن پیامک ارسالی به مشتریان" required>
+              <Textarea
+                id="sms-msg-body"
+                rows={3}
+                value={smsMessageText}
+                onChange={(e) => setSmsMessageText(e.target.value)}
+              />
+            </FormField>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <span className="text-xs text-[#64748B] tabular-nums">
+                تعداد کل گیرندگان انتخابی:{' '}
+                <strong className="text-[#061138]">
+                  {toPersianDigits(selectedCustomerIds.length + customRecipients.length)} نفر
+                </strong>{' '}
+                (کسر از سهمیه: {toPersianDigits(selectedCustomerIds.length + customRecipients.length)} پیامک)
+              </span>
+              <Button
+                type="submit"
+                variant="primary"
+                isLoading={isSendingSms}
+                disabled={remainingSms <= 0}
+              >
+                <Send className="w-4 h-4" />
+                <span>ارسال فوری پیامک به مشتریان</span>
+              </Button>
+            </div>
+          </div>
+        </form>
+
+        {/* جدول گزارش آخرین پیامک‌های ارسال‌شده */}
+        {smsLogs.filter((l) => !currentBiz || l.businessId === currentBiz.id).length > 0 ? (
+          <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+            <h3 className="text-xs font-extrabold text-[#061138]">
+              تاریخچه پیامک‌های ارسال‌شده به مشتریان سالن شما:
+            </h3>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {smsLogs
+                .filter((l) => !currentBiz || l.businessId === currentBiz.id)
+                .slice(0, 6)
+                .map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="space-y-0.5 max-w-xl">
+                      <span className="font-extrabold text-[#0057FF]">
+                        {log.templateTitle} ({toPersianDigits(log.recipientsCount)} گیرنده)
+                      </span>
+                      <p className="text-[#334155] line-clamp-1">{log.messageText}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-[#64748B] tabular-nums">
+                        {log.createdAtJalali}
+                      </span>
+                      <StatusBadge label="ارسال شد" tone="success" />
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        ) : null}
+      </Card>
 
       {/* بخش ۱: بسته‌های تبلیغاتی و ارتقای جایگاه (Sponsored Boost & Add-on SMS) */}
       <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 space-y-5 border border-[#1E293B] shadow-md">
@@ -3683,21 +4069,84 @@ export const BusinessSubscriptionPage: React.FC = () => {
   );
 };
 
-/** ۱۳. تنظیمات پنل کسب‌وکار و اتصال سریع ملی‌پیامک (/app/settings) */
+/** ۱۳. تنظیمات پنل کسب‌وکار، رمز عبور ثابت و اتصال سریع ملی‌پیامک (/app/settings) */
 export const BusinessSettingsPage: React.FC = () => {
-  const { showToast } = usePrototypeData();
+  const {
+    authUser,
+    setAccountPassword,
+    requestOtpLogin,
+    resetPasswordWithOtp,
+    showToast,
+  } = usePrototypeData();
   const [activeTab, setActiveTab] = useState('notifications');
+  const [fixedPassword, setFixedPassword] = useState('');
+  const [isSavingPass, setIsSavingPass] = useState(false);
+
+  // بازیابی رمز عبور با کد پیامکی
+  const [resetPhone, setResetPhone] = useState(authUser?.phone || '');
+  const [resetOtpCode, setResetOtpCode] = useState('');
+  const [resetNewPass, setResetNewPass] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPass(true);
+    try {
+      const ok = await setAccountPassword(fixedPassword);
+      if (ok) {
+        setFixedPassword('');
+      }
+    } finally {
+      setIsSavingPass(false);
+    }
+  };
+
+  const handleSendResetOtp = async () => {
+    const clean = normalizeIranMobileInput(resetPhone || authUser?.phone || '');
+    if (!isValidIranMobile(clean)) {
+      showToast('شماره موبایل ۱۱ رقمی معتبر وارد کنید.');
+      return;
+    }
+    setIsResetting(true);
+    try {
+      await requestOtpLogin(clean);
+      setResetPhone(clean);
+      setOtpSent(true);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'خطا در ارسال کد تایید.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const handleResetWithOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = normalizeIranMobileInput(resetPhone || authUser?.phone || '');
+    const cleanCode = toEnglishDigitsClient(resetOtpCode).replace(/\D/g, '').slice(0, 6);
+    setIsResetting(true);
+    try {
+      const ok = await resetPasswordWithOtp(cleanPhone, cleanCode, resetNewPass);
+      if (ok) {
+        setOtpSent(false);
+        setResetOtpCode('');
+        setResetNewPass('');
+      }
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="تنظیمات · پیکربندی سالن و درگاه پیامک"
-        title="تنظیمات پنل کسب‌وکار و اتصال ملی‌پیامک"
-        subtitle="اتصال ۱ دقیقه‌ای پنل پیامک ملی‌پیامک (MelliPayamak)، مدیریت قوانین نوبت‌دهی و یادآورهای پیامکی"
+        kicker="تنظیمات · پیکربندی سالن، رمز عبور و درگاه پیامک"
+        title="تنظیمات پنل کسب‌وکار، امنیت و اتصال ملی‌پیامک"
+        subtitle="اتصال ۱ دقیقه‌ای پنل پیامک ملی‌پیامک (MelliPayamak)، تعریف رمز عبور ثابت و مدیریت قوانین نوبت‌دهی"
         routePattern="/app/settings"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'تنظیمات و پیامک' },
+          { label: 'تنظیمات و امنیت' },
         ]}
       />
 
@@ -3708,7 +4157,7 @@ export const BusinessSettingsPage: React.FC = () => {
           tabs={[
             { id: 'notifications', label: 'اتصال ملی‌پیامک و اعلان‌ها' },
             { id: 'booking_rules', label: 'قوانین رزرو و لغو' },
-            { id: 'security', label: 'امنیت و دسترسی' },
+            { id: 'security', label: 'تنظیم و بازیابی رمز عبور' },
           ]}
         />
 
@@ -3755,62 +4204,144 @@ export const BusinessSettingsPage: React.FC = () => {
               </div>
             </Card>
           </div>
-        ) : (
+        ) : activeTab === 'booking_rules' ? (
           <Card padding="lg" className="space-y-5">
-            {activeTab === 'booking_rules' ? (
-              <>
-                <FormField
-                  id="set-buffer"
-                  label="فاصله استراحت بین دو نوبت متوالی"
-                  hint="این زمان برای آماده‌سازی میز کار بین دو مراجع در نظر گرفته می‌شود"
-                >
-                  <Select
-                    id="set-buffer"
-                    defaultValue="15"
-                    options={[
-                      { value: '0', label: 'بدون فاصله' },
-                      { value: '15', label: '۱۵ دقیقه' },
-                      { value: '30', label: '۳۰ دقیقه' },
-                    ]}
-                  />
-                </FormField>
+            <FormField
+              id="set-buffer"
+              label="فاصله استراحت بین دو نوبت متوالی"
+              hint="این زمان برای آماده‌سازی میز کار بین دو مراجع در نظر گرفته می‌شود"
+            >
+              <Select
+                id="set-buffer"
+                defaultValue="15"
+                options={[
+                  { value: '0', label: 'بدون فاصله' },
+                  { value: '15', label: '۱۵ دقیقه' },
+                  { value: '30', label: '۳۰ دقیقه' },
+                ]}
+              />
+            </FormField>
 
-                <FormField
-                  id="set-cancel"
-                  label="حداقل زمان مجاز برای لغو نوبت توسط مشتری"
-                >
-                  <Select
-                    id="set-cancel"
-                    defaultValue="24"
-                    options={[
-                      { value: '12', label: '۱۲ ساعت پیش از نوبت' },
-                      { value: '24', label: '۲۴ ساعت پیش از نوبت' },
-                      { value: '48', label: '۴۸ ساعت پیش از نوبت' },
-                    ]}
-                  />
-                </FormField>
-              </>
-            ) : (
-              <div className="p-4 rounded-xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-start gap-3 text-xs text-[#334155]">
-                <ShieldCheck className="w-5 h-5 text-[#0057FF] shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
-                  سطوح دسترسی مدیر سالن، منشی و متخصصان از طریق احراز هویت پیامکی
-                  محافظت می‌شود.
-                </p>
-              </div>
-            )}
+            <FormField
+              id="set-cancel"
+              label="حداقل زمان مجاز برای لغو نوبت توسط مشتری"
+            >
+              <Select
+                id="set-cancel"
+                defaultValue="24"
+                options={[
+                  { value: '12', label: '۱۲ ساعت پیش از نوبت' },
+                  { value: '24', label: '۲۴ ساعت پیش از نوبت' },
+                  { value: '48', label: '۴۸ ساعت پیش از نوبت' },
+                ]}
+              />
+            </FormField>
 
             <div className="pt-2">
               <Button
                 variant="primary"
                 onClick={() =>
-                  showToast('تنظیمات پنل کسب‌وکار با موفقیت ذخیره شد.')
+                  showToast('تنظیمات قوانین رزرو کسب‌وکار با موفقیت ذخیره شد.')
                 }
               >
                 ذخیره تنظیمات
               </Button>
             </div>
           </Card>
+        ) : (
+          <div className="space-y-5">
+            <Card padding="lg" className="space-y-4 border-2 border-[#0057FF]/25">
+              <div className="space-y-1">
+                <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  ۱. تعریف یا تغییر مستقیم رمز عبور ثابت حساب کسب‌وکار
+                </h3>
+                <p className="text-xs text-[#64748B]">
+                  با تعریف رمز عبور ثابت، در مراجعات بعدی بدون نیاز به کد پیامکی می‌توانید وارد پنل مدیریت سالن شوید.
+                </p>
+              </div>
+              <form onSubmit={handleSetPassword} className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+                <div className="flex-1">
+                  <FormField id="biz-set-pass" label="رمز عبور ثابت جدید (حداقل ۶ کاراکتر)" required>
+                    <Input
+                      id="biz-set-pass"
+                      type="password"
+                      dir="ltr"
+                      placeholder="حداقل ۶ کاراکتر..."
+                      value={fixedPassword}
+                      onChange={(e) => setFixedPassword(e.target.value)}
+                    />
+                  </FormField>
+                </div>
+                <Button type="submit" variant="primary" isLoading={isSavingPass}>
+                  ذخیره رمز عبور ثابت
+                </Button>
+              </form>
+            </Card>
+
+            <Card padding="lg" className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  ۲. فراموشی رمز عبور / بازنشانی رمز با کد تایید پیامکی
+                </h3>
+                <p className="text-xs text-[#64748B]">
+                  اگر رمز عبور قبلی را فراموش کرده‌اید، با دریافت کد پیامکی به شماره موبایل خود رمز جدید ثبت کنید:
+                </p>
+              </div>
+              <form onSubmit={handleResetWithOtp} className="space-y-4">
+                <FormField id="biz-reset-phone" label="شماره موبایل صاحب کسب‌وکار" required>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="biz-reset-phone"
+                      dir="ltr"
+                      maxLength={11}
+                      placeholder="09131234567"
+                      value={resetPhone}
+                      onChange={(e) => setResetPhone(normalizeIranMobileInput(e.target.value))}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleSendResetOtp()}
+                      disabled={isResetting}
+                    >
+                      {otpSent ? 'ارسال مجدد کد' : 'دریافت کد پیامکی'}
+                    </Button>
+                  </div>
+                </FormField>
+
+                {otpSent ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField id="biz-reset-code" label="کد ۶ رقمی پیامک‌شده" required>
+                      <Input
+                        id="biz-reset-code"
+                        dir="ltr"
+                        maxLength={6}
+                        placeholder="123456"
+                        value={resetOtpCode}
+                        onChange={(e) => setResetOtpCode(e.target.value)}
+                      />
+                    </FormField>
+                    <FormField id="biz-reset-newpass" label="رمز عبور جدید" required>
+                      <Input
+                        id="biz-reset-newpass"
+                        type="password"
+                        dir="ltr"
+                        placeholder="حداقل ۶ کاراکتر"
+                        value={resetNewPass}
+                        onChange={(e) => setResetNewPass(e.target.value)}
+                      />
+                    </FormField>
+                    <div className="sm:col-span-2">
+                      <Button type="submit" variant="primary" isLoading={isResetting}>
+                        تایید کد و ثبت رمز عبور جدید
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </form>
+            </Card>
+          </div>
         )}
       </div>
     </div>

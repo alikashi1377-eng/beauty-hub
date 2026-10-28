@@ -133,10 +133,41 @@ export interface BusinessItem {
   sponsoredExpiresJalali?: string;
   trialDaysRemaining?: number;
   extraSmsBalance?: number;
+  smsSentCount?: number;
   instagramHandle?: string;
   mapLat?: number;
   mapLng?: number;
   avatarUrl?: string;
+  isSampleShowcase?: boolean;
+  ownerName?: string;
+  ownerPhone?: string;
+  createdAtJalali?: string;
+}
+
+export interface SmsMessageLogItem {
+  id: string;
+  businessId: string;
+  businessName?: string;
+  recipientsCount: number;
+  recipientPhones: string[];
+  messageText: string;
+  templateTitle?: string;
+  createdAtJalali: string;
+  status: 'SENT' | 'DELIVERED' | 'SIMULATED';
+}
+
+export interface AdminNotificationItem {
+  id: string;
+  type: 'NEW_BUSINESS' | 'NEW_PAYMENT_ORDER' | 'SMS_TOPUP_REQUEST';
+  title: string;
+  message: string;
+  businessId?: string;
+  businessName?: string;
+  ownerName?: string;
+  ownerPhone?: string;
+  city?: string;
+  createdAtJalali: string;
+  isRead: boolean;
 }
 
 export type SponsoredPlacementSlot =
@@ -210,6 +241,7 @@ export interface CustomerRecord {
   id: string;
   fullName: string;
   phoneMasked: string;
+  phone?: string;
   city: string;
   totalVisits: number;
   lastVisitJalali: string;
@@ -311,6 +343,7 @@ export interface AdminUserRecord {
   id: string;
   fullName: string;
   phoneMasked: string;
+  phone?: string;
   roleLabel: string;
   city: string;
   joinedJalali: string;

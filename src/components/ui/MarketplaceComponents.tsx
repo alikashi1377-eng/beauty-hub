@@ -283,6 +283,11 @@ export const BusinessCard: React.FC<{
           <div className="flex-1 min-w-0 flex flex-col justify-between gap-1.5">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                {business.isSampleShowcase ? (
+                  <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
+                    نمونه نمایشی
+                  </span>
+                ) : null}
                 {business.isSponsored ? (
                   <span className="px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold shrink-0">
                     {business.sponsoredLabel || 'پیشنهاد ویژه'}
@@ -358,19 +363,31 @@ export const BusinessCard: React.FC<{
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0 mr-auto">
-            <Link
-              to={profileLink}
-              className="px-2.5 py-1.5 rounded-full text-[11px] font-bold text-[#334155] bg-[#F3F6FC] hover:bg-[#E0ECFF] hover:text-[#0057FF] transition-colors whitespace-nowrap"
-            >
-              پروفایل
-            </Link>
-            <Link
-              to={`/booking/${business.slug}`}
-              className="px-3.5 py-1.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-[11px] font-extrabold inline-flex items-center gap-1 transition-colors shadow-2xs whitespace-nowrap"
-            >
-              <span>رزرو نوبت</span>
-              <ArrowLeft className="w-3 h-3 shrink-0" />
-            </Link>
+            {business.isSampleShowcase ? (
+              <Link
+                to={profileLink}
+                className="px-3.5 py-1.5 rounded-full bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 transition-colors shadow-2xs whitespace-nowrap"
+              >
+                <span>مشاهده نمونه نمایشی</span>
+                <ArrowLeft className="w-3 h-3 shrink-0" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to={profileLink}
+                  className="px-2.5 py-1.5 rounded-full text-[11px] font-bold text-[#334155] bg-[#F3F6FC] hover:bg-[#E0ECFF] hover:text-[#0057FF] transition-colors whitespace-nowrap"
+                >
+                  پروفایل
+                </Link>
+                <Link
+                  to={`/booking/${business.slug}`}
+                  className="px-3.5 py-1.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-[11px] font-extrabold inline-flex items-center gap-1 transition-colors shadow-2xs whitespace-nowrap"
+                >
+                  <span>رزرو نوبت</span>
+                  <ArrowLeft className="w-3 h-3 shrink-0" />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </Card>
@@ -405,6 +422,11 @@ export const BusinessCard: React.FC<{
 
           {/* نشان نوع مرکز یا آگهی ویژه در بالا راست */}
           <div className="absolute top-2.5 right-2.5 flex flex-wrap items-center gap-1.5 max-w-[78%]">
+            {business.isSampleShowcase ? (
+              <span className="px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B] text-[10px] font-extrabold shadow-xs truncate">
+                نمونه نمایشی پلتفرم
+              </span>
+            ) : null}
             {business.isSponsored ? (
               <span className="px-2.5 py-1 rounded-full bg-gradient-to-l from-[#061138] to-[#0057FF] text-[#00E5FF] text-[11px] font-extrabold shadow-xs truncate">
                 ★ {business.sponsoredLabel || 'پیشنهاد ویژه'}
@@ -504,19 +526,31 @@ export const BusinessCard: React.FC<{
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0 mr-auto">
-            <Link
-              to={profileLink}
-              className="px-3 py-1.5 rounded-full text-xs font-bold text-[#334155] bg-[#F3F6FC] hover:bg-[#E0ECFF] hover:text-[#0057FF] transition-colors whitespace-nowrap"
-            >
-              پروفایل
-            </Link>
-            <Link
-              to={`/booking/${business.slug}`}
-              className="px-3.5 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.42)] whitespace-nowrap"
-            >
-              <span>رزرو نوبت</span>
-              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-            </Link>
+            {business.isSampleShowcase ? (
+              <Link
+                to={profileLink}
+                className="px-4 py-2 rounded-full bg-[#061138] hover:bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-xs whitespace-nowrap"
+              >
+                <span>مشاهده پروفایل نمونه</span>
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to={profileLink}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold text-[#334155] bg-[#F3F6FC] hover:bg-[#E0ECFF] hover:text-[#0057FF] transition-colors whitespace-nowrap"
+                >
+                  پروفایل
+                </Link>
+                <Link
+                  to={`/booking/${business.slug}`}
+                  className="px-3.5 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.42)] whitespace-nowrap"
+                >
+                  <span>رزرو نوبت</span>
+                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

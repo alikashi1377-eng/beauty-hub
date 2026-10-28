@@ -146,10 +146,13 @@ export const CustomerLoginPage: React.FC = () => {
     verifyOtpLogin,
     loginWithPassword,
     setAccountPassword,
+    resetPasswordWithOtp,
     logoutUser,
   } = usePrototypeData();
 
   const [authMethod, setAuthMethod] = useState<'otp' | 'password'>('otp');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetOtpSent, setResetOtpSent] = useState(false);
   const [phone, setPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
@@ -292,6 +295,68 @@ export const CustomerLoginPage: React.FC = () => {
     }
   };
 
+  const handleRequestResetOtp = async () => {
+    const normalizedPhone = normalizeIranMobileInput(phone);
+    if (!isValidIranMobile(normalizedPhone)) {
+      setError('لطفاً ابتدا شماره موبایل ۱۱ رقمی معتبر خود را وارد کنید.');
+      return;
+    }
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await requestOtpLogin(normalizedPhone);
+      setResetOtpSent(true);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'خطا در ارسال کد بازیابی رمز عبور.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConfirmResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const normalizedPhone = normalizeIranMobileInput(phone);
+    const trimmedCode = toEnglishDigitsClient(otpCode)
+      .replace(/\D/g, '')
+      .slice(0, 6);
+    if (!isValidIranMobile(normalizedPhone)) {
+      setError('شماره موبایل معتبر نیست.');
+      return;
+    }
+    if (!/^\d{6}$/.test(trimmedCode)) {
+      setError('کد تایید ۶ رقمی پیامک‌شده را وارد کنید.');
+      return;
+    }
+    if (newPassword.trim().length < 6) {
+      setError('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
+      return;
+    }
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const ok = await resetPasswordWithOtp(
+        normalizedPhone,
+        trimmedCode,
+        newPassword
+      );
+      if (ok) {
+        setIsResettingPassword(false);
+        setResetOtpSent(false);
+        setOtpCode('');
+        setNewPassword('');
+        navigate('/me', { replace: true });
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'خطا در بازنشانی رمز عبور.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto my-4 sm:my-8 space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center rounded-[32px] border border-[#CBD5E1] bg-white p-6 sm:p-10 shadow-[0_14px_45px_-20px_rgba(6,17,56,0.14)]">
@@ -388,54 +453,180 @@ export const CustomerLoginPage: React.FC = () => {
           ) : null}
 
           {authMethod === 'password' ? (
-            <form onSubmit={handlePasswordLogin} className="space-y-4" noValidate>
-              <FormField
-                id="login-pass-phone"
-                label="شماره تلفن همراه (۱۱ رقم با 09)"
-                required
-                error={error}
+            isResettingPassword ? (
+              <form
+                onSubmit={handleConfirmResetPassword}
+                className="space-y-4 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]"
+                noValidate
               >
-                <Input
+                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
+                  <span className="text-xs font-extrabold text-[#0057FF]">
+                    بازیابی / تعریف رمز عبور جدید با کد پیامکی
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResettingPassword(false);
+                      setResetOtpSent(false);
+                      setError('');
+                    }}
+                    className="text-[11px] font-bold text-[#64748B] hover:text-[#061138] cursor-pointer"
+                  >
+                    بازگشت به ورود با رمز
+                  </button>
+                </div>
+
+                <FormField
+                  id="reset-pass-phone"
+                  label="شماره تلفن همراه (۱۱ رقم با 09)"
+                  required
+                  error={error}
+                >
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="reset-pass-phone"
+                      type="tel"
+                      inputMode="tel"
+                      maxLength={11}
+                      dir="ltr"
+                      placeholder="09138201042"
+                      value={phone}
+                      onChange={(e) =>
+                        setPhone(normalizeIranMobileInput(e.target.value))
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => void handleRequestResetOtp()}
+                      disabled={isSubmitting}
+                    >
+                      {resetOtpSent ? 'ارسال مجدد کد' : 'ارسال کد پیامکی'}
+                    </Button>
+                  </div>
+                </FormField>
+
+                {resetOtpSent ? (
+                  <>
+                    <FormField
+                      id="reset-otp-code"
+                      label="کد ۶ رقمی پیامک‌شده"
+                      required
+                    >
+                      <Input
+                        id="reset-otp-code"
+                        dir="ltr"
+                        maxLength={6}
+                        inputMode="numeric"
+                        placeholder="123456"
+                        value={otpCode}
+                        onChange={(e) =>
+                          setOtpCode(
+                            toEnglishDigitsClient(e.target.value)
+                              .replace(/\D/g, '')
+                              .slice(0, 6)
+                          )
+                        }
+                      />
+                    </FormField>
+
+                    <FormField
+                      id="reset-new-password"
+                      label="رمز عبور جدید (حداقل ۶ کاراکتر)"
+                      required
+                    >
+                      <Input
+                        id="reset-new-password"
+                        type="password"
+                        dir="ltr"
+                        placeholder="رمز عبور جدید..."
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </FormField>
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="lg"
+                      fullWidth
+                      isLoading={isSubmitting}
+                    >
+                      <span>ثبت رمز جدید و ورود به حساب</span>
+                      <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-[#64748B]">
+                    شماره موبایل خود را وارد کرده و دکمه «ارسال کد پیامکی» را بزنید تا بتوانید رمز عبور جدید تعریف کنید.
+                  </p>
+                )}
+              </form>
+            ) : (
+              <form onSubmit={handlePasswordLogin} className="space-y-4" noValidate>
+                <FormField
                   id="login-pass-phone"
-                  type="tel"
-                  inputMode="tel"
-                  maxLength={11}
-                  dir="ltr"
-                  placeholder="09138201042"
-                  value={phone}
-                  hasError={Boolean(error)}
-                  onChange={(e) => setPhone(normalizeIranMobileInput(e.target.value))}
-                />
-              </FormField>
+                  label="شماره تلفن همراه (۱۱ رقم با 09)"
+                  required
+                  error={error}
+                >
+                  <Input
+                    id="login-pass-phone"
+                    type="tel"
+                    inputMode="tel"
+                    maxLength={11}
+                    dir="ltr"
+                    placeholder="09138201042"
+                    value={phone}
+                    hasError={Boolean(error)}
+                    onChange={(e) => setPhone(normalizeIranMobileInput(e.target.value))}
+                  />
+                </FormField>
 
-              <FormField
-                id="login-fixed-password"
-                label="رمز عبور ثابت"
-                hint="اگر قبلاً در حساب خود رمز عبور ثابت تعریف کرده‌اید، بدون نیاز به پیامک وارد شوید"
-                required
-              >
-                <Input
+                <FormField
                   id="login-fixed-password"
-                  type="password"
-                  dir="ltr"
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </FormField>
+                  label="رمز عبور ثابت"
+                  hint="اگر قبلاً در حساب خود رمز عبور ثابت تعریف کرده‌اید، بدون نیاز به پیامک وارد شوید"
+                  required
+                >
+                  <Input
+                    id="login-fixed-password"
+                    type="password"
+                    dir="ltr"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </FormField>
 
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                fullWidth
-                isLoading={isSubmitting}
-              >
-                <span>ورود مستقیم با رمز عبور</span>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </form>
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResettingPassword(true);
+                      setError('');
+                    }}
+                    className="font-extrabold text-[#0057FF] hover:underline cursor-pointer"
+                  >
+                    فراموشی رمز عبور / دریافت رمز جدید با پیامک ←
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
+                  isLoading={isSubmitting}
+                >
+                  <span>ورود مستقیم با رمز عبور</span>
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              </form>
+            )
           ) : step === 'phone' ? (
             <form
               onSubmit={handleRequestOtp}
@@ -859,6 +1050,24 @@ export const BookingStepPage: React.FC = () => {
           <span>{business.neighborhood}</span>
         </span>
       </div>
+
+      {business.isSampleShowcase ? (
+        <div className="mb-5 p-4 rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] text-[#92400E] flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs sm:text-sm space-y-0.5">
+            <p className="font-extrabold">
+              این سالن یک «نمونه نمایشی پلتفرم» است (غیرقابل رزرو واقعی)
+            </p>
+            <p className="text-xs text-[#B45309]">
+              مراحل زیر صرفاً جهت آشنایی با فرآیند رزرو آنلاین تایم تو نمایش داده می‌شود و امکان ثبت نهایی نوبت روی سالن‌های نمونه غیرفعال است.
+            </p>
+          </div>
+          <Link to={`/salon/${business.slug}`}>
+            <Button variant="outline" size="sm">
+              بازگشت به پروفایل نمونه
+            </Button>
+          </Link>
+        </div>
+      ) : null}
 
       {/* نوار مرحله‌به‌مرحله مینیمال و قابل کلیک */}
       <BookingFlowStepIndicator
@@ -1347,15 +1556,21 @@ export const BookingStepPage: React.FC = () => {
               </div>
             </div>
 
-            <Button
-              variant="accent"
-              size="lg"
-              fullWidth
-              onClick={() => navigate('/booking/confirm')}
-            >
-              <span>ادامه و تایید نهایی</span>
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
+            {business.isSampleShowcase ? (
+              <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-200 text-xs font-extrabold text-center">
+                سالن نمونه نمایشی (امکان ثبت نوبت واقعی وجود ندارد)
+              </div>
+            ) : (
+              <Button
+                variant="accent"
+                size="lg"
+                fullWidth
+                onClick={() => navigate('/booking/confirm')}
+              >
+                <span>ادامه و تایید نهایی</span>
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+            )}
           </Card>
         </div>
       </div>
@@ -1371,14 +1586,20 @@ export const BookingStepPage: React.FC = () => {
             {bookingDraft.timeSlot}
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={() => navigate('/booking/confirm')}
-        >
-          <span>ادامه رزرو</span>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
+        {business.isSampleShowcase ? (
+          <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-200 text-[11px] font-extrabold shrink-0">
+            نمونه نمایشی
+          </span>
+        ) : (
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => navigate('/booking/confirm')}
+          >
+            <span>ادامه رزرو</span>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -2297,22 +2518,29 @@ export const CustomerFavoritesPage: React.FC = () => {
 
 /** ۸. ویرایش پروفایل مشتری (/me/profile) */
 export const CustomerProfilePage: React.FC = () => {
-  const { dataMode, authUser, updateCustomerProfile } = usePrototypeData();
+  const {
+    dataMode,
+    authUser,
+    updateCustomerProfile,
+    setAccountPassword,
+  } = usePrototypeData();
   const [name, setName] = useState(
     authUser?.fullName ?? (dataMode === 'mock' ? 'المیرا شمس' : '')
   );
   const [phone, setPhone] = useState(
     authUser?.phone ?? (dataMode === 'mock' ? '09123456789' : '')
   );
-  const [city, setCity] = useState(authUser?.defaultCity ?? 'تهران');
+  const [city, setCity] = useState(authUser?.defaultCity ?? 'اصفهان');
   const [smsReminder, setSmsReminder] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [fixedPassword, setFixedPassword] = useState('');
+  const [isSavingPass, setIsSavingPass] = useState(false);
 
   useEffect(() => {
     if (authUser) {
       setName(authUser.fullName);
       setPhone(authUser.phone);
-      setCity(authUser.defaultCity || 'تهران');
+      setCity(authUser.defaultCity || 'اصفهان');
     }
   }, [authUser]);
 
@@ -2329,12 +2557,25 @@ export const CustomerProfilePage: React.FC = () => {
     }
   };
 
+  const handleSavePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPass(true);
+    try {
+      const ok = await setAccountPassword(fixedPassword);
+      if (ok) {
+        setFixedPassword('');
+      }
+    } finally {
+      setIsSavingPass(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
-        kicker="حساب کاربری · اطلاعات شخصی"
-        title="ویرایش مشخصات کاربری"
-        subtitle="مدیریت نام، شهر پیش‌فرض جست‌وجو و تنظیمات پیامک یادآور نوبت"
+        kicker="حساب کاربری · اطلاعات شخصی و رمز عبور"
+        title="ویرایش مشخصات کاربری و تنظیم رمز عبور"
+        subtitle="مدیریت نام، شهر پیش‌فرض جست‌وجو، تعریف رمز عبور ثابت و تنظیمات پیامک یادآور نوبت"
         breadcrumbs={[
           { label: 'حساب کاربری من', href: '/me' },
           { label: 'اطلاعات کاربری' },
@@ -2342,51 +2583,81 @@ export const CustomerProfilePage: React.FC = () => {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
-        <Card padding="lg" className="lg:col-span-7 rounded-3xl">
-          <form onSubmit={handleSave} className="space-y-5">
-            <FormField id="cust-name" label="نام و نام خانوادگی" required>
-              <Input
-                id="cust-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </FormField>
-            <FormField id="cust-phone" label="شماره همراه">
-              <Input
-                id="cust-phone"
-                dir="ltr"
-                value={phone}
-                disabled={dataMode === 'real'}
-                onChange={(e) => setPhone(e.target.value)}
-              />
-            </FormField>
-            <FormField id="cust-city" label="شهر پیش‌فرض جست‌وجو">
-              <Input
-                id="cust-city"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-              />
-            </FormField>
-
-            <div className="pt-3 border-t border-[#E6E0F5]">
-              <label className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#1E1B2E] cursor-pointer py-1">
-                <span>دریافت پیامک یادآور ۲۴ ساعت پیش از نوبت</span>
-                <input
-                  type="checkbox"
-                  checked={smsReminder}
-                  onChange={(e) => setSmsReminder(e.target.checked)}
-                  className="accent-[#8B5CF6] w-4 h-4"
+        <div className="lg:col-span-7 space-y-6">
+          <Card padding="lg" className="rounded-3xl">
+            <form onSubmit={handleSave} className="space-y-5">
+              <FormField id="cust-name" label="نام و نام خانوادگی" required>
+                <Input
+                  id="cust-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                 />
-              </label>
-            </div>
+              </FormField>
+              <FormField id="cust-phone" label="شماره همراه">
+                <Input
+                  id="cust-phone"
+                  dir="ltr"
+                  value={phone}
+                  disabled={dataMode === 'real'}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </FormField>
+              <FormField id="cust-city" label="شهر پیش‌فرض جست‌وجو">
+                <Input
+                  id="cust-city"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                />
+              </FormField>
 
-            <div className="pt-2">
-              <Button type="submit" variant="primary" isLoading={isSaving}>
-                ذخیره تغییرات پروفایل
-              </Button>
+              <div className="pt-3 border-t border-[#E6E0F5]">
+                <label className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#1E1B2E] cursor-pointer py-1">
+                  <span>دریافت پیامک یادآور ۲۴ ساعت پیش از نوبت</span>
+                  <input
+                    type="checkbox"
+                    checked={smsReminder}
+                    onChange={(e) => setSmsReminder(e.target.checked)}
+                    className="accent-[#8B5CF6] w-4 h-4"
+                  />
+                </label>
+              </div>
+
+              <div className="pt-2">
+                <Button type="submit" variant="primary" isLoading={isSaving}>
+                  ذخیره تغییرات پروفایل
+                </Button>
+              </div>
+            </form>
+          </Card>
+
+          <Card padding="lg" className="rounded-3xl space-y-4 border-2 border-[#0057FF]/20">
+            <div className="space-y-1">
+              <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                تنظیم یا تغییر رمز عبور ثابت حساب کاربری
+              </h3>
+              <p className="text-xs text-[#64748B]">
+                با تعیین رمز عبور ثابت، در مراجعات بعدی بدون نیاز به دریافت کد پیامکی می‌توانید مستقیماً وارد شوید. در صورت فراموشی رمز نیز همیشه از صفحه ورود با کد پیامکی قابل بازیابی است.
+              </p>
             </div>
-          </form>
-        </Card>
+            <form onSubmit={handleSavePassword} className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+              <div className="flex-1">
+                <FormField id="cust-new-pass" label="رمز عبور جدید (حداقل ۶ کاراکتر)" required>
+                  <Input
+                    id="cust-new-pass"
+                    type="password"
+                    dir="ltr"
+                    placeholder="حداقل ۶ کاراکتر..."
+                    value={fixedPassword}
+                    onChange={(e) => setFixedPassword(e.target.value)}
+                  />
+                </FormField>
+              </div>
+              <Button type="submit" variant="primary" isLoading={isSavingPass}>
+                ثبت رمز عبور ثابت
+              </Button>
+            </form>
+          </Card>
+        </div>
 
         <Card variant="muted" className="lg:col-span-5 rounded-3xl space-y-3">
           <div className="flex items-center gap-3">
