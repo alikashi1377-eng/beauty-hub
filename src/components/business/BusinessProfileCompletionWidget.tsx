@@ -1,8 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import {
-  CheckCircle2,
-  Circle,
   Clock,
   MapPin,
   Scissors,
@@ -38,6 +36,7 @@ export interface BusinessProfileCompletionSummary {
   activeSpecialistsCount: number;
   openDaysCount: number;
   steps: ProfileCompletionStep[];
+  incompleteSteps: ProfileCompletionStep[];
   nextIncompleteStep: ProfileCompletionStep | null;
 }
 
@@ -76,6 +75,7 @@ export function computeBusinessProfileCompletion(params: {
       activeSpecialistsCount: 0,
       openDaysCount: 0,
       steps: [],
+      incompleteSteps: [],
       nextIncompleteStep: null,
     };
   }
@@ -102,23 +102,20 @@ export function computeBusinessProfileCompletion(params: {
   const hasServices = bizServices.length >= 1;
 
   // ۳. تنظیم دقیق روزها و ساعات کاری (۲۰٪)
-  // برای سالن‌های جدید، تا زمانی که ساعات کاری را در پنل تایید/ذخیره نکنند یا روزهای باز مشخص نباشد، یادآوری می‌شود
-  const isDefaultUntouchedHours =
-    !business.workingHoursConfigured &&
-    !business.isSampleShowcase &&
-    !/^biz-[1-8]$/.test(business.id) &&
-    bizServices.length === 0;
-  const hasWorkingHours = openDays.length > 0 && !isDefaultUntouchedHours;
+  // تا زمانی که صاحب سالن روزها و ساعات کاری را در بخش ساعات کاری ذخیره/تایید نکرده باشد، به عنوان ناقص نمایش داده می‌شود
+  const hasWorkingHours =
+    openDays.length > 0 && Boolean(business.workingHoursConfigured);
 
   // ۴. معرفی متخصصان متناسب با ظرفیت پلن (۲۰٪)
   const hasSpecialists = bizSpecialists.length >= 1;
 
-  // ۵. تصویر پروفایل، بیوگرافی، اینستاگرام یا نمونه کار (۱۵٪)
+  // ۵. تصویر پروفایل، بیوگرافی، اینستاگرام و نمونه کار (۱۵٪)
   const hasMediaAndBio = Boolean(
     business.avatarUrl &&
-      (business.instagramHandle?.trim() ||
-        (business.aboutText && business.aboutText.trim().length >= 25) ||
-        bizGallery.length > 0)
+      business.instagramHandle?.trim() &&
+      business.aboutText &&
+      business.aboutText.trim().length >= 25 &&
+      bizGallery.length > 0
   );
 
   const steps: ProfileCompletionStep[] = [
@@ -129,20 +126,16 @@ export function computeBusinessProfileCompletion(params: {
       weightPercent: 20,
       completed: hasBasicAndLocation,
       href: '/app/profile',
-      statusHint: hasBasicAndLocation
-        ? `${business.city}، ${business.neighborhood}`
-        : 'ثبت موقعیت روی نقشه و آدرس دقیق',
+      statusHint: 'ثبت موقعیت روی نقشه و آدرس دقیق',
     },
     {
       id: 'services',
       title: 'تعریف خدمات قابل رزرو و تعرفه‌ها',
-      shortLabel: 'خدمات و تعرفه‌ها',
+      shortLabel: 'خدمات سالن',
       weightPercent: 25,
       completed: hasServices,
       href: '/app/services',
-      statusHint: hasServices
-        ? `${toPersianDigits(bizServices.length)} خدمت فعال (پیشنهاد پلن: حداقل ${toPersianDigits(recommendedServicesMin)} خدمت)`
-        : 'هنوز خدمتی برای رزرو تعریف نشده است',
+      statusHint: 'تعریف خدمات و تعرفه‌های قابل رزرو',
     },
     {
       id: 'working_hours',
@@ -151,31 +144,25 @@ export function computeBusinessProfileCompletion(params: {
       weightPercent: 20,
       completed: hasWorkingHours,
       href: '/app/working-hours',
-      statusHint: hasWorkingHours
-        ? `${toPersianDigits(openDays.length)} روز کاری فعال در هفته`
-        : 'روزها و ساعات خالی پذیرش را مشخص کنید',
+      statusHint: 'تعیین و ذخیره روزهای کاری و ساعات پذیرش',
     },
     {
       id: 'specialists',
       title: `معرفی متخصصان سالن (ظرفیت پلن: تا ${toPersianDigits(planStaffLimitCount)} نفر)`,
-      shortLabel: 'تیم متخصصان',
+      shortLabel: 'متخصصان سالن',
       weightPercent: 20,
       completed: hasSpecialists,
       href: '/app/staff',
-      statusHint: hasSpecialists
-        ? `${toPersianDigits(bizSpecialists.length)} از ${toPersianDigits(planStaffLimitCount)} ظرفیت پلن ${planName}`
-        : `ثبت متخصص (سقف پلن شما: ${toPersianDigits(planStaffLimitCount)} نفر)`,
+      statusHint: `ثبت متخصص (سقف پلن شما: ${toPersianDigits(planStaffLimitCount)} نفر)`,
     },
     {
       id: 'media_bio',
-      title: 'تصویر سالن، بیوگرافی و نمونه کار',
-      shortLabel: 'تصویر و معرفی',
+      title: 'تصویر سالن، اینستاگرام و نمونه‌کار',
+      shortLabel: 'تصویر و نمونه‌کار',
       weightPercent: 15,
       completed: hasMediaAndBio,
-      href: '/app/profile',
-      statusHint: hasMediaAndBio
-        ? 'تصویر و معرفی سالن کامل است'
-        : 'افزودن عکس، پیج اینستاگرام یا درباره سالن',
+      href: bizGallery.length === 0 ? '/app/gallery' : '/app/profile',
+      statusHint: 'تکمیل عکس پروفایل، اینستاگرام و گالری نمونه‌کار',
     },
   ];
 
@@ -184,7 +171,8 @@ export function computeBusinessProfileCompletion(params: {
     0
   );
 
-  const nextIncompleteStep = steps.find((s) => !s.completed) ?? null;
+  const incompleteSteps = steps.filter((s) => !s.completed);
+  const nextIncompleteStep = incompleteSteps[0] ?? null;
 
   return {
     totalPercent,
@@ -195,30 +183,37 @@ export function computeBusinessProfileCompletion(params: {
     activeSpecialistsCount: bizSpecialists.length,
     openDaysCount: openDays.length,
     steps,
+    incompleteSteps,
     nextIncompleteStep,
   };
 }
 
 /**
  * ویجت فوق‌العاده مینیمال و جمع‌وجور دایره‌ای + نواری برای سایدبار پنل کسب‌وکار
+ * به محض رسیدن به ۱۰۰٪ به صورت خودکار مخفی می‌شود تا فضا اشغال نکند.
  */
 export const SidebarProfileCompletionRing: React.FC<{
   summary: BusinessProfileCompletionSummary;
 }> = ({ summary }) => {
-  const size = 40;
+  if (summary.totalPercent >= 100 || summary.incompleteSteps.length === 0) {
+    return null;
+  }
+
+  const size = 36;
   const strokeWidth = 3.5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (summary.totalPercent / 100) * circumference;
 
-  const isComplete = summary.totalPercent >= 100;
-
   return (
-    <div className="mt-3 rounded-xl border border-slate-700/80 bg-slate-800/75 p-2.5">
-      <div className="flex items-center gap-2.5">
-        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center">
-          <svg className="h-10 w-10 -rotate-90 transform" viewBox={`0 0 ${size} ${size}`}>
+    <div className="mt-2.5 rounded-xl border border-white/15 bg-white/10 p-2">
+      <div className="flex items-center gap-2">
+        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+          <svg
+            className="h-9 w-9 -rotate-90 transform"
+            viewBox={`0 0 ${size} ${size}`}
+          >
             <circle
               cx={size / 2}
               cy={size / 2}
@@ -226,7 +221,7 @@ export const SidebarProfileCompletionRing: React.FC<{
               fill="transparent"
               stroke="currentColor"
               strokeWidth={strokeWidth}
-              className="text-slate-700"
+              className="text-white/20"
             />
             <circle
               cx={size / 2}
@@ -238,35 +233,27 @@ export const SidebarProfileCompletionRing: React.FC<{
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
-              className={
-                isComplete
-                  ? 'text-emerald-400 transition-all duration-500'
-                  : 'text-rose-400 transition-all duration-500'
-              }
+              className="text-[#00E5FF] transition-all duration-500"
             />
           </svg>
-          <span className="absolute text-[10px] font-black text-white">
+          <span className="absolute text-[9px] font-black text-white tabular-nums">
             {toPersianDigits(summary.totalPercent)}٪
           </span>
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-[11px] font-bold text-slate-200">
-              تکمیل پروفایل سالن
+            <span className="truncate text-[10px] font-bold text-white">
+              تکمیل پروفایل
             </span>
-            <span className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">
-              {summary.planName}
+            <span className="shrink-0 text-[9px] font-bold text-[#00E5FF]">
+              {toPersianDigits(summary.incompleteSteps.length)} مورد باقی‌مانده
             </span>
           </div>
 
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-700">
+          <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/20">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isComplete
-                  ? 'bg-emerald-400'
-                  : 'bg-gradient-to-l from-rose-500 to-amber-400'
-              }`}
+              className="h-full rounded-full bg-[#00E5FF] transition-all duration-500"
               style={{ width: `${summary.totalPercent}%` }}
             />
           </div>
@@ -274,19 +261,15 @@ export const SidebarProfileCompletionRing: React.FC<{
           {summary.nextIncompleteStep ? (
             <Link
               to={summary.nextIncompleteStep.href}
-              className="mt-1.5 flex items-center justify-between text-[10px] font-bold text-amber-300 hover:text-amber-200"
+              className="mt-1 flex items-center justify-between text-[10px] font-bold text-amber-300 hover:text-white"
             >
               <span className="truncate">
-                گام بعدی: {summary.nextIncompleteStep.shortLabel} (+
+                + {summary.nextIncompleteStep.shortLabel} (
                 {toPersianDigits(summary.nextIncompleteStep.weightPercent)}٪)
               </span>
               <ChevronLeft className="h-3 w-3 shrink-0" />
             </Link>
-          ) : (
-            <p className="mt-1 text-[10px] font-semibold text-emerald-400">
-              پروفایل شما ۱۰۰٪ آماده پذیرش نوبت است
-            </p>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -294,50 +277,47 @@ export const SidebarProfileCompletionRing: React.FC<{
 };
 
 /**
- * نوار و حلقه پیشرفت مینیمال در بالای داشبورد کسب‌وکار (/app)
- * با تگ‌های کلیک‌پذیر برای تکمیل سریع خدمات، ساعات کاری، متخصصان و لوکیشن
+ * نوار و حلقه پیشرفت فوق‌العاده جمع‌وجور در بالای داشبورد کسب‌وکار (/app)
+ * فقط موارد ناقص را نشان می‌دهد و هر مورد که کامل شود حذف می‌گردد؛
+ * پس از تکمیل ۱۰۰٪ نیز کل این نوار به صورت خودکار مخفی می‌شود.
  */
 export const BusinessProfileCompletionBanner: React.FC<{
   summary: BusinessProfileCompletionSummary;
 }> = ({ summary }) => {
-  const size = 54;
-  const strokeWidth = 4.5;
+  if (summary.totalPercent >= 100 || summary.incompleteSteps.length === 0) {
+    return null;
+  }
+
+  const size = 38;
+  const strokeWidth = 3.5;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (summary.totalPercent / 100) * circumference;
 
-  const isComplete = summary.totalPercent >= 100;
-
   const getStepIcon = (id: ProfileCompletionStep['id']) => {
     switch (id) {
       case 'basic_location':
-        return <MapPin className="h-3.5 w-3.5" />;
+        return <MapPin className="h-3 w-3" />;
       case 'services':
-        return <Scissors className="h-3.5 w-3.5" />;
+        return <Scissors className="h-3 w-3" />;
       case 'working_hours':
-        return <Clock className="h-3.5 w-3.5" />;
+        return <Clock className="h-3 w-3" />;
       case 'specialists':
-        return <Users className="h-3.5 w-3.5" />;
+        return <Users className="h-3 w-3" />;
       case 'media_bio':
-        return <Sparkles className="h-3.5 w-3.5" />;
+        return <Sparkles className="h-3 w-3" />;
     }
   };
 
   return (
-    <div
-      className={`rounded-2xl border p-3.5 sm:p-4 transition-all ${
-        isComplete
-          ? 'border-emerald-200/90 bg-gradient-to-l from-emerald-50/70 via-white to-white'
-          : 'border-slate-200/90 bg-white shadow-xs'
-      }`}
-    >
-      <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
-        {/* بخش راست: دایره پیشرفت و نوار وضعیت نسبت به پلن */}
-        <div className="flex items-center gap-3.5">
-          <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
+    <div className="rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 shadow-2xs">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        {/* سمت راست: دایره کوچک درصد + نوار باریک */}
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex h-9.5 w-9.5 shrink-0 items-center justify-center">
             <svg
-              className="h-14 w-14 -rotate-90 transform"
+              className="h-9.5 w-9.5 -rotate-90 transform"
               viewBox={`0 0 ${size} ${size}`}
             >
               <circle
@@ -347,7 +327,7 @@ export const BusinessProfileCompletionBanner: React.FC<{
                 fill="transparent"
                 stroke="currentColor"
                 strokeWidth={strokeWidth}
-                className="text-slate-100"
+                className="text-slate-200"
               />
               <circle
                 cx={size / 2}
@@ -359,88 +339,53 @@ export const BusinessProfileCompletionBanner: React.FC<{
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
-                className={
-                  isComplete
-                    ? 'text-emerald-500 transition-all duration-500'
-                    : summary.totalPercent >= 60
-                      ? 'text-violet-600 transition-all duration-500'
-                      : 'text-rose-500 transition-all duration-500'
-                }
+                className="text-[#0057FF] transition-all duration-500"
               />
             </svg>
-            <div className="absolute flex flex-col items-center justify-center">
-              <span className="text-xs font-black text-slate-900">
-                {toPersianDigits(summary.totalPercent)}٪
-              </span>
-            </div>
+            <span className="absolute text-[10px] font-black text-[#061138] tabular-nums">
+              {toPersianDigits(summary.totalPercent)}٪
+            </span>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900">
-                پیشرفت تکمیل پروفایل سالن
-              </h3>
-              <span className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-bold text-violet-800">
-                متناسب با پلن: {summary.planName} (ظرفیت تا{' '}
-                {toPersianDigits(summary.planStaffLimitCount)} متخصص)
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold text-[#061138]">
+                تکمیل پروفایل سالن
+              </span>
+              <span className="rounded-md bg-[#E8EFFA] px-1.5 py-0.5 text-[10px] font-bold text-[#0057FF]">
+                پلن {summary.planName}
               </span>
             </div>
-
-            {/* نوار خطی مینیمال */}
-            <div className="mt-2 flex items-center gap-2.5">
-              <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-slate-100">
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-28 sm:w-36 overflow-hidden rounded-full bg-slate-200">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    isComplete
-                      ? 'bg-emerald-500'
-                      : 'bg-gradient-to-l from-rose-500 via-violet-500 to-emerald-500'
-                  }`}
+                  className="h-full rounded-full bg-[#0057FF] transition-all duration-500"
                   style={{ width: `${summary.totalPercent}%` }}
                 />
               </div>
-              <span className="text-[11px] font-semibold text-slate-500">
-                {isComplete
-                  ? 'کامل و آماده رزرو آنلاین'
-                  : `${toPersianDigits(
-                      summary.steps.filter((s) => s.completed).length
-                    )} از ${toPersianDigits(summary.steps.length)} بخش تکمیل شده`}
+              <span className="text-[10px] font-bold text-[#334155]">
+                فقط موارد باقی‌مانده:
               </span>
             </div>
           </div>
         </div>
 
-        {/* بخش چپ: تگ‌های تعاملی هر بخش با درصد تاثیر */}
+        {/* سمت چپ: فقط آیتم‌های تکمیل‌نشده (هر آیتم کامل شود، خودکار حذف می‌شود) */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {summary.steps.map((step) =>
-            step.completed ? (
-              <Link
-                key={step.id}
-                to={step.href}
-                title={step.statusHint}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100/80"
-              >
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                <span>{step.shortLabel}</span>
-                <span className="text-[10px] text-emerald-600">
-                  ({toPersianDigits(step.weightPercent)}٪)
-                </span>
-              </Link>
-            ) : (
-              <Link
-                key={step.id}
-                to={step.href}
-                title={step.statusHint}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] font-black text-rose-800 shadow-2xs transition hover:border-rose-300 hover:bg-rose-100"
-              >
-                <Circle className="h-3 w-3 text-rose-500" />
-                {getStepIcon(step.id)}
-                <span>تکمیل {step.shortLabel}</span>
-                <span className="rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                  +{toPersianDigits(step.weightPercent)}٪
-                </span>
-              </Link>
-            )
-          )}
+          {summary.incompleteSteps.map((step) => (
+            <Link
+              key={step.id}
+              to={step.href}
+              title={step.statusHint}
+              className="inline-flex items-center gap-1 rounded-full border border-[#0057FF]/30 bg-[#F3F6FC] px-2.5 py-1 text-[11px] font-extrabold text-[#061138] transition hover:border-[#0057FF] hover:bg-[#E0ECFF]"
+            >
+              <span className="text-[#0057FF]">{getStepIcon(step.id)}</span>
+              <span>+ {step.shortLabel}</span>
+              <span className="rounded-full bg-[#0057FF] px-1.5 py-0.2 text-[10px] font-black text-white tabular-nums">
+                +{toPersianDigits(step.weightPercent)}٪
+              </span>
+            </Link>
+          ))}
         </div>
       </div>
     </div>

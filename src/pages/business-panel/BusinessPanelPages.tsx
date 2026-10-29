@@ -241,33 +241,33 @@ export const BusinessDashboardPage: React.FC = () => {
       <BusinessProfileCompletionBanner summary={profileCompletion} />
 
       {/* داشبورد اختصاصی ارتقای پلن، وضعیت دوره تست تاییدشده ادمین و خرید تبلیغات ویژه (Boost) */}
-      <Card className="rounded-3xl bg-[#061138] text-white border border-[#1E293B] p-5 space-y-4">
+      <div className="rounded-3xl bg-white text-[#061138] border border-[#CBD5E1] p-4 sm:p-5 space-y-4 shadow-2xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 rounded-full bg-[#0057FF] text-white text-xs font-extrabold">
                 پلن فعال: {currentBiz?.subscriptionPlan || activePlanObj?.name || 'شروع رایگان (پایه)'}
               </span>
-              <span className="px-3 py-1 rounded-full bg-white/10 text-[#00E5FF] text-xs font-extrabold tabular-nums">
+              <span className="px-3 py-1 rounded-full bg-[#E8EFFA] text-[#061138] border border-[#CBD5E1] text-xs font-extrabold tabular-nums">
                 ظرفیت متخصصان: {toPersianDigits(bizSpecialists.length)} از{' '}
                 {toPersianDigits(currentStaffLimit)} نفر مجاز
               </span>
               {currentBiz?.trialDaysRemaining &&
               currentBiz.trialDaysRemaining > 0 ? (
-                <span className="px-3 py-1 rounded-full bg-[#F59E0B] text-[#061138] text-xs font-extrabold tabular-nums">
+                <span className="px-3 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/40 text-xs font-extrabold tabular-nums">
                   دوره تست تاییدشده مدیریت: {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
                 </span>
               ) : null}
               {currentBiz?.isSponsored ? (
-                <span className="px-3 py-1 rounded-full bg-[#10B981] text-white text-xs font-extrabold tabular-nums">
+                <span className="px-3 py-1 rounded-full bg-[#ECFDF5] text-[#065F46] border border-[#10B981]/40 text-xs font-extrabold tabular-nums">
                   ★ تبلیغ ویژه فعال ({toPersianDigits(currentBiz.sponsoredDaysRemaining ?? 30)} روز باقی‌مانده)
                 </span>
               ) : null}
             </div>
-            <h2 className="text-sm sm:text-base font-extrabold text-white">
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
               داشبورد ارتقای پلن اشتراک و تبلیغات جایگاه ویژه (Boost)
             </h2>
-            <p className="text-xs text-slate-300">
+            <p className="text-xs font-medium text-[#334155]">
               برای افزایش ظرفیت متخصصان (تا ۳ یا ۸ نفر)، فعال‌سازی پیامک خودکار یا قرارگیری در صدر جست‌وجو و بنر صفحه اول، بسته مورد نظر را انتخاب کنید.
             </p>
           </div>
@@ -295,8 +295,8 @@ export const BusinessDashboardPage: React.FC = () => {
                 </Button>
               ))}
             <Link to="/app/subscription">
-              <Button variant="outline" size="sm" className="bg-white/10 text-white border-white/25 hover:bg-white/20">
-                <Megaphone className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <Button variant="outline" size="sm">
+                <Megaphone className="w-3.5 h-3.5 text-[#0057FF]" />
                 <span>خرید تبلیغ صدر جست‌وجو / بنر</span>
               </Button>
             </Link>
@@ -304,17 +304,17 @@ export const BusinessDashboardPage: React.FC = () => {
         </div>
 
         {/* کارت‌های سریع خرید جایگاه تبلیغاتی مستقیم از پیشخوان */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-white/15 text-xs">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
           {adPackages.slice(0, 3).map((pkg) => (
             <div
               key={pkg.id}
-              className="p-3.5 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-between gap-3"
+              className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-center justify-between gap-3"
             >
-              <div className="min-w-0 space-y-0.5">
-                <p className="font-extrabold text-[#00E5FF] truncate">
+              <div className="min-w-0 space-y-1">
+                <p className="font-extrabold text-[#061138] truncate">
                   {pkg.title}
                 </p>
-                <p className="text-[11px] text-slate-200 tabular-nums">
+                <p className="text-[11px] font-bold text-[#0057FF] tabular-nums">
                   {formatPriceToman(pkg.priceToman)}
                   {pkg.slot !== 'SMS_ADDON' ? ' / ۳۰ روزه' : ` / ${toPersianDigits(pkg.smsCount ?? 200)} پیامک`}
                 </p>
@@ -335,14 +335,14 @@ export const BusinessDashboardPage: React.FC = () => {
                     smsCount: pkg.smsCount,
                   })
                 }
-                className="px-3 py-1.5 rounded-full bg-[#00E5FF] text-[#061138] font-extrabold text-[11px] shrink-0 cursor-pointer hover:bg-white transition-colors"
+                className="px-3.5 py-1.5 rounded-full bg-[#0057FF] text-white font-extrabold text-[11px] shrink-0 cursor-pointer hover:bg-[#0044CC] transition-colors"
               >
                 خرید و فعال‌سازی
               </button>
             </div>
           ))}
         </div>
-      </Card>
+      </div>
 
       <EasyCheckoutModal
         isOpen={Boolean(dashboardCheckout)}

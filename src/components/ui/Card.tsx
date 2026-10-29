@@ -22,6 +22,9 @@ export const Card: React.FC<CardProps> = ({
     lg: 'p-6 sm:p-8',
   };
 
+  const hasCustomBg = /\bbg-\[|#061138|bg-slate-9|bg-indigo-9/.test(className);
+  const resolvedVariant = hasCustomBg && variant === 'default' ? 'dark' : variant;
+
   const variantMap = {
     default:
       'bg-[#FFFFFF] border-[#CBD5E1] text-[#061138] shadow-[0_4px_20px_-4px_rgba(6,17,56,0.06)]',
@@ -34,7 +37,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       id={id}
-      className={`rounded-3xl border ${variantMap[variant]} ${paddingMap[padding]} ${className}`}
+      className={`rounded-3xl border ${variantMap[resolvedVariant]} ${paddingMap[padding]} ${className}`}
     >
       {children}
     </div>
