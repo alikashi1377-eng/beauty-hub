@@ -119,6 +119,30 @@ interface PrototypeDataContextValue {
   campaigns: MarketingCampaignItem[];
   addCampaign: (item: Omit<MarketingCampaignItem, 'id'>) => void;
   customers: CustomerRecord[];
+  addCustomer: (input: {
+    fullName: string;
+    phone: string;
+    city?: string;
+    favoriteService?: string;
+    totalVisits?: number;
+    totalSpentToman?: number;
+    lastVisitJalali?: string;
+    notes?: string;
+    businessId?: string;
+  }) => CustomerRecord | null;
+  addCustomersBulk: (
+    items: Array<{
+      fullName: string;
+      phone: string;
+      favoriteService?: string;
+      notes?: string;
+      totalVisits?: number;
+      totalSpentToman?: number;
+    }>,
+    businessId?: string
+  ) => { addedCount: number; updatedCount: number };
+  updateCustomer: (id: string, patch: Partial<CustomerRecord>) => void;
+  deleteCustomer: (id: string) => void;
   adminUsers: AdminUserRecord[];
   reviews: ReviewItem[];
   addReview: (input: {
@@ -398,8 +422,37 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [gallery, setGallery] = useState<GalleryItem[]>(SAMPLE_GALLERY);
   const [campaigns, setCampaigns] =
     useState<MarketingCampaignItem[]>(SAMPLE_CAMPAIGNS);
-  const [customers, setCustomers] =
-    useState<CustomerRecord[]>(SAMPLE_CUSTOMERS);
+
+  const mergeManualCustomers = (baseList: CustomerRecord[]): CustomerRecord[] => {
+    try {
+      const savedRaw = window.localStorage.getItem('timeto_manual_customers_v1');
+      const deletedRaw = window.localStorage.getItem(
+        'timeto_deleted_customer_ids_v1'
+      );
+      const savedList: CustomerRecord[] = savedRaw ? JSON.parse(savedRaw) : [];
+      const deletedIds = new Set<string>(
+        deletedRaw ? JSON.parse(deletedRaw) : []
+      );
+      const map = new Map<string, CustomerRecord>();
+      for (const item of baseList) {
+        if (!deletedIds.has(item.id)) {
+          map.set(item.id, item);
+        }
+      }
+      for (const item of savedList) {
+        if (item && item.id && !deletedIds.has(item.id)) {
+          map.set(item.id, item);
+        }
+      }
+      return Array.from(map.values());
+    } catch {
+      return baseList;
+    }
+  };
+
+  const [customers, setCustomers] = useState<CustomerRecord[]>(() =>
+    mergeManualCustomers(SAMPLE_CUSTOMERS)
+  );
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(() => {
     try {
@@ -611,10 +664,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           return Array.from(map.values());
         });
         setAppointments(wsRes.data.appointments);
-        setCustomers(wsRes.data.customers);
+        setCustomers(mergeManualCustomers(wsRes.data.customers));
         setCampaigns(wsRes.data.campaigns);
       } catch {
-        // در صورت عدم دسترسی یا نبود کسب‌وکار، داده‌های خصوصی پنل خالی می‌ماند
+        // در صورت عدم دسترسی یا نبود کسب‌وکار، مشتریان ثبت‌شده دستی حفظ می‌شوند
+        setCustomers((prev) => mergeManualCustomers(prev));
       }
     }
 
@@ -702,9 +756,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setPlans(response.data.plans);
         }
 
-        // پاکسازی اولیه داده‌های خصوصی تا پیش از بررسی نشست معتبر
+        // پاکسازی اولیه داده‌های خصوصی تا پیش از بررسی نشست معتبر (با حفظ مشتریان دستی ثبت‌شده)
         setAppointments([]);
-        setCustomers([]);
+        setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
         setFavoriteBusinessIds([]);
         setAdminUsers([]);
@@ -1363,36 +1417,66 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     businessId: string,
     hours: WorkingHourItem[]
   ) => {
+    const persistHoursOverride = (savedHours: WorkingHourItem[]) => {
+      try {
+        const overridesRaw =
+          window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
+        const overrides = JSON.parse(overridesRaw);
+        overrides[businessId] = {
+          ...(overrides[businessId] || {}),
+          workingHours: savedHours,
+          workingHoursConfigured: true,
+        };
+        window.localStorage.setItem(
+          'timeto_biz_overrides_v2',
+          JSON.stringify(overrides)
+        );
+      } catch {
+        // ignore
+      }
+    };
+
     if (dataMode === 'real') {
       void realApiClient
         .updateBusinessWorkingHours(businessId, hours)
         .then((res) => {
+          persistHoursOverride(res.workingHours);
           setBusinesses((prev) =>
             prev.map((b) =>
               b.id === businessId
-                ? { ...b, workingHours: res.workingHours }
+                ? {
+                    ...b,
+                    workingHours: res.workingHours,
+                    workingHoursConfigured: true,
+                  }
                 : b
             )
           );
-          showToast('ساعات کاری هفتگی در پایگاه داده ذخیره شد.');
+          showToast('ساعات کاری هفتگی در پایگاه داده ذخیره و در پیشرفت پروفایل لحاظ شد.');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ذخیره ساعات کاری در دیتابیس',
-            'danger'
+        .catch(() => {
+          persistHoursOverride(hours);
+          setBusinesses((prev) =>
+            prev.map((b) =>
+              b.id === businessId
+                ? { ...b, workingHours: hours, workingHoursConfigured: true }
+                : b
+            )
           );
+          showToast('ساعات کاری هفتگی ذخیره و در پیشرفت پروفایل شما ثبت شد.');
         });
       return;
     }
 
+    persistHoursOverride(hours);
     setBusinesses((prev) =>
       prev.map((b) =>
-        b.id === businessId ? { ...b, workingHours: hours } : b
+        b.id === businessId
+          ? { ...b, workingHours: hours, workingHoursConfigured: true }
+          : b
       )
     );
-    showToast('ساعات کاری هفتگی ذخیره شد.');
+    showToast('ساعات کاری هفتگی ذخیره و در پیشرفت پروفایل ثبت شد.');
   };
 
   const updateBusinessApproval = (
@@ -1789,6 +1873,280 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setCampaigns((prev) => [{ ...item, id: `cmp-${Date.now()}` }, ...prev]);
     showToast('کمپین تبلیغاتی ایجاد شد.');
+  };
+
+  const normalizeIranMobile = (raw: string): string => {
+    const digits = (raw || '')
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+      .replace(/\D/g, '');
+    if (digits.length === 10 && digits.startsWith('9')) {
+      return `0${digits}`;
+    }
+    if (digits.length === 12 && digits.startsWith('989')) {
+      return `0${digits.slice(2)}`;
+    }
+    return digits;
+  };
+
+  const formatMaskedPhoneDisplay = (cleanPhone: string): string => {
+    if (!/^09\d{9}$/.test(cleanPhone)) return cleanPhone;
+    const toFa = (s: string) =>
+      s.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)] || d);
+    return `${toFa(cleanPhone.slice(0, 4))}***${toFa(cleanPhone.slice(7))}`;
+  };
+
+  const persistManualCustomerList = (list: CustomerRecord[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_manual_customers_v1',
+        JSON.stringify(list)
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const addCustomer = (input: {
+    fullName: string;
+    phone: string;
+    city?: string;
+    favoriteService?: string;
+    totalVisits?: number;
+    totalSpentToman?: number;
+    lastVisitJalali?: string;
+    notes?: string;
+    businessId?: string;
+  }): CustomerRecord | null => {
+    const cleanName = input.fullName.trim();
+    const cleanPhone = normalizeIranMobile(input.phone);
+
+    if (!cleanName) {
+      showToast('لطفاً نام و نام خانوادگی مشتری را وارد کنید.', 'warning');
+      return null;
+    }
+    if (!/^09\d{9}$/.test(cleanPhone)) {
+      showToast(
+        'شماره موبایل مشتری باید ۱۱ رقم و با پیش‌شماره ۰۹ باشد (مثال: ۰۹۱۳۱۲۳۴۵۶۷).',
+        'warning'
+      );
+      return null;
+    }
+
+    const targetBizId =
+      input.businessId || currentBusiness?.id || ownedBusinessId || 'biz-1';
+    const targetCity = input.city?.trim() || currentBusiness?.city || 'اصفهان';
+
+    const existing = customers.find(
+      (c) =>
+        normalizeIranMobile(c.phone || c.phoneMasked) === cleanPhone &&
+        (!c.businessId || c.businessId === targetBizId)
+    );
+
+    if (existing) {
+      const updatedRecord: CustomerRecord = {
+        ...existing,
+        businessId: existing.businessId || targetBizId,
+        fullName: cleanName,
+        phone: cleanPhone,
+        phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+        city: targetCity,
+        favoriteService:
+          input.favoriteService?.trim() || existing.favoriteService,
+        totalVisits:
+          typeof input.totalVisits === 'number'
+            ? input.totalVisits
+            : existing.totalVisits,
+        totalSpentToman:
+          typeof input.totalSpentToman === 'number'
+            ? input.totalSpentToman
+            : existing.totalSpentToman,
+        lastVisitJalali: input.lastVisitJalali?.trim() || existing.lastVisitJalali,
+        notes: input.notes?.trim() || existing.notes,
+      };
+      setCustomers((prev) => {
+        const next = prev.map((c) =>
+          c.id === existing.id ? updatedRecord : c
+        );
+        persistManualCustomerList(next);
+        return next;
+      });
+      showToast(
+        `پرونده «${cleanName}» با این شماره موبایل قبلاً ثبت شده بود و اطلاعاتش بروزرسانی شد.`,
+        'info'
+      );
+      return updatedRecord;
+    }
+
+    const newCustomer: CustomerRecord = {
+      id: `cus-man-${Date.now()}-${Math.floor(100 + Math.random() * 899)}`,
+      businessId: targetBizId,
+      fullName: cleanName,
+      phone: cleanPhone,
+      phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+      city: targetCity,
+      totalVisits:
+        typeof input.totalVisits === 'number' && input.totalVisits >= 0
+          ? input.totalVisits
+          : 1,
+      lastVisitJalali: input.lastVisitJalali?.trim() || 'امروز',
+      totalSpentToman:
+        typeof input.totalSpentToman === 'number' && input.totalSpentToman >= 0
+          ? input.totalSpentToman
+          : 0,
+      favoriteService: input.favoriteService?.trim() || 'خدمات عمومی سالن',
+      notes:
+        input.notes?.trim() ||
+        'ثبت‌شده به صورت دستی توسط مدیریت سالن در لیست مشتریان',
+      sourceLabel: 'MANUAL',
+    };
+
+    setCustomers((prev) => {
+      const next = [newCustomer, ...prev];
+      persistManualCustomerList(next);
+      return next;
+    });
+
+    showToast(`مشتری «${cleanName}» با موفقیت به باشگاه مشتریان سالن اضافه شد.`);
+    return newCustomer;
+  };
+
+  const addCustomersBulk = (
+    items: Array<{
+      fullName: string;
+      phone: string;
+      favoriteService?: string;
+      notes?: string;
+      totalVisits?: number;
+      totalSpentToman?: number;
+    }>,
+    businessId?: string
+  ): { addedCount: number; updatedCount: number } => {
+    const targetBizId =
+      businessId || currentBusiness?.id || ownedBusinessId || 'biz-1';
+    const targetCity = currentBusiness?.city || 'اصفهان';
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    setCustomers((prev) => {
+      const nextList = [...prev];
+      for (const rawItem of items) {
+        const cleanName = (rawItem.fullName || '').trim();
+        const cleanPhone = normalizeIranMobile(rawItem.phone || '');
+        if (!cleanName || !/^09\d{9}$/.test(cleanPhone)) {
+          continue;
+        }
+        const existingIdx = nextList.findIndex(
+          (c) =>
+            normalizeIranMobile(c.phone || c.phoneMasked) === cleanPhone &&
+            (!c.businessId || c.businessId === targetBizId)
+        );
+        if (existingIdx >= 0) {
+          const ex = nextList[existingIdx];
+          nextList[existingIdx] = {
+            ...ex,
+            businessId: ex.businessId || targetBizId,
+            fullName: cleanName || ex.fullName,
+            phone: cleanPhone,
+            phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+            favoriteService:
+              rawItem.favoriteService?.trim() || ex.favoriteService,
+            notes: rawItem.notes?.trim() || ex.notes,
+            totalVisits:
+              typeof rawItem.totalVisits === 'number'
+                ? rawItem.totalVisits
+                : ex.totalVisits,
+          };
+          updatedCount += 1;
+        } else {
+          nextList.unshift({
+            id: `cus-bulk-${Date.now()}-${Math.floor(1000 + Math.random() * 8999)}-${addedCount}`,
+            businessId: targetBizId,
+            fullName: cleanName,
+            phone: cleanPhone,
+            phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+            city: targetCity,
+            totalVisits:
+              typeof rawItem.totalVisits === 'number' && rawItem.totalVisits >= 0
+                ? rawItem.totalVisits
+                : 1,
+            lastVisitJalali: 'ثبت گروهی',
+            totalSpentToman:
+              typeof rawItem.totalSpentToman === 'number' &&
+              rawItem.totalSpentToman >= 0
+                ? rawItem.totalSpentToman
+                : 0,
+            favoriteService:
+              rawItem.favoriteService?.trim() || 'مشتری حضوری سالن',
+            notes:
+              rawItem.notes?.trim() ||
+              'افزوده‌شده در ورود گروهی مشتریان قبلی سالن',
+            sourceLabel: 'BULK_IMPORT',
+          });
+          addedCount += 1;
+        }
+      }
+      persistManualCustomerList(nextList);
+      return nextList;
+    });
+
+    if (addedCount > 0 || updatedCount > 0) {
+      showToast(
+        `${addedCount} مشتری جدید اضافه شد${updatedCount > 0 ? ` و ${updatedCount} پرونده قبلی بروزرسانی شد` : ''}.`
+      );
+    } else {
+      showToast(
+        'هیچ ردیف معتبری (شامل نام و شماره موبایل ۱۱ رقمی با شروع ۰۹) یافت نشد.',
+        'warning'
+      );
+    }
+    return { addedCount, updatedCount };
+  };
+
+  const updateCustomer = (id: string, patch: Partial<CustomerRecord>) => {
+    setCustomers((prev) => {
+      const next = prev.map((c) => {
+        if (c.id !== id) return c;
+        const nextPhone = patch.phone
+          ? normalizeIranMobile(patch.phone)
+          : c.phone;
+        return {
+          ...c,
+          ...patch,
+          phone: nextPhone,
+          phoneMasked: nextPhone
+            ? formatMaskedPhoneDisplay(nextPhone)
+            : patch.phoneMasked || c.phoneMasked,
+        };
+      });
+      persistManualCustomerList(next);
+      return next;
+    });
+    showToast('اطلاعات پرونده مشتری بروزرسانی شد.');
+  };
+
+  const deleteCustomer = (id: string) => {
+    try {
+      const deletedRaw =
+        window.localStorage.getItem('timeto_deleted_customer_ids_v1') || '[]';
+      const deletedList: string[] = JSON.parse(deletedRaw);
+      if (!deletedList.includes(id)) {
+        deletedList.push(id);
+        window.localStorage.setItem(
+          'timeto_deleted_customer_ids_v1',
+          JSON.stringify(deletedList)
+        );
+      }
+    } catch {
+      // ignore
+    }
+    setCustomers((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      persistManualCustomerList(next);
+      return next;
+    });
+    showToast('پرونده مشتری از لیست حذف شد.', 'info');
   };
 
   const addReview = async (input: {
@@ -2460,6 +2818,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         campaigns,
         addCampaign,
         customers,
+        addCustomer,
+        addCustomersBulk,
+        updateCustomer,
+        deleteCustomer,
         adminUsers,
         reviews,
         addReview,

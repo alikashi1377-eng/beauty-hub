@@ -139,6 +139,7 @@ export interface BusinessItem {
   mapLng?: number;
   avatarUrl?: string;
   isSampleShowcase?: boolean;
+  workingHoursConfigured?: boolean;
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;
@@ -273,6 +274,7 @@ export interface AppointmentItem {
 
 export interface CustomerRecord {
   id: string;
+  businessId?: string;
   fullName: string;
   phoneMasked: string;
   phone?: string;
@@ -282,6 +284,7 @@ export interface CustomerRecord {
   totalSpentToman: number;
   favoriteService: string;
   notes: string;
+  sourceLabel?: 'MANUAL' | 'BULK_IMPORT' | 'ONLINE_BOOKING';
 }
 
 export interface CategoryItem {

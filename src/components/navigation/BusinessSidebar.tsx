@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { TimetoLogo } from '../ui/TimetoLogo';
+import {
+  computeBusinessProfileCompletion,
+  SidebarProfileCompletionRing,
+} from '../business/BusinessProfileCompletionWidget';
 
 export interface BusinessSidebarItem {
   to: string;
@@ -125,9 +129,24 @@ export const BUSINESS_NAV_GROUPS = [
 ];
 
 export const BusinessSidebar: React.FC = () => {
-  const { currentBusiness } = usePrototypeData();
+  const { currentBusiness, services, specialists, gallery, plans } =
+    usePrototypeData();
   const businessName = currentBusiness?.name || 'سالن زیبایی رویال گلزار';
   const businessSlug = currentBusiness?.slug || 'royal-golzar';
+
+  const completionSummary = computeBusinessProfileCompletion({
+    business: currentBusiness,
+    services,
+    specialists,
+    gallery,
+    plans,
+  });
+
+  const incompleteStepByHref = new Map(
+    completionSummary.steps
+      .filter((s) => !s.completed)
+      .map((s) => [s.href, s.weightPercent])
+  );
 
   return (
     <aside
@@ -157,6 +176,9 @@ export const BusinessSidebar: React.FC = () => {
             <ExternalLink className="w-3 h-3" />
           </Link>
         </div>
+
+        {/* حلقه و نوار مینیمال درصد تکمیل پروفایل نسبت به پلن */}
+        <SidebarProfileCompletionRing summary={completionSummary} />
       </div>
 
       {/* آیتم‌های ناوبری با کنتراست بالا */}
@@ -170,25 +192,33 @@ export const BusinessSidebar: React.FC = () => {
               <p className="px-3 text-[11px] font-extrabold text-[#334155]">
                 {groupName}
               </p>
-              {groupItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs transition-all ${
-                      isActive
-                        ? 'bg-[#E0ECFF] text-[#0057FF] font-extrabold border-r-4 border-[#0057FF] shadow-2xs'
-                        : 'text-[#334155] font-semibold hover:bg-[#F3F6FC] hover:text-[#061138]'
-                    }`
-                  }
-                >
-                  <span className="flex items-center gap-2.5 truncate">
-                    {item.icon}
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                </NavLink>
-              ))}
+              {groupItems.map((item) => {
+                const pendingBonus = incompleteStepByHref.get(item.to);
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs transition-all ${
+                        isActive
+                          ? 'bg-[#E0ECFF] text-[#0057FF] font-extrabold border-r-4 border-[#0057FF] shadow-2xs'
+                          : 'text-[#334155] font-semibold hover:bg-[#F3F6FC] hover:text-[#061138]'
+                      }`
+                    }
+                  >
+                    <span className="flex items-center gap-2.5 truncate">
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    {pendingBonus ? (
+                      <span className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">
+                        +{pendingBonus}٪
+                      </span>
+                    ) : null}
+                  </NavLink>
+                );
+              })}
             </div>
           );
         })}
@@ -196,6 +226,13 @@ export const BusinessSidebar: React.FC = () => {
 
       {/* دکمه‌های اقدام سریع و خروج از پیشخوان در پایین سایدبار */}
       <div className="p-4 border-t border-[#CBD5E1] bg-[#F3F6FC] space-y-2">
+        <Link
+          to="/app/customers?add=1"
+          className="w-full py-2 px-3.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span>ثبت دستی / گروهی مشتری</span>
+        </Link>
         <Link
           to="/app/calendar"
           className="w-full py-2.5 px-3.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.38)]"

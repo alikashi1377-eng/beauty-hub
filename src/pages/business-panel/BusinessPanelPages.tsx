@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Calendar,
@@ -68,6 +68,10 @@ import {
   EasyCheckoutModal,
   CheckoutItemPayload,
 } from '../../components/ui/EasyCheckoutModal';
+import {
+  BusinessProfileCompletionBanner,
+  computeBusinessProfileCompletion,
+} from '../../components/business/BusinessProfileCompletionWidget';
 
 /** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — بازطراحی کامل مطابق Capture2.PNG (Salonia) و Capture8.PNG (Zolmilon) */
 export const BusinessDashboardPage: React.FC = () => {
@@ -78,6 +82,7 @@ export const BusinessDashboardPage: React.FC = () => {
     appointments,
     services,
     specialists,
+    gallery,
     customers,
     plans,
     adPackages,
@@ -86,6 +91,14 @@ export const BusinessDashboardPage: React.FC = () => {
     updateAppointmentStatus,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
+
+  const profileCompletion = computeBusinessProfileCompletion({
+    business: currentBiz,
+    services,
+    specialists,
+    gallery,
+    plans,
+  });
 
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
   const [dashboardCheckout, setDashboardCheckout] =
@@ -201,6 +214,13 @@ export const BusinessDashboardPage: React.FC = () => {
             ))}
           </select>
 
+          <Link to="/app/customers?add=1">
+            <Button variant="secondary" size="sm">
+              <Users className="w-4 h-4" />
+              <span>+ ثبت مشتری دستی</span>
+            </Button>
+          </Link>
+
           <Link to="/app/services">
             <Button variant="outline" size="sm">
               <Plus className="w-4 h-4" />
@@ -216,6 +236,9 @@ export const BusinessDashboardPage: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* ویجت مینیمال درصد پیشرفت تکمیل پروفایل سالن متناسب با پلن فعال (دایره + نوار خطی + تگ‌های اقدام سریع) */}
+      <BusinessProfileCompletionBanner summary={profileCompletion} />
 
       {/* داشبورد اختصاصی ارتقای پلن، وضعیت دوره تست تاییدشده ادمین و خرید تبلیغات ویژه (Boost) */}
       <Card className="rounded-3xl bg-[#061138] text-white border border-[#1E293B] p-5 space-y-4">
@@ -2137,49 +2160,298 @@ export const BusinessStaffPage: React.FC = () => {
   );
 };
 
-/** ۶. پرونده مشتریان (/app/customers) */
+/** ۶. پرونده مشتریان (/app/customers) — ثبت دستی تکی، ورود سریع گروهی مشتریان قبلی، ویرایش و ارسال پیامک */
 export const BusinessCustomersPage: React.FC = () => {
-  const { customers, appointments } = usePrototypeData();
+  const {
+    customers,
+    appointments,
+    services,
+    currentBusiness,
+    businesses,
+    addCustomer,
+    addCustomersBulk,
+    updateCustomer,
+    deleteCustomer,
+    sendBusinessCustomerSms,
+  } = usePrototypeData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentBiz = currentBusiness ?? businesses[0];
+
+  const bizServices = React.useMemo(() => {
+    const list = currentBiz
+      ? services.filter(
+          (s) => s.businessId === currentBiz.id && s.isActive !== false
+        )
+      : [];
+    return list.length > 0 ? list : services.slice(0, 6);
+  }, [currentBiz, services]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerRecord | null>(null);
 
-  const filtered = customers.filter(
-    (c) =>
-      c.fullName.includes(searchQuery.trim()) ||
-      c.favoriteService.includes(searchQuery.trim())
+  // مودال افزودن / ویرایش تکی مشتری
+  const [isSingleModalOpen, setIsSingleModalOpen] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(
+    null
   );
+  const [formFullName, setFormFullName] = useState('');
+  const [formPhone, setFormPhone] = useState('');
+  const [formFavoriteService, setFormFavoriteService] = useState('');
+  const [formTotalVisits, setFormTotalVisits] = useState('1');
+  const [formTotalSpent, setFormTotalSpent] = useState('0');
+  const [formNotes, setFormNotes] = useState('');
+
+  // مودال ورود سریع گروهی مشتریان قبلی (جدول چندردیفه + کپی/جای‌گذاری لیست)
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'GRID' | 'PASTE'>('GRID');
+  const [bulkRows, setBulkRows] = useState<
+    Array<{
+      id: string;
+      fullName: string;
+      phone: string;
+      favoriteService: string;
+      notes: string;
+    }>
+  >([
+    { id: 'r-1', fullName: '', phone: '', favoriteService: '', notes: '' },
+    { id: 'r-2', fullName: '', phone: '', favoriteService: '', notes: '' },
+    { id: 'r-3', fullName: '', phone: '', favoriteService: '', notes: '' },
+    { id: 'r-4', fullName: '', phone: '', favoriteService: '', notes: '' },
+    { id: 'r-5', fullName: '', phone: '', favoriteService: '', notes: '' },
+  ]);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+
+  // ارسال پیامک سریع به مشتری داخل مودال پرونده
+  const [quickSmsText, setQuickSmsText] = useState('');
+  const [isSendingQuickSms, setIsSendingQuickSms] = useState(false);
+
+  // باز شدن خودکار مودال ثبت مشتری در صورت وجود ?add=1
+  useEffect(() => {
+    if (searchParams.get('add') === '1') {
+      openAddSingleModal();
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('add');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [searchParams]);
+
+  const openAddSingleModal = () => {
+    setEditingCustomerId(null);
+    setFormFullName('');
+    setFormPhone('');
+    setFormFavoriteService(bizServices[0]?.title || '');
+    setFormTotalVisits('1');
+    setFormTotalSpent('0');
+    setFormNotes('');
+    setIsSingleModalOpen(true);
+  };
+
+  const openEditSingleModal = (record: CustomerRecord) => {
+    setEditingCustomerId(record.id);
+    setFormFullName(record.fullName);
+    setFormPhone(record.phone || '');
+    setFormFavoriteService(record.favoriteService || '');
+    setFormTotalVisits(String(record.totalVisits ?? 1));
+    setFormTotalSpent(String(record.totalSpentToman ?? 0));
+    setFormNotes(record.notes || '');
+    setSelectedCustomer(null);
+    setIsSingleModalOpen(true);
+  };
+
+  const handleSaveSingleCustomer = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = normalizeIranMobileInput(formPhone);
+    const visitsNum = Math.max(
+      0,
+      Number(toEnglishDigitsClient(formTotalVisits)) || 0
+    );
+    const spentNum = Math.max(
+      0,
+      Number(toEnglishDigitsClient(formTotalSpent)) || 0
+    );
+
+    if (editingCustomerId) {
+      if (!formFullName.trim()) return;
+      updateCustomer(editingCustomerId, {
+        fullName: formFullName.trim(),
+        phone: cleanPhone || undefined,
+        favoriteService: formFavoriteService.trim() || 'خدمات عمومی سالن',
+        totalVisits: visitsNum,
+        totalSpentToman: spentNum,
+        notes: formNotes.trim(),
+      });
+      setIsSingleModalOpen(false);
+      return;
+    }
+
+    const created = addCustomer({
+      fullName: formFullName,
+      phone: cleanPhone,
+      city: currentBiz?.city || 'اصفهان',
+      favoriteService: formFavoriteService.trim() || 'خدمات عمومی سالن',
+      totalVisits: visitsNum,
+      totalSpentToman: spentNum,
+      notes: formNotes.trim(),
+      businessId: currentBiz?.id,
+    });
+    if (created) {
+      setIsSingleModalOpen(false);
+    }
+  };
+
+  // پردازش متن کپی‌شده برای ورود گروهی مشتریان (پشتیبانی از «نام - 0913...» یا «0913... نام»)
+  const parsedPasteItems = React.useMemo(() => {
+    const lines = bulkPasteText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const results: Array<{
+      fullName: string;
+      phone: string;
+      favoriteService?: string;
+      notes?: string;
+    }> = [];
+
+    for (const line of lines) {
+      const normalizedLine = toEnglishDigitsClient(line);
+      const phoneMatch = normalizedLine.match(/(?:09|\+989|989|9)\d{9}/);
+      if (!phoneMatch) continue;
+
+      const rawPhone = phoneMatch[0];
+      const cleanPhone = normalizeIranMobileInput(rawPhone);
+      if (!isValidIranMobile(cleanPhone)) continue;
+
+      const restText = normalizedLine
+        .replace(rawPhone, '')
+        .replace(/^[\s\-_,،:|/]+|[\s\-_,،:|/]+$/g, '')
+        .trim();
+
+      const parts = restText
+        .split(/[\-_,،|/]/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const fullName = parts[0] || 'مشتری سالن';
+      const favoriteService = parts[1] || undefined;
+      const notes = parts.slice(2).join(' - ') || undefined;
+
+      results.push({
+        fullName,
+        phone: cleanPhone,
+        favoriteService,
+        notes,
+      });
+    }
+    return results;
+  }, [bulkPasteText]);
+
+  const validGridItems = React.useMemo(() => {
+    return bulkRows
+      .map((r) => ({
+        fullName: r.fullName.trim(),
+        phone: normalizeIranMobileInput(r.phone),
+        favoriteService: r.favoriteService.trim() || undefined,
+        notes: r.notes.trim() || undefined,
+      }))
+      .filter((r) => r.fullName.length > 0 && isValidIranMobile(r.phone));
+  }, [bulkRows]);
+
+  const handleBulkSubmit = () => {
+    const itemsToImport =
+      bulkMode === 'GRID' ? validGridItems : parsedPasteItems;
+    const res = addCustomersBulk(itemsToImport, currentBiz?.id);
+    if (res.addedCount > 0 || res.updatedCount > 0) {
+      setIsBulkModalOpen(false);
+      setBulkPasteText('');
+      setBulkRows([
+        { id: 'r-1', fullName: '', phone: '', favoriteService: '', notes: '' },
+        { id: 'r-2', fullName: '', phone: '', favoriteService: '', notes: '' },
+        { id: 'r-3', fullName: '', phone: '', favoriteService: '', notes: '' },
+        { id: 'r-4', fullName: '', phone: '', favoriteService: '', notes: '' },
+        { id: 'r-5', fullName: '', phone: '', favoriteService: '', notes: '' },
+      ]);
+    }
+  };
+
+  const filtered = customers.filter((c) => {
+    const q = searchQuery.trim();
+    if (!q) return true;
+    const qEn = toEnglishDigitsClient(q);
+    return (
+      c.fullName.includes(q) ||
+      c.favoriteService.includes(q) ||
+      (c.phone && c.phone.includes(qEn)) ||
+      c.phoneMasked.includes(q) ||
+      (c.notes && c.notes.includes(q))
+    );
+  });
 
   return (
     <div className="space-y-5">
       <PageHeader
-        kicker="مشتریان · پرونده مراجعان"
-        title="فهرست و سوابق مشتریان"
-        subtitle="جست‌وجوی مراجعان، مشاهده تعداد مراجعات، خدمات محبوب و یادداشت‌های تخصصی سالن"
+        kicker="مشتریان · باشگاه و پرونده مراجعان سالن"
+        title="مدیریت و ثبت دستی مشتریان سالن"
+        subtitle="مشتریان حضوری و قبلی سالن خود را به صورت تکی یا گروهی (چندتایی) وارد کنید، سوابق رنگ و خدماتشان را نگه دارید و پیامک بفرستید"
         routePattern="/app/customers"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
           { label: 'پرونده مشتریان' },
         ]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBulkModalOpen(true)}
+            >
+              <Users className="w-4 h-4" />
+              <span>افزودن سریع گروهی (مشتریان قبلی)</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openAddSingleModal}
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ افزودن مشتری جدید</span>
+            </Button>
+          </div>
+        }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* کارت راهنمای ثبت سریع مشتریان حضوری + آمار مشتریان */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="md:col-span-2">
           <FormField
             id="cust-search"
-            label="جست‌وجوی نام مشتری یا خدمت پرتکرار"
+            label="جست‌وجوی نام، شماره موبایل، خدمت یا یادداشت تخصصی"
           >
             <Input
               id="cust-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="مثلاً المیرا شمس یا فیشیال..."
+              placeholder="مثلاً سارا احمدی، 0913 یا بالیاژ..."
             />
           </FormField>
         </Card>
+
         <Card variant="muted" className="flex flex-col justify-center space-y-1">
           <p className="text-xs text-[#6B6480] font-bold">
-            مشتریان وفادار (بیش از ۳ مراجعه)
+            کل پرونده‌های ثبت‌شده سالن
+          </p>
+          <p className="text-2xl font-extrabold text-[#061138] tabular-nums">
+            {toPersianDigits(customers.length)} نفر
+          </p>
+          <p className="text-[11px] text-[#6B6480]">
+            شامل مشتریان آنلاین و حضوری
+          </p>
+        </Card>
+
+        <Card variant="muted" className="flex flex-col justify-center space-y-1">
+          <p className="text-xs text-[#6B6480] font-bold">
+            مشتریان وفادار (۳+ مراجعه)
           </p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {toPersianDigits(
@@ -2187,95 +2459,515 @@ export const BusinessCustomersPage: React.FC = () => {
             )}{' '}
             نفر
           </p>
+          <Link
+            to="/app/marketing"
+            className="text-[11px] font-bold text-[#0057FF] hover:underline"
+          >
+            ارسال پیامک گروهی به مشتریان ←
+          </Link>
         </Card>
       </div>
 
-      <ResponsiveTable<CustomerRecord>
-        keyExtractor={(row) => row.id}
-        data={filtered}
-        columns={[
-          {
-            key: 'name',
-            header: 'نام مشتری',
-            render: (r) => (
-              <div className="flex items-center gap-2.5">
-                <Avatar name={r.fullName} size="sm" tone="rose" />
-                <div>
-                  <p className="font-extrabold text-[#1E1B2E]">{r.fullName}</p>
-                  <p className="text-xs text-[#6B6480]">{r.favoriteService}</p>
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="مشتری با این مشخصات یافت نشد"
+          description="می‌توانید مشتریان حضوری یا قبلی سالن خود را به صورت تکی یا گروهی در چند ثانیه اضافه کنید."
+          actionLabel="+ افزودن اولین مشتری دستی"
+          onAction={openAddSingleModal}
+        />
+      ) : (
+        <ResponsiveTable<CustomerRecord>
+          keyExtractor={(row) => row.id}
+          data={filtered}
+          columns={[
+            {
+              key: 'name',
+              header: 'نام مشتری و خدمت محبوب',
+              render: (r) => (
+                <div className="flex items-center gap-2.5">
+                  <Avatar name={r.fullName} size="sm" tone="rose" />
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-extrabold text-[#1E1B2E]">
+                        {r.fullName}
+                      </p>
+                      {r.sourceLabel === 'MANUAL' ||
+                      r.sourceLabel === 'BULK_IMPORT' ? (
+                        <span className="rounded-md bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                          ثبت دستی
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-[#6B6480]">{r.favoriteService}</p>
+                  </div>
                 </div>
-              </div>
-            ),
-          },
-          {
-            key: 'phone',
-            header: 'شماره همراه (کامل)',
-            render: (r) => (
-              <span dir="ltr" className="text-xs font-mono font-bold text-[#061138] tabular-nums">
-                {r.phone || r.phoneMasked}
-              </span>
-            ),
-          },
-          {
-            key: 'visits',
-            header: 'تعداد مراجعات',
-            render: (r) => (
-              <StatusBadge
-                label={`${toPersianDigits(r.totalVisits)} نوبت`}
-                tone="primary"
-              />
-            ),
-          },
-          {
-            key: 'spent',
-            header: 'مجموع تراکنش‌ها',
-            align: 'left',
-            render: (r) => (
-              <span className="tabular-nums font-extrabold text-[#8B5CF6]">
-                {formatPriceToman(r.totalSpentToman)}
-              </span>
-            ),
-          },
-          {
-            key: 'action',
-            header: 'پرونده',
-            render: (r) => (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedCustomer(r)}
-              >
-                مشاهده سوابق
-              </Button>
-            ),
-          },
-        ]}
-      />
+              ),
+            },
+            {
+              key: 'phone',
+              header: 'شماره همراه',
+              render: (r) => (
+                <span
+                  dir="ltr"
+                  className="text-xs font-mono font-bold text-[#061138] tabular-nums"
+                >
+                  {r.phone || r.phoneMasked}
+                </span>
+              ),
+            },
+            {
+              key: 'visits',
+              header: 'مراجعات',
+              render: (r) => (
+                <div className="flex items-center gap-1.5">
+                  <StatusBadge
+                    label={`${toPersianDigits(r.totalVisits)} نوبت`}
+                    tone="primary"
+                  />
+                  <button
+                    type="button"
+                    title="ثبت سریع ۱ مراجعه حضوری جدید برای این مشتری"
+                    onClick={() =>
+                      updateCustomer(r.id, {
+                        totalVisits: (r.totalVisits || 0) + 1,
+                        lastVisitJalali: 'امروز',
+                      })
+                    }
+                    className="rounded-lg border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-black text-violet-700 hover:bg-violet-100 cursor-pointer"
+                  >
+                    +۱ مراجعه
+                  </button>
+                </div>
+              ),
+            },
+            {
+              key: 'spent',
+              header: 'مجموع تراکنش‌ها',
+              align: 'left',
+              render: (r) => (
+                <span className="tabular-nums font-extrabold text-[#8B5CF6]">
+                  {formatPriceToman(r.totalSpentToman)}
+                </span>
+              ),
+            },
+            {
+              key: 'action',
+              header: 'مدیریت پرونده',
+              render: (r) => (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedCustomer(r);
+                      setQuickSmsText(
+                        `سلام ${r.fullName} عزیز، از همراهی شما با ${currentBiz?.name || 'سالن زیبایی ما'} سپاسگزاریم. برای رزرو نوبت بعدی در خدمتتان هستیم.`
+                      );
+                    }}
+                  >
+                    پرونده و پیامک
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => openEditSingleModal(r)}
+                    title="ویرایش مشخصات و یادداشت مشتری"
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteCustomer(r.id)}
+                    title="حذف پرونده مشتری"
+                    className="p-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
+      {/* مودال ۱: افزودن یا ویرایش تکی مشتری */}
+      <Modal
+        isOpen={isSingleModalOpen}
+        onClose={() => setIsSingleModalOpen(false)}
+        title={
+          editingCustomerId
+            ? 'ویرایش پرونده مشتری'
+            : 'افزودن دستی مشتری جدید به سالن'
+        }
+        description="اطلاعات مشتری حضوری یا تلفنی سالن را وارد کنید تا در باشگاه مشتریان و پنل پیامک شما ذخیره شود."
+      >
+        <form onSubmit={handleSaveSingleCustomer} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <FormField
+              id="single-cust-name"
+              label="نام و نام خانوادگی مشتری"
+              required
+            >
+              <Input
+                id="single-cust-name"
+                value={formFullName}
+                onChange={(e) => setFormFullName(e.target.value)}
+                placeholder="مثلاً: سارا محمدی"
+                required
+              />
+            </FormField>
+
+            <FormField
+              id="single-cust-phone"
+              label="شماره موبایل (۱۱ رقمی با ۰۹)"
+              required
+            >
+              <Input
+                id="single-cust-phone"
+                dir="ltr"
+                value={formPhone}
+                onChange={(e) =>
+                  setFormPhone(normalizeIranMobileInput(e.target.value))
+                }
+                placeholder="09131234567"
+                maxLength={11}
+                required
+              />
+            </FormField>
+          </div>
+
+          <FormField
+            id="single-cust-service"
+            label="خدمت پرتکرار یا مورد علاقه مشتری"
+            hint="می‌توانید روی یکی از خدمات سالن کلیک کنید یا نام خدمت را بنویسید"
+          >
+            <Input
+              id="single-cust-service"
+              value={formFavoriteService}
+              onChange={(e) => setFormFavoriteService(e.target.value)}
+              placeholder="مثلاً: رنگ و مش، کاشت ناخن، فیشیال..."
+            />
+            {bizServices.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {bizServices.slice(0, 6).map((srv) => (
+                  <button
+                    key={srv.id}
+                    type="button"
+                    onClick={() => setFormFavoriteService(srv.title)}
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-bold transition cursor-pointer ${
+                      formFavoriteService === srv.title
+                        ? 'border-violet-600 bg-violet-600 text-white'
+                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {srv.title}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </FormField>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <FormField
+              id="single-cust-visits"
+              label="تعداد مراجعات قبلی"
+              hint="برای مشتریان قدیمی سالن عدد واقعی را وارد کنید"
+            >
+              <Input
+                id="single-cust-visits"
+                type="number"
+                min={0}
+                value={formTotalVisits}
+                onChange={(e) => setFormTotalVisits(e.target.value)}
+              />
+            </FormField>
+
+            <FormField
+              id="single-cust-spent"
+              label="مجموع پرداختی قبلی (تومان - اختیاری)"
+            >
+              <Input
+                id="single-cust-spent"
+                type="number"
+                min={0}
+                step={50000}
+                value={formTotalSpent}
+                onChange={(e) => setFormTotalSpent(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <FormField
+            id="single-cust-notes"
+            label="یادداشت تخصصی پرونده (فرمول رنگ، حساسیت پوستی، سلیقه و...)"
+          >
+            <Textarea
+              id="single-cust-notes"
+              rows={3}
+              value={formNotes}
+              onChange={(e) => setFormNotes(e.target.value)}
+              placeholder="مثلاً: پایه مو ۸، ترکیب رنگ دودی زیتونی شماره ۸.۱ با اکسیدان ۶٪ - پوست حساس..."
+            />
+          </FormField>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSingleModalOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              <Check className="w-4 h-4" />
+              <span>
+                {editingCustomerId ? 'ذخیره تغییرات پرونده' : 'ثبت در لیست مشتریان'}
+              </span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* مودال ۲: ورود سریع گروهی مشتریان قبلی (بهینه‌ترین روش برای سالن‌دارهای پرمشتری) */}
+      <Modal
+        isOpen={isBulkModalOpen}
+        onClose={() => setIsBulkModalOpen(false)}
+        title="افزودن سریع و گروهی مشتریان قبلی سالن"
+        description="اگر لیست مشتریان حضوری یا دفترچه تلفن سالن را دارید، به راحتی چند مشتری را همزمان وارد کنید."
+      >
+        <div className="space-y-4">
+          {/* سوئیچ بین حالت جدول چندردیفه و حالت کپی/پیست متنی */}
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => setBulkMode('GRID')}
+              className={`rounded-xl py-2 px-3 text-xs font-extrabold transition cursor-pointer ${
+                bulkMode === 'GRID'
+                  ? 'bg-white text-[#061138] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              ۱. جدول ورود سریع ردیفی
+            </button>
+            <button
+              type="button"
+              onClick={() => setBulkMode('PASTE')}
+              className={`rounded-xl py-2 px-3 text-xs font-extrabold transition cursor-pointer ${
+                bulkMode === 'PASTE'
+                  ? 'bg-white text-[#061138] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              ۲. کپی و جای‌گذاری لیست متنی
+            </button>
+          </div>
+
+          {bulkMode === 'GRID' ? (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">
+                نام و شماره موبایل مشتریان را ردیف‌به‌ردیف وارد کنید (ردیف‌های خالی نادیده گرفته می‌شوند):
+              </p>
+
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                {bulkRows.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center rounded-xl border border-slate-200 bg-slate-50/70 p-2"
+                  >
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        value={row.fullName}
+                        onChange={(e) =>
+                          setBulkRows((prev) =>
+                            prev.map((item, i) =>
+                              i === idx
+                                ? { ...item, fullName: e.target.value }
+                                : item
+                            )
+                          )
+                        }
+                        placeholder={`نام مشتری ${toPersianDigits(idx + 1)}`}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:border-violet-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        dir="ltr"
+                        maxLength={11}
+                        value={row.phone}
+                        onChange={(e) =>
+                          setBulkRows((prev) =>
+                            prev.map((item, i) =>
+                              i === idx
+                                ? {
+                                    ...item,
+                                    phone: normalizeIranMobileInput(
+                                      e.target.value
+                                    ),
+                                  }
+                                : item
+                            )
+                          )
+                        }
+                        placeholder="0913..."
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 focus:border-violet-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        value={row.favoriteService}
+                        onChange={(e) =>
+                          setBulkRows((prev) =>
+                            prev.map((item, i) =>
+                              i === idx
+                                ? { ...item, favoriteService: e.target.value }
+                                : item
+                            )
+                          )
+                        }
+                        placeholder="خدمت یا یادداشت (اختیاری)"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:border-violet-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBulkRows((prev) => [
+                      ...prev,
+                      {
+                        id: `r-${Date.now()}-${prev.length}`,
+                        fullName: '',
+                        phone: '',
+                        favoriteService: '',
+                        notes: '',
+                      },
+                    ])
+                  }
+                  className="inline-flex items-center gap-1 text-xs font-extrabold text-violet-700 hover:text-violet-900 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>افزودن ردیف بیشتر</span>
+                </button>
+
+                <span className="text-xs font-bold text-emerald-700">
+                  {toPersianDigits(validGridItems.length)} ردیف معتبر آماده ثبت
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3 text-xs text-violet-950 space-y-1">
+                <p className="font-extrabold">
+                  نحوه ورود سریع از دفترچه تلفن یا اکسل:
+                </p>
+                <p className="text-[11px] text-violet-800 leading-relaxed">
+                  در هر خط، نام مشتری و شماره موبایل را بنویسید یا کپی کنید. سیستم به صورت هوشمند شماره موبایل و نام را جدا می‌کند:
+                </p>
+                <pre
+                  dir="rtl"
+                  className="mt-1 rounded-lg bg-white/90 p-2 text-[11px] font-mono text-slate-700 border border-violet-100"
+                >
+                  {`سارا احمدی - 09131112233 - رنگ و لایت\nمریم رضایی، 09132223344\nنازنین کریمی 09123334455`}
+                </pre>
+              </div>
+
+              <Textarea
+                id="bulk-paste-input"
+                rows={6}
+                value={bulkPasteText}
+                onChange={(e) => setBulkPasteText(e.target.value)}
+                placeholder={`سارا احمدی - 09131112233\nمریم رضایی - 09132223344`}
+              />
+
+              <div className="flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs">
+                <span className="font-bold text-emerald-900">
+                  مشتریان شناسایی‌شده در متن:
+                </span>
+                <span className="font-black text-emerald-700">
+                  {toPersianDigits(parsedPasteItems.length)} نفر آماده افزودن
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsBulkModalOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={handleBulkSubmit}
+            >
+              <Check className="w-4 h-4" />
+              <span>
+                ثبت یکجای مشتریان (
+                {toPersianDigits(
+                  bulkMode === 'GRID'
+                    ? validGridItems.length
+                    : parsedPasteItems.length
+                )}{' '}
+                نفر)
+              </span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* مودال ۳: مشاهده پرونده کامل، یادداشت‌ها و ارسال پیامک مستقیم */}
       <Modal
         isOpen={Boolean(selectedCustomer)}
         onClose={() => setSelectedCustomer(null)}
         title={`پرونده مشتری: ${selectedCustomer?.fullName ?? ''}`}
-        description="سوابق مراجعات، شماره تماس کامل و یادداشت‌های تخصصی سالن"
+        description="سوابق مراجعات، شماره تماس کامل، یادداشت تخصصی و ارسال پیامک مستقیم"
       >
         {selectedCustomer ? (
           <div className="space-y-4 text-xs">
             <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-2">
-              <p>
-                <strong className="text-[#1E1B2E]">شماره همراه مشتری:</strong>{' '}
-                <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">
-                  {selectedCustomer.phone || selectedCustomer.phoneMasked}
-                </span>
-              </p>
+              <div className="flex items-center justify-between">
+                <p>
+                  <strong className="text-[#1E1B2E]">شماره همراه مشتری:</strong>{' '}
+                  <span
+                    dir="ltr"
+                    className="font-mono font-extrabold text-[#0057FF]"
+                  >
+                    {selectedCustomer.phone || selectedCustomer.phoneMasked}
+                  </span>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditSingleModal(selectedCustomer)}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>ویرایش پرونده</span>
+                </Button>
+              </div>
               <p>
                 <strong className="text-[#1E1B2E]">خدمت پرتکرار:</strong>{' '}
                 {selectedCustomer.favoriteService}
               </p>
               <p>
-                <strong className="text-[#1E1B2E]">آخرین مراجعه:</strong>{' '}
-                <span className="tabular-nums">
-                  {selectedCustomer.lastVisitJalali}
-                </span>
+                <strong className="text-[#1E1B2E]">تعداد کل مراجعات:</strong>{' '}
+                <span className="font-bold text-violet-700">
+                  {toPersianDigits(selectedCustomer.totalVisits)} بار
+                </span>{' '}
+                (آخرین مراجعه: {selectedCustomer.lastVisitJalali})
               </p>
               <p>
                 <strong className="text-[#1E1B2E]">یادداشت تخصصی سالن:</strong>{' '}
@@ -2283,27 +2975,73 @@ export const BusinessCustomersPage: React.FC = () => {
               </p>
             </div>
 
+            {/* ارسال سریع پیامک به همین مشتری */}
+            {selectedCustomer.phone ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
+                <p className="font-extrabold text-[#061138] flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4 text-[#0057FF]" />
+                  <span>ارسال پیامک مستقیم به {selectedCustomer.fullName}</span>
+                </p>
+                <Textarea
+                  id="quick-cust-sms"
+                  rows={2}
+                  value={quickSmsText}
+                  onChange={(e) => setQuickSmsText(e.target.value)}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isSendingQuickSms}
+                    onClick={async () => {
+                      if (!selectedCustomer.phone) return;
+                      setIsSendingQuickSms(true);
+                      await sendBusinessCustomerSms({
+                        businessId: currentBiz?.id,
+                        recipientPhones: [selectedCustomer.phone],
+                        messageText: quickSmsText,
+                        templateTitle: `پیامک اختصاصی به ${selectedCustomer.fullName}`,
+                      });
+                      setIsSendingQuickSms(false);
+                    }}
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>ارسال پیامک</span>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="space-y-2">
               <h3 className="font-extrabold text-[#1E1B2E]">
-                تاریخچه نوبت‌های ثبت‌شده:
+                تاریخچه نوبت‌های ثبت‌شده در سیستم:
               </h3>
-              {appointments
-                .filter((a) =>
-                  a.customerName.includes(selectedCustomer.fullName)
-                )
-                .map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="p-3 rounded-xl border border-[#E6E0F5] flex items-center justify-between"
-                  >
-                    <span className="font-bold text-[#1E1B2E]">
-                      {apt.serviceTitle} ({apt.dateJalali})
-                    </span>
-                    <span className="font-extrabold text-[#8B5CF6] tabular-nums">
-                      {formatPriceToman(apt.priceToman)}
-                    </span>
-                  </div>
-                ))}
+              {appointments.filter((a) =>
+                a.customerName.includes(selectedCustomer.fullName)
+              ).length === 0 ? (
+                <p className="text-slate-500">
+                  نوبت آنلاینی در سیستم ثبت نشده است (مشتری حضوری سالن).
+                </p>
+              ) : (
+                appointments
+                  .filter((a) =>
+                    a.customerName.includes(selectedCustomer.fullName)
+                  )
+                  .map((apt) => (
+                    <div
+                      key={apt.id}
+                      className="p-3 rounded-xl border border-[#E6E0F5] flex items-center justify-between"
+                    >
+                      <span className="font-bold text-[#1E1B2E]">
+                        {apt.serviceTitle} ({apt.dateJalali})
+                      </span>
+                      <span className="font-extrabold text-[#8B5CF6] tabular-nums">
+                        {formatPriceToman(apt.priceToman)}
+                      </span>
+                    </div>
+                  ))
+              )}
             </div>
           </div>
         ) : null}
