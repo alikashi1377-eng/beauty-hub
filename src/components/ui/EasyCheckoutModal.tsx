@@ -391,20 +391,12 @@ export const EasyCheckoutModal: React.FC<{
           />
         </FormField>
 
-        <label className="flex items-center justify-between p-3 rounded-xl bg-[#ECFDF5] border border-[#10B981]/40 cursor-pointer">
-          <div className="flex items-center gap-2 text-[#065F46]">
-            <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0" />
-            <span className="font-bold text-xs">
-              فعال‌سازی آنی بسته بلافاصله پس از ثبت رسید (هم‌زمان با ارسال به پنل مدیر کل)
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            checked={instantActivate}
-            onChange={(e) => setInstantActivate(e.target.checked)}
-            className="accent-[#0057FF] w-4 h-4"
-          />
-        </label>
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-[#ECFDF5] border border-[#10B981]/40 text-[#065F46]">
+          <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0" />
+          <span className="font-bold text-xs">
+            امکانات و ظرفیت بسته انتخابی بلافاصله پس از ثبت کد پیگیری برای سالن شما فعال می‌شود.
+          </span>
+        </div>
 
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
           <Button variant="outline" size="sm" onClick={onClose}>

@@ -50,6 +50,13 @@ import {
   BusinessCard,
   ProfessionalCard,
 } from '../../components/ui/MarketplaceComponents';
+import { TimetoFlagshipHome } from '../../components/home/TimetoFlagshipHome';
+import {
+  getSavedVisitorRole,
+  saveVisitorRole,
+  VISITOR_ROLE_EVENT,
+  VisitorEntryRole,
+} from '../../components/home/timetoHomeData';
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   Sparkles: <Sparkles className="w-4 h-4 text-[#0057FF]" />,
@@ -62,10 +69,13 @@ const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   HeartHandshake: <HeartHandshake className="w-4 h-4 text-[#10B981]" />,
 };
 
-/** ۱. صفحه اصلی (/) — هیرو جذاب، جست‌وجوی هوشمند زنده و اسلایدر افقی متخصصان در موبایل */
-export const HomePage: React.FC = () => {
+/** ۱-الف. صفحه اصلی مشتریان (پس از انتخاب نقش مشتری در صفحه ورود) */
+const OriginalCustomerHomePage: React.FC = () => {
   const navigate = useNavigate();
   const {
+    authUser,
+    ownedBusinessId,
+    openAuthModal,
     businesses,
     services,
     specialists,
@@ -76,9 +86,15 @@ export const HomePage: React.FC = () => {
     toggleFavoriteSpecialist,
   } = usePrototypeData();
 
+  const isLoggedInCustomerOnly = Boolean(
+    authUser &&
+      !ownedBusinessId &&
+      !authUser.roles.includes('BUSINESS_OWNER') &&
+      !authUser.isPlatformAdmin
+  );
+
   const [searchKeyword, setSearchKeyword] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [activeHeroCardIndex, setActiveHeroCardIndex] = useState<number>(1);
   const [proSpecialtyFilter, setProSpecialtyFilter] = useState<string>('ALL');
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
 
@@ -144,49 +160,6 @@ export const HomePage: React.FC = () => {
     if (searchKeyword.trim()) params.set('q', searchKeyword.trim());
     navigate(`/search?${params.toString()}`);
   };
-
-  const heroShowcaseCards = [
-    {
-      id: 'biz-3',
-      slug: 'sara-rad',
-      title: 'استودیو پوست و میکاپ سارا راد',
-      subtitle: 'فیشیال تخصصی و آبرسانی پوست',
-      neighborhood: 'نظر شرقی',
-      rating: '۴.۹',
-      startingPrice: '۶۲۰,۰۰۰ تومان',
-      badge: 'پذیرش VIP تک‌نفره',
-      href: '/pro/sara-rad',
-      imageUrl: getBeautyPhotoUrl('استودیو پوست سارا راد', 'پوست و فیشیال', 'botanical'),
-    },
-    {
-      id: 'biz-1',
-      slug: 'royal-golzar',
-      title: 'سالن زیبایی رویال گلزار',
-      subtitle: 'تخصص رنگ، لایت و احیای مو',
-      neighborhood: 'چهارباغ بالا',
-      rating: '۴.۹',
-      startingPrice: '۴۸۰,۰۰۰ تومان',
-      badge: 'پرمخاطب‌ترین در اصفهان',
-      href: '/salon/royal-golzar',
-      imageUrl: getBeautyPhotoUrl('سالن زیبایی رویال گلزار', 'مو و رنگ'),
-    },
-    {
-      id: 'biz-4',
-      slug: 'niloofar-abi',
-      title: 'مرکز ناخن و مژه نیلوفر آبی',
-      subtitle: 'مانیکور روسی و لیفت مژه',
-      neighborhood: 'مرداویج',
-      rating: '۴.۷',
-      startingPrice: '۳۹۰,۰۰۰ تومان',
-      badge: 'پک بهداشتی اختصاصی',
-      href: '/salon/niloofar-abi',
-      imageUrl: getBeautyPhotoUrl('مرکز ناخن نیلوفر آبی', 'ناخن و مژه', 'atelier'),
-    },
-  ];
-
-  const activeHeroCard =
-    heroShowcaseCards[activeHeroCardIndex] ?? heroShowcaseCards[1];
-  const isHeroSalonFav = favoriteBusinessIds.includes(activeHeroCard.id);
 
   const approvedSalons = businesses.filter(
     (b) => b.approvalStatus === 'APPROVED'
@@ -269,9 +242,8 @@ export const HomePage: React.FC = () => {
 
   return (
     <div className="space-y-8 sm:space-y-11">
-      {/* ۱. بخش Hero بهینه‌شده با ارتفاع متوازن، تصویر بک‌گراند خوانا و جست‌وجوی هوشمند شناور */}
+      {/* ۱. بخش Hero صفحه اصلی مشتریان با جست‌وجوی هوشمند شناور */}
       <section className="relative rounded-[28px] sm:rounded-[32px] border border-[#1E293B] bg-[#061138] shadow-[0_20px_48px_-18px_rgba(6,17,56,0.55)]">
-        {/* لایه تصویر پس‌زمینه با overflow-hidden مجزا تا منوی نتایج جست‌وجو بریده نشود */}
         <div className="absolute inset-0 rounded-[28px] sm:rounded-[32px] overflow-hidden pointer-events-none">
           <img
             src={getBeautyPhotoUrl('سالن زیبایی لوکس در تایم تو', 'سالن زیبایی زنانه')}
@@ -282,10 +254,9 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="relative z-20 px-4 py-5 sm:px-8 sm:py-8 lg:py-9 max-w-3xl mx-auto text-center space-y-3.5 sm:space-y-4">
-          {/* نشان موقعیت مکانی جمع‌وجور */}
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/12 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] sm:text-xs font-extrabold text-[#00E5FF]">
             <MapPin className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
-            <span>تایم تو (Timeto) · رزرو آنلاین سالن و متخصص در اصفهان</span>
+            <span>تایم تو (Timeto) · رزرو آنلاین سالن و متخصص در اصفهان و درچه</span>
           </div>
 
           <div className="space-y-1.5">
@@ -297,7 +268,7 @@ export const HomePage: React.FC = () => {
             </p>
           </div>
 
-          {/* باکس جست‌وجوی هوشمند (Smart Live Search) با پنل شناور مطلق */}
+          {/* باکس جست‌وجوی هوشمند (Smart Live Search) */}
           <div className="relative z-30 text-right max-w-2xl mx-auto pt-0.5">
             <form
               onSubmit={handleHeroSearch}
@@ -317,7 +288,7 @@ export const HomePage: React.FC = () => {
                     setSearchKeyword(e.target.value);
                     setIsSearchFocused(true);
                   }}
-                  placeholder="نام سالن، متخصص، خدمت یا محله (مثلاً چهارباغ، فیشیال، ناخن)..."
+                  placeholder="نام سالن، متخصص، خدمت یا محله (مثلاً درچه، چهارباغ، فیشیال، ناخن)..."
                   className="w-full text-xs sm:text-sm font-medium text-[#061138] placeholder:text-[#64748B] bg-transparent focus:outline-none truncate"
                 />
                 {searchKeyword ? (
@@ -340,7 +311,6 @@ export const HomePage: React.FC = () => {
               </button>
             </form>
 
-            {/* پنل شناور نتایج جست‌وجوی هوشمند زنده (بدون تغییر ارتفاع هیرو) */}
             {isSearchFocused ? (
               <div className="absolute left-0 right-0 top-full mt-2 z-50 rounded-3xl border border-[#CBD5E1] bg-white p-4 shadow-2xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2">
@@ -498,7 +468,6 @@ export const HomePage: React.FC = () => {
             ) : null}
           </div>
 
-          {/* آیکون‌قرص‌های سریع دسته‌بندی‌ها در پایین هیرو */}
           <div className="flex items-center justify-start sm:justify-center gap-2 overflow-x-auto pb-1 no-scrollbar pt-1">
             {categories.slice(0, 6).map((cat) => (
               <Link
@@ -522,16 +491,16 @@ export const HomePage: React.FC = () => {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-[#8B5CF6]">
-              تخفیف‌ها و پکیج‌های فصلی اصفهان
+            <p className="text-xs font-bold text-[#0057FF]">
+              تخفیف‌ها و پکیج‌های فصلی اصفهان و درچه
             </p>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
               پیشنهادهای ویژه رزرو آنلاین
             </h2>
           </div>
           <Link
             to="/search"
-            className="text-xs font-bold text-[#8B5CF6] hover:text-[#7C3AED] inline-flex items-center gap-1"
+            className="text-xs font-bold text-[#0057FF] hover:text-[#0044CC] inline-flex items-center gap-1"
           >
             <span>همه پیشنهادها</span>
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -539,7 +508,6 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* کارت اصلی بنر ویژه (متصل به مدیریت تبلیغات ادمین) */}
           <div className="lg:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-l from-[#061138] via-[#0A2568] to-[#0057FF] text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-[0_18px_45px_-18px_rgba(0,87,255,0.35)]">
             <div className="space-y-3.5 max-w-md z-10">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-xs font-extrabold text-[#00E5FF]">
@@ -562,12 +530,12 @@ export const HomePage: React.FC = () => {
                 <Link
                   to={
                     homeBannerPrimary
-                      ? `/booking/${homeBannerPrimary.slug}`
-                      : '/booking/royal-golzar'
+                      ? `/salon/${homeBannerPrimary.slug}`
+                      : '/salon/royal-golzar'
                   }
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#00E5FF] text-[#061138] hover:bg-white text-xs sm:text-sm font-extrabold transition-colors shadow-sm"
                 >
-                  <span>رزرو مستقیم نوبت</span>
+                  <span>مشاهده پروفایل سالن</span>
                   <ArrowLeft className="w-4 h-4" />
                 </Link>
                 {homeBannerPrimary ? (
@@ -591,7 +559,6 @@ export const HomePage: React.FC = () => {
             </div>
           </div>
 
-          {/* کارت دوم پیشنهاد ویژه */}
           <div className="lg:col-span-5 rounded-3xl border border-[#CBD5E1] bg-white p-6 sm:p-7 flex flex-col justify-between gap-5 shadow-xs">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
@@ -635,12 +602,12 @@ export const HomePage: React.FC = () => {
               <Link
                 to={
                   homeBannerSecondary
-                    ? `/booking/${homeBannerSecondary.slug}`
+                    ? `/salon/${homeBannerSecondary.slug}`
                     : '/pro/sara-rad'
                 }
                 className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
               >
-                <span>مشاهده و رزرو</span>
+                <span>مشاهده سالن</span>
                 <ArrowLeft className="w-3.5 h-3.5" />
               </Link>
             </div>
@@ -648,27 +615,26 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ۳. بخش متخصصان برجسته (Pro Care) — اسلایدر افقی در موبایل برای جلوگیری از اسکرول طولانی عمودی */}
+      {/* ۳. بخش متخصصان برجسته (Pro Care) */}
       <section className="space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-bold text-[#8B5CF6] mb-1">
+            <p className="text-xs font-bold text-[#0057FF] mb-1">
               انتخاب مستقیم متخصص (Pro Care)
             </p>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
               متخصصان برجسته زیبایی، پوست و پیرایش اصفهان
             </h2>
           </div>
           <Link
             to="/search"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8B5CF6] hover:text-[#7C3AED] transition-colors shrink-0"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0057FF] hover:text-[#0044CC] transition-colors shrink-0"
           >
             <span>مشاهده همه متخصصان</span>
             <ArrowLeft className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        {/* فیلتر سریع تخصص‌ها + راهنمای کشیدن افقی در موبایل */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {[
@@ -684,20 +650,19 @@ export const HomePage: React.FC = () => {
                 onClick={() => setProSpecialtyFilter(tab.id)}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                   proSpecialtyFilter === tab.id
-                    ? 'bg-[#8B5CF6] text-white shadow-2xs'
-                    : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
+                    ? 'bg-[#0057FF] text-white shadow-2xs'
+                    : 'bg-white border border-[#CBD5E1] text-[#334155] hover:text-[#061138]'
                 }`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
-          <span className="sm:hidden text-[11px] font-semibold text-[#6B6480] shrink-0">
+          <span className="sm:hidden text-[11px] font-semibold text-[#64748B] shrink-0">
             ورق بزنید ←
           </span>
         </div>
 
-        {/* در موبایل: کاروسل افقی اسنپ‌دار بدون اسکرول عمودی اضافه | در دسکتاپ: شبکه ۴ ستونی */}
         <div className="flex overflow-x-auto snap-x snap-mandatory gap-3.5 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:gap-5 no-scrollbar">
           {filteredProfessionals.map((sp) => (
             <div
@@ -713,9 +678,8 @@ export const HomePage: React.FC = () => {
           ))}
         </div>
 
-        {/* کارت ادیتوریال متخصص منتخب ماه با دکمه علاقه‌مندی و چیدمان فشرده در موبایل */}
         {spotlightSpecialist ? (
-          <div className="rounded-3xl border border-[#E6E0F5] bg-white p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-center shadow-[0_12px_32px_-16px_rgba(139,92,246,0.14)]">
+          <div className="rounded-3xl border border-[#CBD5E1] bg-white p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-center shadow-xs">
             <div className="lg:col-span-4 relative h-48 sm:h-60 rounded-2xl overflow-hidden">
               <img
                 src={getSpecialistAvatarUrl(
@@ -725,7 +689,7 @@ export const HomePage: React.FC = () => {
                 alt={spotlightSpecialist.fullName}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/85 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/85 via-transparent to-transparent" />
               <button
                 type="button"
                 onClick={() => toggleFavoriteSpecialist(spotlightSpecialist.id)}
@@ -735,8 +699,8 @@ export const HomePage: React.FC = () => {
                 <Heart
                   className={`w-4 h-4 ${
                     isSpotlightFav
-                      ? 'text-[#8B5CF6] fill-[#8B5CF6]'
-                      : 'text-[#1E1B2E]'
+                      ? 'text-[#0057FF] fill-[#0057FF]'
+                      : 'text-[#061138]'
                   }`}
                 />
               </button>
@@ -758,27 +722,27 @@ export const HomePage: React.FC = () => {
 
             <div className="lg:col-span-8 space-y-3 sm:space-y-4">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-xs font-bold">
+                <span className="px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-bold">
                   منتخب ماه مراجعان اصفهان
                 </span>
-                <span className="text-xs text-[#6B6480] tabular-nums">
+                <span className="text-xs text-[#64748B] tabular-nums">
                   {toPersianDigits(spotlightSpecialist.experienceYears)} سال
                   سابقه تخصصی · {spotlightSpecialist.city}
                 </span>
               </div>
-              <h3 className="text-base sm:text-xl font-extrabold text-[#1E1B2E]">
+              <h3 className="text-base sm:text-xl font-extrabold text-[#061138]">
                 تجربه خدمات تخصصی با {spotlightSpecialist.fullName} (
                 {spotlightSpecialist.roleTitle})
               </h3>
-              <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed line-clamp-2 sm:line-clamp-none">
+              <p className="text-xs sm:text-sm text-[#334155] leading-relaxed line-clamp-2 sm:line-clamp-none">
                 {spotlightSpecialist.bio}
               </p>
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#F3EEFF]">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {spotlightSpecialist.specialties.map((spec) => (
                     <span
                       key={spec}
-                      className="px-2.5 py-1 rounded-full bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
+                      className="px-2.5 py-1 rounded-full bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-semibold text-[#334155]"
                     >
                       {spec}
                     </span>
@@ -786,7 +750,7 @@ export const HomePage: React.FC = () => {
                 </div>
                 <Link
                   to={`/pro/${spotlightSpecialist.slug}`}
-                  className="px-5 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-bold inline-flex items-center gap-2 transition-colors shadow-[0_6px_16px_-4px_rgba(139,92,246,0.4)]"
+                  className="px-5 py-2.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-bold inline-flex items-center gap-2 transition-colors"
                 >
                   <span>مشاهده پروفایل و تقویم آزاد</span>
                   <ArrowLeft className="w-3.5 h-3.5" />
@@ -801,24 +765,24 @@ export const HomePage: React.FC = () => {
       <section className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-bold text-[#8B5CF6] mb-1">
-              رزرو مستقیم در برترین مراکز اصفهان
+            <p className="text-xs font-bold text-[#0057FF] mb-1">
+              رزرو مستقیم در برترین مراکز اصفهان و درچه
             </p>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
-              سالن‌های زیبایی و آرایشگاه‌های منتخب اصفهان
+            <h2 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
+              سالن‌های زیبایی و آرایشگاه‌های منتخب
             </h2>
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-3">
-            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FAF8FF] border border-[#E6E0F5] text-xs font-bold text-[#8B5CF6]">
-              <MapPin className="w-3.5 h-3.5 text-[#8B5CF6]" />
-              <span>شهر فعال: اصفهان</span>
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#CBD5E1] text-xs font-bold text-[#0057FF]">
+              <MapPin className="w-3.5 h-3.5 text-[#0057FF]" />
+              <span>اصفهان و درچه</span>
             </span>
             <Link
               to="/search"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8B5CF6] hover:text-[#7C3AED] transition-colors shrink-0"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0057FF] hover:text-[#0044CC] transition-colors shrink-0"
             >
-              <span>همه سالن‌های اصفهان</span>
+              <span>همه سالن‌ها</span>
               <ArrowLeft className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -836,73 +800,86 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ۵. بخش معرفی پنل مدیریت ویژه صاحبان سالن و متخصصان */}
-      <section className="rounded-[32px] border border-[#1E293B] bg-[#061138] text-white p-6 sm:p-9">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          <div className="lg:col-span-8 space-y-3">
-            <span className="inline-block text-xs font-bold text-[#00E5FF] bg-white/10 px-3 py-1 rounded-full">
-              ویژه مدیران سالن و متخصصان
-            </span>
-            <h2 className="text-lg sm:text-2xl font-extrabold leading-snug">
-              مدیریت هوشمند تقویم نوبت‌ها و مشتریان در Timeto
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs text-slate-200">
-              <div className="flex items-center gap-2">
-                <CalendarCheck className="w-4 h-4 text-[#00E5FF] shrink-0" />
-                <span>تقویم مجزا برای هر متخصص</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-[#00E5FF] shrink-0" />
-                <span>دریافت بیعانه آنلاین</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-[#00E5FF] shrink-0" />
-                <span>گزارش شفاف درآمد</span>
+      {/* ۵. بخش معرفی پنل مدیریت ویژه صاحبان سالن و متخصصان — فقط اگر کاربر به عنوان مشتری وارد نشده باشد نمایش داده شود */}
+      {!isLoggedInCustomerOnly ? (
+        <section className="rounded-[32px] border border-[#1E293B] bg-[#061138] text-white p-6 sm:p-9">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            <div className="lg:col-span-8 space-y-3">
+              <span className="inline-block text-xs font-bold text-[#00E5FF] bg-white/10 px-3 py-1 rounded-full">
+                ویژه مدیران سالن و متخصصان
+              </span>
+              <h2 className="text-lg sm:text-2xl font-extrabold leading-snug">
+                مدیریت هوشمند تقویم نوبت‌ها و مشتریان در Timeto
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs text-slate-200">
+                <div className="flex items-center gap-2">
+                  <CalendarCheck className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                  <span>تقویم مجزا برای هر متخصص</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                  <span>دریافت بیعانه آنلاین</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                  <span>گزارش شفاف درآمد</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="lg:col-span-4 flex flex-col gap-2.5 bg-white/5 p-4 rounded-3xl border border-white/15">
-            <Link to="/business/register">
-              <Button variant="accent" size="lg" fullWidth>
+            <div className="lg:col-span-4 flex flex-col gap-2.5 bg-white/5 p-4 rounded-3xl border border-white/15">
+              <Button
+                type="button"
+                variant="accent"
+                size="lg"
+                fullWidth
+                onClick={() =>
+                  openAuthModal({
+                    initialScreen: 'REGISTER_STEP_1_PHONE',
+                    defaultRole: 'BUSINESS_OWNER',
+                    redirectTo: '/app',
+                    promptReason: 'ثبت سریع سالن زیبایی و ورود به پنل مدیریت',
+                  })
+                }
+              >
                 <span>ثبت رایگان کسب‌وکار</span>
                 <ArrowLeft className="w-4 h-4" />
               </Button>
-            </Link>
-            <div className="grid grid-cols-2 gap-2">
-              <Link to="/pricing">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  fullWidth
-                  className="!bg-white/10 !text-white !border-white/25 hover:!bg-white/20"
-                >
-                  تعرفه پلن‌ها
-                </Button>
-              </Link>
-              <Link to="/app">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  fullWidth
-                  className="!bg-white/10 !text-white !border-white/25 hover:!bg-white/20"
-                >
-                  مشاهده پنل سالن
-                </Button>
-              </Link>
+              <div className="grid grid-cols-2 gap-2">
+                <Link to="/pricing">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    fullWidth
+                    className="!bg-white/10 !text-white !border-white/25 hover:!bg-white/20"
+                  >
+                    تعرفه پلن‌ها
+                  </Button>
+                </Link>
+                <Link to="/app">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    fullWidth
+                    className="!bg-white/10 !text-white !border-white/25 hover:!bg-white/20"
+                  >
+                    مشاهده پنل سالن
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {/* ۶. پرسش‌های متداول */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-4 space-y-2">
-          <p className="text-xs font-bold text-[#8B5CF6]">پاسخ به سوالات رایج</p>
-          <h2 className="text-xl font-extrabold text-[#1E1B2E]">
+          <p className="text-xs font-bold text-[#0057FF]">پاسخ به سوالات رایج</p>
+          <h2 className="text-xl font-extrabold text-[#061138]">
             پرسش‌های متداول درباره رزرو نوبت
           </h2>
-          <p className="text-xs text-[#6B6480] leading-relaxed">
+          <p className="text-xs text-[#64748B] leading-relaxed">
             برای راهنمایی بیشتر می‌توانید به بخش پشتیبانی و راهنما مراجعه کنید.
           </p>
           <div className="pt-2">
@@ -920,23 +897,23 @@ export const HomePage: React.FC = () => {
             return (
               <div
                 key={idx}
-                className="rounded-2xl border border-[#E6E0F5] bg-white overflow-hidden"
+                className="rounded-2xl border border-[#CBD5E1] bg-white overflow-hidden"
               >
                 <button
                   type="button"
                   onClick={() => setOpenFaqIndex(isOpen ? -1 : idx)}
                   aria-expanded={isOpen}
-                  className="w-full px-5 py-4 text-right flex items-center justify-between gap-4 text-sm font-bold text-[#1E1B2E] hover:bg-[#FAF8FF] cursor-pointer"
+                  className="w-full px-5 py-4 text-right flex items-center justify-between gap-4 text-sm font-bold text-[#061138] hover:bg-[#F8FAFC] cursor-pointer"
                 >
                   <span>{item.q}</span>
                   <ChevronDown
-                    className={`w-4 h-4 text-[#6B6480] shrink-0 transition-transform ${
-                      isOpen ? 'rotate-180 text-[#8B5CF6]' : ''
+                    className={`w-4 h-4 text-[#64748B] shrink-0 transition-transform ${
+                      isOpen ? 'rotate-180 text-[#0057FF]' : ''
                     }`}
                   />
                 </button>
                 {isOpen ? (
-                  <div className="px-5 pb-4 text-xs sm:text-sm text-[#6B6480] leading-relaxed border-t border-[#F3EEFF] pt-3">
+                  <div className="px-5 pb-4 text-xs sm:text-sm text-[#334155] leading-relaxed border-t border-[#E2E8F0] pt-3">
                     {item.a}
                   </div>
                 ) : null}
@@ -947,6 +924,82 @@ export const HomePage: React.FC = () => {
       </section>
     </div>
   );
+};
+
+/** ۱. درگاه هوشمند صفحه اول (/) — اگر کاربر هنوز نقش خود را مشخص نکرده، صفحه ورود سه‌بعدی (TimetoFlagshipHome) نمایش داده می‌شود و پس از انتخاب نقش، سیستم خودکار بخش مربوط به او را بارگذاری می‌کند */
+export const HomePage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { ownedBusinessId, authUser, openAuthModal } = usePrototypeData();
+  const [visitorRole, setVisitorRole] = useState<VisitorEntryRole>(() =>
+    getSavedVisitorRole()
+  );
+
+  useEffect(() => {
+    const syncRole = () => {
+      setVisitorRole(getSavedVisitorRole());
+    };
+    window.addEventListener(VISITOR_ROLE_EVENT, syncRole);
+    window.addEventListener('storage', syncRole);
+    return () => {
+      window.removeEventListener(VISITOR_ROLE_EVENT, syncRole);
+      window.removeEventListener('storage', syncRole);
+    };
+  }, []);
+
+  useEffect(() => {
+    setVisitorRole(getSavedVisitorRole());
+  }, [searchParams]);
+
+  const isBusinessOwnerRegistered =
+    Boolean(ownedBusinessId) ||
+    Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
+
+  // اگر کاربر قبلاً نقش «سالن‌دار» را انتخاب کرده و سالن ثبت‌شده دارد، مستقیم وارد پیشخوان سالن شود
+  useEffect(() => {
+    if (
+      visitorRole === 'BUSINESS_OWNER' &&
+      isBusinessOwnerRegistered &&
+      searchParams.get('intro') !== '1'
+    ) {
+      navigate('/app', { replace: true });
+    }
+  }, [visitorRole, isBusinessOwnerRegistered, navigate, searchParams]);
+
+  const handleSelectCustomer = () => {
+    saveVisitorRole('CUSTOMER');
+    setVisitorRole('CUSTOMER');
+    if (searchParams.get('intro') === '1') {
+      setSearchParams({}, { replace: true });
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleSelectBusinessOwner = () => {
+    saveVisitorRole('BUSINESS_OWNER');
+    setVisitorRole('BUSINESS_OWNER');
+    if (isBusinessOwnerRegistered) {
+      navigate('/app');
+    } else {
+      openAuthModal({
+        initialScreen: 'REGISTER_STEP_1_PHONE',
+        defaultRole: 'BUSINESS_OWNER',
+        redirectTo: '/app',
+        promptReason: 'ثبت سریع سالن زیبایی و ورود به پنل مدیریت',
+      });
+    }
+  };
+
+  if (visitorRole === null || searchParams.get('intro') === '1') {
+    return (
+      <TimetoFlagshipHome
+        onSelectCustomerRole={handleSelectCustomer}
+        onSelectBusinessRole={handleSelectBusinessOwner}
+      />
+    );
+  }
+
+  return <OriginalCustomerHomePage />;
 };
 
 /** ۲. صفحه جست‌وجوی هوشمند سالن و متخصص (/search) */
@@ -1900,61 +1953,86 @@ export const HelpPage: React.FC = () => {
             ))}
           </div>
 
-          {/* نمایش تیکت‌های ثبت‌شده و پاسخ مدیریت */}
-          {supportTickets.length > 0 ? (
-            <div className="space-y-3 pt-2">
-              <h2 className="text-base font-extrabold text-[#061138]">
-                پیگیری تیکت‌های ارسالی و پاسخ مدیریت ({toPersianDigits(supportTickets.length)} مورد)
-              </h2>
-              {supportTickets.map((tck) => (
-                <Card key={tck.id} className="space-y-3 border-2 border-[#E2E8F0]">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-extrabold text-[#0057FF]">
-                        {tck.id}
-                      </span>
-                      <span className="text-xs font-extrabold text-[#061138]">
-                        {tck.subject}
-                      </span>
+          {/* نمایش تیکت‌های ثبت‌شده کاربر فعلی و پاسخ پشتیبانی */}
+          {(() => {
+            const isPlatformAdmin = Boolean(
+              authUser?.isPlatformAdmin &&
+                authUser?.roles?.includes('PLATFORM_ADMIN')
+            );
+            const activeUserPhone = (
+              authUser?.phone ||
+              senderPhone ||
+              ''
+            ).trim();
+            const myTickets = isPlatformAdmin
+              ? supportTickets
+              : activeUserPhone
+                ? supportTickets.filter(
+                    (tck) => tck.senderPhone === activeUserPhone
+                  )
+                : [];
+
+            if (myTickets.length === 0) return null;
+
+            return (
+              <div className="space-y-3 pt-2">
+                <h2 className="text-base font-extrabold text-[#061138]">
+                  پیگیری تیکت‌های ارسالی شما و پاسخ پشتیبانی (
+                  {toPersianDigits(myTickets.length)} مورد)
+                </h2>
+                {myTickets.map((tck) => (
+                  <Card
+                    key={tck.id}
+                    className="space-y-3 border-2 border-[#E2E8F0]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-extrabold text-[#0057FF]">
+                          {tck.id}
+                        </span>
+                        <span className="text-xs font-extrabold text-[#061138]">
+                          {tck.subject}
+                        </span>
+                      </div>
+                      <StatusBadge
+                        label={
+                          tck.status === 'ANSWERED'
+                            ? 'پاسخ داده شده توسط پشتیبانی'
+                            : tck.status === 'CLOSED'
+                              ? 'بسته شده'
+                              : 'در انتظار پاسخ پشتیبانی'
+                        }
+                        tone={tck.status === 'ANSWERED' ? 'success' : 'warning'}
+                      />
                     </div>
-                    <StatusBadge
-                      label={
-                        tck.status === 'ANSWERED'
-                          ? 'پاسخ داده شده توسط مدیریت'
-                          : tck.status === 'CLOSED'
-                            ? 'بسته شده'
-                            : 'در انتظار پاسخ مدیریت'
-                      }
-                      tone={tck.status === 'ANSWERED' ? 'success' : 'warning'}
-                    />
-                  </div>
-                  <p className="text-xs text-[#334155] leading-relaxed">
-                    {tck.message}
-                  </p>
-                  {tck.adminReply ? (
-                    <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/40 space-y-1 text-xs">
-                      <p className="font-extrabold text-[#047857]">
-                        پاسخ مدیریت پلتفرم Timeto ({tck.repliedAtJalali || 'امروز'}):
-                      </p>
-                      <p className="text-[#065F46] leading-relaxed font-medium">
-                        {tck.adminReply}
-                      </p>
-                    </div>
-                  ) : null}
-                </Card>
-              ))}
-            </div>
-          ) : null}
+                    <p className="text-xs text-[#334155] leading-relaxed">
+                      {tck.message}
+                    </p>
+                    {tck.adminReply ? (
+                      <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/40 space-y-1 text-xs">
+                        <p className="font-extrabold text-[#047857]">
+                          پاسخ پشتیبانی تایم تو ({tck.repliedAtJalali || 'امروز'}):
+                        </p>
+                        <p className="text-[#065F46] leading-relaxed font-medium">
+                          {tck.adminReply}
+                        </p>
+                      </div>
+                    ) : null}
+                  </Card>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="lg:col-span-5">
           <Card className="rounded-3xl space-y-4 border-2 border-[#0057FF]/25">
             <div className="space-y-1 border-b border-[#E6E0F5] pb-3">
               <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                ثبت تیکت و سوال مستقیم از مدیریت
+                ثبت تیکت و پیام مستقیم به پشتیبانی
               </h2>
               <p className="text-xs text-[#6B648B]">
-                مشخص کنید مشتری هستید یا صاحب کسب‌وکار؛ پیام شما مستقیماً در پنل مدیر کل نمایش داده می‌شود.
+                مشخص کنید مشتری هستید یا صاحب کسب‌وکار؛ پاسخ پشتیبانی در همین صفحه برای شما نمایش داده می‌شود.
               </p>
             </div>
 
@@ -2065,7 +2143,7 @@ export const HelpPage: React.FC = () => {
               </FormField>
 
               <Button type="submit" variant="primary" fullWidth>
-                ارسال تیکت به مدیریت کلان
+                ارسال تیکت به پشتیبانی تایم تو
               </Button>
             </form>
           </Card>

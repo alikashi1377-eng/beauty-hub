@@ -1,20 +1,32 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { Bell, CalendarPlus, Store } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { PublicHeader } from '../components/navigation/PublicHeader';
 import { PublicFooter } from '../components/navigation/PublicFooter';
 import { PublicMobileBottomNav } from '../components/navigation/PublicMobileBottomNav';
-import { BusinessSidebar } from '../components/navigation/BusinessSidebar';
-import { BusinessMobileNavigation } from '../components/navigation/BusinessMobileNavigation';
+import {
+  BusinessAvatarProfileMenu,
+  BusinessCategorySubTabs,
+  BusinessStickyBottomNav,
+} from '../components/navigation/BusinessMobileNavigation';
 import { AdminSidebar } from '../components/navigation/AdminSidebar';
 import { ARCHITECTURE_ROUTES } from '../config/designTokens';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ToastBanner } from '../components/ui/MarketplaceComponents';
 import { PWAMobileInstallBanner } from '../components/ui/PWAInstallPrompt';
-import { TimetoStartupSplash } from '../components/ui/TimetoLogo';
+import {
+  TIMETO_BRAND_LOGO_URL,
+  TimetoStartupSplash,
+} from '../components/ui/TimetoLogo';
+import {
+  getSavedVisitorRole,
+  VISITOR_ROLE_EVENT,
+  VisitorEntryRole,
+} from '../components/home/timetoHomeData';
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
+import { TimetoAuthModal } from '../components/auth/TimetoAuthModal';
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -24,10 +36,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const location = useLocation();
   const pathname = location.pathname;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [visitorRole, setVisitorRole] = useState<VisitorEntryRole>(() =>
+    getSavedVisitorRole()
+  );
   const [bootSplashActive, setBootSplashActive] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return !window.location.search.includes('autostart=1');
   });
+
+  React.useEffect(() => {
+    const syncRole = () => {
+      setVisitorRole(getSavedVisitorRole());
+    };
+    window.addEventListener(VISITOR_ROLE_EVENT, syncRole);
+    window.addEventListener('storage', syncRole);
+    return () => {
+      window.removeEventListener(VISITOR_ROLE_EVENT, syncRole);
+      window.removeEventListener('storage', syncRole);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    setVisitorRole(getSavedVisitorRole());
+  }, [location.search, pathname]);
 
   React.useEffect(() => {
     if (!bootSplashActive) return;
@@ -41,7 +72,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   useScrollToTop();
 
   const {
-    dataMode,
     authUser,
     isLoadingInitialData,
     currentBusiness,
@@ -62,6 +92,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
 
+  const isIntroGatewayActive =
+    pathname === '/intro' ||
+    (pathname === '/' &&
+      (visitorRole === null || location.search.includes('intro=1')));
+
   const currentRouteMeta = ARCHITECTURE_ROUTES.find(
     (r) => r.path === pathname || r.samplePath === pathname
   );
@@ -78,7 +113,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   ).length;
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#F3F6FC] text-[#061138]">
+    <div
+      className={`min-h-screen w-full max-w-full overflow-x-clip flex flex-col ${
+        isIntroGatewayActive
+          ? 'bg-[#02081D] text-white'
+          : 'bg-[#F3F6FC] text-[#061138]'
+      }`}
+    >
       <TimetoStartupSplash
         visible={isLoadingInitialData || bootSplashActive}
       />
@@ -99,33 +140,30 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       ) : null}
 
       {isBusinessPanel ? (
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
-          <BusinessSidebar />
-          <div className="flex-1 flex flex-col min-w-0">
-            <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 z-20">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="w-9 h-9 rounded-2xl bg-[#E0ECFF] text-[#0057FF] flex items-center justify-center shrink-0">
-                  <Store className="w-4 h-4" />
-                </span>
+        <div className="flex-1 flex flex-col w-full min-h-screen">
+          {/* هدر یکپارچه و خلوت پیشخوان کسب‌وکار بدون دکمه‌های خروج تکراری (خروج و پروفایل داخل آواتار) */}
+          <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3 sticky top-0 z-20">
+            <div className="max-w-[1140px] mx-auto flex items-center justify-between gap-3">
+              <Link
+                to="/app"
+                className="flex items-center gap-2.5 min-w-0 group"
+              >
+                <img
+                  src={TIMETO_BRAND_LOGO_URL}
+                  alt="تایم تو"
+                  className="w-9 h-9 rounded-2xl object-cover border border-[#CBD5E1] shrink-0 shadow-2xs"
+                />
                 <div className="min-w-0">
-                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] truncate block">
-                    {currentRouteMeta?.title ?? 'پنل مدیریت کسب‌وکار'}
-                  </span>
-                  <span className="text-[11px] font-medium text-[#334155] truncate block">
+                  <span className="text-xs sm:text-sm font-black text-[#061138] truncate block group-hover:text-[#0057FF] transition-colors">
                     {currentBusiness?.name ?? 'سالن زیبایی رویال گلزار'}
                   </span>
+                  <span className="text-[11px] font-semibold text-[#64748B] truncate block">
+                    {currentRouteMeta?.title ?? 'پیشخوان مدیریت کسب‌وکار'}
+                  </span>
                 </div>
-              </div>
+              </Link>
 
               <div className="flex items-center gap-2 shrink-0">
-                <Link
-                  to="/app/calendar"
-                  className="hidden md:inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#F3F6FC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-xs font-bold text-[#061138] transition-colors"
-                >
-                  <CalendarPlus className="w-3.5 h-3.5 text-[#0057FF]" />
-                  <span>تقویم روزانه</span>
-                </Link>
-
                 <button
                   type="button"
                   onClick={() => setNotificationsOpen(true)}
@@ -134,36 +172,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 >
                   <Bell className="w-4 h-4" />
                   {pendingCount > 0 ? (
-                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#0057FF] border-2 border-white" />
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#EF4444] border-2 border-white" />
                   ) : null}
                 </button>
 
-                <Link
-                  to="/app/appointments"
-                  className="hidden sm:inline-flex px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-xs font-bold text-white transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
-                >
-                  مدیریت رزروها
-                </Link>
-
-                <Link
-                  to="/"
-                  aria-label="خروج از پیشخوان کسب‌وکار و بازگشت به سایت اصلی"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FEF2F2] hover:bg-[#FEE2E2] border border-[#EF4444]/30 text-xs font-extrabold text-[#DC2626] transition-colors whitespace-nowrap shrink-0"
-                >
-                  <span>خروج از پیشخوان</span>
-                </Link>
+                {/* منوی پروفایل و خروج یکپارچه در آیکون آواتار */}
+                <BusinessAvatarProfileMenu />
               </div>
-            </header>
+            </div>
+          </header>
 
-            <BusinessMobileNavigation />
-            <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
-          </div>
+          {/* نوار تب‌های زیرمجموعه در صورت وجود زیربخش (نوبت‌ها، سالن من، مشتریان، مالی و پلن) */}
+          <BusinessCategorySubTabs />
+
+          {/* محتوای اصلی صفحه با فاصله پایین برای نوار چسبان پایین */}
+          <main className="flex-1 max-w-[1140px] w-full mx-auto p-4 sm:p-6 lg:p-8 pb-28 min-w-0">
+            {children}
+          </main>
+
+          {/* نوار چسبان پایین صفحه شامل ۵ دسته اصلی */}
+          <BusinessStickyBottomNav />
         </div>
       ) : isAdminPanel && isAuthorizedPlatformAdmin ? (
         <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
           <AdminSidebar />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
         </div>
+      ) : isIntroGatewayActive ? (
+        <main className="flex-1 w-full min-w-0">{children}</main>
       ) : (
         <>
           <PublicHeader />
@@ -210,6 +246,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           <PublicMobileBottomNav />
         </>
       )}
+
+      <TimetoAuthModal />
 
       {toast ? (
         <ToastBanner

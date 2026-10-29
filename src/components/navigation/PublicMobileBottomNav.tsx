@@ -13,7 +13,7 @@ import { toPersianDigits } from '../../utils/formatters';
 export const PublicMobileBottomNav: React.FC = () => {
   const location = useLocation();
   const pathname = location.pathname;
-  const { authUser, appointments } = usePrototypeData();
+  const { authUser, appointments, openAuthModal } = usePrototypeData();
 
   const activeAppointmentsCount = appointments.filter(
     (apt) => apt.status === 'CONFIRMED' || apt.status === 'PENDING'
@@ -24,24 +24,28 @@ export const PublicMobileBottomNav: React.FC = () => {
       to: '/',
       label: 'خانه',
       icon: Home,
+      requiresAuth: false,
       isActive: pathname === '/',
     },
     {
       to: '/search',
       label: 'جست‌وجو',
       icon: Search,
+      requiresAuth: false,
       isActive: pathname.startsWith('/search'),
     },
     {
       to: '/categories',
       label: 'دسته‌ها',
       icon: LayoutGrid,
+      requiresAuth: false,
       isActive: pathname.startsWith('/categories'),
     },
     {
       to: '/me/appointments',
       label: 'نوبت‌ها',
       icon: CalendarCheck,
+      requiresAuth: true,
       badge: activeAppointmentsCount > 0 ? activeAppointmentsCount : undefined,
       isActive:
         pathname.startsWith('/me/appointments') ||
@@ -51,6 +55,7 @@ export const PublicMobileBottomNav: React.FC = () => {
       to: '/me',
       label: authUser ? 'پروفایل' : 'حساب من',
       icon: User,
+      requiresAuth: true,
       isActive:
         pathname === '/me' ||
         pathname.startsWith('/me/profile') ||
@@ -59,7 +64,6 @@ export const PublicMobileBottomNav: React.FC = () => {
     },
   ];
 
-  // در صفحات رزرو که نوار ادامه رزرو پایین صفحه قرار دارد، جایگاه منوی پایین را هماهنگ نگه می‌داریم
   return (
     <nav
       aria-label="منوی دسترسی سریع پایین موبایل"
@@ -72,7 +76,20 @@ export const PublicMobileBottomNav: React.FC = () => {
             <NavLink
               key={item.to}
               to={item.to}
-              onClick={() => {
+              onClick={(e) => {
+                if (item.requiresAuth && !authUser) {
+                  e.preventDefault();
+                  openAuthModal({
+                    initialScreen: 'LOGIN',
+                    defaultRole: 'CUSTOMER',
+                    redirectTo: item.to,
+                    promptReason:
+                      item.to === '/me/appointments'
+                        ? 'برای مشاهده و مدیریت نوبت‌ها، وارد شوید یا ثبت‌نام کنید'
+                        : 'برای ورود به حساب کاربری خود، شماره موبایل را وارد کنید',
+                  });
+                  return;
+                }
                 window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
               }}
               className={() =>

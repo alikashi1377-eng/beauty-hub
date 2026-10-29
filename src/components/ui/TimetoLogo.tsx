@@ -2,6 +2,7 @@ import React from 'react';
 
 export const TIMETO_LOGO_IMAGE_PATH =
   '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
+export const TIMETO_BRAND_LOGO_URL = TIMETO_LOGO_IMAGE_PATH;
 export const TIMETO_SHOWCASE_IMAGE_PATH =
   '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
 

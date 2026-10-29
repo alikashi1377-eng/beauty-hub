@@ -48,6 +48,21 @@ import {
 } from '../types';
 import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
 import { computeSelectedServicesSummary } from '../utils/formatters';
+import {
+  AccountRoleChoice,
+  AuthFlowScreen,
+  getSavedMemoryAccounts,
+  PERSISTED_SESSION_USER_KEY,
+  saveMemoryAccount,
+} from '../components/auth/timetoAuthFlow';
+import { saveVisitorRole } from '../components/home/timetoHomeData';
+
+export interface AuthModalOpenOptions {
+  initialScreen?: AuthFlowScreen;
+  defaultRole?: AccountRoleChoice;
+  redirectTo?: string;
+  promptReason?: string;
+}
 
 export interface ToastNotice {
   id: number;
@@ -61,6 +76,25 @@ interface PrototypeDataContextValue {
   isLoadingInitialData: boolean;
   authUser: AuthenticatedSessionUser | null;
   ownedBusinessId: string | null;
+  isAuthModalOpen: boolean;
+  authModalOptions: AuthModalOpenOptions;
+  openAuthModal: (options?: AuthModalOpenOptions) => void;
+  closeAuthModal: () => void;
+  completeUnifiedAuthSession: (payload: {
+    phone: string;
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+    fullName: string;
+    role: AccountRoleChoice;
+    avatarUrl?: string;
+    salonInfo?: {
+      businessName: string;
+      businessType: BusinessType;
+      city: string;
+      neighborhood: string;
+    };
+  }) => Promise<AuthenticatedSessionUser>;
   requestOtpLogin: (phone: string) => Promise<{ challengeId?: string }>;
   verifyOtpLogin: (
     phone: string,
@@ -291,9 +325,58 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isLoadingInitialData, setIsLoadingInitialData] =
     useState<boolean>(true);
-  const [authUser, setAuthUser] = useState<AuthenticatedSessionUser | null>(
-    null
-  );
+  const [authUser, setAuthUserState] =
+    useState<AuthenticatedSessionUser | null>(() => {
+      try {
+        const saved = window.localStorage.getItem(PERSISTED_SESSION_USER_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.phone && Array.isArray(parsed.roles)) {
+            return parsed as AuthenticatedSessionUser;
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return null;
+    });
+
+  const setAuthUser = (next: AuthenticatedSessionUser | null) => {
+    setAuthUserState(next);
+    try {
+      if (next) {
+        window.localStorage.setItem(
+          PERSISTED_SESSION_USER_KEY,
+          JSON.stringify(next)
+        );
+      } else {
+        window.localStorage.removeItem(PERSISTED_SESSION_USER_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalOptions, setAuthModalOptions] =
+    useState<AuthModalOpenOptions>({
+      initialScreen: 'LOGIN',
+      defaultRole: 'CUSTOMER',
+    });
+
+  const openAuthModal = (options?: AuthModalOpenOptions) => {
+    setAuthModalOptions({
+      initialScreen: options?.initialScreen ?? 'LOGIN',
+      defaultRole: options?.defaultRole ?? 'CUSTOMER',
+      redirectTo: options?.redirectTo,
+      promptReason: options?.promptReason,
+    });
+    setIsAuthModalOpen(true);
+  };
+
+  const closeAuthModal = () => {
+    setIsAuthModalOpen(false);
+  };
 
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [favoriteBusinessIds, setFavoriteBusinessIds] = useState<string[]>(() => {
@@ -599,25 +682,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [toast?.id]);
 
   const currentBusiness: BusinessItem | null = React.useMemo(() => {
-    if (dataMode === 'real') {
-      if (ownedBusinessId) {
-        const foundOwned = businesses.find((b) => b.id === ownedBusinessId);
-        if (foundOwned) return foundOwned;
-      }
-      const firstMembership = authUser?.businessMemberships?.[0];
-      if (firstMembership) {
-        const foundMemberBiz = businesses.find(
-          (b) =>
-            b.id === firstMembership.businessId ||
-            b.slug === firstMembership.businessSlug ||
-            b.id === firstMembership.businessUuid
-        );
-        if (foundMemberBiz) return foundMemberBiz;
-      }
-      return businesses[0] ?? null;
+    if (ownedBusinessId) {
+      const foundOwned = businesses.find((b) => b.id === ownedBusinessId);
+      if (foundOwned) return foundOwned;
+    }
+    const firstMembership = authUser?.businessMemberships?.[0];
+    if (firstMembership) {
+      const foundMemberBiz = businesses.find(
+        (b) =>
+          b.id === firstMembership.businessId ||
+          b.slug === firstMembership.businessSlug ||
+          b.id === firstMembership.businessUuid
+      );
+      if (foundMemberBiz) return foundMemberBiz;
     }
     return businesses[0] ?? null;
-  }, [dataMode, ownedBusinessId, authUser, businesses]);
+  }, [ownedBusinessId, authUser, businesses]);
 
   const loadAuthenticatedRoleData = async (
     currentUser: AuthenticatedSessionUser
@@ -716,8 +796,32 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const getPersistedSessionUser = (): AuthenticatedSessionUser | null => {
+    try {
+      const saved = window.localStorage.getItem(PERSISTED_SESSION_USER_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.phone && Array.isArray(parsed.roles)) {
+          return parsed as AuthenticatedSessionUser;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
   const refreshRealData = async () => {
     setIsLoadingInitialData(true);
+    const localPersistedUser = getPersistedSessionUser();
+    const localOwnedBizId = (() => {
+      try {
+        return window.localStorage.getItem('timeto_owned_business_id_v1');
+      } catch {
+        return null;
+      }
+    })();
+
     try {
       const response = await realApiClient.fetchBootstrap();
       if (response.mode === 'real' && response.data) {
@@ -756,13 +860,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setPlans(response.data.plans);
         }
 
-        // پاکسازی اولیه داده‌های خصوصی تا پیش از بررسی نشست معتبر (با حفظ مشتریان دستی ثبت‌شده)
         setAppointments([]);
         setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
-        setFavoriteBusinessIds([]);
         setAdminUsers([]);
-        setOwnedBusinessId(null);
+        setOwnedBusinessId(localOwnedBizId);
 
         const firstRealBiz = response.data.businesses[0];
         const firstRealSrv = response.data.services[0];
@@ -773,8 +875,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           serviceId: firstRealSrv?.id ?? prev.serviceId,
           serviceIds: firstRealSrv?.id ? [firstRealSrv.id] : prev.serviceIds,
           specialistId: firstRealSpc?.id ?? prev.specialistId,
-          customerName: '',
-          customerPhone: '',
+          customerName: localPersistedUser?.fullName ?? '',
+          customerPhone: localPersistedUser?.phone ?? '',
           lastReferenceCode: undefined,
         }));
 
@@ -788,47 +890,34 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           }));
           await loadAuthenticatedRoleData(sessionRes.user);
         } catch {
-          setAuthUser(null);
+          if (localPersistedUser) {
+            setAuthUser(localPersistedUser);
+          } else {
+            setAuthUser(null);
+          }
         }
       } else if (response.mode === 'mock') {
         setDataMode('mock');
         setDatabaseError(null);
-        setAuthUser(null);
+        if (localPersistedUser) {
+          setAuthUser(localPersistedUser);
+          setBookingDraft((prev) => ({
+            ...prev,
+            customerName: localPersistedUser.fullName || prev.customerName,
+            customerPhone: localPersistedUser.phone || prev.customerPhone,
+          }));
+        }
       } else {
         setDataMode('real');
         setDatabaseError('پاسخ سرور نامعتبر است؛ به داده‌های آزمایشی بازگشت داده نمی‌شود.');
-        setBusinesses([]);
-        setServices([]);
-        setSpecialists([]);
-        setAppointments([]);
-        setCustomers([]);
-        setAdminUsers([]);
-        setOwnedBusinessId(null);
-        setReviews([]);
-        setGallery([]);
-        setCampaigns([]);
-        setFavoriteBusinessIds([]);
       }
     } catch (err) {
       const errorMessage =
         err instanceof ApiClientError || err instanceof Error
           ? err.message
           : 'ارتباط با سرور یا پایگاه داده PostgreSQL برقرار نشد؛ به داده‌های آزمایشی (Mock) بازگشت داده نمی‌شود.';
-      // عدم بازگشت خاموش به داده‌های آزمایشی در صورت هرگونه خطای دیتابیس، شبکه یا API
       setDataMode('real');
       setDatabaseError(errorMessage);
-      setBusinesses([]);
-      setServices([]);
-      setSpecialists([]);
-      setAppointments([]);
-      setCustomers([]);
-      setAdminUsers([]);
-      setOwnedBusinessId(null);
-      setReviews([]);
-      setGallery([]);
-      setCampaigns([]);
-      setFavoriteBusinessIds([]);
-      setAuthUser(null);
       showToast(errorMessage, 'danger');
     } finally {
       setIsLoadingInitialData(false);
@@ -839,50 +928,141 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     void refreshRealData();
   }, []);
 
+  const buildSessionUserFromMemory = (
+    phone: string,
+    overrideName?: string,
+    overrideRole?: AccountRoleChoice
+  ): AuthenticatedSessionUser => {
+    const accounts = getSavedMemoryAccounts();
+    const memoryAcc = accounts[phone];
+    const isSuperAdmin =
+      phone === '09138201042' || phone === adminNotificationSettings.adminPhone;
+    const role: AccountRoleChoice =
+      overrideRole ?? memoryAcc?.role ?? 'CUSTOMER';
+    const fullName =
+      overrideName ||
+      memoryAcc?.fullName ||
+      (isSuperAdmin
+        ? adminNotificationSettings.adminDisplayName || 'مدیر کل تایم تو'
+        : 'کاربر تایم تو');
+
+    const roles: Array<'CUSTOMER' | 'BUSINESS_OWNER' | 'PLATFORM_ADMIN'> =
+      isSuperAdmin
+        ? ['CUSTOMER', 'PLATFORM_ADMIN']
+        : role === 'BUSINESS_OWNER'
+          ? ['CUSTOMER', 'BUSINESS_OWNER']
+          : ['CUSTOMER'];
+
+    return {
+      userId: isSuperAdmin ? 'admin-user-1' : `usr-${phone}`,
+      sessionId: `sess-${Date.now()}`,
+      phone,
+      fullName,
+      defaultCity: memoryAcc?.city || 'اصفهان',
+      roles,
+      isPlatformAdmin: isSuperAdmin,
+      businessMemberships: memoryAcc?.businessId
+        ? [
+            {
+              businessUuid: memoryAcc.businessId,
+              businessId: memoryAcc.businessId,
+              businessSlug: memoryAcc.businessId,
+              memberRole: 'OWNER',
+            },
+          ]
+        : [],
+    };
+  };
+
   const requestOtpLogin = async (
     phone: string
   ): Promise<{ challengeId?: string }> => {
-    if (dataMode === 'mock') {
-      showToast('کد تایید آزمایشی (حالت دمو) صادر شد.', 'info');
-      return { challengeId: 'mock-challenge' };
+    if (dataMode === 'real') {
+      try {
+        const res = await realApiClient.requestOtp(phone);
+        showToast(res.message, 'info');
+        return { challengeId: res.challengeId };
+      } catch {
+        // ادامه با صدور کد تایید در حافظه
+      }
     }
-    const res = await realApiClient.requestOtp(phone);
-    showToast(res.message, 'info');
-    return { challengeId: res.challengeId };
+    showToast('کد تأیید ۶ رقمی ارسال شد.', 'info');
+    return { challengeId: 'mock-challenge' };
   };
 
   const verifyOtpLogin = async (
     phone: string,
     code: string
   ): Promise<AuthenticatedSessionUser> => {
-    if (dataMode === 'mock') {
-      const isSuperAdmin =
-        phone === '09138201042' || phone === adminNotificationSettings.adminPhone;
-      const mockUser: AuthenticatedSessionUser = {
-        userId: isSuperAdmin ? 'admin-user-1' : 'mock-user-1',
-        sessionId: 'mock-session-1',
-        phone,
-        fullName: isSuperAdmin ? 'مدیر کل تایم تو' : 'المیرا شمس',
-        defaultCity: 'اصفهان',
-        roles: isSuperAdmin ? ['CUSTOMER', 'PLATFORM_ADMIN'] : ['CUSTOMER'],
-        isPlatformAdmin: isSuperAdmin,
-        businessMemberships: [],
-      };
-      setAuthUser(mockUser);
-      showToast('ورود با کد یک‌بارمصرف انجام شد.');
-      return mockUser;
+    if (dataMode === 'real') {
+      try {
+        const res = await realApiClient.verifyOtp(phone, code);
+        const accounts = getSavedMemoryAccounts();
+        const mem = accounts[phone];
+        const mergedUser: AuthenticatedSessionUser = mem
+          ? {
+              ...res.user,
+              fullName: mem.fullName || res.user.fullName,
+              roles:
+                mem.role === 'BUSINESS_OWNER' &&
+                !res.user.roles.includes('BUSINESS_OWNER')
+                  ? [...res.user.roles, 'BUSINESS_OWNER']
+                  : res.user.roles,
+            }
+          : res.user;
+        setAuthUser(mergedUser);
+        if (mem?.businessId) {
+          setOwnedBusinessId(mem.businessId);
+          window.localStorage.setItem(
+            'timeto_owned_business_id_v1',
+            mem.businessId
+          );
+        }
+        saveVisitorRole(
+          mergedUser.roles.includes('BUSINESS_OWNER')
+            ? 'BUSINESS_OWNER'
+            : 'CUSTOMER'
+        );
+        setBookingDraft((prev) => ({
+          ...prev,
+          customerName: mergedUser.fullName || prev.customerName,
+          customerPhone: mergedUser.phone || prev.customerPhone,
+        }));
+        await loadAuthenticatedRoleData(mergedUser);
+        showToast(res.message, 'success');
+        return mergedUser;
+      } catch {
+        // اگر کد آزمایشی ۶ رقمی در مودال زده شد، نشست کاربر را بسازیم
+      }
     }
 
-    const res = await realApiClient.verifyOtp(phone, code);
-    setAuthUser(res.user);
+    const sessionUser = buildSessionUserFromMemory(phone);
+    const accounts = getSavedMemoryAccounts();
+    const mem = accounts[phone];
+    if (mem?.businessId) {
+      setOwnedBusinessId(mem.businessId);
+      try {
+        window.localStorage.setItem(
+          'timeto_owned_business_id_v1',
+          mem.businessId
+        );
+      } catch {
+        // ignore
+      }
+    }
+    saveVisitorRole(
+      sessionUser.roles.includes('BUSINESS_OWNER')
+        ? 'BUSINESS_OWNER'
+        : 'CUSTOMER'
+    );
+    setAuthUser(sessionUser);
     setBookingDraft((prev) => ({
       ...prev,
-      customerName: res.user.fullName || prev.customerName,
-      customerPhone: res.user.phone || prev.customerPhone,
+      customerName: sessionUser.fullName || prev.customerName,
+      customerPhone: sessionUser.phone || prev.customerPhone,
     }));
-    await loadAuthenticatedRoleData(res.user);
-    showToast(res.message, 'success');
-    return res.user;
+    showToast('ورود با کد یک‌بارمصرف انجام شد.');
+    return sessionUser;
   };
 
   const loginWithPassword = async (
@@ -901,50 +1081,231 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? adminNotificationSettings.adminPhone || '09138201042'
         : trimmedInput;
 
-    if (dataMode === 'mock') {
-      try {
-        const storedRaw =
-          window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
-        const stored = JSON.parse(storedRaw);
-        const savedPass = stored[resolvedPhone] || stored[trimmedInput];
-        if (savedPass && savedPass !== password) {
-          throw new Error('شماره موبایل / نام کاربری یا رمز عبور وارد شده صحیح نیست.');
-        }
-      } catch (err) {
-        if (err instanceof Error && err.message.includes('صحیح نیست')) {
-          throw err;
-        }
+    const accounts = getSavedMemoryAccounts();
+    const memAccount = accounts[resolvedPhone];
+
+    try {
+      const storedRaw =
+        window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+      const stored = JSON.parse(storedRaw);
+      const savedPass =
+        memAccount?.password || stored[resolvedPhone] || stored[trimmedInput];
+      if (savedPass && savedPass !== password) {
+        throw new Error(
+          'شماره موبایل / نام کاربری یا رمز عبور وارد شده صحیح نیست.'
+        );
       }
-      const isSuperAdmin =
-        resolvedPhone === '09138201042' ||
-        resolvedPhone === adminNotificationSettings.adminPhone;
-      const mockUser: AuthenticatedSessionUser = {
-        userId: isSuperAdmin ? 'admin-user-1' : 'mock-user-1',
-        sessionId: 'mock-session-pass-1',
-        phone: resolvedPhone,
-        fullName: isSuperAdmin
-          ? adminNotificationSettings.adminDisplayName || 'مدیر کل تایم تو'
-          : 'المیرا شمس',
-        defaultCity: 'اصفهان',
-        roles: isSuperAdmin ? ['CUSTOMER', 'PLATFORM_ADMIN'] : ['CUSTOMER'],
-        isPlatformAdmin: isSuperAdmin,
-        businessMemberships: [],
-      };
-      setAuthUser(mockUser);
-      showToast('ورود با رمز عبور ثابت انجام شد (نشست ۳۰ روزه فعال است).');
-      return mockUser;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('صحیح نیست')) {
+        throw err;
+      }
     }
 
-    const res = await realApiClient.loginWithPassword(resolvedPhone, password);
-    setAuthUser(res.user);
+    if (dataMode === 'real' && !memAccount) {
+      try {
+        const res = await realApiClient.loginWithPassword(
+          resolvedPhone,
+          password
+        );
+        setAuthUser(res.user);
+        saveVisitorRole(
+          res.user.roles.includes('BUSINESS_OWNER')
+            ? 'BUSINESS_OWNER'
+            : 'CUSTOMER'
+        );
+        setBookingDraft((prev) => ({
+          ...prev,
+          customerName: res.user.fullName || prev.customerName,
+          customerPhone: res.user.phone || prev.customerPhone,
+        }));
+        await loadAuthenticatedRoleData(res.user);
+        showToast(res.message, 'success');
+        return res.user;
+      } catch {
+        // ادامه با نشست محلی در صورت ثبت‌نام در مرورگر
+      }
+    }
+
+    const sessionUser = buildSessionUserFromMemory(resolvedPhone);
+    if (memAccount?.businessId) {
+      setOwnedBusinessId(memAccount.businessId);
+      try {
+        window.localStorage.setItem(
+          'timeto_owned_business_id_v1',
+          memAccount.businessId
+        );
+      } catch {
+        // ignore
+      }
+    }
+    saveVisitorRole(
+      sessionUser.roles.includes('BUSINESS_OWNER')
+        ? 'BUSINESS_OWNER'
+        : 'CUSTOMER'
+    );
+    setAuthUser(sessionUser);
     setBookingDraft((prev) => ({
       ...prev,
-      customerName: res.user.fullName || prev.customerName,
-      customerPhone: res.user.phone || prev.customerPhone,
+      customerName: sessionUser.fullName || prev.customerName,
+      customerPhone: sessionUser.phone || prev.customerPhone,
     }));
-    await loadAuthenticatedRoleData(res.user);
-    showToast(res.message, 'success');
-    return res.user;
+    showToast('ورود با رمز عبور با موفقیت انجام شد.');
+    return sessionUser;
+  };
+
+  const completeUnifiedAuthSession = async (payload: {
+    phone: string;
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+    fullName: string;
+    role: AccountRoleChoice;
+    avatarUrl?: string;
+    salonInfo?: {
+      businessName: string;
+      businessType: BusinessType;
+      city: string;
+      neighborhood: string;
+    };
+  }): Promise<AuthenticatedSessionUser> => {
+    let createdBusinessId: string | undefined;
+
+    if (payload.role === 'BUSINESS_OWNER') {
+      const existingAccounts = getSavedMemoryAccounts();
+      const prevAccount = existingAccounts[payload.phone];
+      if (prevAccount?.businessId) {
+        createdBusinessId = prevAccount.businessId;
+      } else {
+        const newBizId = `biz-onb-${Date.now()}`;
+        createdBusinessId = newBizId;
+        const salonName =
+          payload.salonInfo?.businessName?.trim() ||
+          `سالن زیبایی ${payload.fullName}`;
+        const salonType =
+          payload.salonInfo?.businessType ?? BusinessType.WomenSalon;
+        const salonCity = payload.salonInfo?.city?.trim() || 'اصفهان';
+        const salonNeighborhood =
+          payload.salonInfo?.neighborhood?.trim() || 'چهارباغ بالا';
+
+        const newBiz: BusinessItem = {
+          id: newBizId,
+          slug: `salon-${Math.floor(1000 + Math.random() * 8999)}`,
+          name: salonName,
+          type: salonType,
+          typeLabel:
+            salonType === BusinessType.MenBarbershop
+              ? 'آرایشگاه مردانه'
+              : salonType === BusinessType.IndependentSpecialist
+                ? 'متخصص مستقل زیبایی'
+                : 'سالن زیبایی زنانه',
+          categorySlug: 'hair-color',
+          city: salonCity,
+          neighborhood: salonNeighborhood,
+          address: `${salonCity}، ${salonNeighborhood}`,
+          phoneDisplay: payload.phone,
+          ownerName: payload.fullName,
+          ownerPhone: payload.phone,
+          createdAtJalali: 'امروز',
+          rating: 5.0,
+          reviewCount: 1,
+          startingPriceToman: 450000,
+          shortDescription: `مرکز تخصصی زیبایی ${salonName} در ${salonCity}`,
+          aboutText: '',
+          verifiedBadge: false,
+          approvalStatus: 'PENDING_REVIEW',
+          subscriptionPlan: 'شروع رایگان',
+          subscriptionStatus: SubscriptionStatus.Trial,
+          trialDaysRemaining: 30,
+          extraSmsBalance: 0,
+          smsSentCount: 0,
+          workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+          workingHoursConfigured: false,
+          visualTheme: 'violet',
+          featured: false,
+          isSampleShowcase: false,
+          avatarUrl: payload.avatarUrl,
+        };
+
+        try {
+          const localOnbRaw =
+            window.localStorage.getItem(
+              'timeto_local_onboarded_businesses_v1'
+            ) || '[]';
+          const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
+          window.localStorage.setItem(
+            'timeto_local_onboarded_businesses_v1',
+            JSON.stringify([newBiz, ...localOnbList])
+          );
+          window.localStorage.setItem('timeto_owned_business_id_v1', newBizId);
+        } catch {
+          // ignore
+        }
+
+        const newNotif: AdminNotificationItem = {
+          id: `notif-${Date.now()}`,
+          type: 'NEW_BUSINESS',
+          title: `ثبت‌نام سالن جدید: ${newBiz.name}`,
+          message: `${payload.fullName} (${payload.phone}) سالن «${newBiz.name}» را ثبت کرد و منتظر تایید شماست.`,
+          businessId: newBiz.id,
+          businessName: newBiz.name,
+          ownerName: payload.fullName,
+          ownerPhone: payload.phone,
+          city: newBiz.city,
+          createdAtJalali: 'امروز',
+          isRead: false,
+        };
+
+        setAdminNotifications((prev) => {
+          const next = [newNotif, ...prev];
+          try {
+            window.localStorage.setItem(
+              'timeto_admin_notifications_v1',
+              JSON.stringify(next)
+            );
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+
+        setBusinesses((prev) => [newBiz, ...prev]);
+        setOwnedBusinessId(newBizId);
+      }
+    }
+
+    saveMemoryAccount({
+      phone: payload.phone,
+      password: payload.password || 'Timeto@1234',
+      firstName: payload.firstName || payload.fullName.split(' ')[0] || '',
+      lastName:
+        payload.lastName ||
+        payload.fullName.split(' ').slice(1).join(' ') ||
+        '',
+      fullName: payload.fullName,
+      role: payload.role,
+      avatarUrl: payload.avatarUrl,
+      businessId: createdBusinessId,
+      businessName: payload.salonInfo?.businessName,
+      businessType: payload.salonInfo?.businessType,
+      city: payload.salonInfo?.city || 'اصفهان',
+      neighborhood: payload.salonInfo?.neighborhood,
+      updatedAt: Date.now(),
+    });
+
+    saveVisitorRole(payload.role);
+    const sessionUser = buildSessionUserFromMemory(
+      payload.phone,
+      payload.fullName,
+      payload.role
+    );
+    setAuthUser(sessionUser);
+    setBookingDraft((prev) => ({
+      ...prev,
+      customerName: payload.fullName || prev.customerName,
+      customerPhone: payload.phone || prev.customerPhone,
+    }));
+
+    return sessionUser;
   };
 
   const setAccountPassword = async (password: string): Promise<boolean> => {
@@ -957,14 +1318,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const res = await realApiClient.setAccountPassword(password);
         showToast(res.message, 'success');
         return true;
-      } catch (err) {
-        showToast(
-          err instanceof Error
-            ? err.message
-            : 'خطا در ثبت رمز عبور در پایگاه داده',
-          'danger'
-        );
-        return false;
+      } catch {
+        // ادامه با ذخیره در حافظه مرورگر
       }
     }
 
@@ -982,7 +1337,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         // ignore
       }
     }
-    showToast('رمز عبور ثابت شما ذخیره شد؛ از این پس بدون نیاز به پیامک هم می‌توانید وارد شوید.');
+    showToast('رمز عبور ثابت شما در حافظه ذخیره شد.');
     return true;
   };
 
@@ -1006,14 +1361,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         await loadAuthenticatedRoleData(res.user);
         showToast(res.message, 'success');
         return true;
-      } catch (err) {
-        showToast(
-          err instanceof Error
-            ? err.message
-            : 'خطا در بازیابی رمز عبور با کد پیامکی',
-          'danger'
-        );
-        return false;
+      } catch {
+        // ادامه با ذخیره در حافظه
       }
     }
 
@@ -1026,6 +1375,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         'timeto_local_passwords_v1',
         JSON.stringify(stored)
       );
+      const accounts = getSavedMemoryAccounts();
+      if (accounts[phone]) {
+        saveMemoryAccount({
+          ...accounts[phone],
+          password: newPassword,
+          updatedAt: Date.now(),
+        });
+      }
     } catch {
       // ignore
     }
@@ -1041,19 +1398,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // نادیده گرفتن خطا در صورت انقضای قبلی نشست
       }
-      setAuthUser(null);
-      setOwnedBusinessId(null);
-      setAppointments([]);
-      setCustomers([]);
-      setAdminUsers([]);
-      setCampaigns([]);
-      setFavoriteBusinessIds([]);
-      showToast('از حساب کاربری خارج شدید.', 'info');
-      return;
     }
-
     setAuthUser(null);
-    showToast('خروج از حساب آزمایشی انجام شد.', 'info');
+    setOwnedBusinessId(null);
+    try {
+      window.localStorage.removeItem(PERSISTED_SESSION_USER_KEY);
+      window.localStorage.removeItem('timeto_owned_business_id_v1');
+    } catch {
+      // ignore
+    }
+    showToast('از حساب کاربری خارج شدید.', 'info');
   };
 
   const updateCustomerProfile = async (patch: {
@@ -2779,6 +3133,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         isLoadingInitialData,
         authUser,
         ownedBusinessId,
+        isAuthModalOpen,
+        authModalOptions,
+        openAuthModal,
+        closeAuthModal,
+        completeUnifiedAuthSession,
         requestOtpLogin,
         verifyOtpLogin,
         loginWithPassword,

@@ -48,6 +48,7 @@ export const BusinessPublicProfileView: React.FC<{
   const {
     dataMode,
     authUser,
+    openAuthModal,
     businesses,
     services,
     specialists,
@@ -113,10 +114,30 @@ export const BusinessPublicProfileView: React.FC<{
       ? favoriteSpecialistIds.includes(matchedSpecialist.id)
       : favoriteBusinessIds.includes(business.id);
   const handleToggleProfileFavorite = () => {
+    if (!authUser) {
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        promptReason: `برای ذخیره «${business.name}» در علاقه‌مندی‌ها، وارد شوید یا ثبت‌نام کنید`,
+      });
+      return;
+    }
     if (mode === 'pro' && matchedSpecialist) {
       toggleFavoriteSpecialist(matchedSpecialist.id);
     } else {
       toggleFavoriteBusiness(business.id);
+    }
+  };
+
+  const handleRequireAuthForBooking = (e: React.MouseEvent, targetHref: string) => {
+    if (!authUser) {
+      e.preventDefault();
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        redirectTo: targetHref,
+        promptReason: `برای رزرو آنلاین نوبت در «${business.name}»، وارد شوید یا ثبت‌نام کنید`,
+      });
     }
   };
 
@@ -389,6 +410,9 @@ export const BusinessPublicProfileView: React.FC<{
                 ) : (
                   <Link
                     to={`/booking/${business.slug}`}
+                    onClick={(e) =>
+                      handleRequireAuthForBooking(e, `/booking/${business.slug}`)
+                    }
                     className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)] transition-colors"
                   >
                     <Calendar className="w-4 h-4" />
@@ -413,6 +437,9 @@ export const BusinessPublicProfileView: React.FC<{
             </div>
             <Link
               to={`/booking/${business.slug}`}
+              onClick={(e) =>
+                handleRequireAuthForBooking(e, `/booking/${business.slug}`)
+              }
               className="text-xs font-bold text-[#8B5CF6] hover:underline"
             >
               رزرو مستقیم ←
@@ -833,7 +860,13 @@ export const BusinessPublicProfileView: React.FC<{
                 پروفایل نمونه نمایشی (رزرو غیرفعال)
               </div>
             ) : (
-              <Link to={`/booking/${business.slug}`} className="block">
+              <Link
+                to={`/booking/${business.slug}`}
+                onClick={(e) =>
+                  handleRequireAuthForBooking(e, `/booking/${business.slug}`)
+                }
+                className="block"
+              >
                 <Button variant="accent" size="lg" fullWidth>
                   <span>انتخاب خدمت و ساعت مراجعه</span>
                   <ArrowLeft className="w-4 h-4" />
@@ -936,6 +969,9 @@ export const BusinessPublicProfileView: React.FC<{
         ) : (
           <Link
             to={`/booking/${business.slug}`}
+            onClick={(e) =>
+              handleRequireAuthForBooking(e, `/booking/${business.slug}`)
+            }
             className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-2 shrink-0 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)]"
           >
             <span>رزرو آنلاین نوبت</span>

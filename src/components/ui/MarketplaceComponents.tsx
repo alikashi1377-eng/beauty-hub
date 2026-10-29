@@ -222,13 +222,41 @@ export const BusinessCard: React.FC<{
   compact?: boolean;
 }> = ({ business, isFavorite, onToggleFavorite, compact = false }) => {
   const [imgErr, setImgErr] = useState(false);
-  const { favoriteBusinessIds, toggleFavoriteBusiness } = usePrototypeData();
+  const { authUser, openAuthModal, favoriteBusinessIds, toggleFavoriteBusiness } =
+    usePrototypeData();
 
   const resolvedFavorite =
     typeof isFavorite === 'boolean'
       ? isFavorite
       : favoriteBusinessIds.includes(business.id);
   const handleToggleFavorite = onToggleFavorite ?? toggleFavoriteBusiness;
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!authUser) {
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        promptReason: `برای ذخیره «${business.name}» در علاقه‌مندی‌ها، وارد شوید یا ثبت‌نام کنید`,
+      });
+      return;
+    }
+    handleToggleFavorite(business.id);
+  };
+
+  const handleBookingClick = (e: React.MouseEvent) => {
+    if (!authUser) {
+      e.preventDefault();
+      e.stopPropagation();
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        redirectTo: `/booking/${business.slug}`,
+        promptReason: `برای رزرو نوبت در «${business.name}»، وارد شوید یا ثبت‌نام کنید`,
+      });
+    }
+  };
 
   const profileLink =
     business.type === BusinessType.IndependentSpecialist
@@ -311,11 +339,7 @@ export const BusinessCard: React.FC<{
 
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleToggleFavorite(business.id);
-                }}
+                onClick={handleFavoriteClick}
                 aria-pressed={resolvedFavorite}
                 aria-label={
                   resolvedFavorite
@@ -381,6 +405,7 @@ export const BusinessCard: React.FC<{
                 </Link>
                 <Link
                   to={`/booking/${business.slug}`}
+                  onClick={handleBookingClick}
                   className="px-3.5 py-1.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-[11px] font-extrabold inline-flex items-center gap-1 transition-colors shadow-2xs whitespace-nowrap"
                 >
                   <span>رزرو نوبت</span>
@@ -449,11 +474,7 @@ export const BusinessCard: React.FC<{
 
         <button
           type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleToggleFavorite(business.id);
-          }}
+          onClick={handleFavoriteClick}
           aria-pressed={resolvedFavorite}
           aria-label={
             resolvedFavorite
@@ -544,6 +565,7 @@ export const BusinessCard: React.FC<{
                 </Link>
                 <Link
                   to={`/booking/${business.slug}`}
+                  onClick={handleBookingClick}
                   className="px-3.5 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.42)] whitespace-nowrap"
                 >
                   <span>رزرو نوبت</span>
@@ -565,8 +587,12 @@ export const ProfessionalCard: React.FC<{
   isFavorite?: boolean;
   onToggleFavorite?: (id: string) => void;
 }> = ({ specialist, businessSlug, isFavorite, onToggleFavorite }) => {
-  const { favoriteSpecialistIds, toggleFavoriteSpecialist } =
-    usePrototypeData();
+  const {
+    authUser,
+    openAuthModal,
+    favoriteSpecialistIds,
+    toggleFavoriteSpecialist,
+  } = usePrototypeData();
 
   const resolvedFavorite =
     typeof isFavorite === 'boolean'
@@ -575,6 +601,9 @@ export const ProfessionalCard: React.FC<{
   const handleToggleFavorite = onToggleFavorite ?? toggleFavoriteSpecialist;
 
   const targetUrl = `/pro/${specialist.slug}`;
+  const bookingUrl = businessSlug
+    ? `/booking/${businessSlug}?specialist=${specialist.id}`
+    : targetUrl;
   const portraitUrl =
     specialist.avatarUrl ||
     getSpecialistAvatarUrl(specialist.fullName, specialist.roleTitle);
@@ -589,6 +618,14 @@ export const ProfessionalCard: React.FC<{
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          if (!authUser) {
+            openAuthModal({
+              initialScreen: 'LOGIN',
+              defaultRole: 'CUSTOMER',
+              promptReason: `برای ذخیره «${specialist.fullName}» در علاقه‌مندی‌ها، وارد شوید`,
+            });
+            return;
+          }
           handleToggleFavorite(specialist.id);
         }}
         aria-pressed={resolvedFavorite}
@@ -653,11 +690,18 @@ export const ProfessionalCard: React.FC<{
       </div>
 
       <Link
-        to={
-          businessSlug
-            ? `/booking/${businessSlug}?specialist=${specialist.id}`
-            : targetUrl
-        }
+        to={bookingUrl}
+        onClick={(e) => {
+          if (!authUser) {
+            e.preventDefault();
+            openAuthModal({
+              initialScreen: 'LOGIN',
+              defaultRole: 'CUSTOMER',
+              redirectTo: bookingUrl,
+              promptReason: `برای رزرو نوبت با «${specialist.fullName}»، وارد شوید یا ثبت‌نام کنید`,
+            });
+          }
+        }}
         className="w-full"
       >
         <button
@@ -677,6 +721,7 @@ export const PopularServicePastelCard: React.FC<{
   bookingHref: string;
   toneIndex?: number;
 }> = ({ service, bookingHref, toneIndex = 0 }) => {
+  const { authUser, openAuthModal } = usePrototypeData();
   const tones = [
     {
       bg: 'bg-[#EDE9FE] border-[#DDD6FE]',
@@ -699,6 +744,17 @@ export const PopularServicePastelCard: React.FC<{
   return (
     <Link
       to={bookingHref}
+      onClick={(e) => {
+        if (!authUser) {
+          e.preventDefault();
+          openAuthModal({
+            initialScreen: 'LOGIN',
+            defaultRole: 'CUSTOMER',
+            redirectTo: bookingHref,
+            promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
+          });
+        }
+      }}
       className={`group rounded-3xl border p-5 flex flex-col justify-between min-h-[155px] transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-8px_rgba(139,92,246,0.20)] ${style.bg}`}
     >
       <div className="space-y-2">
@@ -748,6 +804,7 @@ export const ServiceCard: React.FC<{
   onSelect,
   bookingHref,
 }) => {
+  const { authUser, openAuthModal } = usePrototypeData();
   const thumbUrl = getBeautyPhotoUrl(service.title, service.category);
 
   return (
@@ -798,6 +855,17 @@ export const ServiceCard: React.FC<{
         {bookingHref ? (
           <Link
             to={bookingHref}
+            onClick={(e) => {
+              if (!authUser) {
+                e.preventDefault();
+                openAuthModal({
+                  initialScreen: 'LOGIN',
+                  defaultRole: 'CUSTOMER',
+                  redirectTo: bookingHref,
+                  promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
+                });
+              }
+            }}
             className="px-4 py-2 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(139,92,246,0.38)]"
           >
             <span>{actionLabel}</span>

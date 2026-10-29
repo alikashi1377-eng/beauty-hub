@@ -49,6 +49,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
 import { EasyCheckoutModal } from '../../components/ui/EasyCheckoutModal';
+import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 
 /** نوار پیشرفت افقی مینیمال و جمع‌وجور (بدون توضیحات اضافی بالای صفحه) */
 const OnboardingProgressHeader: React.FC<{
@@ -209,6 +210,9 @@ export const BusinessRegisterPage: React.FC = () => {
   const { onboardingDraft, updateOnboardingDraft, categories, showToast } =
     usePrototypeData();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [registrationMode, setRegistrationMode] = useState<'fast' | 'wizard'>(
+    'fast'
+  );
 
   const effectiveCategories =
     categories.length > 0 ? categories : SAMPLE_CATEGORIES;
@@ -240,6 +244,30 @@ export const BusinessRegisterPage: React.FC = () => {
     showToast('مشخصات سالن و عکس پروفایل ذخیره شد.');
     navigate('/business/onboarding');
   };
+
+  if (registrationMode === 'fast') {
+    return (
+      <div className="max-w-lg mx-auto my-4 sm:my-8 space-y-4">
+        <div className="rounded-[32px] border border-[#CBD5E1] bg-gradient-to-b from-[#EFF6FF] via-[#F8FAFC] to-white p-5 sm:p-8 shadow-[0_20px_50px_-20px_rgba(6,17,56,0.18)]">
+          <TimetoUnifiedAuthCard
+            initialScreen="REGISTER_STEP_1_PHONE"
+            defaultRole="BUSINESS_OWNER"
+            redirectTo="/app"
+            promptReason="ثبت سریع سالن در ۴ گام کوتاه (شماره · تأیید · پروفایل · سالن) و ورود مستقیم به پنل مدیریت؛ تکمیل خدمات، ساعات کاری و شماره شبا در پنل سالن با نوار پیشرفت انجام می‌شود."
+          />
+        </div>
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => setRegistrationMode('wizard')}
+            className="text-xs font-bold text-[#64748B] hover:text-[#0057FF] cursor-pointer underline"
+          >
+            ترجیح می‌دهید از فرم چندمرحله‌ای کامل ثبت‌نام سالن استفاده کنید؟ کلیک کنید
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

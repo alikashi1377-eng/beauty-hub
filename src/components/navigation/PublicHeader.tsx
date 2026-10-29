@@ -14,6 +14,7 @@ import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { TimetoLogo } from '../ui/TimetoLogo';
 import { PWAInstallButton } from '../ui/PWAInstallPrompt';
 import { toPersianDigits } from '../../utils/formatters';
+import { saveVisitorRole } from '../home/timetoHomeData';
 
 export const PublicHeader: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -23,12 +24,14 @@ export const PublicHeader: React.FC = () => {
     favoriteBusinessIds,
     favoriteSpecialistIds,
     adminNotifications,
+    openAuthModal,
   } = usePrototypeData();
 
   const totalFavs = favoriteBusinessIds.length + favoriteSpecialistIds.length;
   const isBusinessOwner =
     Boolean(ownedBusinessId) ||
     Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
+  const isLoggedInCustomerOnly = Boolean(authUser && !isBusinessOwner);
   const isPlatformAdmin = Boolean(
     authUser?.isPlatformAdmin && authUser?.roles?.includes('PLATFORM_ADMIN')
   );
@@ -37,18 +40,20 @@ export const PublicHeader: React.FC = () => {
     : 0;
 
   const navItems = [
-    { to: '/search', label: 'جست‌وجوی سالن‌ها' },
-    { to: '/categories', label: 'دسته‌بندی خدمات' },
-    { to: '/me/appointments', label: 'نوبت‌های من' },
-    { to: '/pricing', label: 'ویژه سالن‌داران' },
-    { to: '/help', label: 'راهنما' },
+    { to: '/search', label: 'جست‌وجوی سالن‌ها', requiresAuth: false },
+    { to: '/categories', label: 'دسته‌بندی خدمات', requiresAuth: false },
+    { to: '/me/appointments', label: 'نوبت‌های من', requiresAuth: true },
+    ...(!isLoggedInCustomerOnly
+      ? [{ to: '/pricing', label: 'ویژه سالن‌داران', requiresAuth: false }]
+      : []),
+    { to: '/help', label: 'راهنما', requiresAuth: false },
   ];
 
   return (
     <header className="bg-[#061138] text-white border-b border-[#1E293B] sticky top-0 z-30 shadow-[0_4px_20px_-6px_rgba(6,17,56,0.45)]">
       <div className="max-w-[1240px] mx-auto flex items-center justify-between gap-4 px-4 sm:px-6 py-3">
         {/* برند و هویت بصری Timeto */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5">
           <Link to="/" className="inline-flex items-center shrink-0">
             <TimetoLogo size="md" theme="dark" />
           </Link>
@@ -62,6 +67,18 @@ export const PublicHeader: React.FC = () => {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onClick={(e) => {
+                  if (item.requiresAuth && !authUser) {
+                    e.preventDefault();
+                    openAuthModal({
+                      initialScreen: 'LOGIN',
+                      defaultRole: 'CUSTOMER',
+                      redirectTo: item.to,
+                      promptReason:
+                        'برای مشاهده نوبت‌های خود، وارد شوید یا ثبت‌نام کنید',
+                    });
+                  }
+                }}
                 className={({ isActive }) =>
                   `px-3.5 py-2 rounded-full transition-all whitespace-nowrap shrink-0 ${
                     isActive
@@ -81,7 +98,27 @@ export const PublicHeader: React.FC = () => {
           <PWAInstallButton compact />
 
           <Link
+            to="/?intro=1"
+            onClick={() => saveVisitorRole(null)}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-[#00E5FF] bg-white/8 hover:bg-white/15 border border-[#00E5FF]/35 rounded-full transition-colors whitespace-nowrap shrink-0"
+          >
+            <span>معرفی اپ (صفحه ۳بعدی)</span>
+          </Link>
+
+          <Link
             to="/me/favorites"
+            onClick={(e) => {
+              if (!authUser) {
+                e.preventDefault();
+                openAuthModal({
+                  initialScreen: 'LOGIN',
+                  defaultRole: 'CUSTOMER',
+                  redirectTo: '/me/favorites',
+                  promptReason:
+                    'برای مشاهده سالن‌های ذخیره‌شده، وارد حساب خود شوید',
+                });
+              }
+            }}
             aria-label="علاقه‌مندی‌های ذخیره‌شده"
             className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-full transition-colors"
           >
@@ -100,13 +137,19 @@ export const PublicHeader: React.FC = () => {
               <span>{authUser.fullName || 'حساب من'}</span>
             </Link>
           ) : (
-            <Link
-              to="/login"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-full transition-colors whitespace-nowrap shrink-0"
+            <button
+              type="button"
+              onClick={() =>
+                openAuthModal({
+                  initialScreen: 'LOGIN',
+                  defaultRole: 'CUSTOMER',
+                })
+              }
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <User className="w-3.5 h-3.5 text-[#00E5FF]" />
               <span>ورود / عضویت</span>
-            </Link>
+            </button>
           )}
 
           {isPlatformAdmin ? (
@@ -132,15 +175,22 @@ export const PublicHeader: React.FC = () => {
               <LayoutDashboard className="w-3.5 h-3.5" />
               <span>پیشخوان سالن من</span>
             </Link>
-          ) : (
-            <Link
-              to="/business/register"
-              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 shadow-[0_6px_16px_-4px_rgba(0,163,255,0.45)]"
+          ) : !isLoggedInCustomerOnly ? (
+            <button
+              type="button"
+              onClick={() =>
+                openAuthModal({
+                  initialScreen: 'REGISTER_STEP_1_PHONE',
+                  defaultRole: 'BUSINESS_OWNER',
+                  redirectTo: '/app',
+                })
+              }
+              className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 shadow-[0_6px_16px_-4px_rgba(0,163,255,0.45)] cursor-pointer"
             >
               <Store className="w-3.5 h-3.5" />
               <span>ثبت سالن زیبایی</span>
-            </Link>
-          )}
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -165,7 +215,17 @@ export const PublicHeader: React.FC = () => {
               <NavLink
                 key={item.to}
                 to={item.to}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={(e) => {
+                  setMobileMenuOpen(false);
+                  if (item.requiresAuth && !authUser) {
+                    e.preventDefault();
+                    openAuthModal({
+                      initialScreen: 'LOGIN',
+                      defaultRole: 'CUSTOMER',
+                      redirectTo: item.to,
+                    });
+                  }
+                }}
                 className={({ isActive }) =>
                   `block px-4 py-2.5 rounded-2xl text-sm font-bold ${
                     isActive
@@ -196,45 +256,48 @@ export const PublicHeader: React.FC = () => {
               </Link>
             ) : null}
 
-            <p className="text-[11px] font-bold text-slate-400 px-1">
-              حساب مشتری
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                to="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-xs font-bold text-center text-white px-3 py-2.5 rounded-full bg-white/10 border border-white/15"
-              >
-                ورود با موبایل
-              </Link>
-              <Link
-                to="/me/appointments"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-xs font-bold text-center text-white px-3 py-2.5 rounded-full bg-white/10 border border-white/15"
-              >
-                نوبت‌های من
-              </Link>
-            </div>
+            {!authUser ? (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    openAuthModal({
+                      initialScreen: 'LOGIN',
+                      defaultRole: 'CUSTOMER',
+                    });
+                  }}
+                  className="text-xs font-bold text-center text-white px-3 py-2.5 rounded-full bg-white/10 border border-white/15 cursor-pointer"
+                >
+                  ورود / ثبت‌نام مشتری
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    openAuthModal({
+                      initialScreen: 'REGISTER_STEP_1_PHONE',
+                      defaultRole: 'BUSINESS_OWNER',
+                      redirectTo: '/app',
+                    });
+                  }}
+                  className="text-xs font-extrabold text-center text-white px-3 py-2.5 rounded-full bg-[#0057FF] cursor-pointer"
+                >
+                  ثبت سالن زیبایی
+                </button>
+              </div>
+            ) : null}
 
-            <p className="text-[11px] font-bold text-[#00E5FF] px-1 pt-1">
-              ویژه مدیران سالن و متخصصان
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                to="/business/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-xs font-extrabold text-center text-white px-3 py-2.5 rounded-full bg-[#0057FF]"
-              >
-                ثبت رایگان سالن
-              </Link>
-              <Link
-                to="/app"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-xs font-extrabold text-center text-[#061138] px-3 py-2.5 rounded-full bg-[#00E5FF]"
-              >
-                پیشخوان مدیریت سالن
-              </Link>
-            </div>
+            <Link
+              to="/?intro=1"
+              onClick={() => {
+                saveVisitorRole(null);
+                setMobileMenuOpen(false);
+              }}
+              className="block text-xs font-extrabold text-center text-[#00E5FF] px-3 py-2.5 rounded-full bg-white/8 border border-[#00E5FF]/35 mt-2"
+            >
+              مشاهده صفحه ورود سه‌بعدی (معرفی اپ)
+            </Link>
           </div>
         </nav>
       ) : null}

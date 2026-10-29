@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Clock,
+  CreditCard,
   MapPin,
   Scissors,
   Sparkles,
@@ -18,7 +19,13 @@ import {
 import { toPersianDigits } from '../../utils/formatters';
 
 export interface ProfileCompletionStep {
-  id: 'basic_location' | 'services' | 'working_hours' | 'specialists' | 'media_bio';
+  id:
+    | 'basic_location'
+    | 'services'
+    | 'working_hours'
+    | 'specialists'
+    | 'financial_info'
+    | 'media_bio';
   title: string;
   shortLabel: string;
   weightPercent: number;
@@ -89,7 +96,7 @@ export function computeBusinessProfileCompletion(params: {
   const bizGallery = gallery.filter((g) => g.businessId === business.id);
   const openDays = (business.workingHours || []).filter((h) => h.isOpen);
 
-  // ۱. اطلاعات پایه، آدرس و لوکیشن نقشه (۲۰٪)
+  // ۱. اطلاعات پایه، آدرس و لوکیشن نقشه (۱۵٪)
   const hasBasicAndLocation = Boolean(
     business.name?.trim() &&
       business.address?.trim() &&
@@ -102,14 +109,20 @@ export function computeBusinessProfileCompletion(params: {
   const hasServices = bizServices.length >= 1;
 
   // ۳. تنظیم دقیق روزها و ساعات کاری (۲۰٪)
-  // تا زمانی که صاحب سالن روزها و ساعات کاری را در بخش ساعات کاری ذخیره/تایید نکرده باشد، به عنوان ناقص نمایش داده می‌شود
   const hasWorkingHours =
     openDays.length > 0 && Boolean(business.workingHoursConfigured);
 
-  // ۴. معرفی متخصصان متناسب با ظرفیت پلن (۲۰٪)
+  // ۴. معرفی متخصصان متناسب با ظرفیت پلن (۱۵٪)
   const hasSpecialists = bizSpecialists.length >= 1;
 
-  // ۵. تصویر پروفایل، بیوگرافی، اینستاگرام و نمونه کار (۱۵٪)
+  // ۵. اطلاعات مالی و تسویه حساب: شماره کارت یا شبا (۱۵٪)
+  const cleanCard = (business.bankCardNumber || '').replace(/\D/g, '');
+  const cleanSheba = (business.bankShebaNumber || '')
+    .replace(/^IR/i, '')
+    .replace(/\D/g, '');
+  const hasFinancialInfo = cleanCard.length >= 16 || cleanSheba.length >= 24;
+
+  // ۶. تصویر پروفایل، بیوگرافی، اینستاگرام و نمونه کار (۱۰٪)
   const hasMediaAndBio = Boolean(
     business.avatarUrl &&
       business.instagramHandle?.trim() &&
@@ -123,7 +136,7 @@ export function computeBusinessProfileCompletion(params: {
       id: 'basic_location',
       title: 'اطلاعات پایه، آدرس و لوکیشن نقشه',
       shortLabel: 'آدرس و لوکیشن',
-      weightPercent: 20,
+      weightPercent: 15,
       completed: hasBasicAndLocation,
       href: '/app/profile',
       statusHint: 'ثبت موقعیت روی نقشه و آدرس دقیق',
@@ -150,16 +163,25 @@ export function computeBusinessProfileCompletion(params: {
       id: 'specialists',
       title: `معرفی متخصصان سالن (ظرفیت پلن: تا ${toPersianDigits(planStaffLimitCount)} نفر)`,
       shortLabel: 'متخصصان سالن',
-      weightPercent: 20,
+      weightPercent: 15,
       completed: hasSpecialists,
       href: '/app/staff',
       statusHint: `ثبت متخصص (سقف پلن شما: ${toPersianDigits(planStaffLimitCount)} نفر)`,
     },
     {
+      id: 'financial_info',
+      title: 'ثبت شماره کارت و شبا (تسویه حساب سالن)',
+      shortLabel: 'شماره کارت و شبا',
+      weightPercent: 15,
+      completed: hasFinancialInfo,
+      href: '/app/profile#financial-section',
+      statusHint: 'تکمیل شماره کارت ۱۶ رقمی یا شبا جهت تسویه بیعانه و نوبت‌ها',
+    },
+    {
       id: 'media_bio',
       title: 'تصویر سالن، اینستاگرام و نمونه‌کار',
       shortLabel: 'تصویر و نمونه‌کار',
-      weightPercent: 15,
+      weightPercent: 10,
       completed: hasMediaAndBio,
       href: bizGallery.length === 0 ? '/app/gallery' : '/app/profile',
       statusHint: 'تکمیل عکس پروفایل، اینستاگرام و گالری نمونه‌کار',
@@ -305,6 +327,8 @@ export const BusinessProfileCompletionBanner: React.FC<{
         return <Clock className="h-3 w-3" />;
       case 'specialists':
         return <Users className="h-3 w-3" />;
+      case 'financial_info':
+        return <CreditCard className="h-3 w-3" />;
       case 'media_bio':
         return <Sparkles className="h-3 w-3" />;
     }

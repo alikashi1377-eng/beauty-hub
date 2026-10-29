@@ -63,7 +63,6 @@ import {
 } from '../../components/ui/MarketplaceComponents';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
 import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
-import { MelipayamakQuickSetupCard } from '../../components/ui/MelipayamakQuickSetupCard';
 import {
   EasyCheckoutModal,
   CheckoutItemPayload,
@@ -72,8 +71,9 @@ import {
   BusinessProfileCompletionBanner,
   computeBusinessProfileCompletion,
 } from '../../components/business/BusinessProfileCompletionWidget';
+import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
 
-/** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — بازطراحی کامل مطابق Capture2.PNG (Salonia) و Capture8.PNG (Zolmilon) */
+/** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — چیدمان خلوت، اولویت‌بندی‌شده و مجهز به استوری‌های راهنما */
 export const BusinessDashboardPage: React.FC = () => {
   const {
     dataMode,
@@ -85,9 +85,6 @@ export const BusinessDashboardPage: React.FC = () => {
     gallery,
     customers,
     plans,
-    adPackages,
-    activePlanId,
-    setActivePlanId,
     updateAppointmentStatus,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -101,17 +98,6 @@ export const BusinessDashboardPage: React.FC = () => {
   });
 
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
-  const [dashboardCheckout, setDashboardCheckout] =
-    useState<CheckoutItemPayload | null>(null);
-
-  const activePlanObj =
-    plans.find(
-      (p) =>
-        p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
-    ) || plans[0];
-  const currentStaffLimit = getPlanStaffLimitCount(
-    currentBiz?.subscriptionPlan || activePlanId
-  );
 
   const pendingAppointments = appointments.filter(
     (a) => a.status === AppointmentStatus.Pending
@@ -122,17 +108,8 @@ export const BusinessDashboardPage: React.FC = () => {
   const activeAppointmentsCount =
     dataMode === 'real'
       ? pendingAppointments.length + confirmedAppointments.length
-      : Math.max(pendingAppointments.length + confirmedAppointments.length, 8);
+      : Math.max(pendingAppointments.length + confirmedAppointments.length, 6);
 
-  const realRevenueToman = appointments
-    .filter(
-      (a) =>
-        a.status === AppointmentStatus.Completed ||
-        a.status === AppointmentStatus.Confirmed
-    )
-    .reduce((sum, a) => sum + (Number(a.priceToman) || 0), 0);
-
-  const displayedRevenue = dataMode === 'real' ? realRevenueToman : 64800000;
   const displayedCustomersCount =
     dataMode === 'real' ? customers.length : customers.length + 124;
 
@@ -147,793 +124,384 @@ export const BusinessDashboardPage: React.FC = () => {
       )
     : specialists.slice(0, 4);
 
-  const scheduleBlocks = [
-    {
-      time: '۰۹:۳۰ - ۱۱:۰۰',
-      title: appointments[0]?.serviceTitle || 'بالیاژ و لایت تخصصی مو',
-      customer: appointments[0]?.customerName || 'المیرا شمس',
-      specialist: bizSpecialists[0]?.fullName || 'مهسا کیانی',
-      tone: 'bg-[#EDE9FE] border-[#EDE9FE] text-[#8B5CF6]',
-      dot: 'bg-[#8B5CF6]',
-    },
-    {
-      time: '۱۱:۰۰ - ۱۲:۳۰',
-      title: appointments[1]?.serviceTitle || 'طراحی و کاشت ناخن ژلیش',
-      customer: appointments[1]?.customerName || 'نگار رحیمی',
-      specialist: bizSpecialists[1]?.fullName || 'نیلوفر تهرانی',
-      tone: 'bg-[#FFFBEB] border-[#FDE68A] text-[#8B5CF6]',
-      dot: 'bg-[#8B5CF6]',
-    },
-    {
-      time: '۱۳:۳۰ - ۱۵:۰۰',
-      title: appointments[2]?.serviceTitle || 'فیشیال تخصصی و آبرسانی',
-      customer: appointments[2]?.customerName || 'پریسا نادری',
-      specialist: bizSpecialists[2]?.fullName || 'سارا راد',
-      tone: 'bg-[#ECFDF5] border-[#A7F3D0] text-[#10B981]',
-      dot: 'bg-[#10B981]',
-    },
-    {
-      time: '۱۵:۳۰ - ۱۷:۰۰',
-      title: 'پروتئین‌تراپی و احیای مو',
-      customer: 'ترانه کاظمی',
-      specialist: bizSpecialists[0]?.fullName || 'مهسا کیانی',
-      tone: 'bg-[#EDE9FE] border-[#EDE9FE] text-[#8B5CF6]',
-      dot: 'bg-[#8B5CF6]',
-    },
-  ].filter(
-    (b) =>
-      selectedStaffFilter === 'ALL' || b.specialist === selectedStaffFilter
+  const todayAppointmentsList = (
+    appointments.length > 0
+      ? appointments
+      : [
+          {
+            id: 'td-1',
+            timeSlot: '۱۰:۰۰',
+            dateJalali: 'امروز',
+            serviceTitle: 'بالیاژ و لایت تخصصی مو',
+            customerName: 'المیرا شمس',
+            specialistName: bizSpecialists[0]?.fullName || 'مهسا کیانی',
+            status: AppointmentStatus.Confirmed,
+          },
+          {
+            id: 'td-2',
+            timeSlot: '۱۱:۳۰',
+            dateJalali: 'امروز',
+            serviceTitle: 'طراحی و کاشت ناخن ژلیش',
+            customerName: 'نگار رحیمی',
+            specialistName: bizSpecialists[1]?.fullName || 'نیلوفر تهرانی',
+            status: AppointmentStatus.Confirmed,
+          },
+          {
+            id: 'td-3',
+            timeSlot: '۱۴:۰۰',
+            dateJalali: 'امروز',
+            serviceTitle: 'فیشیال تخصصی و آبرسانی پوست',
+            customerName: 'پریسا نادری',
+            specialistName: bizSpecialists[2]?.fullName || 'سارا راد',
+            status: AppointmentStatus.Confirmed,
+          },
+        ]
+  ).filter(
+    (apt) =>
+      selectedStaffFilter === 'ALL' ||
+      apt.specialistName === selectedStaffFilter
   );
 
   return (
-    <div className="space-y-6">
-      {/* نوار کنترل بالایی و فیلتر سالن/متخصص/تاریخ — مطابق Zolmilon در Capture8.PNG */}
-      <div className="rounded-3xl bg-white border border-[#E6E0F5] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xs">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[#8B5CF6] font-bold">
-            <span>پنل مدیریت سالن · {currentBiz?.name ?? 'کسب‌وکار شما'}</span>
-            <StatusBadge label="رزرو آنلاین فعال" tone="success" />
-          </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
-            پیشخوان روزانه و تقویم عملیاتی سالن
-          </h1>
-        </div>
+    <div className="space-y-5">
+      {/* ۱. نوار استوری‌های آموزشی و اطلاعیه‌ها (به سبک اینستاگرام با پوستر تصویری و لینک مستقیم به بخش‌ها) */}
+      <BusinessStoriesBar />
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <select
-            aria-label="فیلتر متخصص"
-            value={selectedStaffFilter}
-            onChange={(e) => setSelectedStaffFilter(e.target.value)}
-            className="rounded-full border border-[#D4C9EE] bg-[#FAF8FF] px-4 py-2 text-xs font-bold text-[#1E1B2E] focus:outline-none cursor-pointer"
-          >
-            <option value="ALL">همه متخصصان ({toPersianDigits(bizSpecialists.length)})</option>
-            {bizSpecialists.map((sp) => (
-              <option key={sp.id} value={sp.fullName}>
-                {sp.fullName}
-              </option>
-            ))}
-          </select>
-
-          <Link to="/app/customers?add=1">
-            <Button variant="secondary" size="sm">
-              <Users className="w-4 h-4" />
-              <span>+ ثبت مشتری دستی</span>
-            </Button>
-          </Link>
-
-          <Link to="/app/services">
-            <Button variant="outline" size="sm">
-              <Plus className="w-4 h-4" />
-              <span>خدمت جدید</span>
-            </Button>
-          </Link>
-
-          <Link to="/app/calendar">
-            <Button variant="primary" size="sm">
-              <Calendar className="w-4 h-4" />
-              <span>تقویم کامل</span>
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* ویجت مینیمال درصد پیشرفت تکمیل پروفایل سالن متناسب با پلن فعال (دایره + نوار خطی + تگ‌های اقدام سریع) */}
+      {/* ۲. نوار جمع‌وجور درصد تکمیل پروفایل سالن (فقط نمایش موارد باقی‌مانده) */}
       <BusinessProfileCompletionBanner summary={profileCompletion} />
 
-      {/* داشبورد اختصاصی ارتقای پلن، وضعیت دوره تست تاییدشده ادمین و خرید تبلیغات ویژه (Boost) */}
-      <div className="rounded-3xl bg-white text-[#061138] border border-[#CBD5E1] p-4 sm:p-5 space-y-4 shadow-2xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-[#0057FF] text-white text-xs font-extrabold">
-                پلن فعال: {currentBiz?.subscriptionPlan || activePlanObj?.name || 'شروع رایگان (پایه)'}
-              </span>
-              <span className="px-3 py-1 rounded-full bg-[#E8EFFA] text-[#061138] border border-[#CBD5E1] text-xs font-extrabold tabular-nums">
-                ظرفیت متخصصان: {toPersianDigits(bizSpecialists.length)} از{' '}
-                {toPersianDigits(currentStaffLimit)} نفر مجاز
-              </span>
-              {currentBiz?.trialDaysRemaining &&
-              currentBiz.trialDaysRemaining > 0 ? (
-                <span className="px-3 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/40 text-xs font-extrabold tabular-nums">
-                  دوره تست تاییدشده مدیریت: {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
-                </span>
-              ) : null}
-              {currentBiz?.isSponsored ? (
-                <span className="px-3 py-1 rounded-full bg-[#ECFDF5] text-[#065F46] border border-[#10B981]/40 text-xs font-extrabold tabular-nums">
-                  ★ تبلیغ ویژه فعال ({toPersianDigits(currentBiz.sponsoredDaysRemaining ?? 30)} روز باقی‌مانده)
-                </span>
-              ) : null}
-            </div>
-            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              داشبورد ارتقای پلن اشتراک و تبلیغات جایگاه ویژه (Boost)
-            </h2>
-            <p className="text-xs font-medium text-[#334155]">
-              برای افزایش ظرفیت متخصصان (تا ۳ یا ۸ نفر)، فعال‌سازی پیامک خودکار یا قرارگیری در صدر جست‌وجو و بنر صفحه اول، بسته مورد نظر را انتخاب کنید.
+      {/* ۳. خلاصه وضعیت امروز سالن در یک نگاه (۴ شمارنده ساده، خلوت و کاربردی) */}
+      <section
+        aria-label="خلاصه وضعیت امروز سالن"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+      >
+        <Link
+          to="/app/appointments"
+          className="rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] p-4 flex items-center justify-between gap-3 transition-all shadow-2xs"
+        >
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-[#64748B] block">
+              در انتظار تایید
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-[#061138] tabular-nums">
+              {toPersianDigits(pendingAppointments.length)}{' '}
+              <span className="text-xs font-bold text-[#64748B]">نوبت</span>
             </p>
           </div>
+          <span
+            className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+              pendingAppointments.length > 0
+                ? 'bg-[#FEF3C7] text-[#D97706]'
+                : 'bg-[#ECFDF5] text-[#10B981]'
+            }`}
+          >
+            {pendingAppointments.length > 0 ? (
+              <AlertCircle className="w-5 h-5" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5" />
+            )}
+          </span>
+        </Link>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {plans
-              .filter((p) => p.monthlyPriceToman > 0)
-              .map((pl) => (
-                <Button
-                  key={pl.id}
-                  type="button"
-                  variant={pl.isRecommended ? 'primary' : 'secondary'}
-                  size="sm"
-                  onClick={() =>
-                    setDashboardCheckout({
-                      itemType: 'PLAN',
-                      itemId: pl.id,
-                      itemTitle: `اشتراک ماهانه «${pl.name}»`,
-                      baseAmountToman: pl.monthlyPriceToman,
-                    })
-                  }
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>ارتقا به {pl.name}</span>
-                </Button>
-              ))}
-            <Link to="/app/subscription">
-              <Button variant="outline" size="sm">
-                <Megaphone className="w-3.5 h-3.5 text-[#0057FF]" />
-                <span>خرید تبلیغ صدر جست‌وجو / بنر</span>
-              </Button>
+        <Link
+          to="/app/calendar"
+          className="rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] p-4 flex items-center justify-between gap-3 transition-all shadow-2xs"
+        >
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-[#64748B] block">
+              نوبت‌های فعال امروز
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-[#061138] tabular-nums">
+              {toPersianDigits(activeAppointmentsCount)}{' '}
+              <span className="text-xs font-bold text-[#64748B]">نوبت</span>
+            </p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-[#E0ECFF] text-[#0057FF] flex items-center justify-center shrink-0">
+            <Calendar className="w-5 h-5" />
+          </span>
+        </Link>
+
+        <Link
+          to="/app/customers"
+          className="rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] p-4 flex items-center justify-between gap-3 transition-all shadow-2xs"
+        >
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-[#64748B] block">
+              مشتریان سالن
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-[#061138] tabular-nums">
+              {toPersianDigits(displayedCustomersCount)}{' '}
+              <span className="text-xs font-bold text-[#64748B]">نفر</span>
+            </p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-[#F3E8FF] text-[#7C3AED] flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
+          </span>
+        </Link>
+
+        <Link
+          to="/app/services"
+          className="rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] p-4 flex items-center justify-between gap-3 transition-all shadow-2xs"
+        >
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-[#64748B] block">
+              خدمات فعال
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-[#061138] tabular-nums">
+              {toPersianDigits(bizServicesCount)}{' '}
+              <span className="text-xs font-bold text-[#64748B]">خدمت</span>
+            </p>
+          </div>
+          <span className="w-10 h-10 rounded-2xl bg-[#ECFDF5] text-[#10B981] flex items-center justify-center shrink-0">
+            <Clock className="w-5 h-5" />
+          </span>
+        </Link>
+      </section>
+
+      {/* ۴. اولویت اول سالن‌دار: نوبت‌های در انتظار تایید + برنامه نوبت‌های امروز */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* ستون راست (۷ ستون): صف تایید فوری نوبت‌های جدید */}
+        <Card className="lg:col-span-7 rounded-3xl space-y-4 border border-[#CBD5E1]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3.5">
+            <div className="flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0">
+                <AlertCircle className="w-4 h-4" />
+              </span>
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  اولویت ۱: نوبت‌های در انتظار تایید شما
+                </h2>
+                <p className="text-xs text-[#64748B]">
+                  درخواست‌های رزرو جدید را مستقیم تایید یا تعیین تکلیف کنید
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/app/appointments"
+              className="text-xs font-extrabold text-[#0057FF] hover:underline"
+            >
+              لیست کامل رزروها ←
             </Link>
           </div>
-        </div>
 
-        {/* کارت‌های سریع خرید جایگاه تبلیغاتی مستقیم از پیشخوان */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-[#E2E8F0] text-xs">
-          {adPackages.slice(0, 3).map((pkg) => (
-            <div
-              key={pkg.id}
-              className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-center justify-between gap-3"
-            >
-              <div className="min-w-0 space-y-1">
-                <p className="font-extrabold text-[#061138] truncate">
-                  {pkg.title}
-                </p>
-                <p className="text-[11px] font-bold text-[#0057FF] tabular-nums">
-                  {formatPriceToman(pkg.priceToman)}
-                  {pkg.slot !== 'SMS_ADDON' ? ' / ۳۰ روزه' : ` / ${toPersianDigits(pkg.smsCount ?? 200)} پیامک`}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setDashboardCheckout({
-                    itemType:
-                      pkg.slot === 'SMS_ADDON' ? 'SMS_PACK' : 'AD_PACKAGE',
-                    itemId: pkg.id,
-                    itemTitle: pkg.title,
-                    baseAmountToman: pkg.priceToman,
-                    weeklyAmountToman: pkg.weeklyPriceToman,
-                    defaultPlacement:
-                      pkg.slot !== 'SMS_ADDON' ? pkg.slot : undefined,
-                    defaultDurationDays: 30,
-                    smsCount: pkg.smsCount,
-                  })
-                }
-                className="px-3.5 py-1.5 rounded-full bg-[#0057FF] text-white font-extrabold text-[11px] shrink-0 cursor-pointer hover:bg-[#0044CC] transition-colors"
-              >
-                خرید و فعال‌سازی
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <EasyCheckoutModal
-        isOpen={Boolean(dashboardCheckout)}
-        onClose={() => setDashboardCheckout(null)}
-        item={dashboardCheckout}
-        businessId={currentBiz?.id || 'biz-1'}
-        businessName={currentBiz?.name || 'سالن زیبایی شما'}
-        onPaymentSuccess={() => {
-          if (dashboardCheckout?.itemType === 'PLAN') {
-            setActivePlanId(dashboardCheckout.itemId);
-          }
-        }}
-      />
-
-      {/* چیدمان ۳ ستونی دسکتاپ: ستون میانی (KPIهای موج‌دار + نمودارها + جدول زمان‌بندی) + ستون چپ (برنامه امروز + تقویم ماهانه) — مطابق Capture2.PNG و Capture8.PNG */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* ستون اصلی میانی (۸ ستون) */}
-        <div className="xl:col-span-8 space-y-6">
-          {/* ۱. سه کارت شاخص کلیدی با نمودار موجی SVG (Sparkline Area Cards) — دقیقاً مطابق Salonia در Capture2.PNG */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* کارت ۱: فروش کل */}
-            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
-              <div className="p-5 pb-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#6B6480]">
-                    {dataMode === 'real' ? 'ارزش نوبت‌های ثبت‌شده' : 'فروش و کارکرد ماه'}
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] text-[11px] font-extrabold tabular-nums">
-                    ↗ +۱۲٪
-                  </span>
+          {pendingAppointments.length === 0 ? (
+            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#ECFDF5] text-[#10B981] inline-flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
-                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
-                  {formatPriceToman(displayedRevenue)}
-                </p>
-              </div>
-              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
-                <defs>
-                  <linearGradient id="spark-plum" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M0,44 C40,42 65,18 110,24 C155,30 185,8 240,12 L240,56 L0,56 Z"
-                  fill="url(#spark-plum)"
-                />
-                <path
-                  d="M0,44 C40,42 65,18 110,24 C155,30 185,8 240,12"
-                  fill="none"
-                  stroke="#8B5CF6"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </Card>
-
-            {/* کارت ۲: نوبت‌های فعال */}
-            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
-              <div className="p-5 pb-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#6B6480]">
-                    نوبت‌های فعال امروز
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-[11px] font-extrabold tabular-nums">
-                    ↗ +۱۸٪
-                  </span>
-                </div>
-                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
-                  {toPersianDigits(activeAppointmentsCount)} نوبت فعال
-                </p>
-              </div>
-              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
-                <defs>
-                  <linearGradient id="spark-berry" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M0,40 C50,35 80,28 125,16 C170,4 200,22 240,10 L240,56 L0,56 Z"
-                  fill="url(#spark-berry)"
-                />
-                <path
-                  d="M0,40 C50,35 80,28 125,16 C170,4 200,22 240,10"
-                  fill="none"
-                  stroke="#8B5CF6"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </Card>
-
-            {/* کارت ۳: مشتریان فعال */}
-            <Card padding="none" className="rounded-3xl overflow-hidden border border-[#E6E0F5] bg-white">
-              <div className="p-5 pb-2 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#6B6480]">
-                    مشتریان پرونده‌دار
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] text-[11px] font-extrabold tabular-nums">
-                    {toPersianDigits(bizServicesCount)} خدمت
-                  </span>
-                </div>
-                <p className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
-                  {toPersianDigits(displayedCustomersCount)} مشتری
-                </p>
-              </div>
-              <svg viewBox="0 0 240 56" className="w-full h-14 block" aria-hidden="true">
-                <defs>
-                  <linearGradient id="spark-emerald" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10B981" stopOpacity="0.24" />
-                    <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M0,46 C45,36 95,38 140,22 C185,6 210,16 240,8 L240,56 L0,56 Z"
-                  fill="url(#spark-emerald)"
-                />
-                <path
-                  d="M0,46 C45,36 95,38 140,22 C185,6 210,16 240,8"
-                  fill="none"
-                  stroke="#10B981"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </Card>
-          </div>
-
-          {/* ۲. صف تایید فوری نوبت‌های در انتظار */}
-          <Card className="rounded-3xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E0F5] pb-3.5">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-[#F59E0B]" />
                 <div>
-                  <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                    نوبت‌های در انتظار تایید و اقدام فوری
-                  </h2>
-                  <p className="text-xs text-[#6B6480] mt-0.5">
-                    تایید یا لغو مستقیم درخواست‌های جدید بدون نیاز به ترک پیشخوان
+                  <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    همه نوبت‌های ورودی بررسی شده‌اند
+                  </p>
+                  <p className="text-xs text-[#64748B]">
+                    در حال حاضر نوبت منتظر تاییدی وجود ندارد.
                   </p>
                 </div>
               </div>
-              <Link
-                to="/app/appointments"
-                className="text-xs font-bold text-[#8B5CF6] hover:underline"
-              >
-                همه نوبت‌ها ←
+              <Link to="/app/calendar">
+                <Button variant="outline" size="sm">
+                  مشاهده تقویم
+                </Button>
               </Link>
             </div>
-
-            {pendingAppointments.length === 0 ? (
-              <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#ECFDF5] text-[#10B981] inline-flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
-                      همه نوبت‌های ورودی بررسی شده‌اند
-                    </p>
-                    <p className="text-xs text-[#6B6480]">
-                      هیچ نوبت در انتظار تاییدی در صف وجود ندارد.
-                    </p>
-                  </div>
-                </div>
-                <Link to="/app/calendar">
-                  <Button variant="outline" size="sm">
-                    مشاهده تقویم امروز
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <div className="divide-y divide-[#E6E0F5]">
-                {pendingAppointments.slice(0, 4).map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar name={apt.customerName} size="sm" />
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-extrabold text-[#1E1B2E]">
-                            {apt.customerName}
-                          </span>
-                          <span className="font-mono text-[11px] font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded-md">
-                            {apt.referenceCode}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#6B6480]">
-                          <strong className="text-[#1E1B2E]">
-                            {apt.serviceTitle}
-                          </strong>{' '}
-                          · متخصص: {apt.specialistName} ·{' '}
-                          <span className="tabular-nums font-bold text-[#8B5CF6]">
-                            {apt.dateJalali} ساعت {apt.timeSlot}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() =>
-                          updateAppointmentStatus(
-                            apt.id,
-                            AppointmentStatus.Confirmed
-                          )
-                        }
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>تایید نوبت</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          updateAppointmentStatus(
-                            apt.id,
-                            AppointmentStatus.Cancelled
-                          )
-                        }
-                      >
-                        <X className="w-3.5 h-3.5 text-[#EF4444]" />
-                        <span>لغو</span>
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* ۳. بخش تحلیلی دو ستونی: نمودار روند درآمد (Revenue Overview) + نمودار دونات ترکیب خدمات (Service Breakdown) — دقیقاً مطابق Capture2.PNG */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-            {/* نمودار روند درآمد ماهانه */}
-            <Card className="md:col-span-7 rounded-3xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                    نمودار روند درآمد سالن (Revenue Overview)
-                  </h2>
-                  <p className="text-[11px] text-[#6B6480]">
-                    روند کارکرد ۶ ماه اخیر به تومان
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-[11px] font-bold">
-                  نیم‌سال اول ۱۴۰۵
-                </span>
-              </div>
-
-              <div className="pt-2">
-                <svg viewBox="0 0 420 170" className="w-full h-40 overflow-visible">
-                  <defs>
-                    <linearGradient id="rev-area-grad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.32" />
-                      <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  {[30, 70, 110, 145].map((y) => (
-                    <line
-                      key={y}
-                      x1="10"
-                      y1={y}
-                      x2="410"
-                      y2={y}
-                      stroke="#F3EEFF"
-                      strokeDasharray="4 4"
-                    />
-                  ))}
-                  <path
-                    d="M15,125 C75,115 110,75 160,82 C210,89 250,42 310,48 C355,52 385,22 405,18 L405,145 L15,145 Z"
-                    fill="url(#rev-area-grad)"
-                  />
-                  <path
-                    d="M15,125 C75,115 110,75 160,82 C210,89 250,42 310,48 C355,52 385,22 405,18"
-                    fill="none"
-                    stroke="#8B5CF6"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                  {[
-                    { x: 15, y: 125, m: 'فروردین' },
-                    { x: 95, y: 96, m: 'اردیبهشت' },
-                    { x: 175, y: 82, m: 'خرداد' },
-                    { x: 255, y: 55, m: 'تیر' },
-                    { x: 330, y: 45, m: 'مرداد' },
-                    { x: 405, y: 18, m: 'شهریور' },
-                  ].map((pt) => (
-                    <g key={pt.m}>
-                      <circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r="4.5"
-                        fill="#FFFFFF"
-                        stroke="#8B5CF6"
-                        strokeWidth="2.5"
-                      />
-                      <text
-                        x={pt.x}
-                        y="165"
-                        textAnchor="middle"
-                        className="fill-[#6B6480] text-[10px] font-bold"
-                      >
-                        {pt.m}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              </div>
-            </Card>
-
-            {/* نمودار دونات ترکیب خدمات (Service Breakdown) — مطابق Capture2.PNG */}
-            <Card className="md:col-span-5 rounded-3xl flex flex-col justify-between space-y-4">
-              <div>
-                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                  ترکیب خدمات (Service Breakdown)
-                </h2>
-                <p className="text-[11px] text-[#6B6480]">
-                  سهم لاین‌های زیبایی از کل رزروها
-                </p>
-              </div>
-
-              <div className="flex items-center justify-center py-1">
-                <div className="relative w-32 h-32 flex items-center justify-center">
-                  <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      fill="none"
-                      stroke="#F3EEFF"
-                      strokeWidth="5"
-                    />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      fill="none"
-                      stroke="#8B5CF6"
-                      strokeWidth="5"
-                      strokeDasharray="35 65"
-                      strokeDashoffset="0"
-                    />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      fill="none"
-                      stroke="#8B5CF6"
-                      strokeWidth="5"
-                      strokeDasharray="25 75"
-                      strokeDashoffset="-35"
-                    />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      fill="none"
-                      stroke="#10B981"
-                      strokeWidth="5"
-                      strokeDasharray="20 80"
-                      strokeDashoffset="-60"
-                    />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      fill="none"
-                      stroke="#F59E0B"
-                      strokeWidth="5"
-                      strokeDasharray="20 80"
-                      strokeDashoffset="-80"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                    <span className="text-xs font-extrabold text-[#1E1B2E] tabular-nums">
-                      ۱۰۰٪
-                    </span>
-                    <span className="text-[10px] text-[#6B6480]">کل خدمات</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
-                  <span className="text-[#6B6480] truncate">رنگ و لایت (۳۵٪)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
-                  <span className="text-[#6B6480] truncate">طراحی ناخن (۲۵٪)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
-                  <span className="text-[#6B6480] truncate">فیشیال پوست (۲۰٪)</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                  <span className="text-[#6B6480] truncate">استایل مو (۲۰٪)</span>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* ۴. جدول زمان‌بندی روزانه متخصصان با بلوک‌های پاستلی رنگی (Day Schedule) — دقیقاً مطابق Zolmilon در Capture8.PNG */}
-          <Card className="rounded-3xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3.5">
-              <div>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#1E1B2E]">
-                  جدول زمان‌بندی روزانه متخصصان (Day Schedule)
-                </h2>
-                <p className="text-xs text-[#6B6480]">
-                  بلوک‌های رنگی به تفکیک هر متخصص در تقویم امروز
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs">
-                {bizSpecialists.slice(0, 3).map((sp, i) => {
-                  const dotColors = [
-                    'bg-[#8B5CF6]',
-                    'bg-[#8B5CF6]',
-                    'bg-[#10B981]',
-                  ];
-                  return (
-                    <span
-                      key={sp.id}
-                      className="inline-flex items-center gap-1.5 font-bold text-[#6B6480]"
-                    >
-                      <span
-                        className={`w-2.5 h-2.5 rounded-full ${
-                          dotColors[i % dotColors.length]
-                        }`}
-                      />
-                      <span>{sp.fullName}</span>
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {scheduleBlocks.map((blk, idx) => (
+          ) : (
+            <div className="divide-y divide-[#E2E8F0]">
+              {pendingAppointments.slice(0, 5).map((apt) => (
                 <div
-                  key={idx}
-                  className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center"
+                  key={apt.id}
+                  className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
-                  <div className="sm:col-span-3 text-xs font-extrabold text-[#6B6480] tabular-nums">
-                    {blk.time}
-                  </div>
-                  <div
-                    className={`sm:col-span-9 p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${blk.tone}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar name={blk.specialist} size="sm" />
-                      <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-extrabold truncate">
-                          {blk.title}
-                        </p>
-                        <p className="text-[11px] opacity-85 truncate">
-                          مراجع: {blk.customer} · متخصص: {blk.specialist}
-                        </p>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={apt.customerName} size="sm" />
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-extrabold text-[#061138]">
+                          {apt.customerName}
+                        </span>
+                        <span className="font-mono text-[11px] font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded-md">
+                          {apt.referenceCode}
+                        </span>
                       </div>
+                      <p className="text-xs text-[#475569] truncate">
+                        <strong className="text-[#061138]">
+                          {apt.serviceTitle}
+                        </strong>{' '}
+                        · متخصص: {apt.specialistName} ·{' '}
+                        <span className="tabular-nums font-bold text-[#0057FF]">
+                          {apt.dateJalali} ساعت {apt.timeSlot}
+                        </span>
+                      </p>
                     </div>
-                    <Link
-                      to="/app/calendar"
-                      className="px-3 py-1 rounded-full bg-white/80 hover:bg-white text-[11px] font-bold shrink-0"
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() =>
+                        updateAppointmentStatus(
+                          apt.id,
+                          AppointmentStatus.Confirmed
+                        )
+                      }
                     >
-                      جزئیات
-                    </Link>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>تایید نوبت</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        updateAppointmentStatus(
+                          apt.id,
+                          AppointmentStatus.Cancelled
+                        )
+                      }
+                    >
+                      <X className="w-3.5 h-3.5 text-[#EF4444]" />
+                      <span>لغو</span>
+                    </Button>
                   </div>
                 </div>
               ))}
             </div>
-          </Card>
-        </div>
+          )}
+        </Card>
 
-        {/* ستون کناری چپ (۴ ستون): برنامه امروز (Today's Schedule) + تقویم ماهانه — دقیقاً مطابق Salonia در Capture2.PNG */}
-        <div className="xl:col-span-4 space-y-6">
-          {/* ۱. برنامه امروز (Today's Schedule) با تایم‌لاین عمودی و کارت‌های یاسی */}
-          <Card className="rounded-3xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3">
-              <div>
-                <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                  برنامه امروز (Today&apos;s Schedule)
-                </h2>
-                <p className="text-[11px] text-[#6B6480]">
-                  نوبت‌های پیش‌روی امروز به ترتیب ساعت
-                </p>
-              </div>
-              <Link
-                to="/app/appointments"
-                className="text-xs font-bold text-[#8B5CF6] hover:underline"
-              >
-                همه
-              </Link>
+        {/* ستون چپ (۵ ستون): برنامه نوبت‌های امروز به ترتیب ساعت */}
+        <Card className="lg:col-span-5 rounded-3xl space-y-4 border border-[#CBD5E1]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3.5">
+            <div>
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                برنامه نوبت‌های امروز
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                مراجعین امروز به ترتیب ساعت حضور
+              </p>
             </div>
 
-            <div className="space-y-3.5 relative before:absolute before:top-3 before:bottom-3 before:right-[19px] before:w-0.5 before:bg-[#EDE9FE]">
-              {(appointments.slice(0, 4).length > 0
-                ? appointments.slice(0, 4)
-                : [
-                    {
-                      id: 'td-1',
-                      timeSlot: '۱۰:۰۰',
-                      serviceTitle: 'رنگ و مش تخصصی',
-                      customerName: 'المیرا شمس',
-                      specialistName: 'مهسا کیانی',
-                    },
-                    {
-                      id: 'td-2',
-                      timeSlot: '۱۱:۳۰',
-                      serviceTitle: 'طراحی و کاشت ناخن',
-                      customerName: 'نگار رحیمی',
-                      specialistName: 'نیلوفر تهرانی',
-                    },
-                    {
-                      id: 'td-3',
-                      timeSlot: '۱۴:۰۰',
-                      serviceTitle: 'فیشیال تخصصی پوست',
-                      customerName: 'سارا احمدی',
-                      specialistName: 'سارا راد',
-                    },
-                  ]
-              ).map((apt) => (
-                <div key={apt.id} className="relative flex items-start gap-3 min-w-0">
-                  <span className="relative z-10 w-10 py-1 rounded-full bg-[#8B5CF6] text-white text-[10px] font-extrabold text-center tabular-nums shrink-0 mt-1">
+            <select
+              aria-label="فیلتر متخصص"
+              value={selectedStaffFilter}
+              onChange={(e) => setSelectedStaffFilter(e.target.value)}
+              className="rounded-full border border-[#CBD5E1] bg-[#F3F6FC] px-3 py-1.5 text-xs font-bold text-[#061138] focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">
+                همه متخصصان ({toPersianDigits(bizSpecialists.length)})
+              </option>
+              {bizSpecialists.map((sp) => (
+                <option key={sp.id} value={sp.fullName}>
+                  {sp.fullName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-3">
+            {todayAppointmentsList.slice(0, 4).map((apt) => (
+              <div
+                key={apt.id}
+                className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="px-2.5 py-1.5 rounded-xl bg-[#061138] text-[#00E5FF] text-xs font-black tabular-nums shrink-0">
                     {apt.timeSlot}
                   </span>
-                  <div className="flex-1 min-w-0 p-3.5 rounded-2xl bg-[#EDE9FE]/80 border border-[#EDE9FE] flex items-center justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0 flex-1">
-                      <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
-                        {apt.serviceTitle}
-                      </p>
-                      <p className="text-[11px] text-[#6B6480] truncate">
-                        مراجع: {apt.customerName}
-                      </p>
-                      <p className="text-[10px] font-bold text-[#8B5CF6] truncate">
-                        متخصص: {apt.specialistName}
-                      </p>
-                    </div>
-                    <Avatar name={apt.specialistName} size="sm" />
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
+                      {apt.serviceTitle}
+                    </p>
+                    <p className="text-[11px] font-medium text-[#475569] truncate">
+                      مراجع: {apt.customerName} · متخصص: {apt.specialistName}
+                    </p>
                   </div>
                 </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* ۲. تقویم ماهانه جمع‌وجور (Mini Jalali Calendar) — مطابق پایین ستون کناری در Capture2.PNG */}
-          <Card className="rounded-3xl space-y-3.5">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
-              <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                تقویم ماهانه سالن
-              </h2>
-              <span className="text-xs font-bold text-[#8B5CF6] tabular-nums">
-                آبان ۱۴۰۵
-              </span>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#6B6480]">
-              {['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'].map((d) => (
-                <span key={d}>{d}</span>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 text-center text-xs tabular-nums">
-              {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
-                const isToday = day === 3;
-                const hasBooking = day === 4 || day === 5 || day === 8 || day === 12;
-                return (
-                  <Link
-                    key={day}
-                    to="/app/calendar"
-                    className={`h-8 w-8 mx-auto rounded-full flex items-center justify-center font-bold transition-colors ${
-                      isToday
-                        ? 'bg-[#8B5CF6] text-white shadow-2xs'
-                        : hasBooking
-                        ? 'bg-[#EDE9FE] text-[#8B5CF6]'
-                        : 'text-[#6B6480] hover:bg-[#FAF8FF]'
-                    }`}
-                  >
-                    {toPersianDigits(day)}
-                  </Link>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
+                <Link
+                  to="/app/calendar"
+                  className="text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
+                >
+                  تقویم
+                </Link>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
+
+      {/* ۵. اولویت دوم: میانبرهای کاربردی روزانه سالن‌دار */}
+      <section aria-label="میانبرهای سریع مدیریت سالن" className="space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs sm:text-sm font-extrabold text-[#475569]">
+            دسترسی سریع به بخش‌های پرکاربرد سالن
+          </h2>
+          <span className="text-[11px] font-medium text-[#64748B]">
+            سایر بخش‌ها و زیرمجموعه‌ها از نوار پایین صفحه در دسترس هستند
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link
+            to="/app/customers?add=1"
+            className="p-4 rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] flex items-center justify-between gap-3 transition-all shadow-2xs group"
+          >
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138] group-hover:text-[#0057FF] truncate">
+                + ثبت دستی مشتری حضوری
+              </p>
+              <p className="text-[11px] text-[#64748B] truncate">
+                افزودن تکی یا گروهی مشتریان قدیمی
+              </p>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-[#64748B] group-hover:text-[#0057FF] shrink-0" />
+          </Link>
+
+          <Link
+            to="/app/services"
+            className="p-4 rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] flex items-center justify-between gap-3 transition-all shadow-2xs group"
+          >
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138] group-hover:text-[#0057FF] truncate">
+                مدیریت خدمات و تعرفه‌ها
+              </p>
+              <p className="text-[11px] text-[#64748B] truncate">
+                ویرایش قیمت‌ها و زمان هر خدمت
+              </p>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-[#64748B] group-hover:text-[#0057FF] shrink-0" />
+          </Link>
+
+          <Link
+            to="/app/working-hours"
+            className="p-4 rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] flex items-center justify-between gap-3 transition-all shadow-2xs group"
+          >
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138] group-hover:text-[#0057FF] truncate">
+                روزها و ساعات کاری
+              </p>
+              <p className="text-[11px] text-[#64748B] truncate">
+                تعیین روزهای باز و شیفت پذیرش
+              </p>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-[#64748B] group-hover:text-[#0057FF] shrink-0" />
+          </Link>
+
+          <Link
+            to="/app/profile#financial-section"
+            className="p-4 rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] flex items-center justify-between gap-3 transition-all shadow-2xs group"
+          >
+            <div className="space-y-1 min-w-0">
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138] group-hover:text-[#0057FF] truncate">
+                پروفایل سالن و شماره شبا
+              </p>
+              <p className="text-[11px] text-[#64748B] truncate">
+                اطلاعات تسویه، آدرس و عکس سالن
+              </p>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-[#64748B] group-hover:text-[#0057FF] shrink-0" />
+          </Link>
+        </div>
+      </section>
     </div>
   );
 };
@@ -3170,6 +2738,15 @@ export const BusinessProfileEditPage: React.FC = () => {
     currentBiz?.shortDescription ?? ''
   );
   const [aboutText, setAboutText] = useState(currentBiz?.aboutText ?? '');
+  const [bankCardNumber, setBankCardNumber] = useState(
+    currentBiz?.bankCardNumber ?? ''
+  );
+  const [bankShebaNumber, setBankShebaNumber] = useState(
+    currentBiz?.bankShebaNumber ?? ''
+  );
+  const [bankAccountHolder, setBankAccountHolder] = useState(
+    currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
+  );
   const [savedNotice, setSavedNotice] = useState(false);
 
   if (!currentBiz) {
@@ -3185,6 +2762,11 @@ export const BusinessProfileEditPage: React.FC = () => {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanedInsta = instagramHandle.trim();
+    const cleanCard = bankCardNumber.replace(/\D/g, '').slice(0, 16);
+    const cleanSheba = bankShebaNumber
+      .toUpperCase()
+      .replace(/[^0-9I-R]/g, '')
+      .replace(/^IR/, '');
     updateBusinessProfile(currentBiz.id, {
       name,
       avatarUrl: avatarUrl || undefined,
@@ -3194,6 +2776,9 @@ export const BusinessProfileEditPage: React.FC = () => {
       mapLng,
       shortDescription: shortDesc,
       aboutText,
+      bankCardNumber: cleanCard || undefined,
+      bankShebaNumber: cleanSheba ? `IR${cleanSheba}` : undefined,
+      bankAccountHolder: bankAccountHolder.trim() || undefined,
     });
     updateOnboardingDraft({
       businessName: name,
@@ -3211,9 +2796,9 @@ export const BusinessProfileEditPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="کسب‌وکار · پروفایل عمومی"
-        title="ویرایش پروفایل عمومی سالن"
-        subtitle="تغییرات نشانی، موقعیت نقشه و آدرس اینستاگرام بلافاصله در صفحه عمومی سالن نمایش داده می‌شود."
+        kicker="کسب‌وکار · پروفایل عمومی و مالی"
+        title="ویرایش پروفایل و اطلاعات بانکی سالن"
+        subtitle="تغییرات نشانی، موقعیت نقشه، اینستاگرام و شماره کارت/شبا بلافاصله ذخیره شده و درصد تکمیل پروفایل شما را به ۱۰۰٪ می‌رساند."
         routePattern="/app/profile"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -3302,13 +2887,88 @@ export const BusinessProfileEditPage: React.FC = () => {
                 onChange={(e) => setAboutText(e.target.value)}
               />
             </FormField>
+
+            {/* بخش اطلاعات مالی و تسویه‌حساب سالن‌دار (شماره کارت ۱۶ رقمی و شبا) — تاثیر مستقیم روی نوار تکمیل پروفایل */}
+            <div
+              id="financial-section"
+              className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3.5 scroll-mt-24"
+            >
+              <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+                <div>
+                  <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    اطلاعات بانکی و تسویه‌حساب سالن (+۱۵٪ تکمیل پروفایل)
+                  </h3>
+                  <p className="text-[11px] text-[#64748B] mt-0.5">
+                    شماره کارت ۱۶ رقمی یا شماره شبا جهت واریز بیعانه‌ها و تسویه نوبت‌های آنلاین
+                  </p>
+                </div>
+                {bankCardNumber.replace(/\D/g, '').length >= 16 ||
+                bankShebaNumber.replace(/\D/g, '').length >= 24 ? (
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
+                    تکمیل‌شده ✓
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
+                    نیاز به تکمیل
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <FormField
+                  id="prof-bank-card"
+                  label="شماره کارت بانکی (۱۶ رقم)"
+                >
+                  <Input
+                    id="prof-bank-card"
+                    dir="ltr"
+                    inputMode="numeric"
+                    maxLength={19}
+                    value={bankCardNumber}
+                    onChange={(e) =>
+                      setBankCardNumber(
+                        e.target.value.replace(/[^\d-]/g, '').slice(0, 19)
+                      )
+                    }
+                    placeholder="6037997512345678"
+                  />
+                </FormField>
+
+                <FormField
+                  id="prof-bank-holder"
+                  label="نام صاحب حساب"
+                >
+                  <Input
+                    id="prof-bank-holder"
+                    value={bankAccountHolder}
+                    onChange={(e) => setBankAccountHolder(e.target.value)}
+                    placeholder="نام و نام خانوادگی صاحب کارت"
+                  />
+                </FormField>
+              </div>
+
+              <FormField
+                id="prof-bank-sheba"
+                label="شماره شبا (۲۴ رقم بدون یا با IR)"
+              >
+                <Input
+                  id="prof-bank-sheba"
+                  dir="ltr"
+                  maxLength={26}
+                  value={bankShebaNumber}
+                  onChange={(e) => setBankShebaNumber(e.target.value)}
+                  placeholder="IR120170000000123456789012"
+                />
+              </FormField>
+            </div>
+
             <div className="pt-2 flex items-center gap-3">
               <Button type="submit" variant="primary">
-                ذخیره تغییرات پروفایل
+                ذخیره تغییرات پروفایل و اطلاعات مالی
               </Button>
               {savedNotice ? (
                 <span className="text-xs font-bold text-[#10B981]">
-                  تغییرات با موفقیت در پروفایل عمومی ذخیره شد.
+                  تغییرات با موفقیت ذخیره شد و درصد پیشرفت پروفایل بروزرسانی گردید.
                 </span>
               ) : null}
             </div>
@@ -4565,7 +4225,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · اشتراک ماهانه و درگاه پرداخت بدون اینماد"
+        kicker="مالی · اشتراک ماهانه و ارتقای پنل سالن"
         title="مدیریت اشتراک و ارتقای کسب‌وکار"
         subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP با امکان تسویه فوری از طریق بله‌پی (BalePay) یا کارت‌به‌کارت"
         routePattern="/app/subscription"
@@ -4807,16 +4467,31 @@ export const BusinessSubscriptionPage: React.FC = () => {
   );
 };
 
-/** ۱۳. تنظیمات پنل کسب‌وکار، رمز عبور ثابت و اتصال سریع ملی‌پیامک (/app/settings) */
+/** ۱۳. تنظیمات پنل کسب‌وکار، اطلاع‌رسانی پیامکی، قوانین رزرو و رمز عبور (/app/settings) */
 export const BusinessSettingsPage: React.FC = () => {
   const {
     authUser,
+    currentBusiness,
+    businesses,
+    plans,
+    activePlanId,
     setAccountPassword,
     requestOtpLogin,
     resetPasswordWithOtp,
     showToast,
   } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
+  const currentPlan =
+    plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
+  const totalSmsQuota =
+    (currentPlan?.smsQuotaMonthly ?? 0) + (currentBiz?.extraSmsBalance ?? 0);
+
   const [activeTab, setActiveTab] = useState('notifications');
+  const [smsOnBookingConfirm, setSmsOnBookingConfirm] = useState(true);
+  const [smsReminder24h, setSmsReminder24h] = useState(true);
+  const [smsOwnerNewBookingAlert, setSmsOwnerNewBookingAlert] = useState(true);
+  const [smsThankYouAfterService, setSmsThankYouAfterService] = useState(false);
+
   const [fixedPassword, setFixedPassword] = useState('');
   const [isSavingPass, setIsSavingPass] = useState(false);
 
@@ -4878,13 +4553,13 @@ export const BusinessSettingsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="تنظیمات · پیکربندی سالن، رمز عبور و درگاه پیامک"
-        title="تنظیمات پنل کسب‌وکار، امنیت و اتصال ملی‌پیامک"
-        subtitle="اتصال ۱ دقیقه‌ای پنل پیامک ملی‌پیامک (MelliPayamak)، تعریف رمز عبور ثابت و مدیریت قوانین نوبت‌دهی"
+        kicker="تنظیمات سالن · اعلان‌های پیامکی، قوانین نوبت‌دهی و امنیت حساب"
+        title="تنظیمات پنل کسب‌وکار، پیامک‌های خودکار و رمز عبور"
+        subtitle="مدیریت پیامک‌های تایید و یادآوری نوبت مشتریان، قوانین لغو رزرو و تنظیم رمز عبور ثابت حساب سالن"
         routePattern="/app/settings"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'تنظیمات و امنیت' },
+          { label: 'تنظیمات و قوانین' },
         ]}
       />
 
@@ -4893,7 +4568,7 @@ export const BusinessSettingsPage: React.FC = () => {
           activeTab={activeTab}
           onChange={setActiveTab}
           tabs={[
-            { id: 'notifications', label: 'اتصال ملی‌پیامک و اعلان‌ها' },
+            { id: 'notifications', label: 'پیامک‌های خودکار و اعلان‌ها' },
             { id: 'booking_rules', label: 'قوانین رزرو و لغو' },
             { id: 'security', label: 'تنظیم و بازیابی رمز عبور' },
           ]}
@@ -4901,43 +4576,126 @@ export const BusinessSettingsPage: React.FC = () => {
 
         {activeTab === 'notifications' ? (
           <div className="space-y-5">
-            <MelipayamakQuickSetupCard />
+            {/* خلاصه اعتبار پیامک سالن */}
+            <Card className="bg-gradient-to-l from-[#061138] via-[#0B1D56] to-[#0057FF] text-white border border-[#1E293B]">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>اعتبار پیامک خدماتی سالن شما</span>
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    {toPersianDigits(totalSmsQuota)} پیامک فعال در پلن «
+                    {currentPlan?.name || 'شروع رایگان'}»
+                  </h3>
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    پیامک‌های تایید رزرو و یادآوری نوبت به صورت خودکار از خط خدماتی پلتفرم برای مشتریان سالن شما ارسال می‌شود.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Link
+                    to="/app/marketing"
+                    className="px-3.5 py-2 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] font-extrabold text-xs transition-colors"
+                  >
+                    پنل پیامک و شارژ بسته
+                  </Link>
+                  <Link
+                    to="/app/subscription"
+                    className="px-3.5 py-2 rounded-xl bg-white/12 hover:bg-white/20 border border-white/20 text-white font-bold text-xs transition-colors"
+                  >
+                    ارتقای پلن
+                  </Link>
+                </div>
+              </div>
+            </Card>
 
             <Card padding="lg" className="space-y-4">
-              <h3 className="text-sm font-extrabold text-[#061138]">
-                ترجیحات ارسال پیامک خودکار به مشتریان سالن
-              </h3>
-              <div className="space-y-3 text-xs sm:text-sm text-[#061138]">
-                <label className="flex items-center justify-between py-2.5 border-b border-[#E2E8F0] cursor-pointer">
-                  <span className="font-bold">
-                    ارسال پیامک تایید بلافاصله پس از ثبت نوبت
-                  </span>
+              <div className="space-y-1">
+                <h3 className="text-sm font-extrabold text-[#061138]">
+                  تنظیمات ارسال پیامک خودکار برای مشتریان و مدیر سالن
+                </h3>
+                <p className="text-xs text-[#64748B]">
+                  مشخص کنید در چه مراحلی پیامک اطلاع‌رسانی برای مراجعان یا شماره موبایل شما ارسال شود:
+                </p>
+              </div>
+              <div className="space-y-2.5 text-xs sm:text-sm text-[#061138]">
+                <label className="flex items-center justify-between gap-3 py-3 border-b border-[#E2E8F0] cursor-pointer">
+                  <div>
+                    <p className="font-extrabold text-[#061138]">
+                      ارسال پیامک تایید بلافاصله پس از ثبت نوبت
+                    </p>
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
+                      شامل نام سالن، تاریخ و ساعت مراجعه و کد رهگیری نوبت برای مشتری
+                    </p>
+                  </div>
                   <input
                     type="checkbox"
-                    defaultChecked
-                    className="accent-[#0057FF] w-4 h-4"
+                    checked={smsOnBookingConfirm}
+                    onChange={(e) => setSmsOnBookingConfirm(e.target.checked)}
+                    className="accent-[#0057FF] w-4 h-4 shrink-0"
                   />
                 </label>
-                <label className="flex items-center justify-between py-2.5 border-b border-[#E2E8F0] cursor-pointer">
-                  <span className="font-bold">
-                    ارسال یادآور ۲۴ ساعت مانده به زمان مراجعه
-                  </span>
+
+                <label className="flex items-center justify-between gap-3 py-3 border-b border-[#E2E8F0] cursor-pointer">
+                  <div>
+                    <p className="font-extrabold text-[#061138]">
+                      ارسال پیامک یادآور ۲۴ ساعت مانده به زمان مراجعه
+                    </p>
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
+                      کاهش چشمگیر فراموشی نوبت و عدم حضور مشتری در سالن
+                    </p>
+                  </div>
                   <input
                     type="checkbox"
-                    defaultChecked
-                    className="accent-[#0057FF] w-4 h-4"
+                    checked={smsReminder24h}
+                    onChange={(e) => setSmsReminder24h(e.target.checked)}
+                    className="accent-[#0057FF] w-4 h-4 shrink-0"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-3 py-3 border-b border-[#E2E8F0] cursor-pointer">
+                  <div>
+                    <p className="font-extrabold text-[#061138]">
+                      ارسال پیامک اطلاع‌رسانی ثبت نوبت جدید به موبایل مدیر سالن
+                    </p>
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
+                      اطلاع فوری به شماره {currentBiz?.ownerPhone || authUser?.phone || 'مدیر سالن'} هنگام ثبت رزرو جدید
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={smsOwnerNewBookingAlert}
+                    onChange={(e) => setSmsOwnerNewBookingAlert(e.target.checked)}
+                    className="accent-[#0057FF] w-4 h-4 shrink-0"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between gap-3 py-3 cursor-pointer">
+                  <div>
+                    <p className="font-extrabold text-[#061138]">
+                      ارسال پیامک تشکر و لینک ثبت نظر پس از انجام خدمت
+                    </p>
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
+                      افزایش امتیاز و نظرات مثبت پروفایل سالن شما در تایم تو
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={smsThankYouAfterService}
+                    onChange={(e) => setSmsThankYouAfterService(e.target.checked)}
+                    className="accent-[#0057FF] w-4 h-4 shrink-0"
                   />
                 </label>
               </div>
-              <div>
+              <div className="pt-2">
                 <Button
-                  variant="outline"
+                  variant="primary"
                   size="sm"
                   onClick={() =>
-                    showToast('ترجیحات اطلاع‌رسانی پیامکی ذخیره شد.')
+                    showToast('تنظیمات اطلاع‌رسانی پیامکی سالن با موفقیت ذخیره شد.')
                   }
                 >
-                  ذخیره ترجیحات اعلان
+                  ذخیره تنظیمات اعلان پیامکی
                 </Button>
               </div>
             </Card>

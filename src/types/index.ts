@@ -140,6 +140,9 @@ export interface BusinessItem {
   avatarUrl?: string;
   isSampleShowcase?: boolean;
   workingHoursConfigured?: boolean;
+  bankCardNumber?: string;
+  bankShebaNumber?: string;
+  bankAccountHolder?: string;
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;

@@ -16,7 +16,10 @@ import { Input } from './Input';
 import { StatusBadge } from './StatusBadge';
 
 export const MelipayamakQuickSetupCard: React.FC = () => {
-  const { showToast } = usePrototypeData();
+  const { authUser, showToast } = usePrototypeData();
+  const isPlatformAdmin = Boolean(
+    authUser?.isPlatformAdmin && authUser?.roles?.includes('PLATFORM_ADMIN')
+  );
 
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [maskedSavedKey, setMaskedSavedKey] = useState<string | null>(null);
@@ -37,6 +40,7 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
   } | null>(null);
 
   useEffect(() => {
+    if (!isPlatformAdmin) return;
     let active = true;
     fetch('/api/v1/sms-gateway/status', { credentials: 'include' })
       .then((r) => r.json())
@@ -53,7 +57,11 @@ export const MelipayamakQuickSetupCard: React.FC = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isPlatformAdmin]);
+
+  if (!isPlatformAdmin) {
+    return null;
+  }
 
   const handleSaveMelipayamak = async (e: React.FormEvent) => {
     e.preventDefault();

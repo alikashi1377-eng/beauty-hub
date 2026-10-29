@@ -60,6 +60,7 @@ import {
   ProfessionalCard,
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
+import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 
 /** نوار مرحله‌به‌مرحله مینیمال، آیکون‌محور و قابل کلیک برای مسیر رزرو نوبت */
 const BookingFlowStepIndicator: React.FC<{
@@ -135,670 +136,71 @@ const BookingFlowStepIndicator: React.FC<{
   );
 };
 
-/** ۱. صفحه ورود مشتری / مدیر سالن / مدیر کل با کد پیامکی خودکار (WebOTP) یا رمز عبور ثابت (/login) */
+/** ۱. صفحه ورود مشتری / مدیر سالن / مدیر کل با رابط یکپارچه جدید تایم تو (/login) */
 export const CustomerLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const {
-    dataMode,
-    authUser,
-    requestOtpLogin,
-    verifyOtpLogin,
-    loginWithPassword,
-    setAccountPassword,
-    resetPasswordWithOtp,
-    logoutUser,
-  } = usePrototypeData();
-
-  const [authMethod, setAuthMethod] = useState<'otp' | 'password'>('otp');
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [resetOtpSent, setResetOtpSent] = useState(false);
-  const [phone, setPhone] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const { authUser, logoutUser } = usePrototypeData();
 
   const rawRedirect = searchParams.get('redirect') || '';
   const safeRedirectPath =
     rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
       ? rawRedirect
       : '';
-
-  const navigateAfterLogin = (user: {
-    isPlatformAdmin?: boolean;
-    roles: string[];
-  }) => {
-    if (safeRedirectPath) {
-      navigate(safeRedirectPath, { replace: true });
-    } else if (user.isPlatformAdmin && user.roles.includes('PLATFORM_ADMIN')) {
-      navigate('/admin', { replace: true });
-    } else if (user.roles.includes('BUSINESS_OWNER')) {
-      navigate('/app', { replace: true });
-    } else {
-      navigate('/me', { replace: true });
-    }
-  };
-
-  const verifyOtpCodeDirect = async (targetPhone: string, code6: string) => {
-    if (!/^\d{6}$/.test(code6)) return;
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const user = await verifyOtpLogin(targetPhone, code6);
-      navigateAfterLogin(user);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'کد واردشده معتبر نیست.'
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // خواندن خودکار پیامک کد تایید (WebOTP API) روی موبایل به محض دریافت پیامک
-  useEffect(() => {
-    if (step !== 'otp' || authMethod !== 'otp') return;
-    if (typeof window === 'undefined' || !('OTPCredential' in window)) return;
-
-    const ac = new AbortController();
-    navigator.credentials
-      .get({
-        // @ts-expect-error WebOTP API transport option
-        otp: { transport: ['sms'] },
-        signal: ac.signal,
-      })
-      .then((cred: unknown) => {
-        const otpCred = cred as { code?: string } | null;
-        if (otpCred?.code) {
-          const clean = toEnglishDigitsClient(otpCred.code).replace(/\D/g, '').slice(0, 6);
-          if (clean.length === 6) {
-            setOtpCode(clean);
-            void verifyOtpCodeDirect(phone.trim(), clean);
-          }
-        }
-      })
-      .catch(() => {
-        // نادیده گرفتن در صورت لغو یا عدم پشتیبانی مرورگر
-      });
-
-    return () => ac.abort();
-  }, [step, authMethod, phone]);
-
-  const handleRequestOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const normalizedPhone = normalizeIranMobileInput(phone);
-    if (!isValidIranMobile(normalizedPhone)) {
-      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09131234567).');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await requestOtpLogin(normalizedPhone);
-      setStep('otp');
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'خطا در ارسال کد تایید یک‌بارمصرف.';
-      setError(msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedCode = toEnglishDigitsClient(otpCode).replace(/\D/g, '').slice(0, 6);
-    if (!/^\d{6}$/.test(trimmedCode)) {
-      setError('کد تایید باید یک عدد ۶ رقمی معتبر باشد.');
-      return;
-    }
-    await verifyOtpCodeDirect(phone.trim(), trimmedCode);
-  };
-
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const rawIdentifier = toEnglishDigitsClient(phone).trim();
-    const isPhoneCandidate = /^0?9\d+$/.test(rawIdentifier.replace(/\D/g, ''));
-    const finalIdentifier = isPhoneCandidate
-      ? normalizeIranMobileInput(rawIdentifier)
-      : rawIdentifier;
-
-    if (!finalIdentifier || (isPhoneCandidate && !isValidIranMobile(finalIdentifier))) {
-      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر یا نام کاربری خود را وارد کنید.');
-      return;
-    }
-    if (password.trim().length < 4) {
-      setError('رمز عبور باید حداقل ۴ کاراکتر باشد.');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const user = await loginWithPassword(finalIdentifier, password);
-      navigateAfterLogin(user);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'شماره موبایل / نام کاربری یا رمز عبور صحیح نیست.'
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSaveFixedPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const ok = await setAccountPassword(newPassword);
-    if (ok) {
-      setNewPassword('');
-    }
-  };
-
-  const handleRequestResetOtp = async () => {
-    const normalizedPhone = normalizeIranMobileInput(phone);
-    if (!isValidIranMobile(normalizedPhone)) {
-      setError('لطفاً ابتدا شماره موبایل ۱۱ رقمی معتبر خود را وارد کنید.');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      await requestOtpLogin(normalizedPhone);
-      setResetOtpSent(true);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'خطا در ارسال کد بازیابی رمز عبور.'
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleConfirmResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const normalizedPhone = normalizeIranMobileInput(phone);
-    const trimmedCode = toEnglishDigitsClient(otpCode)
-      .replace(/\D/g, '')
-      .slice(0, 6);
-    if (!isValidIranMobile(normalizedPhone)) {
-      setError('شماره موبایل معتبر نیست.');
-      return;
-    }
-    if (!/^\d{6}$/.test(trimmedCode)) {
-      setError('کد تایید ۶ رقمی پیامک‌شده را وارد کنید.');
-      return;
-    }
-    if (newPassword.trim().length < 6) {
-      setError('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
-      return;
-    }
-    setError('');
-    setIsSubmitting(true);
-    try {
-      const ok = await resetPasswordWithOtp(
-        normalizedPhone,
-        trimmedCode,
-        newPassword
-      );
-      if (ok) {
-        setIsResettingPassword(false);
-        setResetOtpSent(false);
-        setOtpCode('');
-        setNewPassword('');
-        const isSuperAdmin = normalizedPhone === '09138201042';
-        if (safeRedirectPath) {
-          navigate(safeRedirectPath, { replace: true });
-        } else if (isSuperAdmin) {
-          navigate('/admin', { replace: true });
-        } else {
-          navigate('/me', { replace: true });
-        }
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'خطا در بازنشانی رمز عبور.'
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const roleParam = searchParams.get('role');
+  const defaultRole =
+    roleParam === 'BUSINESS_OWNER' ? 'BUSINESS_OWNER' : 'CUSTOMER';
+  const screenParam = searchParams.get('mode');
+  const initialScreen =
+    screenParam === 'register'
+      ? roleParam === 'BUSINESS_OWNER'
+        ? 'REGISTER_STEP_1_PHONE'
+        : 'ROLE_PICKER'
+      : 'LOGIN';
 
   return (
-    <div className="max-w-4xl mx-auto my-4 sm:my-8 space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center rounded-[32px] border border-[#CBD5E1] bg-white p-6 sm:p-10 shadow-[0_14px_45px_-20px_rgba(6,17,56,0.14)]">
-        {/* ستون فرم ورود دوگانه (کد پیامکی خودکار + رمز عبور ثابت) */}
-        <div className="lg:col-span-6 space-y-5">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-bold">
-                <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
-                <span>ورود هوشمند با پیامک خودکار یا رمز ثابت</span>
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#10B981]/30 text-[11px] font-extrabold">
-                حفظ نشست ۳۰ روزه
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#061138]">
-              ورود یا عضویت در Timeto
-            </h1>
-            <p className="text-xs sm:text-sm text-[#475569] leading-relaxed">
-              با کد تایید پیامکی (خوانش خودکار از پیامک) یا رمز عبور ثابت وارد حساب کاربری یا پیشخوان مدیریت سالن خود شوید.
+    <div className="max-w-lg mx-auto my-4 sm:my-8 space-y-4">
+      {authUser ? (
+        <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <p className="font-extrabold text-[#061138]">
+              واردشده با حساب: {authUser.fullName} ({authUser.phone})
+            </p>
+            <p className="text-[11px] text-[#059669] mt-0.5">
+              نشست شما فعال است و در مراجعات بعدی خودکار شناسایی می‌شوید.
             </p>
           </div>
-
-          {/* تب انتخاب روش ورود: کد پیامکی یا رمز عبور ثابت */}
-          <div className="grid grid-cols-2 gap-1.5 p-1.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1]">
-            <button
+          <div className="flex items-center gap-2">
+            <Button
               type="button"
-              onClick={() => {
-                setAuthMethod('otp');
-                setError('');
-              }}
-              className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
-                authMethod === 'otp'
-                  ? 'bg-[#0057FF] text-white shadow-2xs'
-                  : 'text-[#334155] hover:text-[#061138]'
-              }`}
+              variant="primary"
+              size="sm"
+              onClick={() =>
+                navigate(
+                  authUser.roles.includes('BUSINESS_OWNER') ? '/app' : '/me'
+                )
+              }
             >
-              کد یک‌بارمصرف پیامکی
-            </button>
-            <button
+              ورود به پنل من
+            </Button>
+            <Button
               type="button"
-              onClick={() => {
-                setAuthMethod('password');
-                setError('');
-              }}
-              className={`py-2 px-3 rounded-xl text-xs font-extrabold cursor-pointer transition-all ${
-                authMethod === 'password'
-                  ? 'bg-[#061138] text-[#00E5FF] shadow-2xs'
-                  : 'text-[#334155] hover:text-[#061138]'
-              }`}
+              variant="outline"
+              size="sm"
+              onClick={() => void logoutUser()}
             >
-              ورود با رمز عبور ثابت
-            </button>
-          </div>
-
-          {authUser ? (
-            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#BBF7D0] space-y-3 text-xs text-[#059669]">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-extrabold text-[#061138]">
-                    کاربر فعال: {authUser.fullName} ({authUser.phone})
-                  </p>
-                  <p className="text-[11px] text-[#059669] mt-0.5">
-                    نشست ۳۰ روزه شما فعال است و نیازی به ورود مجدد ندارید.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void logoutUser()}
-                >
-                  خروج از حساب
-                </Button>
-              </div>
-
-              {/* تعریف یا تغییر رمز عبور ثابت برای ورود بدون پیامک در دفعات بعد */}
-              <form
-                onSubmit={handleSaveFixedPassword}
-                className="pt-3 border-t border-[#A7F3D0] flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
-              >
-                <Input
-                  type="password"
-                  dir="ltr"
-                  placeholder="تعریف رمز عبور ثابت (حداقل ۶ کاراکتر)"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
-                <Button type="submit" variant="primary" size="sm" className="shrink-0">
-                  ذخیره رمز ثابت
-                </Button>
-              </form>
-            </div>
-          ) : null}
-
-          {authMethod === 'password' ? (
-            isResettingPassword ? (
-              <form
-                onSubmit={handleConfirmResetPassword}
-                className="space-y-4 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]"
-                noValidate
-              >
-                <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
-                  <span className="text-xs font-extrabold text-[#0057FF]">
-                    بازیابی / تعریف رمز عبور جدید با کد پیامکی
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsResettingPassword(false);
-                      setResetOtpSent(false);
-                      setError('');
-                    }}
-                    className="text-[11px] font-bold text-[#64748B] hover:text-[#061138] cursor-pointer"
-                  >
-                    بازگشت به ورود با رمز
-                  </button>
-                </div>
-
-                <FormField
-                  id="reset-pass-phone"
-                  label="شماره تلفن همراه (۱۱ رقم با 09)"
-                  required
-                  error={error}
-                >
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="reset-pass-phone"
-                      type="tel"
-                      inputMode="tel"
-                      maxLength={11}
-                      dir="ltr"
-                      placeholder="09123456789"
-                      value={phone}
-                      onChange={(e) =>
-                        setPhone(normalizeIranMobileInput(e.target.value))
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => void handleRequestResetOtp()}
-                      disabled={isSubmitting}
-                    >
-                      {resetOtpSent ? 'ارسال مجدد کد' : 'ارسال کد پیامکی'}
-                    </Button>
-                  </div>
-                </FormField>
-
-                {resetOtpSent ? (
-                  <>
-                    <FormField
-                      id="reset-otp-code"
-                      label="کد ۶ رقمی پیامک‌شده"
-                      required
-                    >
-                      <Input
-                        id="reset-otp-code"
-                        dir="ltr"
-                        maxLength={6}
-                        inputMode="numeric"
-                        placeholder="123456"
-                        value={otpCode}
-                        onChange={(e) =>
-                          setOtpCode(
-                            toEnglishDigitsClient(e.target.value)
-                              .replace(/\D/g, '')
-                              .slice(0, 6)
-                          )
-                        }
-                      />
-                    </FormField>
-
-                    <FormField
-                      id="reset-new-password"
-                      label="رمز عبور جدید (حداقل ۶ کاراکتر)"
-                      required
-                    >
-                      <Input
-                        id="reset-new-password"
-                        type="password"
-                        dir="ltr"
-                        placeholder="رمز عبور جدید..."
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                      />
-                    </FormField>
-
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="lg"
-                      fullWidth
-                      isLoading={isSubmitting}
-                    >
-                      <span>ثبت رمز جدید و ورود به حساب</span>
-                      <ArrowLeft className="w-4 h-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-[11px] text-[#64748B]">
-                    شماره موبایل خود را وارد کرده و دکمه «ارسال کد پیامکی» را بزنید تا بتوانید رمز عبور جدید تعریف کنید.
-                  </p>
-                )}
-              </form>
-            ) : (
-              <form onSubmit={handlePasswordLogin} className="space-y-4" noValidate>
-                <FormField
-                  id="login-pass-phone"
-                  label="شماره تلفن همراه یا نام کاربری"
-                  required
-                  error={error}
-                >
-                  <Input
-                    id="login-pass-phone"
-                    type="text"
-                    maxLength={32}
-                    dir="ltr"
-                    placeholder="09123456789"
-                    value={phone}
-                    hasError={Boolean(error)}
-                    onChange={(e) => setPhone(toEnglishDigitsClient(e.target.value))}
-                  />
-                </FormField>
-
-                <FormField
-                  id="login-fixed-password"
-                  label="رمز عبور ثابت"
-                  hint="اگر قبلاً در حساب خود رمز عبور ثابت تعریف کرده‌اید، بدون نیاز به پیامک وارد شوید"
-                  required
-                >
-                  <Input
-                    id="login-fixed-password"
-                    type="password"
-                    dir="ltr"
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </FormField>
-
-                <div className="flex items-center justify-between text-xs">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsResettingPassword(true);
-                      setError('');
-                    }}
-                    className="font-extrabold text-[#0057FF] hover:underline cursor-pointer"
-                  >
-                    فراموشی رمز عبور / دریافت رمز جدید با پیامک ←
-                  </button>
-                </div>
-
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  isLoading={isSubmitting}
-                >
-                  <span>ورود مستقیم با رمز عبور</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-              </form>
-            )
-          ) : step === 'phone' ? (
-            <form
-              onSubmit={handleRequestOtp}
-              className="space-y-4"
-              noValidate
-            >
-              <FormField
-                id="login-phone"
-                label="شماره تلفن همراه (۱۱ رقم با 09)"
-                hint="شماره ۱۱ رقمی با پیش‌شماره 09 (تبدیل خودکار اعداد فارسی)"
-                error={error}
-                required
-              >
-                <Input
-                  id="login-phone"
-                  type="tel"
-                  inputMode="tel"
-                  maxLength={11}
-                  dir="ltr"
-                  placeholder="09131234567"
-                  value={phone}
-                  hasError={Boolean(error)}
-                  onChange={(e) =>
-                    setPhone(normalizeIranMobileInput(e.target.value))
-                  }
-                />
-              </FormField>
-
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                fullWidth
-                isLoading={isSubmitting}
-              >
-                <span>دریافت کد تایید پیامکی</span>
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} className="space-y-4" noValidate>
-              <FormField
-                id="login-otp-code"
-                label={`کد تایید ۶ رقمی ارسال‌شده به ${phone}`}
-                hint="به محض دریافت پیامک، کد به صورت خودکار جایگذاری و تایید می‌شود"
-                error={error}
-                required
-              >
-                <Input
-                  id="login-otp-code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  dir="ltr"
-                  maxLength={6}
-                  value={otpCode}
-                  hasError={Boolean(error)}
-                  onChange={(e) => {
-                    const clean = toEnglishDigitsClient(e.target.value)
-                      .replace(/\D/g, '')
-                      .slice(0, 6);
-                    setOtpCode(clean);
-                    if (clean.length === 6 && dataMode === 'real') {
-                      void verifyOtpCodeDirect(phone.trim(), clean);
-                    }
-                  }}
-                  placeholder="123456"
-                />
-              </FormField>
-
-              <div className="flex items-center gap-2.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="md"
-                  onClick={() => {
-                    setStep('phone');
-                    setOtpCode('');
-                    setError('');
-                  }}
-                >
-                  ویرایش شماره
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  isLoading={isSubmitting}
-                >
-                  <span>تایید و ورود</span>
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-              </div>
-            </form>
-          )}
-
-          <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center gap-2.5 text-xs text-[#334155]">
-            <ShieldCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
-            <span>
-              پس از یک‌بار ورود، نشست شما تا ۳۰ روز روی این دستگاه فعال می‌ماند و همچنین می‌توانید رمز عبور ثابت برای ورود فوری بدون پیامک تعریف کنید.
-            </span>
-          </div>
-
-          <div className="pt-3 border-t border-[#CBD5E1] flex items-center justify-between text-xs text-[#475569]">
-            <span>صاحب سالن زیبایی یا متخصص هستید؟</span>
-            <Link
-              to="/business/register"
-              className="font-bold text-[#0057FF] hover:text-[#0041C4] transition-colors"
-            >
-              ثبت رایگان کسب‌وکار ←
-            </Link>
+              خروج
+            </Button>
           </div>
         </div>
+      ) : null}
 
-        {/* ستون ویترین برند Timeto (تصاویر ۱۰۰٪ بدون نیاز به فیلترشکن) */}
-        <div className="lg:col-span-6 rounded-3xl bg-[#061138] border border-[#1E293B] p-6 flex flex-col items-center text-center space-y-5 text-white">
-          <div className="relative w-full max-w-[320px] h-[230px] flex items-center justify-center pt-2">
-            <div
-              className="w-28 sm:w-32 h-40 rounded-2xl overflow-hidden border-2 border-white/20 shadow-md"
-              style={{
-                transform: 'rotate(9deg) translateX(52px) translateY(10px)',
-              }}
-            >
-              <img
-                src={getBeautyPhotoUrl('کلینیک پوست و فیشیال', 'پوست و فیشیال')}
-                alt="پوست و فیشیال"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div
-              className="w-28 sm:w-32 h-40 rounded-2xl overflow-hidden border-2 border-white/20 shadow-md"
-              style={{
-                transform: 'rotate(-9deg) translateX(-52px) translateY(10px)',
-              }}
-            >
-              <img
-                src={getBeautyPhotoUrl('استودیو تخصصی ناخن', 'ناخن')}
-                alt="طراحی ناخن"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="relative z-10 w-36 sm:w-40 h-48 rounded-3xl overflow-hidden border-4 border-[#00E5FF] shadow-xl">
-              <img
-                src={getBeautyPhotoUrl('سالن زیبایی رویال گلزار', 'مو و رنگ')}
-                alt="استایل مو"
-                className="w-full h-full object-cover"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5 max-w-xs">
-            <h2 className="text-lg font-extrabold text-white">
-              تایم تو؛ وقت زیبایی تو، به انتخاب تو
-            </h2>
-            <p className="text-xs text-[#94A3B8] leading-relaxed">
-              بهترین سالن‌ها و متخصصان اصفهان و درچه را مقایسه کنید و نوبت خود را
-              آنی رزرو نمایید.
-            </p>
-          </div>
-        </div>
+      <div className="rounded-[32px] border border-[#CBD5E1] bg-gradient-to-b from-[#EFF6FF] via-[#F8FAFC] to-white p-5 sm:p-8 shadow-[0_20px_50px_-20px_rgba(6,17,56,0.18)]">
+        <TimetoUnifiedAuthCard
+          initialScreen={initialScreen}
+          defaultRole={defaultRole}
+          redirectTo={safeRedirectPath || undefined}
+        />
       </div>
     </div>
   );
@@ -811,12 +213,27 @@ export const BookingStepPage: React.FC = () => {
   const navigate = useNavigate();
   const {
     dataMode,
+    authUser,
+    openAuthModal,
     businesses,
     services,
     specialists,
     bookingDraft,
     updateBookingDraft,
   } = usePrototypeData();
+
+  const handleProceedToConfirm = () => {
+    if (!authUser) {
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        redirectTo: '/booking/confirm',
+        promptReason: 'برای تکمیل و ثبت نهایی نوبت، وارد حساب کاربری خود شوید',
+      });
+      return;
+    }
+    navigate('/booking/confirm');
+  };
 
   const [serviceCatFilter, setServiceCatFilter] = useState<string>('ALL');
   const [activeStepIndicator, setActiveStepIndicator] = useState<1 | 2 | 3>(1);
@@ -1576,7 +993,7 @@ export const BookingStepPage: React.FC = () => {
                 variant="accent"
                 size="lg"
                 fullWidth
-                onClick={() => navigate('/booking/confirm')}
+                onClick={handleProceedToConfirm}
               >
                 <span>ادامه و تایید نهایی</span>
                 <ArrowLeft className="w-4 h-4" />
@@ -1605,7 +1022,7 @@ export const BookingStepPage: React.FC = () => {
           <Button
             variant="primary"
             size="md"
-            onClick={() => navigate('/booking/confirm')}
+            onClick={handleProceedToConfirm}
           >
             <span>ادامه رزرو</span>
             <ArrowLeft className="w-4 h-4" />

@@ -33,7 +33,7 @@ const baseBusiness: BusinessItem = {
   instagramHandle: '@test.salon',
 };
 
-test('computeBusinessProfileCompletion returns only incomplete steps and 100% when all completed', () => {
+test('computeBusinessProfileCompletion returns only incomplete steps including financial_info and 100% when all completed', () => {
   const partial = computeBusinessProfileCompletion({
     business: { ...baseBusiness, workingHoursConfigured: false },
     services: [],
@@ -42,16 +42,24 @@ test('computeBusinessProfileCompletion returns only incomplete steps and 100% wh
     plans: [],
   });
 
-  // Only basic_location (20%) is complete; services (25%), working_hours (20%), specialists (20%), media_bio (15%) are incomplete
-  assert.equal(partial.totalPercent, 20);
-  assert.equal(partial.incompleteSteps.length, 4);
+  // Only basic_location (15%) is complete; services (25%), working_hours (20%), specialists (15%), financial_info (15%), media_bio (10%) are incomplete
+  assert.equal(partial.totalPercent, 15);
+  assert.equal(partial.incompleteSteps.length, 5);
   assert.equal(
     partial.incompleteSteps.some((s) => s.id === 'basic_location'),
     false
   );
+  assert.equal(
+    partial.incompleteSteps.some((s) => s.id === 'financial_info'),
+    true
+  );
 
   const complete = computeBusinessProfileCompletion({
-    business: { ...baseBusiness, workingHoursConfigured: true },
+    business: {
+      ...baseBusiness,
+      workingHoursConfigured: true,
+      bankCardNumber: '6037997112345678',
+    },
     services: [
       {
         id: 's1',
