@@ -9,9 +9,21 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#061138",
-  "background_color": "#061138",
+  "theme_color": "#02081D",
+  "background_color": "#02081D",
   "icons": [
+    {
+      "src": "/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",

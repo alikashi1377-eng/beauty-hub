@@ -1,76 +1,32 @@
 import React from 'react';
 
 export const TIMETO_LOGO_IMAGE_PATH =
-  '/assets/aistudio/photo_2026-10-26_09-25-18_f42e916e.jpg';
+  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
 export const TIMETO_SHOWCASE_IMAGE_PATH =
-  '/assets/aistudio/photo_2026-10-26_09-25-12_fd4cca7d.jpg';
+  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
 
 export const TimetoIconMark: React.FC<{
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
 }> = ({ size = 'md', className = '' }) => {
-  const uid = React.useId().replace(/:/g, '');
   const iconBoxSize =
     size === 'sm'
       ? 'w-9 h-9 rounded-xl'
       : size === 'lg'
-      ? 'w-12 h-12 rounded-2xl'
-      : 'w-10 h-10 rounded-2xl';
-  const svgSize =
-    size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-8 h-8' : 'w-7 h-7';
+        ? 'w-12 h-12 rounded-2xl'
+        : size === 'xl'
+          ? 'w-24 h-24 rounded-3xl'
+          : 'w-10 h-10 rounded-2xl';
 
   return (
     <div
-      className={`relative ${iconBoxSize} bg-gradient-to-br from-[#0A1D56] via-[#061138] to-[#030920] border border-[#0084FF]/40 shadow-[0_6px_18px_-4px_rgba(0,87,255,0.45)] flex items-center justify-center overflow-hidden shrink-0 ${className}`}
+      className={`relative ${iconBoxSize} bg-[#02081D] border border-[#00D4FF]/35 shadow-[0_6px_18px_-4px_rgba(0,132,255,0.45)] flex items-center justify-center overflow-hidden shrink-0 ${className}`}
     >
-      <svg
-        viewBox="0 0 256 256"
-        className={svgSize}
-        fill="none"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient
-            id={`tm-top-${uid}`}
-            x1="36"
-            y1="74"
-            x2="162"
-            y2="112"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#00E5FF" />
-            <stop offset="100%" stopColor="#007BFF" />
-          </linearGradient>
-          <linearGradient
-            id={`tm-stem-${uid}`}
-            x1="120"
-            y1="74"
-            x2="108"
-            y2="204"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0%" stopColor="#00D4FF" />
-            <stop offset="55%" stopColor="#0084FF" />
-            <stop offset="100%" stopColor="#0051FF" />
-          </linearGradient>
-        </defs>
-        <path
-          d="M84 72H158C136 86 118 106 112 114H56C47.1634 114 42 106.5 45.5 97.5C51.5 82 66.5 72 84 72Z"
-          fill={`url(#tm-top-${uid})`}
-        />
-        <path
-          d="M158 72C145 82 138 96 138 114V168C138 187.882 121.882 204 102 204C87.6406 204 76 192.359 76 178V144C76 112 108 84 146 72H158Z"
-          fill={`url(#tm-stem-${uid})`}
-        />
-        <circle cx="186" cy="92" r="24" fill="#00E5FF" />
-        <path
-          d="M184 79V93H196"
-          stroke="#061138"
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <img
+        src={TIMETO_LOGO_IMAGE_PATH}
+        alt="لوگوی تایم تو (Timeto)"
+        className="w-full h-full object-cover"
+      />
     </div>
   );
 };
@@ -94,8 +50,8 @@ export const TimetoLogo: React.FC<{
     size === 'sm'
       ? 'text-lg'
       : size === 'lg'
-      ? 'text-2xl'
-      : 'text-xl';
+        ? 'text-2xl'
+        : 'text-xl';
 
   const textColor = resolvedTheme === 'dark' ? 'text-white' : 'text-[#061138]';
   const badgeBg =
@@ -105,7 +61,7 @@ export const TimetoLogo: React.FC<{
 
   return (
     <div className="inline-flex items-center gap-2.5 select-none shrink-0">
-      {/* آیکون اصلی Timeto */}
+      {/* تصویر لوگوی اصلی Timeto */}
       <TimetoIconMark size={size} />
 
       {/* تایپوگرافی برند Timeto | تایم تو */}
@@ -135,6 +91,54 @@ export const TimetoLogo: React.FC<{
             {subtitle}
           </span>
         ) : null}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * صفحه اسپلش / راه‌اندازی اولیه اپلیکیشن (هنگام بالا آمدن اپ) با لوگوی رسمی تایم تو
+ */
+export const TimetoStartupSplash: React.FC<{ visible: boolean }> = ({
+  visible,
+}) => {
+  if (!visible) return null;
+
+  return (
+    <div
+      role="status"
+      aria-label="در حال راه‌اندازی اپلیکیشن تایم تو"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#02081D] text-white transition-opacity duration-300"
+    >
+      <div className="relative flex flex-col items-center gap-5 px-6 text-center">
+        <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden border-2 border-[#00E5FF]/40 shadow-[0_0_48px_rgba(0,212,255,0.35)] bg-[#02081D]">
+          <img
+            src={TIMETO_LOGO_IMAGE_PATH}
+            alt="Timeto App Logo"
+            className="w-full h-full object-cover"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-center gap-2">
+            <span
+              dir="ltr"
+              className="text-2xl sm:text-3xl font-black tracking-tight text-white"
+            >
+              Timeto
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 border border-[#00E5FF]/40 text-xs font-extrabold text-[#00E5FF]">
+              تایم تو
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-300 font-medium">
+            رزرو آنلاین سالن‌های زیبایی و متخصصان
+          </p>
+        </div>
+
+        <div className="w-40 h-1.5 rounded-full bg-white/15 overflow-hidden mt-1">
+          <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-[#0057FF] to-[#00E5FF] animate-pulse" />
+        </div>
       </div>
     </div>
   );

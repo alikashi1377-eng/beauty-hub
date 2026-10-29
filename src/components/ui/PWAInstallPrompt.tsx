@@ -127,31 +127,28 @@ const PWAInstallGuideModal: React.FC<{
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#061138]/75 backdrop-blur-sm p-4"
     >
       <div className="w-full max-w-md rounded-3xl bg-white border border-[#CBD5E1] shadow-2xl overflow-hidden">
-        <div className="relative h-44 bg-[#061138] overflow-hidden">
-          <img
-            src={TIMETO_SHOWCASE_IMAGE_PATH}
-            alt="Timeto Mobile App Preview"
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover opacity-95"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#061138] via-[#061138]/30 to-transparent" />
+        <div className="relative py-6 px-5 bg-[#02081D] overflow-hidden flex flex-col items-center text-center gap-3">
           <button
             type="button"
             onClick={onClose}
             aria-label="بستن"
-            className="absolute top-3 left-3 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 cursor-pointer"
+            className="absolute top-3 left-3 w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
-          <div className="absolute bottom-3 right-4 left-4 flex items-center justify-between text-white">
-            <div>
-              <span className="text-[11px] font-bold text-[#00E5FF] block">
-                نسخه وب‌اپلیکیشن موبایل (PWA)
-              </span>
-              <h3 className="text-base font-extrabold">
-                نصب Timeto (تایم تو) روی صفحه اصلی گوشی
-              </h3>
-            </div>
+          <img
+            src={TIMETO_LOGO_IMAGE_PATH}
+            alt="Timeto Mobile App Icon"
+            referrerPolicy="no-referrer"
+            className="w-20 h-20 rounded-2xl object-cover border-2 border-[#00E5FF]/40 shadow-[0_0_28px_rgba(0,212,255,0.35)]"
+          />
+          <div className="text-white space-y-1">
+            <span className="text-[11px] font-bold text-[#00E5FF] block">
+              نسخه وب‌اپلیکیشن موبایل (PWA)
+            </span>
+            <h3 className="text-base font-extrabold">
+              نصب Timeto (تایم تو) روی صفحه اصلی گوشی
+            </h3>
           </div>
         </div>
 

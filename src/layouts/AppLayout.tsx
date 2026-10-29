@@ -12,6 +12,7 @@ import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ToastBanner } from '../components/ui/MarketplaceComponents';
 import { PWAMobileInstallBanner } from '../components/ui/PWAInstallPrompt';
+import { TimetoStartupSplash } from '../components/ui/TimetoLogo';
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 
@@ -23,6 +24,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const location = useLocation();
   const pathname = location.pathname;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [bootSplashActive, setBootSplashActive] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.location.search.includes('autostart=1');
+  });
+
+  React.useEffect(() => {
+    if (!bootSplashActive) return;
+    const timer = window.setTimeout(() => {
+      setBootSplashActive(false);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [bootSplashActive]);
 
   // فراخوانی هوک مدیریت اسکرول برای بازگشت فوری به بالای صفحه در تمام مسیرها
   useScrollToTop();
@@ -66,6 +79,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#F3F6FC] text-[#061138]">
+      <TimetoStartupSplash
+        visible={isLoadingInitialData || bootSplashActive}
+      />
       {databaseError ? (
         <div
           role="alert"
