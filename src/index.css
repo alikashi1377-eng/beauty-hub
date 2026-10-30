@@ -122,7 +122,7 @@
     text-align: right;
     color: var(--color-text-main);
     background-color: var(--color-canvas);
-    overflow-x: hidden;
+    overflow-x: clip;
     max-width: 100vw;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -136,7 +136,7 @@
     background-color: var(--color-canvas);
     color: var(--color-text-main);
     margin: 0;
-    overflow-x: hidden;
+    overflow-x: clip;
     max-width: 100vw;
     line-height: 1.7;
   }
@@ -198,6 +198,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* جلوگیری کامل از زوم خودکار سافاری آیفون (iOS 17 / iPhone 17) هنگام کلیک روی کادرهای ورودی، ساعت کاری و منوهای انتخابی */
+@media screen and (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+    touch-action: manipulation;
+  }
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+
 /* مخفی‌سازی اسکرول‌بار افقی در نوارهای فیلتر و تب موبایل */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -205,6 +224,48 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@keyframes timeto-marquee-slide {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes timeto-orb-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0px, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) scale(1.03);
+  }
+}
+
+@keyframes timeto-ring-spin {
+  0% {
+    transform: rotateX(68deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(68deg) rotateZ(360deg);
+  }
+}
+
+.animate-timeto-marquee {
+  display: flex;
+  width: max-content;
+  animation: timeto-marquee-slide 26s linear infinite;
+}
+
+.animate-timeto-orb {
+  animation: timeto-orb-float 4.5s ease-in-out infinite;
+}
+
+.animate-timeto-ring {
+  animation: timeto-ring-spin 18s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -217,3 +278,4 @@
     scroll-behavior: auto !important;
   }
 }
+

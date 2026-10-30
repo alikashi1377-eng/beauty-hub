@@ -264,29 +264,8 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   mapLng: 51.6621,
   shortDescription:
     'مرکز تخصصی رنگ و مش، احیای مو و طراحی ناخن با کادر مجرب و نوبت‌دهی آنلاین در اصفهان.',
-  services: [
-    {
-      id: 'onb-srv-1',
-      title: 'کوتاهی ژورنالی و براشینگ',
-      category: 'مو و رنگ',
-      durationMinutes: 60,
-      priceToman: 580000,
-    },
-    {
-      id: 'onb-srv-2',
-      title: 'مانیکور روسی و ژلیش ناخن',
-      category: 'ناخن',
-      durationMinutes: 60,
-      priceToman: 420000,
-    },
-  ],
-  staff: [
-    {
-      id: 'onb-stf-1',
-      fullName: 'مریم فرهادی',
-      roleTitle: 'مدیر و متخصص ارشد مو',
-    },
-  ],
+  services: [],
+  staff: [],
   workingHours: [
     { dayName: 'شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
     { dayName: 'یکشنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
@@ -308,10 +287,10 @@ const INITIAL_BOOKING_DRAFT: BookingDraft = {
   specialistId: 'spc-1',
   dateJalali: '۱۴۰۵/۰۸/۰۵',
   timeSlot: '۱۱:۰۰',
-  customerName: 'المیرا شمس',
-  customerPhone: '09123456789',
+  customerName: '',
+  customerPhone: '',
   customerNotes: '',
-  lastReferenceCode: 'TM-403990',
+  lastReferenceCode: undefined,
 };
 
 const PrototypeDataContext = createContext<PrototypeDataContextValue | null>(
@@ -381,7 +360,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [selectedCity, setSelectedCity] = useState<string>('ALL');
   const [favoriteBusinessIds, setFavoriteBusinessIds] = useState<string[]>(() => {
     try {
-      const saved = window.localStorage.getItem('beautyhub_fav_businesses');
+      const sessRaw = window.localStorage.getItem(PERSISTED_SESSION_USER_KEY);
+      const sessUser = sessRaw ? JSON.parse(sessRaw) : null;
+      const phoneKey = sessUser?.phone
+        ? `timeto_fav_biz_${sessUser.phone}`
+        : 'timeto_fav_biz_guest';
+      const saved = window.localStorage.getItem(phoneKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
@@ -389,11 +373,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // ignore storage errors
     }
-    return ['biz-1', 'biz-3'];
+    return [];
   });
   const [favoriteSpecialistIds, setFavoriteSpecialistIds] = useState<string[]>(() => {
     try {
-      const saved = window.localStorage.getItem('beautyhub_fav_specialists');
+      const sessRaw = window.localStorage.getItem(PERSISTED_SESSION_USER_KEY);
+      const sessUser = sessRaw ? JSON.parse(sessRaw) : null;
+      const phoneKey = sessUser?.phone
+        ? `timeto_fav_spc_${sessUser.phone}`
+        : 'timeto_fav_spc_guest';
+      const saved = window.localStorage.getItem(phoneKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
@@ -401,8 +390,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // ignore storage errors
     }
-    return ['spc-1', 'spc-4'];
+    return [];
   });
+
+  useEffect(() => {
+    try {
+      const bizKey = authUser?.phone
+        ? `timeto_fav_biz_${authUser.phone}`
+        : 'timeto_fav_biz_guest';
+      const spcKey = authUser?.phone
+        ? `timeto_fav_spc_${authUser.phone}`
+        : 'timeto_fav_spc_guest';
+      const savedBiz = window.localStorage.getItem(bizKey);
+      const savedSpc = window.localStorage.getItem(spcKey);
+      setFavoriteBusinessIds(savedBiz ? JSON.parse(savedBiz) : []);
+      setFavoriteSpecialistIds(savedSpc ? JSON.parse(savedSpc) : []);
+    } catch {
+      setFavoriteBusinessIds([]);
+      setFavoriteSpecialistIds([]);
+    }
+  }, [authUser?.phone]);
   const mergeBusinessOverrides = (list: BusinessItem[]): BusinessItem[] => {
     try {
       const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
@@ -462,26 +469,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [services, setServices] = useState<ServiceItem[]>(SAMPLE_SERVICES);
   const [specialists, setSpecialists] =
     useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
-  const [appointments, setAppointments] =
-    useState<AppointmentItem[]>(SAMPLE_APPOINTMENTS);
+  const [appointments, setAppointments] = useState<AppointmentItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_saved_appointments_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const mergeCategoriesWithDefaults = (
     incoming: CategoryItem[]
   ): CategoryItem[] => {
+    let baseList: CategoryItem[] = [...SAMPLE_CATEGORIES];
     try {
       const savedRaw = window.localStorage.getItem('timeto_custom_categories_v2');
       if (savedRaw) {
         const savedList: CategoryItem[] = JSON.parse(savedRaw);
         if (Array.isArray(savedList) && savedList.length > 0) {
           const bySlug = new Set(savedList.map((c) => c.slug));
-          const extras = incoming.filter((c) => !bySlug.has(c.slug));
-          return [...savedList, ...extras];
+          const missingDefaults = SAMPLE_CATEGORIES.filter(
+            (c) => !bySlug.has(c.slug)
+          );
+          baseList = [...savedList, ...missingDefaults];
         }
       }
     } catch {
       // ignore
     }
 
-    const result: CategoryItem[] = [...SAMPLE_CATEGORIES];
+    const result: CategoryItem[] = [...baseList];
     for (const dbCat of incoming) {
       const idx = result.findIndex(
         (c) => c.slug === dbCat.slug || c.title === dbCat.title
@@ -503,8 +523,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     mergeCategoriesWithDefaults(SAMPLE_CATEGORIES)
   );
   const [gallery, setGallery] = useState<GalleryItem[]>(SAMPLE_GALLERY);
-  const [campaigns, setCampaigns] =
-    useState<MarketingCampaignItem[]>(SAMPLE_CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState<MarketingCampaignItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_saved_campaigns_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
 
   const mergeManualCustomers = (baseList: CustomerRecord[]): CustomerRecord[] => {
     try {
@@ -534,7 +564,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const [customers, setCustomers] = useState<CustomerRecord[]>(() =>
-    mergeManualCustomers(SAMPLE_CUSTOMERS)
+    mergeManualCustomers([])
   );
   const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(() => {
@@ -684,7 +714,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const currentBusiness: BusinessItem | null = React.useMemo(() => {
     if (ownedBusinessId) {
       const foundOwned = businesses.find((b) => b.id === ownedBusinessId);
-      if (foundOwned) return foundOwned;
+      if (foundOwned && !foundOwned.isSampleShowcase) return foundOwned;
     }
     const firstMembership = authUser?.businessMemberships?.[0];
     if (firstMembership) {
@@ -694,9 +724,58 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           b.slug === firstMembership.businessSlug ||
           b.id === firstMembership.businessUuid
       );
-      if (foundMemberBiz) return foundMemberBiz;
+      if (foundMemberBiz && !foundMemberBiz.isSampleShowcase)
+        return foundMemberBiz;
     }
-    return businesses[0] ?? null;
+    const nonSampleBiz = businesses.find(
+      (b) => !b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id)
+    );
+    if (nonSampleBiz) return nonSampleBiz;
+
+    let overrides: Record<string, Partial<BusinessItem>> = {};
+    try {
+      const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
+      if (overridesRaw) overrides = JSON.parse(overridesRaw);
+    } catch {
+      // ignore
+    }
+
+    const zeroBiz: BusinessItem = {
+      id: 'biz-owner-zero',
+      slug: 'my-salon-workspace',
+      name: authUser?.fullName
+        ? `سالن زیبایی ${authUser.fullName}`
+        : 'سالن زیبایی من',
+      type: BusinessType.WomenSalon,
+      typeLabel: 'سالن زیبایی زنانه',
+      categorySlug: 'hair-color',
+      city: authUser?.defaultCity || 'اصفهان',
+      neighborhood: '',
+      address: '',
+      phoneDisplay: authUser?.phone || '',
+      ownerName: authUser?.fullName || 'مدیر سالن',
+      ownerPhone: authUser?.phone || '',
+      createdAtJalali: 'امروز',
+      rating: 5.0,
+      reviewCount: 0,
+      startingPriceToman: 0,
+      shortDescription: '',
+      aboutText: '',
+      verifiedBadge: false,
+      approvalStatus: 'PENDING_REVIEW',
+      subscriptionPlan: 'شروع رایگان',
+      subscriptionStatus: SubscriptionStatus.Trial,
+      trialDaysRemaining: 30,
+      extraSmsBalance: 0,
+      smsSentCount: 0,
+      workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+      workingHoursConfigured: false,
+      visualTheme: 'violet',
+      featured: false,
+      isSampleShowcase: false,
+      ...(overrides['biz-owner-zero'] || {}),
+    };
+    return zeroBiz;
   }, [ownedBusinessId, authUser, businesses]);
 
   const loadAuthenticatedRoleData = async (
@@ -1207,8 +1286,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ownerPhone: payload.phone,
           createdAtJalali: 'امروز',
           rating: 5.0,
-          reviewCount: 1,
-          startingPriceToman: 450000,
+          reviewCount: 0,
+          startingPriceToman: 0,
           shortDescription: `مرکز تخصصی زیبایی ${salonName} در ${salonCity}`,
           aboutText: '',
           verifiedBadge: false,
@@ -1447,34 +1526,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const toggleFavoriteBusiness = (businessId: string) => {
-    if (dataMode === 'real') {
-      void realApiClient
-        .toggleFavoriteBusiness(businessId)
-        .then((res) => {
-          setFavoriteBusinessIds(res.favoriteBusinessIds);
-          try {
-            window.localStorage.setItem(
-              'beautyhub_fav_businesses',
-              JSON.stringify(res.favoriteBusinessIds)
-            );
-          } catch {
-            // ignore storage errors
-          }
-          showToast(
-            res.favorited
-              ? 'به فهرست سالن‌های علاقه‌مندی شما اضافه شد.'
-              : 'از فهرست سالن‌های علاقه‌مندی شما حذف شد.',
-            'info'
-          );
-        })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ثبت علاقه‌مندی در دیتابیس',
-            'danger'
-          );
-        });
+    if (!authUser) {
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        promptReason:
+          'برای ذخیره سالن در لیست علاقه‌مندی‌های حساب کاربری خود، ابتدا وارد شوید.',
+      });
       return;
     }
 
@@ -1484,6 +1542,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? prev.filter((id) => id !== businessId)
         : [...prev, businessId];
       try {
+        const phoneKey = `timeto_fav_biz_${authUser.phone}`;
+        window.localStorage.setItem(phoneKey, JSON.stringify(next));
         window.localStorage.setItem(
           'beautyhub_fav_businesses',
           JSON.stringify(next)
@@ -1500,15 +1560,33 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       );
       return next;
     });
+
+    if (dataMode === 'real') {
+      void realApiClient.toggleFavoriteBusiness(businessId).catch(() => {
+        // همگام‌سازی محلی قبلاً انجام شده است
+      });
+    }
   };
 
   const toggleFavoriteSpecialist = (specialistId: string) => {
+    if (!authUser) {
+      openAuthModal({
+        initialScreen: 'LOGIN',
+        defaultRole: 'CUSTOMER',
+        promptReason:
+          'برای ذخیره متخصص در لیست علاقه‌مندی‌های حساب کاربری خود، ابتدا وارد شوید.',
+      });
+      return;
+    }
+
     setFavoriteSpecialistIds((prev) => {
       const exists = prev.includes(specialistId);
       const next = exists
         ? prev.filter((id) => id !== specialistId)
         : [...prev, specialistId];
       try {
+        const phoneKey = `timeto_fav_spc_${authUser.phone}`;
+        window.localStorage.setItem(phoneKey, JSON.stringify(next));
         window.localStorage.setItem(
           'beautyhub_fav_specialists',
           JSON.stringify(next)

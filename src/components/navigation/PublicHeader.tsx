@@ -12,9 +12,7 @@ import {
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { TimetoLogo } from '../ui/TimetoLogo';
-import { PWAInstallButton } from '../ui/PWAInstallPrompt';
 import { toPersianDigits } from '../../utils/formatters';
-import { saveVisitorRole } from '../home/timetoHomeData';
 
 export const PublicHeader: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -95,16 +93,6 @@ export const PublicHeader: React.FC = () => {
 
         {/* دکمه‌های کاربری متناسب با نقش (مشتری عادی در برابر صاحب سالن) */}
         <div className="flex items-center gap-2 shrink-0">
-          <PWAInstallButton compact />
-
-          <Link
-            to="/?intro=1"
-            onClick={() => saveVisitorRole(null)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-[#00E5FF] bg-white/8 hover:bg-white/15 border border-[#00E5FF]/35 rounded-full transition-colors whitespace-nowrap shrink-0"
-          >
-            <span>معرفی اپ (صفحه ۳بعدی)</span>
-          </Link>
-
           <Link
             to="/me/favorites"
             onClick={(e) => {
@@ -287,17 +275,6 @@ export const PublicHeader: React.FC = () => {
                 </button>
               </div>
             ) : null}
-
-            <Link
-              to="/?intro=1"
-              onClick={() => {
-                saveVisitorRole(null);
-                setMobileMenuOpen(false);
-              }}
-              className="block text-xs font-extrabold text-center text-[#00E5FF] px-3 py-2.5 rounded-full bg-white/8 border border-[#00E5FF]/35 mt-2"
-            >
-              مشاهده صفحه ورود سه‌بعدی (معرفی اپ)
-            </Link>
           </div>
         </nav>
       ) : null}

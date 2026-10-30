@@ -1420,14 +1420,25 @@ export const CustomerOverviewPage: React.FC = () => {
     toggleFavoriteBusiness,
     toggleFavoriteSpecialist,
   } = usePrototypeData();
-  const upcomingCount = appointments.filter(
+
+  const myAppointments = appointments.filter((a) => {
+    if (!authUser) return a.id.startsWith('apt-live-');
+    return (
+      a.customerPhone === authUser.phone ||
+      a.customerName === authUser.fullName ||
+      a.id.startsWith('apt-live-')
+    );
+  });
+
+  const upcomingCount = myAppointments.filter(
     (a) =>
       a.status === AppointmentStatus.Confirmed ||
       a.status === AppointmentStatus.Pending
   ).length;
-  const completedCount =
-    appointments.filter((a) => a.status === AppointmentStatus.Completed)
-      .length || 4;
+  const completedCount = myAppointments.filter(
+    (a) => a.status === AppointmentStatus.Completed
+  ).length;
+  const loyaltyPoints = myAppointments.length * 150;
 
   const favoriteBusinesses = businesses.filter((b) =>
     favoriteBusinessIds.includes(b.id)
@@ -1438,33 +1449,31 @@ export const CustomerOverviewPage: React.FC = () => {
   const totalFavoritesCount =
     favoriteBusinesses.length + favoriteSpecialists.length;
 
-  const displayName =
-    dataMode === 'real'
-      ? (authUser?.fullName ?? 'کاربر مهمان')
-      : (authUser?.fullName ?? 'المیرا شمس');
-  const displayPhoneCity =
-    dataMode === 'real'
-      ? authUser
-        ? `شماره همراه: ${toPersianDigits(authUser.phone)} · ${authUser.defaultCity || 'اصفهان'}`
-        : 'برای مشاهده نوبت‌ها ابتدا وارد شوید'
-      : 'شماره همراه: ۰۹۱۳۳۴۵۶۷۸۹ · اصفهان';
+  const displayName = authUser?.fullName?.trim() || 'کاربر تایم تو';
+  const displayPhoneCity = authUser
+    ? `شماره همراه: ${toPersianDigits(authUser.phone)} · ${authUser.defaultCity || 'اصفهان'}`
+    : 'برای مشاهده و مدیریت نوبت‌ها وارد حساب خود شوید';
 
   return (
     <div className="space-y-6">
       {/* هدر پروفایل مشتری با آواتار دایره‌ای و کارت ۲ ستونی امتیاز وفاداری */}
-      <Card className="rounded-[32px] p-6 sm:p-8 border border-[#E6E0F5] bg-white">
+      <Card className="rounded-[32px] p-6 sm:p-8 border border-[#CBD5E1] bg-white">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           <div className="lg:col-span-6 flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-right gap-4">
-            <Avatar name={displayName} size="xl" tone="rose" />
+            <Avatar name={displayName} size="xl" tone="rose" showPhoto={false} />
             <div className="space-y-1.5">
-              <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-[#EDE9FE] text-[#8B5CF6] text-[11px] font-bold">
-                <Award className="w-3.5 h-3.5 text-[#8B5CF6]" />
-                <span>عضو سطح طلایی باشگاه مشتریان</span>
+              <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-bold">
+                <Award className="w-3.5 h-3.5 text-[#0057FF]" />
+                <span>
+                  {completedCount > 0
+                    ? 'عضو فعال باشگاه مشتریان'
+                    : 'حساب کاربری جدید (بدون سابقه رزرو)'}
+                </span>
               </span>
-              <h1 className="text-xl sm:text-2xl font-extrabold text-[#1E1B2E]">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
                 {displayName}
               </h1>
-              <p className="text-xs text-[#6B6480] tabular-nums">
+              <p className="text-xs text-[#64748B] tabular-nums">
                 {displayPhoneCity}
               </p>
               <div className="pt-1 flex flex-wrap items-center justify-center sm:justify-start gap-2">
@@ -1476,7 +1485,7 @@ export const CustomerOverviewPage: React.FC = () => {
                 </Link>
                 <Link to="/me/favorites">
                   <Button variant="outline" size="sm">
-                    <Heart className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                    <Heart className="w-3.5 h-3.5 text-[#0057FF]" />
                     <span>علاقه‌مندی‌ها ({toPersianDigits(totalFavoritesCount)})</span>
                   </Button>
                 </Link>
@@ -1490,29 +1499,29 @@ export const CustomerOverviewPage: React.FC = () => {
           </div>
 
           {/* کارت ۲ ستونی باشگاه مشتریان و امتیاز وفاداری */}
-          <div className="lg:col-span-6 rounded-3xl bg-[#FAF8FF] border border-[#E6E0F5] p-5 grid grid-cols-2 gap-4 text-center">
-            <div className="border-l border-[#E6E0F5] pl-4 space-y-1">
-              <span className="text-xs font-bold text-[#8B5CF6] block">
+          <div className="lg:col-span-6 rounded-3xl bg-[#F3F6FC] border border-[#CBD5E1] p-5 grid grid-cols-2 gap-4 text-center">
+            <div className="border-l border-[#CBD5E1] pl-4 space-y-1">
+              <span className="text-xs font-bold text-[#0057FF] block">
                 امتیاز باشگاه مشتریان
               </span>
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
-                ۲,۴۵۰
+              <p className="text-2xl sm:text-3xl font-extrabold text-[#0057FF] tabular-nums">
+                {toPersianDigits(loyaltyPoints)}
               </p>
-              <span className="text-[11px] text-[#6B6480] block">
-                قابل تبدیل به کد تخفیف رزرو
+              <span className="text-[11px] text-[#64748B] block">
+                با هر رزرو نوبت ۱۵۰ امتیاز دریافت می‌کنید
               </span>
             </div>
 
             <div className="space-y-1">
-              <span className="text-xs font-bold text-[#6B6480] block">
+              <span className="text-xs font-bold text-[#64748B] block">
                 نوبت‌های تکمیل‌شده
               </span>
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
+              <p className="text-2xl sm:text-3xl font-extrabold text-[#061138] tabular-nums">
                 {toPersianDigits(completedCount)} نوبت
               </p>
               <span className="text-[11px] text-[#10B981] font-bold inline-flex items-center justify-center gap-1">
                 <Check className="w-3.5 h-3.5" />
-                <span>مشتری خوش‌حساب</span>
+                <span>{completedCount > 0 ? 'مشتری خوش‌حساب' : 'آماده اولین رزرو'}</span>
               </span>
             </div>
           </div>
@@ -1659,14 +1668,14 @@ export const CustomerOverviewPage: React.FC = () => {
             مشاهده همه نوبت‌ها ←
           </Link>
         </div>
-        {appointments.length === 0 ? (
+        {myAppointments.length === 0 ? (
           <EmptyState
             title="هنوز نوبتی برای شما ثبت نشده است"
             description="از بخش جست‌وجوی سالن‌ها می‌توانید اولین نوبت خود را به صورت آنلاین رزرو کنید."
           />
         ) : (
           <div className="space-y-3">
-            {appointments.slice(0, 3).map((apt) => (
+            {myAppointments.slice(0, 3).map((apt) => (
               <AppointmentCard key={apt.id} appointment={apt} />
             ))}
           </div>
@@ -1678,19 +1687,28 @@ export const CustomerOverviewPage: React.FC = () => {
 
 /** ۶. نوبت‌های من (/me/appointments) */
 export const CustomerAppointmentsPage: React.FC = () => {
-  const { appointments, updateAppointmentStatus } = usePrototypeData();
+  const { authUser, appointments, updateAppointmentStatus } = usePrototypeData();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AppointmentItem | null>(
     null
   );
 
-  const upcomingList = appointments.filter(
+  const myAppointments = appointments.filter((a) => {
+    if (!authUser) return a.id.startsWith('apt-live-');
+    return (
+      a.customerPhone === authUser.phone ||
+      a.customerName === authUser.fullName ||
+      a.id.startsWith('apt-live-')
+    );
+  });
+
+  const upcomingList = myAppointments.filter(
     (a) =>
       a.status === AppointmentStatus.Confirmed ||
       a.status === AppointmentStatus.Pending
   );
-  const historyList = appointments.filter(
+  const historyList = myAppointments.filter(
     (a) =>
       a.status === AppointmentStatus.Completed ||
       a.status === AppointmentStatus.Cancelled ||
@@ -1952,12 +1970,8 @@ export const CustomerProfilePage: React.FC = () => {
     updateCustomerProfile,
     setAccountPassword,
   } = usePrototypeData();
-  const [name, setName] = useState(
-    authUser?.fullName ?? (dataMode === 'mock' ? 'المیرا شمس' : '')
-  );
-  const [phone, setPhone] = useState(
-    authUser?.phone ?? (dataMode === 'mock' ? '09123456789' : '')
-  );
+  const [name, setName] = useState(authUser?.fullName ?? '');
+  const [phone, setPhone] = useState(authUser?.phone ?? '');
   const [city, setCity] = useState(authUser?.defaultCity ?? 'اصفهان');
   const [smsReminder, setSmsReminder] = useState(true);
   const [isSaving, setIsSaving] = useState(false);

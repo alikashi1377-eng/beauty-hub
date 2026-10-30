@@ -34,12 +34,16 @@ import {
 import { SAMPLE_CATEGORIES } from '../../mocks/sampleData';
 import {
   formatDurationMinutes,
+  formatNumericInputWithCommas,
   formatPriceToman,
   getAppointmentStatusMeta,
   getPlanStaffLimitCount,
+  getSuggestedServiceTitlesForCategory,
   getUpcomingJalaliDays,
   isValidIranMobile,
   normalizeIranMobileInput,
+  parseNumericInput,
+  STANDARD_WORKING_TIME_OPTIONS,
   toEnglishDigitsClient,
   toPersianDigits,
   validateServiceForm,
@@ -73,10 +77,62 @@ import {
 } from '../../components/business/BusinessProfileCompletionWidget';
 import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
 
+/** بررسی رایگان بودن پلن فعلی کسب‌وکار */
+const isFreeSubscriptionPlan = (
+  planId?: string,
+  planName?: string
+): boolean => {
+  const id = (planId || '').toLowerCase();
+  const name = (planName || '').trim();
+  if (id === 'plan-professional' || id === 'plan-vip-multi' || id === 'plan-vip') {
+    return false;
+  }
+  if (name.includes('حرفه‌ای') || name.includes('VIP') || name.includes('ویژه')) {
+    return false;
+  }
+  return true;
+};
+
+/** بنر قفل امکانات ویژه پلن‌های بالاتر (حرفه‌ای / VIP) */
+const PlanUpgradeLockBanner: React.FC<{
+  featureTitle: string;
+  description: string;
+  requiredPlanLabel?: string;
+}> = ({
+  featureTitle,
+  description,
+  requiredPlanLabel = 'پلن حرفه‌ای و VIP',
+}) => (
+  <div className="rounded-2xl border border-[#CBD5E1] bg-slate-100/90 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="flex items-start gap-3">
+      <span className="w-9 h-9 rounded-xl bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 text-sm font-black">
+        🔒
+      </span>
+      <div className="space-y-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs sm:text-sm font-extrabold text-slate-700">
+            {featureTitle}
+          </p>
+          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-extrabold">
+            ویژه {requiredPlanLabel}
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          {description}
+        </p>
+      </div>
+    </div>
+    <Link to="/app/subscription" className="shrink-0">
+      <Button variant="primary" size="sm">
+        <span>ارتقا و خرید پلن ←</span>
+      </Button>
+    </Link>
+  </div>
+);
+
 /** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — چیدمان خلوت، اولویت‌بندی‌شده و مجهز به استوری‌های راهنما */
 export const BusinessDashboardPage: React.FC = () => {
   const {
-    dataMode,
     currentBusiness,
     businesses,
     appointments,
@@ -89,74 +145,58 @@ export const BusinessDashboardPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
+  const bizServicesList = currentBiz
+    ? services.filter((s) => s.businessId === currentBiz.id)
+    : [];
+  const bizSpecialistsList = currentBiz
+    ? specialists.filter((sp) => sp.businessId === currentBiz.id)
+    : [];
+  const bizGalleryList = currentBiz
+    ? gallery.filter((g) => g.businessId === currentBiz.id)
+    : [];
+  const bizAppointments = currentBiz
+    ? appointments.filter(
+        (a) =>
+          a.businessId === currentBiz.id ||
+          a.businessSlug === currentBiz.slug ||
+          a.businessName === currentBiz.name
+      )
+    : [];
+  const bizCustomers = currentBiz
+    ? customers.filter(
+        (c) => !c.businessId || c.businessId === currentBiz.id
+      )
+    : [];
+
   const profileCompletion = computeBusinessProfileCompletion({
     business: currentBiz,
-    services,
-    specialists,
-    gallery,
+    services: bizServicesList,
+    specialists: bizSpecialistsList,
+    gallery: bizGalleryList,
     plans,
   });
 
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>('ALL');
 
-  const pendingAppointments = appointments.filter(
+  const pendingAppointments = bizAppointments.filter(
     (a) => a.status === AppointmentStatus.Pending
   );
-  const confirmedAppointments = appointments.filter(
+  const confirmedAppointments = bizAppointments.filter(
     (a) => a.status === AppointmentStatus.Confirmed
   );
   const activeAppointmentsCount =
-    dataMode === 'real'
-      ? pendingAppointments.length + confirmedAppointments.length
-      : Math.max(pendingAppointments.length + confirmedAppointments.length, 6);
+    pendingAppointments.length + confirmedAppointments.length;
 
-  const displayedCustomersCount =
-    dataMode === 'real' ? customers.length : customers.length + 124;
+  const displayedCustomersCount = bizCustomers.length;
 
-  const bizServicesCount = currentBiz
-    ? services.filter(
-        (s) => s.businessId === currentBiz.id && s.isActive !== false
-      ).length
-    : services.length;
-  const bizSpecialists = currentBiz
-    ? specialists.filter(
-        (sp) => sp.businessId === currentBiz.id && sp.isActive !== false
-      )
-    : specialists.slice(0, 4);
+  const bizServicesCount = bizServicesList.filter(
+    (s) => s.isActive !== false
+  ).length;
+  const bizSpecialists = bizSpecialistsList.filter(
+    (sp) => sp.isActive !== false
+  );
 
-  const todayAppointmentsList = (
-    appointments.length > 0
-      ? appointments
-      : [
-          {
-            id: 'td-1',
-            timeSlot: '۱۰:۰۰',
-            dateJalali: 'امروز',
-            serviceTitle: 'بالیاژ و لایت تخصصی مو',
-            customerName: 'المیرا شمس',
-            specialistName: bizSpecialists[0]?.fullName || 'مهسا کیانی',
-            status: AppointmentStatus.Confirmed,
-          },
-          {
-            id: 'td-2',
-            timeSlot: '۱۱:۳۰',
-            dateJalali: 'امروز',
-            serviceTitle: 'طراحی و کاشت ناخن ژلیش',
-            customerName: 'نگار رحیمی',
-            specialistName: bizSpecialists[1]?.fullName || 'نیلوفر تهرانی',
-            status: AppointmentStatus.Confirmed,
-          },
-          {
-            id: 'td-3',
-            timeSlot: '۱۴:۰۰',
-            dateJalali: 'امروز',
-            serviceTitle: 'فیشیال تخصصی و آبرسانی پوست',
-            customerName: 'پریسا نادری',
-            specialistName: bizSpecialists[2]?.fullName || 'سارا راد',
-            status: AppointmentStatus.Confirmed,
-          },
-        ]
-  ).filter(
+  const todayAppointmentsList = bizAppointments.filter(
     (apt) =>
       selectedStaffFilter === 'ALL' ||
       apt.specialistName === selectedStaffFilter
@@ -399,32 +439,43 @@ export const BusinessDashboardPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {todayAppointmentsList.slice(0, 4).map((apt) => (
-              <div
-                key={apt.id}
-                className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="px-2.5 py-1.5 rounded-xl bg-[#061138] text-[#00E5FF] text-xs font-black tabular-nums shrink-0">
-                    {apt.timeSlot}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
-                      {apt.serviceTitle}
-                    </p>
-                    <p className="text-[11px] font-medium text-[#475569] truncate">
-                      مراجع: {apt.customerName} · متخصص: {apt.specialistName}
-                    </p>
-                  </div>
-                </div>
-                <Link
-                  to="/app/calendar"
-                  className="text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
-                >
-                  تقویم
-                </Link>
+            {todayAppointmentsList.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1.5">
+                <p className="text-xs font-extrabold text-[#061138]">
+                  هنوز نوبتی برای امروز ثبت نشده است
+                </p>
+                <p className="text-[11px] text-[#64748B]">
+                  با تکمیل خدمات و ساعات کاری، نوبت‌های رزرو شده مشتریان در این بخش نمایش داده می‌شود.
+                </p>
               </div>
-            ))}
+            ) : (
+              todayAppointmentsList.slice(0, 4).map((apt) => (
+                <div
+                  key={apt.id}
+                  className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="px-2.5 py-1.5 rounded-xl bg-[#061138] text-[#00E5FF] text-xs font-black tabular-nums shrink-0">
+                      {apt.timeSlot}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
+                        {apt.serviceTitle}
+                      </p>
+                      <p className="text-[11px] font-medium text-[#475569] truncate">
+                        مراجع: {apt.customerName} · متخصص: {apt.specialistName}
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/app/calendar"
+                    className="text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
+                  >
+                    تقویم
+                  </Link>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
@@ -509,12 +560,49 @@ export const BusinessDashboardPage: React.FC = () => {
 
 /** ۲. تقویم نوبت‌ها (/app/calendar) */
 export const BusinessCalendarPage: React.FC = () => {
-  const { appointments, specialists, updateAppointmentStatus } =
-    usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    appointments,
+    specialists,
+    updateAppointmentStatus,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
+
+  const bizAppointments = currentBiz
+    ? appointments.filter(
+        (a) =>
+          a.businessId === currentBiz.id ||
+          a.businessSlug === currentBiz.slug ||
+          a.businessName === currentBiz.name
+      )
+    : [];
+  const bizSpecialistsRaw = currentBiz
+    ? specialists.filter((s) => s.businessId === currentBiz.id)
+    : [];
+  const calendarStaffList: SpecialistItem[] =
+    bizSpecialistsRaw.length > 0
+      ? bizSpecialistsRaw
+      : [
+          {
+            id: 'owner-default-col',
+            businessId: currentBiz?.id || 'biz-owner-zero',
+            slug: 'owner-col',
+            fullName: currentBiz?.ownerName || 'مدیر سالن',
+            roleTitle: 'پذیرش اصلی سالن',
+            experienceYears: 1,
+            rating: 5.0,
+            reviewCount: 0,
+            specialties: [],
+            bio: '',
+            isIndependent: false,
+            isActive: true,
+          },
+        ];
 
   const upcomingDays = getUpcomingJalaliDays(7);
   const calendarDays = upcomingDays.map((d) => ({
@@ -535,8 +623,8 @@ export const BusinessCalendarPage: React.FC = () => {
   ];
   const visibleStaff =
     staffFilter === 'ALL'
-      ? specialists.slice(0, 3)
-      : specialists.filter((s) => s.id === staffFilter);
+      ? calendarStaffList
+      : calendarStaffList.filter((s) => s.id === staffFilter);
 
   return (
     <div>
@@ -594,7 +682,7 @@ export const BusinessCalendarPage: React.FC = () => {
               className="rounded-xl border border-[#D4C9EE] bg-white px-3.5 py-2 text-xs font-bold text-[#1E1B2E] focus:outline-none focus:border-[#8B5CF6]"
             >
               <option value="ALL">همه متخصصان (نمای ستونی)</option>
-              {specialists.slice(0, 4).map((sp) => (
+              {calendarStaffList.map((sp) => (
                 <option key={sp.id} value={sp.id}>
                   {sp.fullName}
                 </option>
@@ -661,11 +749,12 @@ export const BusinessCalendarPage: React.FC = () => {
                       {slot}
                     </td>
                     {visibleStaff.map((sp) => {
-                      const matched = appointments.find(
+                      const matched = bizAppointments.find(
                         (a) =>
                           a.timeSlot === slot &&
                           (a.specialistId === sp.id ||
-                            a.specialistName === sp.fullName)
+                            a.specialistName === sp.fullName ||
+                            calendarStaffList.length === 1)
                       );
                       const statusMeta = matched
                         ? getAppointmentStatusMeta(matched.status)
@@ -1150,18 +1239,22 @@ export const BusinessServicesPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
-  const uniqueCats = Array.from(new Set(services.map((s) => s.category)));
+  const bizServices = currentBiz
+    ? services.filter((s) => s.businessId === currentBiz.id)
+    : [];
+  const uniqueCats = Array.from(new Set(bizServices.map((s) => s.category)));
   const visibleServices =
     selectedCat === 'ALL'
-      ? services
-      : services.filter((s) => s.category === selectedCat);
+      ? bizServices
+      : bizServices.filter((s) => s.category === selectedCat);
+  const suggestedTitles = getSuggestedServiceTitlesForCategory(category);
 
   const openAddModal = () => {
     setEditingService(null);
     setTitle('');
     setCategory('مو و رنگ');
     setDurationMinutes('60');
-    setPriceToman('650000');
+    setPriceToman(formatNumericInputWithCommas('650000'));
     setDescription('');
     setFormErrors({});
     setModalOpen(true);
@@ -1172,7 +1265,7 @@ export const BusinessServicesPage: React.FC = () => {
     setTitle(srv.title);
     setCategory(srv.category);
     setDurationMinutes(String(srv.durationMinutes));
-    setPriceToman(String(srv.priceToman));
+    setPriceToman(formatNumericInputWithCommas(String(srv.priceToman)));
     setDescription(srv.description);
     setFormErrors({});
     setModalOpen(true);
@@ -1180,11 +1273,13 @@ export const BusinessServicesPage: React.FC = () => {
 
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
+    const numericPrice = parseNumericInput(priceToman);
+    const numericDuration = parseNumericInput(durationMinutes) || 60;
     const validation = validateServiceForm({
       title,
       category,
-      durationMinutes: Number(durationMinutes),
-      priceToman: Number(priceToman),
+      durationMinutes: numericDuration,
+      priceToman: numericPrice,
     });
     if (!validation.isValid) {
       setFormErrors(validation.errors);
@@ -1195,19 +1290,19 @@ export const BusinessServicesPage: React.FC = () => {
       updateService(editingService.id, {
         title: title.trim(),
         category,
-        durationMinutes: Number(durationMinutes),
-        priceToman: Number(priceToman),
+        durationMinutes: numericDuration,
+        priceToman: numericPrice,
         description: description.trim() || 'خدمت تخصصی زیبایی',
       });
     } else {
       const matchedCat = categories.find((c) => c.title === category);
       addService({
-        businessId: currentBiz?.id ?? 'biz-1',
+        businessId: currentBiz?.id ?? 'biz-owner-zero',
         categorySlug: matchedCat?.slug ?? 'hair-color',
         title: title.trim(),
         category,
-        durationMinutes: Number(durationMinutes),
-        priceToman: Number(priceToman),
+        durationMinutes: numericDuration,
+        priceToman: numericPrice,
         description: description.trim() || 'خدمت تخصصی سالن زیبایی',
         isActive: true,
       });
@@ -1245,7 +1340,7 @@ export const BusinessServicesPage: React.FC = () => {
               : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
           }`}
         >
-          همه خدمات ({toPersianDigits(services.length)})
+          همه خدمات ({toPersianDigits(bizServices.length)})
         </button>
         {uniqueCats.map((cat) => (
           <button
@@ -1357,22 +1452,8 @@ export const BusinessServicesPage: React.FC = () => {
       >
         <form onSubmit={handleSaveService} className="space-y-4" noValidate>
           <FormField
-            id="srv-form-title"
-            label="نام خدمت"
-            required
-            error={formErrors.title}
-          >
-            <Input
-              id="srv-form-title"
-              value={title}
-              hasError={Boolean(formErrors.title)}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </FormField>
-
-          <FormField
             id="srv-form-cat"
-            label="دسته‌بندی"
+            label="دسته‌بندی خدمت"
             required
             error={formErrors.category}
           >
@@ -1390,24 +1471,44 @@ export const BusinessServicesPage: React.FC = () => {
             />
           </FormField>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(categories.length > 0 ? categories : SAMPLE_CATEGORIES).map(
-              (c) => (
-                <button
-                  key={c.slug}
-                  type="button"
-                  onClick={() => setCategory(c.title)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer border transition-colors ${
-                    category === c.title
-                      ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]'
-                      : 'bg-[#FAF8FF] text-[#1E1B2E] border-[#E6E0F5]'
-                  }`}
-                >
-                  {c.title}
-                </button>
-              )
-            )}
-          </div>
+          <FormField
+            id="srv-form-title"
+            label="نام خدمت"
+            required
+            error={formErrors.title}
+          >
+            <Input
+              id="srv-form-title"
+              value={title}
+              hasError={Boolean(formErrors.title)}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="نام خدمت را بنویسید یا از پیشنهادهای زیر انتخاب کنید"
+            />
+          </FormField>
+
+          {suggestedTitles.length > 0 ? (
+            <div className="space-y-1.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] p-3">
+              <span className="text-[11px] font-extrabold text-[#475569] block">
+                پیشنهاد سریع نام خدمت در دسته «{category}» (با لمس انتخاب می‌شود):
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestedTitles.map((sug) => (
+                  <button
+                    key={sug}
+                    type="button"
+                    onClick={() => setTitle(sug)}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold cursor-pointer border transition-colors ${
+                      title === sug
+                        ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                    }`}
+                  >
+                    + {sug}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <FormField
@@ -1434,9 +1535,13 @@ export const BusinessServicesPage: React.FC = () => {
               <Input
                 id="srv-form-price"
                 dir="ltr"
-                type="number"
+                type="text"
+                inputMode="numeric"
                 value={priceToman}
-                onChange={(e) => setPriceToman(e.target.value)}
+                onChange={(e) =>
+                  setPriceToman(formatNumericInputWithCommas(e.target.value))
+                }
+                placeholder="650,000"
               />
             </FormField>
           </div>
@@ -1509,10 +1614,13 @@ export const BusinessStaffPage: React.FC = () => {
   );
   const bizSpecialistsList = currentBiz
     ? specialists.filter((s) => s.businessId === currentBiz.id)
-    : specialists;
-  const effectiveStaffList =
-    bizSpecialistsList.length > 0 ? bizSpecialistsList : specialists;
+    : [];
+  const effectiveStaffList = bizSpecialistsList;
   const isLimitReached = effectiveStaffList.length >= staffLimitCount;
+  const isFreePlan = isFreeSubscriptionPlan(
+    activePlanId,
+    currentBiz?.subscriptionPlan
+  );
 
   const openAdd = () => {
     if (isLimitReached) {
@@ -1620,63 +1728,79 @@ export const BusinessStaffPage: React.FC = () => {
         }}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {specialists.map((sp) => (
-          <Card key={sp.id} className="space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3.5">
-                  <Avatar name={sp.fullName} size="lg" tone="violet" />
-                  <div>
-                    <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                      {sp.fullName}
-                    </h2>
-                    <p className="text-xs text-[#8B5CF6] font-bold mt-0.5">
-                      {sp.roleTitle}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateSpecialist(sp.id, {
-                      isActive: !(sp.isActive ?? true),
-                    })
-                  }
-                  className="cursor-pointer"
-                >
-                  <StatusBadge
-                    label={sp.isActive !== false ? 'تقویم فعال' : 'غیرفعال'}
-                    tone={sp.isActive !== false ? 'success' : 'neutral'}
-                  />
-                </button>
-              </div>
-              <p className="text-xs text-[#6B6480] leading-relaxed">{sp.bio}</p>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {sp.specialties.map((skill) => (
-                  <span
-                    key={skill}
-                    className="px-2.5 py-1 rounded-lg bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
+      {isFreePlan ? (
+        <PlanUpgradeLockBanner
+          featureTitle="افزودن چندین متخصص و مدیریت تقویم مجزا برای هر پرسنل"
+          description="در پلن شروع رایگان حداکثر ۱ متخصص قابل ثبت است. برای افزودن تا ۱۰ متخصص (پلن حرفه‌ای) یا نامحدود (پلن VIP)، اشتراک سالن خود را ارتقا دهید."
+        />
+      ) : null}
 
-            <div className="pt-3.5 border-t border-[#E6E0F5] flex items-center justify-between text-xs">
-              <span className="text-[#6B6480] font-semibold tabular-nums">
-                سابقه: {toPersianDigits(sp.experienceYears)} سال · امتیاز: ★{' '}
-                {toPersianDigits(sp.rating)}
-              </span>
-              <Button variant="outline" size="sm" onClick={() => openEdit(sp)}>
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>ویرایش</span>
-              </Button>
-            </div>
-          </Card>
-        ))}
-      </div>
+      {effectiveStaffList.length === 0 ? (
+        <EmptyState
+          title="هنوز متخصصی برای سالن شما ثبت نشده است"
+          description="اولین متخصص یا عضو تیم سالن خود را اضافه کنید تا مشتریان بتوانند هنگام رزرو آنلاین، متخصص دلخواهشان را انتخاب نمایند."
+          actionLabel="افزودن اولین متخصص"
+          onAction={openAdd}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {effectiveStaffList.map((sp) => (
+            <Card key={sp.id} className="space-y-4 flex flex-col justify-between">
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3.5">
+                    <Avatar name={sp.fullName} size="lg" tone="violet" />
+                    <div>
+                      <h2 className="text-base font-extrabold text-[#1E1B2E]">
+                        {sp.fullName}
+                      </h2>
+                      <p className="text-xs text-[#8B5CF6] font-bold mt-0.5">
+                        {sp.roleTitle}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSpecialist(sp.id, {
+                        isActive: !(sp.isActive ?? true),
+                      })
+                    }
+                    className="cursor-pointer"
+                  >
+                    <StatusBadge
+                      label={sp.isActive !== false ? 'تقویم فعال' : 'غیرفعال'}
+                      tone={sp.isActive !== false ? 'success' : 'neutral'}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-[#6B6480] leading-relaxed">{sp.bio}</p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {sp.specialties.map((skill) => (
+                    <span
+                      key={skill}
+                      className="px-2.5 py-1 rounded-lg bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3.5 border-t border-[#E6E0F5] flex items-center justify-between text-xs">
+                <span className="text-[#6B6480] font-semibold tabular-nums">
+                  سابقه: {toPersianDigits(sp.experienceYears)} سال · امتیاز: ★{' '}
+                  {toPersianDigits(sp.rating)}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => openEdit(sp)}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>ویرایش</span>
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={modalOpen}
@@ -2683,35 +2807,50 @@ export const BusinessGalleryPage: React.FC = () => {
         </form>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {gallery.map((item) => (
-          <Card key={item.id} padding="sm" className="space-y-3">
-            <VisualMediaIllustration
-              theme={item.theme}
-              categoryLabel={item.categoryLabel}
-              title={item.title}
-              city="تهران"
+      {(() => {
+        const bizGallery = currentBiz
+          ? gallery.filter((g) => g.businessId === currentBiz.id)
+          : [];
+        if (bizGallery.length === 0) {
+          return (
+            <EmptyState
+              title="گالری نمونه کارهای سالن شما هنوز خالی است"
+              description="از فرم بالا اولین نمونه کار تصویری سالن خود را ثبت کنید تا در پروفایل عمومی سالن به مشتریان نمایش داده شود."
             />
-            <div className="flex items-center justify-between text-xs px-1 pt-0.5">
-              <div>
-                <p className="font-extrabold text-[#1E1B2E] truncate">
-                  {item.title}
-                </p>
-                <p className="text-[11px] text-[#6B6480]">
-                  {item.categoryLabel}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeGalleryItem(item.id)}
-                className="text-[#EF4444] font-semibold hover:underline cursor-pointer shrink-0"
-              >
-                حذف
-              </button>
-            </div>
-          </Card>
-        ))}
-      </div>
+          );
+        }
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {bizGallery.map((item) => (
+              <Card key={item.id} padding="sm" className="space-y-3">
+                <VisualMediaIllustration
+                  theme={item.theme}
+                  categoryLabel={item.categoryLabel}
+                  title={item.title}
+                  city={currentBiz?.city || 'اصفهان'}
+                />
+                <div className="flex items-center justify-between text-xs px-1 pt-0.5">
+                  <div>
+                    <p className="font-extrabold text-[#1E1B2E] truncate">
+                      {item.title}
+                    </p>
+                    <p className="text-[11px] text-[#6B6480]">
+                      {item.categoryLabel}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeGalleryItem(item.id)}
+                    className="text-[#EF4444] font-semibold hover:underline cursor-pointer shrink-0"
+                  >
+                    حذف
+                  </button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -2846,14 +2985,6 @@ export const BusinessProfileEditPage: React.FC = () => {
               </FormField>
             </div>
 
-            <FormField id="prof-address" label="نشانی کامل پستی" required>
-              <Input
-                id="prof-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-              />
-            </FormField>
-
             <LocationMapPicker
               city={currentBiz.city}
               neighborhood={currentBiz.neighborhood}
@@ -2863,11 +2994,24 @@ export const BusinessProfileEditPage: React.FC = () => {
               onSelectLocation={(coords) => {
                 setMapLat(coords.lat);
                 setMapLng(coords.lng);
-                if (!address.trim() && coords.suggestedAddress) {
+                if (coords.suggestedAddress) {
                   setAddress(coords.suggestedAddress);
                 }
               }}
             />
+
+            <FormField
+              id="prof-address"
+              label="نشانی ثبت‌شده از روی نقشه (در صورت نیاز قابل ویرایش است)"
+              required
+            >
+              <Input
+                id="prof-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="با لمس موقعیت سالن روی نقشه بالا، آدرس و لینک گوگل‌مپ خودکار ثبت می‌شود"
+              />
+            </FormField>
 
             <FormField
               id="prof-short"
@@ -3032,7 +3176,7 @@ export const BusinessProfileEditPage: React.FC = () => {
 
 /** ۹. ساعات کاری هفتگی (/app/working-hours) */
 export const BusinessWorkingHoursPage: React.FC = () => {
-  const { currentBusiness, businesses, updateBusinessWorkingHours } =
+  const { currentBusiness, businesses, updateBusinessWorkingHours, showToast } =
     usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [hours, setHours] = useState(currentBiz?.workingHours ?? []);
@@ -3057,6 +3201,21 @@ export const BusinessWorkingHoursPage: React.FC = () => {
     );
   };
 
+  const handleApplyDayToAllWeek = (sourceIdx: number) => {
+    const sourceDay = hours[sourceIdx];
+    if (!sourceDay) return;
+    setHours((prev) =>
+      prev.map((item) => ({
+        ...item,
+        openTime: sourceDay.openTime,
+        closeTime: sourceDay.closeTime,
+      }))
+    );
+    showToast(
+      `ساعت کاری (${sourceDay.openTime} تا ${sourceDay.closeTime}) روی تمام روزهای هفته اعمال شد.`
+    );
+  };
+
   const openDaysCount = hours.filter((h) => h.isOpen).length;
 
   return (
@@ -3064,7 +3223,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
       <PageHeader
         kicker="کسب‌وکار · برنامه پذیرش"
         title="تنظیم ساعات کاری هفتگی"
-        subtitle="تعیین روزهای کاری یا تعطیل و ویرایش ساعت شروع و پایان پذیرش نوبت آنلاین"
+        subtitle="بدون نیاز به تایپ دستی، ساعت شروع و پایان را از فهرست انتخاب کنید و با یک دکمه روی تمام روزهای هفته اعمال نمایید"
         routePattern="/app/working-hours"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -3074,6 +3233,23 @@ export const BusinessWorkingHoursPage: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <Card padding="lg" className="lg:col-span-8 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
+            <span className="text-xs font-extrabold text-[#061138]">
+              انتخاب سریع بازه ساعت کاری روزهای هفته
+            </span>
+            {hours.length > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleApplyDayToAllWeek(0)}
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>اعمال ساعت شنبه روی تمام روزهای هفته</span>
+              </Button>
+            ) : null}
+          </div>
+
           <div className="divide-y divide-[#E6E0F5]">
             {hours.map((d, idx) => (
               <div
@@ -3091,26 +3267,45 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                 </label>
 
                 {d.isOpen ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
                       value={d.openTime}
                       onChange={(e) =>
                         handleTimeChange(idx, 'openTime', e.target.value)
                       }
                       aria-label={`ساعت شروع ${d.dayName}`}
-                      className="w-22 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
-                    />
-                    <span className="text-[#6B6480] text-xs">تا</span>
-                    <input
-                      type="text"
+                      className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
+                    >
+                      {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                        <option key={`open-${d.dayName}-${t}`} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[#6B6480] text-xs font-bold">تا</span>
+                    <select
                       value={d.closeTime}
                       onChange={(e) =>
                         handleTimeChange(idx, 'closeTime', e.target.value)
                       }
                       aria-label={`ساعت پایان ${d.dayName}`}
-                      className="w-22 rounded-xl border border-[#D4C9EE] bg-white px-2.5 py-1.5 text-xs font-bold text-center tabular-nums focus:outline-none focus:border-[#8B5CF6]"
-                    />
+                      className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
+                    >
+                      {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                        <option key={`close-${d.dayName}-${t}`} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    {idx === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleApplyDayToAllWeek(idx)}
+                        className="text-[11px] font-extrabold text-[#0057FF] bg-[#E0ECFF] hover:bg-[#0057FF] hover:text-white px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        اعمال به کل هفته
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
                   <StatusBadge label="تعطیل" tone="neutral" />
@@ -3412,8 +3607,24 @@ export const BusinessMarketingPage: React.FC = () => {
         </Card>
       ) : null}
 
+      {/* بنر قفل امکانات باشگاه پیامکی و کمپین تخفیف در پلن رایگان */}
+      {isFreeSubscriptionPlan(activePlanId, currentBiz?.subscriptionPlan) &&
+      extraSms <= 0 ? (
+        <PlanUpgradeLockBanner
+          featureTitle="ارسال پیامک گروهی باشگاه مشتریان و کمپین‌های تخفیف خودکار"
+          description="در پلن شروع رایگان سهمیه پیامک ماهانه ۰ است. برای فعال‌سازی سهمیه پیامک ماهانه و باشگاه مشتریان، پلن حرفه‌ای تهیه کنید یا بسته پیامک اضافه بخرید."
+        />
+      ) : null}
+
       {/* پنل اختصاصی ارسال پیامک به مشتریان سالن + گزارش دقیق مصرف و سهمیه باقی‌مانده */}
-      <Card className="border-2 border-[#0057FF]/30 bg-white space-y-5">
+      <Card
+        className={`border-2 border-[#0057FF]/30 bg-white space-y-5 ${
+          isFreeSubscriptionPlan(activePlanId, currentBiz?.subscriptionPlan) &&
+          extraSms <= 0
+            ? 'opacity-75'
+            : ''
+        }`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-[#0057FF] text-white flex items-center justify-center shrink-0">
@@ -4074,20 +4285,76 @@ export const BusinessMarketingPage: React.FC = () => {
 
 /** ۱۱. گزارش‌ها و آمار عملکرد (/app/analytics) */
 export const BusinessAnalyticsPage: React.FC = () => {
-  const popularBreakdown = [
-    { name: 'پروتئین‌تراپی و احیای مو', pct: 42, amount: 27200000 },
-    { name: 'کوتاهی ژورنالی و براشینگ', pct: 28, amount: 18100000 },
-    { name: 'مانیکور روسی و لمینت ناخن', pct: 18, amount: 11600000 },
-    { name: 'میکاپ و شینیون محفلی', pct: 12, amount: 7900000 },
-  ];
+  const {
+    currentBusiness,
+    businesses,
+    appointments,
+    customers,
+    activePlanId,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
+  const isFreePlan = isFreeSubscriptionPlan(
+    activePlanId,
+    currentBiz?.subscriptionPlan
+  );
+
+  const bizAppointments = currentBiz
+    ? appointments.filter(
+        (a) =>
+          a.businessId === currentBiz.id ||
+          a.businessSlug === currentBiz.slug ||
+          a.businessName === currentBiz.name
+      )
+    : [];
+  const bizCustomers = currentBiz
+    ? customers.filter((c) => !c.businessId || c.businessId === currentBiz.id)
+    : [];
+
+  const activeOrDoneAppointments = bizAppointments.filter(
+    (a) => a.status !== AppointmentStatus.Cancelled
+  );
+  const totalRevenueToman = activeOrDoneAppointments.reduce(
+    (sum, a) => sum + (a.priceToman || 0),
+    0
+  );
+  const repeatCustomersCount = bizCustomers.filter(
+    (c) => (c.totalVisits ?? 0) >= 2
+  ).length;
+  const repeatRatePct =
+    bizCustomers.length > 0
+      ? Math.round((repeatCustomersCount / bizCustomers.length) * 100)
+      : 0;
+
+  const serviceRevenueMap = new Map<string, number>();
+  for (const apt of activeOrDoneAppointments) {
+    const prev = serviceRevenueMap.get(apt.serviceTitle) ?? 0;
+    serviceRevenueMap.set(apt.serviceTitle, prev + (apt.priceToman || 0));
+  }
+  const popularBreakdown = Array.from(serviceRevenueMap.entries()).map(
+    ([name, amount]) => ({
+      name,
+      amount,
+      pct:
+        totalRevenueToman > 0
+          ? Math.max(5, Math.round((amount / totalRevenueToman) * 100))
+          : 0,
+    })
+  );
 
   const monthlyTrend = [
-    { month: 'خرداد', value: 41, label: '۴۱ م' },
-    { month: 'تیر', value: 48, label: '۴۸ م' },
-    { month: 'مرداد', value: 52, label: '۵۲ م' },
-    { month: 'شهریور', value: 59, label: '۵۹ م' },
-    { month: 'مهر', value: 56, label: '۵۶ م' },
-    { month: 'آبان', value: 65, label: '۶۴.۸ م' },
+    { month: 'خرداد', value: 0, label: '۰' },
+    { month: 'تیر', value: 0, label: '۰' },
+    { month: 'مرداد', value: 0, label: '۰' },
+    { month: 'شهریور', value: 0, label: '۰' },
+    { month: 'مهر', value: 0, label: '۰' },
+    {
+      month: 'آبان',
+      value: Math.round(totalRevenueToman / 1000000),
+      label:
+        totalRevenueToman > 0
+          ? `${toPersianDigits(Math.round(totalRevenueToman / 100000) / 10)} م`
+          : '۰',
+    },
   ];
 
   return (
@@ -4095,7 +4362,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
       <PageHeader
         kicker="مالی · گزارش عملکرد"
         title="گزارش‌ها و آمار عملکرد سالن"
-        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و سهم هر لاین خدمتی از کل درآمد"
+        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و سهم هر لاین خدمتی از کل درآمد بر اساس نوبت‌های واقعی ثبت‌شده"
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -4103,14 +4370,21 @@ export const BusinessAnalyticsPage: React.FC = () => {
         ]}
       />
 
+      {isFreePlan ? (
+        <PlanUpgradeLockBanner
+          featureTitle="گزارش‌های تحلیلی پیشرفته، تفکیک پورسانت متخصصان و خروجی مالی اکسل"
+          description="در پلن شروع رایگان خلاصه پایه نمایش داده می‌شود. برای دسترسی به تحلیل کامل مالی و تفکیک عملکرد هر پرسنل، پلن سالن خود را به حرفه‌ای یا VIP ارتقا دهید."
+        />
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">درآمد کل ماه جاری</p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
-            {formatPriceToman(64800000)}
+            {totalRevenueToman > 0 ? formatPriceToman(totalRevenueToman) : '۰ تومان'}
           </p>
-          <p className="text-xs text-[#10B981] font-semibold">
-            بر اساس ۱۰۲ نوبت انجام‌شده (+۱۴٪ رشد)
+          <p className="text-xs text-[#64748B] font-semibold tabular-nums">
+            بر اساس {toPersianDigits(activeOrDoneAppointments.length)} نوبت ثبت‌شده
           </p>
         </Card>
         <Card className="space-y-2">
@@ -4118,58 +4392,87 @@ export const BusinessAnalyticsPage: React.FC = () => {
             نرخ بازگشت مجدد مشتریان
           </p>
           <p className="text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
-            {toPersianDigits(76)}٪
+            {toPersianDigits(repeatRatePct)}٪
           </p>
-          <p className="text-xs text-[#6B6480]">
-            مراجعه بیش از ۲ بار در فصل جاری
+          <p className="text-xs text-[#6B6480] tabular-nums">
+            از مجموع {toPersianDigits(bizCustomers.length)} مشتری ثبت‌شده در پرونده‌ها
           </p>
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            میانگین امتیاز رضایت مشتریان
+            دیدگاه‌ها و امتیاز مشتریان
           </p>
           <p className="text-2xl font-extrabold text-[#F59E0B] tabular-nums">
-            ★ {toPersianDigits(4.9)} از ۵
+            {currentBiz?.reviewCount
+              ? `★ ${toPersianDigits(currentBiz.rating)} از ۵`
+              : 'بدون دیدگاه (جدید)'}
           </p>
-          <p className="text-xs text-[#6B6480]">بر اساس ۱۴۲ دیدگاه ثبت‌شده</p>
+          <p className="text-xs text-[#6B6480] tabular-nums">
+            بر اساس {toPersianDigits(currentBiz?.reviewCount ?? 0)} دیدگاه ثبت‌شده
+          </p>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div
+        className={`grid grid-cols-1 lg:grid-cols-12 gap-6 ${
+          isFreePlan ? 'opacity-60 pointer-events-none select-none' : ''
+        }`}
+      >
         <Card className="lg:col-span-7 space-y-4">
-          <h2 className="text-base font-extrabold text-[#1E1B2E]">
-            سهم خدمات پرطرفدار از درآمد ماهانه
-          </h2>
-          <div className="space-y-4">
-            {popularBreakdown.map((item) => (
-              <div key={item.name} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-extrabold text-[#1E1B2E]">
-                    {item.name}
-                  </span>
-                  <span className="tabular-nums text-[#6B6480] font-semibold">
-                    {toPersianDigits(item.pct)}٪ ({formatPriceToman(item.amount)}
-                    )
-                  </span>
-                </div>
-                <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
-                  <div
-                    className="h-full bg-[#8B5CF6] rounded-full"
-                    style={{ width: `${item.pct}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-extrabold text-[#1E1B2E]">
+              سهم خدمات از درآمد ماهانه
+            </h2>
+            {isFreePlan ? (
+              <StatusBadge label="🔒 ویژه پلن حرفه‌ای" tone="warning" />
+            ) : null}
           </div>
+          {popularBreakdown.length === 0 ? (
+            <div className="p-6 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1">
+              <p className="text-xs font-extrabold text-[#061138]">
+                هنوز تراکنش یا نوبت انجام‌شده‌ای ثبت نشده است
+              </p>
+              <p className="text-[11px] text-[#64748B]">
+                به محض ثبت اولین نوبت‌های سالن شما، نمودار سهم درآمد هر خدمت به صورت خودکار محاسبه می‌شود.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {popularBreakdown.map((item) => (
+                <div key={item.name} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-[#1E1B2E]">
+                      {item.name}
+                    </span>
+                    <span className="tabular-nums text-[#6B6480] font-semibold">
+                      {toPersianDigits(item.pct)}٪ ({formatPriceToman(item.amount)}
+                      )
+                    </span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
+                    <div
+                      className="h-full bg-[#8B5CF6] rounded-full"
+                      style={{ width: `${item.pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         <Card className="lg:col-span-5 space-y-4 flex flex-col justify-between">
           <div>
-            <h2 className="text-base font-extrabold text-[#1E1B2E]">
-              روند ۶ ماهه درآمد سالن (میلیون تومان)
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-extrabold text-[#1E1B2E]">
+                روند ۶ ماهه درآمد سالن
+              </h2>
+              {isFreePlan ? (
+                <StatusBadge label="🔒 ویژه پلن حرفه‌ای" tone="warning" />
+              ) : null}
+            </div>
             <p className="text-xs text-[#6B6480] mt-0.5">
-              رشد پیوسته پس از فعال‌سازی رزرو آنلاین
+              نمودار درآمد ماهانه بر اساس نوبت‌های ثبت‌شده در سیستم
             </p>
           </div>
 
@@ -4184,7 +4487,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
                 </span>
                 <div
                   className="w-full max-w-[30px] rounded-t-lg bg-[#8B5CF6]"
-                  style={{ height: `${Math.round((m.value / 70) * 100)}%` }}
+                  style={{
+                    height: `${Math.max(6, Math.min(100, m.value * 5))}%`,
+                  }}
                 />
                 <span className="text-[11px] font-semibold text-[#6B6480]">
                   {m.month}

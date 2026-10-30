@@ -10,7 +10,11 @@ import {
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { SponsoredPlacementSlot } from '../../types';
-import { formatPriceToman, toPersianDigits } from '../../utils/formatters';
+import {
+  computeAdPackagePriceAndTitle,
+  formatPriceToman,
+  toPersianDigits,
+} from '../../utils/formatters';
 import { Button } from './Button';
 import { FormField } from './FormField';
 import { Input } from './Input';
@@ -74,14 +78,24 @@ export const EasyCheckoutModal: React.FC<{
 
   if (!item) return null;
 
-  const computedAmount =
+  const dynamicAdCalc =
     item.itemType === 'AD_PACKAGE'
-      ? durationDays === 7
-        ? item.weeklyAmountToman || Math.round(item.baseAmountToman * 0.4)
-        : durationDays === 14
-        ? Math.round(item.baseAmountToman * 0.6)
-        : item.baseAmountToman
-      : item.baseAmountToman;
+      ? computeAdPackagePriceAndTitle({
+          placementSlot,
+          durationDays,
+          fallbackBaseAmount: item.baseAmountToman,
+          fallbackWeeklyAmount: item.weeklyAmountToman,
+          fallbackTitle: item.itemTitle,
+        })
+      : null;
+
+  const computedAmount = dynamicAdCalc
+    ? dynamicAdCalc.amountToman
+    : item.baseAmountToman;
+
+  const resolvedItemTitle = dynamicAdCalc
+    ? dynamicAdCalc.title
+    : item.itemTitle;
 
   const handleCopyCard = () => {
     navigator.clipboard?.writeText(paymentConfig.cardNumber);
@@ -109,8 +123,8 @@ export const EasyCheckoutModal: React.FC<{
         itemId: item.itemId,
         itemTitle:
           item.itemType === 'AD_PACKAGE'
-            ? `${item.itemTitle} (${toPersianDigits(durationDays)} روزه)`
-            : item.itemTitle,
+            ? `${resolvedItemTitle} (${toPersianDigits(durationDays)} روزه)`
+            : resolvedItemTitle,
         amountToman: computedAmount,
         paymentMethod,
         trackingCode: finalTracking,
@@ -144,7 +158,7 @@ export const EasyCheckoutModal: React.FC<{
           ? 'تشکر از پرداخت شما · فعال‌سازی موفق امکانات'
           : 'درگاه پرداخت سریع تایم تو (بله‌پی و کارت‌به‌کارت)'
       }
-      description={`${item.itemTitle} — بدون نیاز به رمز دوم پویا در مرورگر`}
+      description={`${resolvedItemTitle} — بدون نیاز به رمز دوم پویا در مرورگر`}
     >
       {completedOrderId ? (
         <div className="space-y-4 text-xs py-2">
@@ -153,7 +167,7 @@ export const EasyCheckoutModal: React.FC<{
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <h3 className="text-base font-extrabold text-[#065F46]">
-              با تشکر! پرداخت «{item.itemTitle}» با موفقیت ثبت شد
+              با تشکر! پرداخت «{resolvedItemTitle}» با موفقیت ثبت شد
             </h3>
             <p className="text-xs text-[#047857] leading-relaxed">
               کد رهگیری سفارش شما:{' '}
@@ -187,7 +201,7 @@ export const EasyCheckoutModal: React.FC<{
                 سفارش انتخابی برای «{businessName}»:
               </span>
               <span className="text-sm font-extrabold text-[#061138]">
-                {item.itemTitle}
+                {resolvedItemTitle}
               </span>
             </div>
             <div className="text-left">
@@ -225,15 +239,15 @@ export const EasyCheckoutModal: React.FC<{
                   options={[
                     {
                       value: 'SEARCH_TOP',
-                      label: 'صدر نتایج جست‌وجو (/search)',
+                      label: 'صدر نتایج جست‌وجو (۴۹۰ هزار ماهانه / ۱۹۰ هفتگی)',
                     },
                     {
                       value: 'HOME_BANNER',
-                      label: 'بنر ویژه در صفحه اول سایت (/)',
+                      label: 'بنر ویژه در صفحه اول سایت (۸۹۰ هزار ماهانه / ۳۵۰ هفتگی)',
                     },
                     {
                       value: 'HERO_SPOTLIGHT',
-                      label: 'ویترین اول هیرو + صدر جست‌وجو (VIP)',
+                      label: 'ویترین اول هیرو + صدر جست‌وجو VIP (۱,۲۹۰ ماهانه / ۴۹۰ هفتگی)',
                     },
                   ]}
                 />

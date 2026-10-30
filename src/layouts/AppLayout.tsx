@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { PublicHeader } from '../components/navigation/PublicHeader';
 import { PublicFooter } from '../components/navigation/PublicFooter';
 import { PublicMobileBottomNav } from '../components/navigation/PublicMobileBottomNav';
 import {
+  BUSINESS_PRIMARY_NAV_GROUPS,
   BusinessAvatarProfileMenu,
   BusinessCategorySubTabs,
   BusinessStickyBottomNav,
@@ -27,6 +28,7 @@ import {
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { TimetoAuthModal } from '../components/auth/TimetoAuthModal';
+import { resolveAdjacentTabBySwipe } from '../utils/formatters';
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -34,8 +36,13 @@ export interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const pathname = location.pathname;
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [touchStartCoords, setTouchStartCoords] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [visitorRole, setVisitorRole] = useState<VisitorEntryRole>(() =>
     getSavedVisitorRole()
   );
@@ -108,6 +115,55 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     { to: '/me/profile', label: 'اطلاعات کاربری' },
   ];
 
+  // لیست صفحه‌های قابل جابه‌جایی با سوایپ چپ و راست در پنل کسب‌وکار (/app/*)
+  const activeBusinessGroup = BUSINESS_PRIMARY_NAV_GROUPS.find((grp) =>
+    grp.matchPaths.includes(pathname)
+  );
+  const businessSwipeRouteIds =
+    activeBusinessGroup && activeBusinessGroup.subTabs.length > 1
+      ? activeBusinessGroup.subTabs.map((t) => t.to)
+      : BUSINESS_PRIMARY_NAV_GROUPS.map((g) => g.defaultPath);
+  const activeBusinessSwipeId =
+    activeBusinessGroup && activeBusinessGroup.subTabs.length > 1
+      ? pathname
+      : (activeBusinessGroup?.defaultPath ?? '/app');
+
+  const handleMainTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    const targetEl = e.target as HTMLElement | null;
+    if (
+      targetEl?.closest(
+        'input, select, textarea, [data-no-swipe="true"], .no-scrollbar'
+      )
+    ) {
+      setTouchStartCoords(null);
+      return;
+    }
+    const t = e.touches[0];
+    if (t) {
+      setTouchStartCoords({ x: t.clientX, y: t.clientY });
+    }
+  };
+
+  const handleMainTouchEnd = (
+    e: React.TouchEvent<HTMLElement>,
+    routeList: string[],
+    currentRoute: string
+  ) => {
+    const t = e.changedTouches[0];
+    if (!touchStartCoords || !t) return;
+    const nextRoute = resolveAdjacentTabBySwipe(
+      routeList,
+      currentRoute,
+      t.clientX - touchStartCoords.x,
+      t.clientY - touchStartCoords.y,
+      68
+    );
+    setTouchStartCoords(null);
+    if (nextRoute && nextRoute !== pathname) {
+      navigate(nextRoute);
+    }
+  };
+
   const pendingCount = appointments.filter(
     (a) => a.status === 'PENDING'
   ).length;
@@ -155,7 +211,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 />
                 <div className="min-w-0">
                   <span className="text-xs sm:text-sm font-black text-[#061138] truncate block group-hover:text-[#0057FF] transition-colors">
-                    {currentBusiness?.name ?? 'سالن زیبایی رویال گلزار'}
+                    {currentBusiness?.name ?? 'سالن زیبایی من'}
                   </span>
                   <span className="text-[11px] font-semibold text-[#64748B] truncate block">
                     {currentRouteMeta?.title ?? 'پیشخوان مدیریت کسب‌وکار'}
@@ -185,8 +241,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {/* نوار تب‌های زیرمجموعه در صورت وجود زیربخش (نوبت‌ها، سالن من، مشتریان، مالی و پلن) */}
           <BusinessCategorySubTabs />
 
-          {/* محتوای اصلی صفحه با فاصله پایین برای نوار چسبان پایین */}
-          <main className="flex-1 max-w-[1140px] w-full mx-auto p-4 sm:p-6 lg:p-8 pb-28 min-w-0">
+          {/* محتوای اصلی صفحه با فاصله پایین برای نوار چسبان پایین + سوایپ چپ و راست بین تب‌ها */}
+          <main
+            onTouchStart={handleMainTouchStart}
+            onTouchEnd={(e) =>
+              handleMainTouchEnd(
+                e,
+                businessSwipeRouteIds,
+                activeBusinessSwipeId
+              )
+            }
+            className="flex-1 max-w-[1140px] w-full mx-auto p-4 sm:p-6 lg:p-8 pb-28 min-w-0"
+          >
             {children}
           </main>
 
@@ -235,7 +301,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
           ) : null}
 
-          <main className="flex-1 max-w-[1240px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0">
+          <main
+            onTouchStart={isCustomerAccountArea ? handleMainTouchStart : undefined}
+            onTouchEnd={
+              isCustomerAccountArea
+                ? (e) =>
+                    handleMainTouchEnd(
+                      e,
+                      customerTabs.map((t) => t.to),
+                      pathname
+                    )
+                : undefined
+            }
+            className="flex-1 max-w-[1240px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0"
+          >
             <PWAMobileInstallBanner />
             {children}
           </main>

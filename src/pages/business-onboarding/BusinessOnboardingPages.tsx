@@ -28,10 +28,14 @@ import {
 import { BusinessType, SubscriptionPlanItem } from '../../types';
 import {
   formatDurationMinutes,
+  formatNumericInputWithCommas,
   formatPriceToman,
   getPlanStaffLimitCount,
+  getSuggestedServiceTitlesForCategory,
   isValidIranMobile,
   normalizeIranMobileInput,
+  parseNumericInput,
+  STANDARD_WORKING_TIME_OPTIONS,
   suggestSlugFromName,
   toPersianDigits,
   validateBusinessRegistrationDraft,
@@ -505,41 +509,27 @@ export const BusinessRegisterPage: React.FC = () => {
               <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-extrabold text-[#061138]">
-                    ۴. انتخاب لوکیشن روی نقشه (تکمیل خودکار آدرس) و لینک صفحه
+                    ۴. انتخاب لوکیشن روی نقشه (ثبت خودکار آدرس و لینک گوگل‌مپ)
                   </h2>
-                  <span className="text-[11px] font-bold text-[#059669] bg-[#ECFDF5] px-2.5 py-1 rounded-full border border-[#10B981]/30">
-                    با کلیک روی نقشه یا انتخاب محله، آدرس خودکار پر می‌شود
-                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                  <FormField
+                <FormField
+                  id="reg-city"
+                  label="شهر"
+                  required
+                  error={errors.city}
+                >
+                  <Select
                     id="reg-city"
-                    label="شهر"
-                    required
-                    error={errors.city}
-                  >
-                    <Select
-                      id="reg-city"
-                      value={onboardingDraft.city}
-                      onChange={(e) =>
-                        updateOnboardingDraft({ city: e.target.value })
-                      }
-                      options={IRAN_CITIES.map((c) => ({ value: c, label: c }))}
-                    />
-                  </FormField>
+                    value={onboardingDraft.city}
+                    onChange={(e) =>
+                      updateOnboardingDraft({ city: e.target.value })
+                    }
+                    options={IRAN_CITIES.map((c) => ({ value: c, label: c }))}
+                  />
+                </FormField>
 
-                  <div className="p-3 rounded-xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between text-xs">
-                    <span className="text-[#334155] font-bold">
-                      محله انتخاب‌شده از نقشه:
-                    </span>
-                    <span className="font-extrabold text-[#0057FF]">
-                      {onboardingDraft.neighborhood || 'چهارباغ بالا'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* انتخاب موقعیت روی نقشه با قابلیت باز کردن گوگل‌مپ، GPS و تکمیل خودکار نشانی */}
+                {/* انتخاب موقعیت روی نقشه با ثبت خودکار لینک گوگل‌مپ و نشانی */}
                 <LocationMapPicker
                   city={onboardingDraft.city}
                   neighborhood={onboardingDraft.neighborhood}
@@ -560,7 +550,7 @@ export const BusinessRegisterPage: React.FC = () => {
                       address: suggestedAddress || onboardingDraft.address,
                     });
                     showToast(
-                      'موقعیت سالن ثبت شد و نشانی به صورت خودکار از روی نقشه تکمیل گردید.',
+                      'لوکیشن و لینک گوگل‌مپ به صورت خودکار به عنوان نشانی ثبت شد.',
                       'success'
                     );
                   }}
@@ -568,7 +558,7 @@ export const BusinessRegisterPage: React.FC = () => {
 
                 <FormField
                   id="reg-address"
-                  label="نشانی سالن (تکمیل‌شده به صورت خودکار از روی نقشه — در صورت نیاز پلاک یا واحد را اضافه کنید)"
+                  label="نشانی ثبت‌شده از روی نقشه (در صورت نیاز قابل ویرایش است)"
                   required
                 >
                   <Input
@@ -711,11 +701,13 @@ export const BusinessOnboardingStepPage: React.FC = () => {
 
   const handleAddService = (e: React.FormEvent) => {
     e.preventDefault();
+    const numericPrice = parseNumericInput(srvPrice);
+    const numericDur = parseNumericInput(srvDuration) || 60;
     const check = validateServiceForm({
       title: srvTitle,
       category: srvCategory,
-      durationMinutes: Number(srvDuration),
-      priceToman: Number(srvPrice),
+      durationMinutes: numericDur,
+      priceToman: numericPrice,
     });
     if (!check.isValid) {
       setSrvError(Object.values(check.errors)[0] ?? 'خطا در ورودی خدمت');
@@ -729,8 +721,8 @@ export const BusinessOnboardingStepPage: React.FC = () => {
           id: `onb-srv-${Date.now()}`,
           title: srvTitle.trim(),
           category: srvCategory,
-          durationMinutes: Number(srvDuration),
-          priceToman: Number(srvPrice),
+          durationMinutes: numericDur,
+          priceToman: numericPrice,
         },
       ],
     });
@@ -820,21 +812,6 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-3"
             >
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
-                <div className="sm:col-span-2">
-                  <FormField
-                    id="onb-srv-title"
-                    label="عنوان خدمت"
-                    required
-                    error={srvError}
-                  >
-                    <Input
-                      id="onb-srv-title"
-                      value={srvTitle}
-                      onChange={(e) => setSrvTitle(e.target.value)}
-                      placeholder="مثلاً بالیاژ و لایت مو..."
-                    />
-                  </FormField>
-                </div>
                 <FormField id="onb-srv-cat" label="دسته‌بندی">
                   <Select
                     id="onb-srv-cat"
@@ -846,39 +823,59 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                     }))}
                   />
                 </FormField>
+                <div className="sm:col-span-2">
+                  <FormField
+                    id="onb-srv-title"
+                    label="عنوان خدمت"
+                    required
+                    error={srvError}
+                  >
+                    <Input
+                      id="onb-srv-title"
+                      value={srvTitle}
+                      onChange={(e) => setSrvTitle(e.target.value)}
+                      placeholder="نام خدمت را بنویسید یا از پیشنهادهای زیر انتخاب کنید..."
+                    />
+                  </FormField>
+                </div>
                 <FormField id="onb-srv-price" label="تعرفه (تومان)" required>
                   <Input
                     id="onb-srv-price"
                     dir="ltr"
-                    type="number"
-                    value={srvPrice}
-                    onChange={(e) => setSrvPrice(e.target.value)}
+                    type="text"
+                    inputMode="numeric"
+                    value={formatNumericInputWithCommas(srvPrice)}
+                    onChange={(e) =>
+                      setSrvPrice(formatNumericInputWithCommas(e.target.value))
+                    }
+                    placeholder="450,000"
                   />
                 </FormField>
               </div>
 
-              {/* انتخاب سریع دسته‌بندی خدمت برای سهولت در موبایل و دسکتاپ */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="text-[11px] font-bold text-[#64748B] ml-1">
-                  انتخاب سریع دسته:
+              {/* پیشنهاد سریع نام خدمت بر اساس دسته‌بندی انتخاب‌شده */}
+              <div className="space-y-1.5 pt-0.5">
+                <span className="text-[11px] font-bold text-[#64748B] block">
+                  پیشنهاد سریع نام خدمت در دسته «{srvCategory}» (با لمس انتخاب می‌شود):
                 </span>
-                {effectiveCategories.map((cat) => {
-                  const isSelected = srvCategory === cat.title;
-                  return (
-                    <button
-                      key={cat.slug}
-                      type="button"
-                      onClick={() => setSrvCategory(cat.title)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-all border ${
-                        isSelected
-                          ? 'bg-[#0057FF] text-white border-[#0057FF]'
-                          : 'bg-white text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
-                      }`}
-                    >
-                      {cat.title}
-                    </button>
-                  );
-                })}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {getSuggestedServiceTitlesForCategory(srvCategory).map(
+                    (sug) => (
+                      <button
+                        key={sug}
+                        type="button"
+                        onClick={() => setSrvTitle(sug)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-bold cursor-pointer transition-all border ${
+                          srvTitle === sug
+                            ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                            : 'bg-white text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
+                        }`}
+                      >
+                        + {sug}
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
@@ -1124,6 +1121,34 @@ export const BusinessOnboardingStepPage: React.FC = () => {
               />
             </div>
 
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E2E8F0]">
+              <span className="text-xs font-bold text-[#475569]">
+                بدون نیاز به تایپ دستی، ساعت شروع و پایان را انتخاب کنید:
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const first = onboardingDraft.workingHours[0];
+                  if (!first) return;
+                  updateOnboardingDraft({
+                    workingHours: onboardingDraft.workingHours.map((w) => ({
+                      ...w,
+                      openTime: first.openTime,
+                      closeTime: first.closeTime,
+                    })),
+                  });
+                  showToast(
+                    `ساعت کاری (${first.openTime} تا ${first.closeTime}) روی تمام روزهای هفته اعمال شد.`
+                  );
+                }}
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>اعمال ساعت شنبه روی تمام روزهای هفته</span>
+              </Button>
+            </div>
+
             <div className="divide-y divide-[#E2E8F0]">
               {onboardingDraft.workingHours.map((wh, index) => (
                 <div
@@ -1140,27 +1165,37 @@ export const BusinessOnboardingStepPage: React.FC = () => {
                     <span>{wh.dayName}</span>
                   </label>
                   {wh.isOpen ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-xs text-[#334155]">از</span>
-                      <input
-                        type="text"
+                      <select
                         value={wh.openTime}
                         onChange={(e) =>
                           handleTimeChange(index, 'openTime', e.target.value)
                         }
                         aria-label={`ساعت شروع ${wh.dayName}`}
-                        className="w-20 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] text-center tabular-nums"
-                      />
+                        className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] tabular-nums cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`onb-open-${wh.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
                       <span className="text-xs text-[#334155]">تا</span>
-                      <input
-                        type="text"
+                      <select
                         value={wh.closeTime}
                         onChange={(e) =>
                           handleTimeChange(index, 'closeTime', e.target.value)
                         }
                         aria-label={`ساعت پایان ${wh.dayName}`}
-                        className="w-20 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] text-center tabular-nums"
-                      />
+                        className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#0057FF] tabular-nums cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`onb-close-${wh.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   ) : (
                     <StatusBadge label="تعطیل" tone="neutral" />

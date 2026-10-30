@@ -102,13 +102,44 @@ const OriginalCustomerHomePage: React.FC = () => {
     'درچه',
     'چهارباغ بالا',
     'مرداویج',
+    'عروس و گریم VIP',
+    'داماد و پیرایش VIP',
     'پروتئین‌تراپی مو',
     'فیشیال تخصصی پوست',
     'کاشت و لمینت ناخن',
-    'اصلاح مردانه',
   ];
 
+  const [isAjaxSearching, setIsAjaxSearching] = useState(false);
   const normalizedQuery = searchKeyword.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!normalizedQuery) {
+      setIsAjaxSearching(false);
+      return;
+    }
+    setIsAjaxSearching(true);
+    const timer = window.setTimeout(() => {
+      setIsAjaxSearching(false);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [normalizedQuery]);
+
+  const smartMatchedCategories = normalizedQuery
+    ? categories
+        .filter(
+          (cat) =>
+            cat.title.toLowerCase().includes(normalizedQuery) ||
+            cat.subtitle.toLowerCase().includes(normalizedQuery) ||
+            cat.slug.toLowerCase().includes(normalizedQuery)
+        )
+        .slice(0, 3)
+    : [];
+
+  const smartMatchedNeighborhoods = normalizedQuery
+    ? ISFAHAN_NEIGHBORHOODS.filter((nb) =>
+        nb.toLowerCase().includes(normalizedQuery)
+      ).slice(0, 3)
+    : [];
 
   const smartMatchedSalons = normalizedQuery
     ? businesses
@@ -120,7 +151,7 @@ const OriginalCustomerHomePage: React.FC = () => {
               b.typeLabel.toLowerCase().includes(normalizedQuery) ||
               b.shortDescription.toLowerCase().includes(normalizedQuery))
         )
-        .slice(0, 3)
+        .slice(0, 4)
     : [];
 
   const smartMatchedSpecialists = normalizedQuery
@@ -145,10 +176,12 @@ const OriginalCustomerHomePage: React.FC = () => {
               srv.category.toLowerCase().includes(normalizedQuery) ||
               srv.description.toLowerCase().includes(normalizedQuery))
         )
-        .slice(0, 3)
+        .slice(0, 4)
     : [];
 
   const hasSmartResults =
+    smartMatchedCategories.length > 0 ||
+    smartMatchedNeighborhoods.length > 0 ||
     smartMatchedSalons.length > 0 ||
     smartMatchedSpecialists.length > 0 ||
     smartMatchedServices.length > 0;
@@ -318,8 +351,10 @@ const OriginalCustomerHomePage: React.FC = () => {
                     <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
                     <span>
                       {normalizedQuery
-                        ? `نتایج برای «${searchKeyword}»`
-                        : 'جست‌وجوهای پرتکرار'}
+                        ? isAjaxSearching
+                          ? 'در حال جست‌وجوی هوشمند زنده (AJAX)...'
+                          : `نتایج لحظه‌ای برای «${searchKeyword}»`
+                        : 'پیشنهادهای سریع جست‌وجو'}
                     </span>
                   </span>
                   <button
@@ -327,7 +362,7 @@ const OriginalCustomerHomePage: React.FC = () => {
                     onClick={() => setIsSearchFocused(false)}
                     className="text-[11px] font-bold text-[#64748B] hover:text-[#061138] cursor-pointer"
                   >
-                    بستن
+                    بستن ✕
                   </button>
                 </div>
 
@@ -365,11 +400,42 @@ const OriginalCustomerHomePage: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {(smartMatchedCategories.length > 0 ||
+                      smartMatchedNeighborhoods.length > 0) ? (
+                      <div className="flex flex-wrap items-center gap-1.5 pb-1 border-b border-[#F1F5F9]">
+                        {smartMatchedCategories.map((cat) => (
+                          <Link
+                            key={cat.id}
+                            to={`/search?category=${cat.slug}`}
+                            onClick={() => setIsSearchFocused(false)}
+                            className="px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-extrabold inline-flex items-center gap-1"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>دسته: {cat.title}</span>
+                          </Link>
+                        ))}
+                        {smartMatchedNeighborhoods.map((nb) => (
+                          <button
+                            key={nb}
+                            type="button"
+                            onClick={() => {
+                              setIsSearchFocused(false);
+                              navigate(`/search?q=${encodeURIComponent(nb)}`);
+                            }}
+                            className="px-3 py-1 rounded-full bg-[#F3F6FC] border border-[#CBD5E1] text-[#061138] hover:border-[#0057FF] text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <MapPin className="w-3 h-3 text-[#0057FF]" />
+                            <span>محله {nb}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
                     {smartMatchedSalons.length > 0 ? (
                       <div className="space-y-1.5">
                         <p className="text-[11px] font-bold text-[#64748B]">
-                          سالن‌ها
+                          سالن‌ها و مراکز زیبایی
                         </p>
                         {smartMatchedSalons.map((biz) => (
                           <Link
@@ -955,20 +1021,34 @@ export const HomePage: React.FC = () => {
     Boolean(ownedBusinessId) ||
     Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
 
+  const isExplicitIntroRoute =
+    typeof window !== 'undefined' && window.location.pathname === '/intro';
+
   // اگر کاربر قبلاً نقش «سالن‌دار» را انتخاب کرده و سالن ثبت‌شده دارد، مستقیم وارد پیشخوان سالن شود
   useEffect(() => {
     if (
       visitorRole === 'BUSINESS_OWNER' &&
       isBusinessOwnerRegistered &&
-      searchParams.get('intro') !== '1'
+      searchParams.get('intro') !== '1' &&
+      !isExplicitIntroRoute
     ) {
       navigate('/app', { replace: true });
     }
-  }, [visitorRole, isBusinessOwnerRegistered, navigate, searchParams]);
+  }, [
+    visitorRole,
+    isBusinessOwnerRegistered,
+    navigate,
+    searchParams,
+    isExplicitIntroRoute,
+  ]);
 
   const handleSelectCustomer = () => {
     saveVisitorRole('CUSTOMER');
     setVisitorRole('CUSTOMER');
+    if (isExplicitIntroRoute) {
+      navigate('/');
+      return;
+    }
     if (searchParams.get('intro') === '1') {
       setSearchParams({}, { replace: true });
     }
@@ -990,7 +1070,11 @@ export const HomePage: React.FC = () => {
     }
   };
 
-  if (visitorRole === null || searchParams.get('intro') === '1') {
+  if (
+    visitorRole === null ||
+    searchParams.get('intro') === '1' ||
+    isExplicitIntroRoute
+  ) {
     return (
       <TimetoFlagshipHome
         onSelectCustomerRole={handleSelectCustomer}
@@ -1088,21 +1172,29 @@ export const SearchPage: React.FC = () => {
       )
     : [];
 
+  const [neighborhoodFilter, setNeighborhoodFilter] = useState<string>('ALL');
+
   const handleResetFilters = () => {
     setQuery('');
     setTypeFilter('ALL');
     setCategoryFilter('ALL');
+    setNeighborhoodFilter('ALL');
     setMaxPrice(1000000);
     setMinRating(0);
     setSortBy('recommended');
     setSearchParams({});
   };
 
-  const quickNeighborhoodChips = ISFAHAN_NEIGHBORHOODS;
+  const finalFiltered =
+    neighborhoodFilter === 'ALL'
+      ? filtered
+      : filtered.filter((b) =>
+          b.neighborhood.includes(neighborhoodFilter)
+        );
 
   return (
     <div className="space-y-4">
-      {/* نوار مستقیم جست‌وجو و فیلتر بدون متن‌های اضافی بالا */}
+      {/* نوار مستقیم جست‌وجو و دسته‌بندی بدون شلوغی محله‌ها در بالا */}
       <div className="bg-white p-3 sm:p-4 rounded-3xl border border-[#CBD5E1] shadow-xs space-y-3">
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] focus-within:border-[#0057FF] focus-within:bg-white transition-colors">
@@ -1138,7 +1230,7 @@ export const SearchPage: React.FC = () => {
           </Button>
         </div>
 
-        {/* نوار دسته‌بندی‌های کپسولی با آیکون */}
+        {/* نوار دسته‌بندی‌های کپسولی با آیکون (شامل عروس و داماد) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
           <button
             type="button"
@@ -1171,59 +1263,74 @@ export const SearchPage: React.FC = () => {
             </button>
           ))}
         </div>
-
-        {/* چیپ‌های فیلتر سریع محله‌های اصفهان */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
-          <span className="text-[11px] font-bold text-[#64748B] shrink-0">
-            محله‌ها:
-          </span>
-          {quickNeighborhoodChips.map((nb) => {
-            const active = query === nb;
-            return (
-              <button
-                key={nb}
-                type="button"
-                onClick={() => setQuery(active ? '' : nb)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors border ${
-                  active
-                    ? 'bg-[#061138] text-white border-[#061138]'
-                    : 'bg-white text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
-                }`}
-              >
-                {nb}
-              </button>
-            );
-          })}
-        </div>
       </div>
+
+      {/* بک‌دراپ موبایل برای دراور فیلترها */}
+      {mobileFilterOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-[#061138]/60 backdrop-blur-xs lg:hidden"
+          onClick={() => setMobileFilterOpen(false)}
+          aria-hidden="true"
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <aside
           aria-label="فیلترهای جست‌وجو"
-          className={`lg:col-span-3 space-y-4 lg:sticky lg:top-20 ${
-            mobileFilterOpen ? 'block' : 'hidden lg:block'
+          className={`lg:col-span-3 lg:sticky lg:top-20 ${
+            mobileFilterOpen
+              ? 'fixed inset-x-0 bottom-0 z-50 max-h-[86vh] overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl border-t border-[#CBD5E1] lg:static lg:z-auto lg:max-h-none lg:p-0 lg:bg-transparent lg:shadow-none lg:border-0'
+              : 'hidden lg:block'
           }`}
         >
-          <Card className="rounded-3xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3">
-              <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-                فیلترهای هوشمند
-              </h2>
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="text-xs font-semibold text-[#8B5CF6] hover:underline cursor-pointer"
-              >
-                پاک کردن همه
-              </button>
+          <Card className="rounded-3xl space-y-4 border-0 lg:border p-0 lg:p-5 shadow-none lg:shadow-xs">
+            <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-3">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-[#0057FF]" />
+                <h2 className="text-sm font-extrabold text-[#061138]">
+                  فیلترهای پیشرفته
+                </h2>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-xs font-bold text-[#0057FF] hover:underline cursor-pointer"
+                >
+                  پاک کردن همه
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileFilterOpen(false)}
+                  aria-label="بستن فیلترها"
+                  className="lg:hidden px-2.5 py-1 rounded-full bg-[#F3F6FC] text-xs font-extrabold text-[#061138] hover:bg-[#E2E8F0] cursor-pointer"
+                >
+                  بستن ✕
+                </button>
+              </div>
             </div>
 
-            <FormField id="filter-query" label="جست‌وجوی سالن، متخصص، خدمت یا محله">
+            <FormField id="filter-query" label="جست‌وجوی سالن، متخصص یا خدمت">
               <Input
                 id="filter-query"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="مثلاً چهارباغ بالا، مرداویج، ناخن..."
+                placeholder="مثلاً فیشیال، ناخن، عروس..."
+              />
+            </FormField>
+
+            <FormField id="filter-neighborhood" label="انتخاب محله (اصفهان و درچه)">
+              <Select
+                id="filter-neighborhood"
+                value={neighborhoodFilter}
+                onChange={(e) => setNeighborhoodFilter(e.target.value)}
+                options={[
+                  { value: 'ALL', label: 'همه محله‌ها' },
+                  ...ISFAHAN_NEIGHBORHOODS.map((nb) => ({
+                    value: nb,
+                    label: nb,
+                  })),
+                ]}
               />
             </FormField>
 
@@ -1273,9 +1380,9 @@ export const SearchPage: React.FC = () => {
                 step={50000}
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
-                className="w-full accent-[#8B5CF6] cursor-pointer"
+                className="w-full accent-[#0057FF] cursor-pointer"
               />
-              <div className="flex justify-between text-[11px] text-[#6B6480] tabular-nums">
+              <div className="flex justify-between text-[11px] text-[#64748B] tabular-nums">
                 <span>۲۵۰,۰۰۰ تومان</span>
                 <span>۱,۰۰۰,۰۰۰ تومان</span>
               </div>
@@ -1293,6 +1400,16 @@ export const SearchPage: React.FC = () => {
                 ]}
               />
             </FormField>
+
+            <div className="pt-2 lg:hidden sticky bottom-0 bg-white pb-1">
+              <Button
+                variant="primary"
+                fullWidth
+                onClick={() => setMobileFilterOpen(false)}
+              >
+                اعمال فیلتر و مشاهده ({toPersianDigits(finalFiltered.length)} مرکز)
+              </Button>
+            </div>
           </Card>
         </aside>
 
@@ -1305,13 +1422,13 @@ export const SearchPage: React.FC = () => {
               <span>
                 نمایش{' '}
                 <strong className="font-extrabold text-[#1E1B2E]">
-                  {toPersianDigits(filtered.length)}
+                  {toPersianDigits(finalFiltered.length)}
                 </strong>{' '}
                 مرکز فعال
               </span>
-              <span className="inline-flex items-center gap-1 text-[#8B5CF6] font-bold">
+              <span className="inline-flex items-center gap-1 text-[#0057FF] font-bold">
                 <MapPin className="w-3.5 h-3.5" />
-                اصفهان
+                {neighborhoodFilter === 'ALL' ? 'اصفهان و درچه' : neighborhoodFilter}
               </span>
             </div>
 
@@ -1326,7 +1443,7 @@ export const SearchPage: React.FC = () => {
                 id="sort-select"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="rounded-full border border-[#D4C9EE] bg-[#FAF8FF] px-3.5 py-1.5 font-bold text-[#1E1B2E] focus:outline-none cursor-pointer"
+                className="rounded-full border border-[#CBD5E1] bg-[#F3F6FC] px-3.5 py-1.5 font-bold text-[#061138] focus:outline-none cursor-pointer"
               >
                 <option value="recommended">پیشنهادی</option>
                 <option value="rating_desc">بالاترین امتیاز</option>
@@ -1358,7 +1475,7 @@ export const SearchPage: React.FC = () => {
             </div>
           ) : null}
 
-          {filtered.length === 0 ? (
+          {finalFiltered.length === 0 ? (
             <EmptyState
               title="مرکزی مطابق با فیلترهای انتخابی شما یافت نشد"
               description="پیشنهاد می‌کنیم سقف قیمت، محله یا دسته‌بندی خدمت را تغییر دهید تا گزینه‌های بیشتری نمایش داده شوند."
@@ -1367,7 +1484,7 @@ export const SearchPage: React.FC = () => {
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {filtered.map((biz) => (
+              {finalFiltered.map((biz) => (
                 <BusinessCard
                   key={biz.id}
                   business={biz}
@@ -1384,15 +1501,15 @@ export const SearchPage: React.FC = () => {
   );
 };
 
-/** ۳. صفحه دسته‌بندی خدمات (/categories) */
+/** ۳. صفحه دسته‌بندی خدمات (/categories) — طراحی جمع‌وجور ۲ ستونه در موبایل */
 export const CategoriesPage: React.FC = () => {
   const { categories } = usePrototypeData();
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 sm:space-y-7">
       <PageHeader
         kicker="طبقه‌بندی خدمات زیبایی"
-        title="دسته‌بندی‌های خدمات زیبایی، پوست و پیرایش"
+        title="دسته‌بندی‌های خدمات زیبایی، عروس، داماد و پیرایش"
         subtitle="لاین خدمتی مورد نظر خود را انتخاب کنید تا سالن‌ها و متخصصان فعال آن حوزه را ببینید."
         breadcrumbs={[
           { label: 'صفحه اصلی', href: '/' },
@@ -1400,55 +1517,49 @@ export const CategoriesPage: React.FC = () => {
         ]}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
         {categories.map((category) => {
           const catImg = getBeautyPhotoUrl(category.title, category.subtitle);
           return (
-            <Card
+            <Link
               key={category.id}
-              padding="none"
-              variant="interactive"
-              className="rounded-3xl overflow-hidden flex flex-col justify-between group"
+              to={`/search?category=${category.slug}`}
+              className="group rounded-2xl sm:rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] shadow-2xs hover:shadow-md overflow-hidden flex flex-col justify-between transition-all"
             >
-              <div className="p-3 pb-0">
-                <div className="relative h-40 rounded-2xl overflow-hidden bg-[#EDE9FE]">
-                  <img
-                    src={catImg}
-                    alt={category.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/70 via-transparent to-transparent" />
-                  <span className="absolute bottom-3 right-3 px-3 py-1 rounded-full bg-white/92 backdrop-blur-md text-xs font-extrabold text-[#8B5CF6] tabular-nums">
-                    {toPersianDigits(category.serviceCount)} خدمت فعال
+              <div className="relative h-24 sm:h-36 overflow-hidden bg-[#E0ECFF]">
+                <img
+                  src={catImg}
+                  alt={category.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/80 via-[#061138]/25 to-transparent" />
+                <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-xs text-[10px] sm:text-xs font-extrabold text-[#0057FF] tabular-nums shadow-2xs">
+                  {toPersianDigits(category.serviceCount)} خدمت
+                </span>
+                <div className="absolute bottom-2 right-2.5 left-2.5 flex items-center gap-1.5 text-white">
+                  <span className="w-6 h-6 rounded-full bg-white/95 text-[#0057FF] flex items-center justify-center shrink-0 shadow-2xs">
+                    {CATEGORY_ICON_MAP[category.iconName] ?? (
+                      <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
+                    )}
                   </span>
-                </div>
-              </div>
-
-              <div className="p-5 space-y-3 flex-1 flex flex-col justify-between">
-                <div className="space-y-1.5">
-                  <h2 className="text-base font-extrabold text-[#1E1B2E]">
+                  <h2 className="text-xs sm:text-sm font-black truncate">
                     {category.title}
                   </h2>
-                  <p className="text-xs text-[#6B6480] leading-relaxed">
-                    {category.subtitle}
-                  </p>
-                  <p className="text-[11px] text-[#6B6480]">
-                    مراکز ارائه‌دهنده: {category.targetAudience}
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-[#F3EEFF]">
-                  <Link
-                    to={`/search?category=${category.slug}`}
-                    className="w-full py-2.5 px-4 rounded-full bg-[#EDE9FE] hover:bg-[#8B5CF6] text-[#8B5CF6] hover:text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
-                  >
-                    <span>مشاهده مراکز این دسته</span>
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                  </Link>
                 </div>
               </div>
-            </Card>
+
+              <div className="p-2.5 sm:p-4 flex-1 flex flex-col justify-between gap-2">
+                <p className="text-[11px] sm:text-xs text-[#475569] line-clamp-2 leading-relaxed">
+                  {category.subtitle}
+                </p>
+
+                <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] sm:text-xs font-extrabold text-[#0057FF]">
+                  <span>مشاهده مراکز</span>
+                  <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
+                </div>
+              </div>
+            </Link>
           );
         })}
       </div>

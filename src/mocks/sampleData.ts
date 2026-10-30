@@ -105,6 +105,24 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     targetAudience: 'مراکز اسپا و مراقبت بدن',
     iconName: 'HeartHandshake',
   },
+  {
+    id: 'cat-9',
+    slug: 'bridal',
+    title: 'عروس',
+    subtitle: 'پکیج VIP میکاپ و شینیون عروس، گریم سینمایی، تاج و تور و مشاوره تخصصی عروس',
+    serviceCount: 28,
+    targetAudience: 'سالن‌های تخصصی عروس و میکاپ‌آرتیست‌های VIP',
+    iconName: 'Crown',
+  },
+  {
+    id: 'cat-10',
+    slug: 'groom',
+    title: 'داماد',
+    subtitle: 'پکیج VIP گریم و پیرایش داماد، فیشیال و پاکسازی صورت داماد و استایلینگ روز مراسم',
+    serviceCount: 21,
+    targetAudience: 'آرایشگاه‌های تخصصی داماد و استودیوهای پیرایش VIP',
+    iconName: 'Award',
+  },
 ];
 
 export const SAMPLE_BUSINESSES: BusinessItem[] = [

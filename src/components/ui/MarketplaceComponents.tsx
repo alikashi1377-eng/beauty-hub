@@ -26,6 +26,7 @@ import {
   formatDurationMinutes,
   formatPriceToman,
   getAppointmentStatusMeta,
+  resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../../utils/formatters';
 import { Button } from './Button';
@@ -102,15 +103,33 @@ export const Avatar: React.FC<{
   );
 };
 
-/** ۲. تب‌های کپسولی با کنتراست بالا (Tabs) */
+/** ۲. تب‌های کپسولی با کنتراست بالا و پشتیبانی از سوایپ لمسی چپ و راست (Tabs) */
 export const Tabs: React.FC<{
   tabs: Array<{ id: string; label: string; count?: number; icon?: React.ReactNode }>;
   activeTab: string;
   onChange: (id: string) => void;
 }> = ({ tabs, activeTab, onChange }) => {
+  const [touchStartPos, setTouchStartPos] = useState<{ x: number; y: number } | null>(null);
+
   return (
     <div
       role="tablist"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (t) setTouchStartPos({ x: t.clientX, y: t.clientY });
+      }}
+      onTouchEnd={(e) => {
+        const t = e.changedTouches[0];
+        if (!touchStartPos || !t) return;
+        const nextId = resolveAdjacentTabBySwipe(
+          tabs.map((item) => item.id),
+          activeTab,
+          t.clientX - touchStartPos.x,
+          t.clientY - touchStartPos.y
+        );
+        if (nextId) onChange(nextId);
+        setTouchStartPos(null);
+      }}
       className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar"
     >
       {tabs.map((tab) => {

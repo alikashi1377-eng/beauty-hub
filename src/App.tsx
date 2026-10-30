@@ -148,6 +148,7 @@ export default function App() {
           <Routes>
             {/* ۱. محیط عمومی */}
             <Route path="/" element={<HomePage />} />
+            <Route path="/intro" element={<HomePage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
             <Route path="/pricing" element={<PricingPage />} />

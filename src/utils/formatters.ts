@@ -399,3 +399,231 @@ export function getUpcomingJalaliDays(count = 7): UpcomingJalaliDayItem[] {
   return result;
 }
 
+/**
+ * فرمت‌دهی زنده ورودی قیمت به صورت سه‌رقمی با کاما (مثلاً 650,000) و استخراج عدد خالص
+ */
+export function formatNumericInputWithCommas(raw: string | number): string {
+  const digits = toEnglishDigitsClient(String(raw)).replace(/\D/g, '');
+  if (!digits) return '';
+  const num = Number(digits);
+  if (!Number.isFinite(num) || num <= 0) return '';
+  return num.toLocaleString('en-US');
+}
+
+export function parseNumericInput(raw: string | number): number {
+  const digits = toEnglishDigitsClient(String(raw)).replace(/\D/g, '');
+  if (!digits) return 0;
+  const num = Number(digits);
+  return Number.isFinite(num) ? num : 0;
+}
+
+/**
+ * پیشنهاد هوشمند عنوان خدمات بر اساس دسته‌بندی انتخاب‌شده
+ */
+export const SERVICE_SUGGESTIONS_BY_CATEGORY: Record<string, string[]> = {
+  'عروس': [
+    'پکیج VIP میکاپ و شینیون عروس',
+    'میکاپ و گریم تخصصی عروس (ضدآب)',
+    'شینیون تخصصی عروس و نصب تاج و تور',
+    'پکیج کامل عقد و نامزدی عروس',
+    'مشاوره و تست میکاپ عروس',
+  ],
+  'داماد': [
+    'پکیج VIP پیرایش و گریم تخصصی داماد',
+    'اصلاح، استایلینگ مو و متعادل‌سازی چهره داماد',
+    'پاکسازی و فیشیال تخصصی پوست داماد',
+    'پکیج کامل عقد و فرمالیته داماد',
+  ],
+  'مو و رنگ': [
+    'کوتاهی ژورنالی و براشینگ تخصصی مو',
+    'بالیاژ، آمبره و سامبره تخصصی مو',
+    'رنگ و مش کامل با اولاپلکس',
+    'کراتین و احیای صافی ۱۰۰٪ مو',
+    'پروتئین‌تراپی و بوتاکس تراپی مو',
+    'شینیون تخصصی محفلی و استایلینگ',
+  ],
+  'آرایش و میکاپ': [
+    'میکاپ تخصصی محفلی و VIP',
+    'میکاپ لایت و اروپایی',
+    'شینیون مدرن و کرلی مو',
+    'گریم و کانتورینگ حرفه‌ای صورت',
+  ],
+  'ناخن': [
+    'کاشت ناخن پودر و ژل به همراه لاک‌ژل',
+    'ترمیم ناخن و طراحی تخصصی',
+    'لمینت و استحکام‌سازی ناخن طبیعی',
+    'مانیکور روسی و ژلیش ناخن طبیعی',
+    'پدیکور VIP و کف‌سابی اسپا',
+  ],
+  'پوست و فیشیال': [
+    'فیشیال تخصصی و پاکسازی عمیق پوست',
+    'هیدرافیشیال و آبرسانی چندمرحله‌ای',
+    'اسیدتراپی و درمان لک و جوش',
+    'کربوکسی‌تراپی و جوانسازی پوست',
+  ],
+  'ابرو و مژه': [
+    'اکستنشن مژه والیوم و مگاوالیوم',
+    'لیفت و لمینت مژه و ابرو با مواد کراتینه',
+    'طراحی، قرینه‌سازی و اصلاح ابرو',
+    'میکروبلیدینگ و فیبروز تخصصی ابرو',
+  ],
+  'آرایشگاه مردانه': [
+    'کوتاهی ژورنالی مردانه و اسکین‌فید',
+    'اصلاح و استایلینگ کلاسیک مو و ریش',
+    'پاکسازی صورت و ماسک زغال آقایان',
+    'کراتین و صافی موی آقایان',
+  ],
+  'اصلاح و پیرایش': [
+    'اصلاح و قرینه‌سازی ریش با حوله گرم',
+    'آنکادر ریش و استایلینگ مو با وکس',
+    'اسکراب پوست سر و ماساژ صورت',
+  ],
+  'ماساژ و مراقبت بدن': [
+    'ماساژ ریلکسیشن و رفع گرفتگی عضلات',
+    'ماساژ سوئدی و آروماتراپی',
+    'بادی‌اسکراب و اسپا تخصصی بدن',
+  ],
+};
+
+export function getSuggestedServiceTitlesForCategory(categoryTitle: string): string[] {
+  const clean = (categoryTitle || '').trim();
+  if (SERVICE_SUGGESTIONS_BY_CATEGORY[clean]) {
+    return SERVICE_SUGGESTIONS_BY_CATEGORY[clean];
+  }
+  const matchKey = Object.keys(SERVICE_SUGGESTIONS_BY_CATEGORY).find(
+    (k) => clean.includes(k) || k.includes(clean)
+  );
+  return matchKey
+    ? SERVICE_SUGGESTIONS_BY_CATEGORY[matchKey]
+    : SERVICE_SUGGESTIONS_BY_CATEGORY['مو و رنگ'];
+}
+
+/**
+ * گزینه‌های استاندارد ساعت کاری از ۰۷:۰۰ تا ۲۳:۳۰ با گام ۳۰ دقیقه برای انتخاب سریع بدون تایپ
+ */
+export const STANDARD_WORKING_TIME_OPTIONS: string[] = [
+  '۰۷:۰۰',
+  '۰۷:۳۰',
+  '۰۸:۰۰',
+  '۰۸:۳۰',
+  '۰۹:۰۰',
+  '۰۹:۳۰',
+  '۱۰:۰۰',
+  '۱۰:۳۰',
+  '۱۱:۰۰',
+  '۱۱:۳۰',
+  '۱۲:۰۰',
+  '۱۲:۳۰',
+  '۱۳:۰۰',
+  '۱۳:۳۰',
+  '۱۴:۰۰',
+  '۱۴:۳۰',
+  '۱۵:۰۰',
+  '۱۵:۳۰',
+  '۱۶:۰۰',
+  '۱۶:۳۰',
+  '۱۷:۰۰',
+  '۱۷:۳۰',
+  '۱۸:۰۰',
+  '۱۸:۳۰',
+  '۱۹:۰۰',
+  '۱۹:۳۰',
+  '۲۰:۰۰',
+  '۲۰:۳۰',
+  '۲۱:۰۰',
+  '۲۱:۳۰',
+  '۲۲:۰۰',
+  '۲۲:۳۰',
+  '۲۳:۰۰',
+  '۲۳:۳۰',
+];
+
+/**
+ * محاسبه پویا قیمت و عنوان بسته تبلیغاتی بر اساس جایگاه انتخاب‌شده (SEARCH_TOP, HOME_BANNER, HERO_SPOTLIGHT) و مدت زمان (۷، ۱۴، ۳۰ روز)
+ */
+export function computeAdPackagePriceAndTitle(params: {
+  placementSlot: 'SEARCH_TOP' | 'HOME_BANNER' | 'HERO_SPOTLIGHT' | 'SMS_ADDON';
+  durationDays: number;
+  fallbackBaseAmount?: number;
+  fallbackWeeklyAmount?: number;
+  fallbackTitle?: string;
+}): { amountToman: number; title: string; baseMonthlyToman: number; weeklyToman: number } {
+  const { placementSlot, durationDays } = params;
+
+  const slotPricing: Record<
+    string,
+    { title: string; monthly: number; weekly: number }
+  > = {
+    SEARCH_TOP: {
+      title: 'صدرنشینی در نتایج جست‌وجوی شهر',
+      monthly: 490000,
+      weekly: 190000,
+    },
+    HOME_BANNER: {
+      title: 'بنر ویژه در صفحه اول تایم تو',
+      monthly: 890000,
+      weekly: 350000,
+    },
+    HERO_SPOTLIGHT: {
+      title: 'ویترین طلایی اول هیرو + صدر جست‌وجو (VIP)',
+      monthly: 1290000,
+      weekly: 490000,
+    },
+  };
+
+  const matched = slotPricing[placementSlot];
+  const baseMonthly = matched?.monthly ?? params.fallbackBaseAmount ?? 490000;
+  const weekly =
+    matched?.weekly ??
+    params.fallbackWeeklyAmount ??
+    Math.round(baseMonthly * 0.4);
+  const resolvedTitle = matched?.title ?? params.fallbackTitle ?? 'بسته تبلیغاتی ویژه';
+
+  const amountToman =
+    durationDays === 7
+      ? weekly
+      : durationDays === 14
+      ? Math.round(baseMonthly * 0.6)
+      : baseMonthly;
+
+  return {
+    amountToman,
+    title: resolvedTitle,
+    baseMonthlyToman: baseMonthly,
+    weeklyToman: weekly,
+  };
+}
+
+/**
+ * تشخیص تب بعدی یا قبلی هنگام کشیدن انگشت به چپ یا راست (Horizontal Touch Swipe در چیدمان RTL)
+ */
+export function resolveAdjacentTabBySwipe<T>(
+  items: T[],
+  activeIndexOrItem: number | T,
+  deltaX: number,
+  deltaY: number,
+  minSwipeDistance = 52
+): T | null {
+  const activeIndex =
+    typeof activeIndexOrItem === 'number'
+      ? activeIndexOrItem
+      : items.indexOf(activeIndexOrItem);
+
+  if (items.length <= 1 || activeIndex < 0 || activeIndex >= items.length) {
+    return null;
+  }
+  if (Math.abs(deltaX) < minSwipeDistance) {
+    return null;
+  }
+  // اگر حرکت عمودی بیشتر از حرکت افقی بود (اسکرول صفحه)، سوایپ تب انجام نشود
+  if (Math.abs(deltaY) > Math.abs(deltaX) * 0.7) {
+    return null;
+  }
+  const nextIndex = deltaX > 0 ? activeIndex + 1 : activeIndex - 1;
+  if (nextIndex < 0 || nextIndex >= items.length) {
+    return null;
+  }
+  return items[nextIndex] ?? null;
+}
+
+

@@ -25,8 +25,9 @@ import { formatPriceToman, toPersianDigits } from '../../utils/formatters';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { FormField } from '../../components/ui/FormField';
-import { Textarea } from '../../components/ui/Input';
+import { Input, Textarea } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
+import { Modal } from '../../components/ui/Modal';
 import {
   getBeautyPhotoUrl,
   getSpecialistAvatarUrl,
@@ -160,34 +161,63 @@ export const BusinessPublicProfileView: React.FC<{
         )
       : getBeautyPhotoUrl(business.name, business.typeLabel);
 
+  const [activeActionModal, setActiveActionModal] = useState<
+    'INSTAGRAM' | 'CONSULTATION' | 'CALL' | 'MAP' | null
+  >(null);
+  const [consultQuestion, setConsultQuestion] = useState('');
+  const [consultPhone, setConsultPhone] = useState(authUser?.phone || '');
+  const [consultSubmitted, setConsultSubmitted] = useState(false);
+
+  const cleanInstaHandle = (business.instagramHandle || '@timeto.beauty')
+    .trim()
+    .replace(/^@/, '');
+  const instagramUrl = `https://www.instagram.com/${cleanInstaHandle}`;
+  const cleanDialPhone = (business.phoneDisplay || '09131234567')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[^\d+]/g, '');
+  const googleMapsUrl = `https://www.google.com/maps?q=${business.mapLat ?? 32.6362},${business.mapLng ?? 51.665}`;
+
   const quickActions = [
     {
       label: 'اینستاگرام',
       icon: <Instagram className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () =>
-        showToast(
-          `صفحه اینستاگرام: ${business.instagramHandle || '@beautyhub.ir'}`
-        ),
+      onClick: () => setActiveActionModal('INSTAGRAM'),
     },
     {
       label: 'مشاوره',
       icon: <MessageCircle className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => setActiveTab('reviews'),
+      onClick: () => {
+        setConsultSubmitted(false);
+        setActiveActionModal('CONSULTATION');
+      },
     },
     {
       label: 'تماس',
       icon: <Phone className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => showToast(`شماره تماس سالن: ${business.phoneDisplay}`),
+      onClick: () => setActiveActionModal('CALL'),
     },
     {
       label: 'مسیریابی',
       icon: <MapPin className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => setActiveTab('about'),
+      onClick: () => {
+        setActiveActionModal('MAP');
+        const mapEl = document.getElementById('salon-map-section');
+        if (mapEl) {
+          mapEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      },
     },
     {
       label: 'اشتراک‌گذاری',
       icon: <Share2 className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => showToast('لینک صفحه سالن کپی شد.'),
+      onClick: () => {
+        try {
+          void navigator.clipboard.writeText(window.location.href);
+        } catch {
+          // ignore
+        }
+        showToast('لینک اختصاصی پروفایل سالن کپی شد.', 'success');
+      },
     },
   ];
 
@@ -939,18 +969,199 @@ export const BusinessPublicProfileView: React.FC<{
             </div>
           </Card>
 
-          <Card padding="sm" className="rounded-3xl space-y-2.5">
-            <LocationMapPicker
-              city={business.city}
-              neighborhood={business.neighborhood}
-              address={business.address}
-              lat={business.mapLat}
-              lng={business.mapLng}
-              readOnly
-            />
-          </Card>
+          <div id="salon-map-section">
+            <Card padding="sm" className="rounded-3xl space-y-2.5">
+              <LocationMapPicker
+                city={business.city}
+                neighborhood={business.neighborhood}
+                address={business.address}
+                lat={business.mapLat}
+                lng={business.mapLng}
+                readOnly
+              />
+            </Card>
+          </div>
         </div>
       </div>
+
+      {/* مودال‌های عملیاتی دکمه‌های ۵گانه پروفایل سالن (اینستاگرام، مشاوره، تماس، مسیریابی) */}
+      <Modal
+        isOpen={activeActionModal === 'INSTAGRAM'}
+        onClose={() => setActiveActionModal(null)}
+        title={`صفحه اینستاگرام ${business.name}`}
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Instagram className="w-5 h-5 text-[#8B5CF6]" />
+              <span className="font-bold text-[#1E1B2E]">آیدی اینستاگرام سالن:</span>
+            </div>
+            <span dir="ltr" className="font-mono text-sm font-black text-[#8B5CF6]">
+              @{cleanInstaHandle}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <a
+              href={instagramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2.5 px-4 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-extrabold text-center transition-colors"
+            >
+              مشاهده صفحه در اینستاگرام ↗
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  void navigator.clipboard.writeText(`@${cleanInstaHandle}`);
+                } catch {
+                  // ignore
+                }
+                showToast('آیدی اینستاگرام کپی شد.', 'success');
+              }}
+              className="py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-[#1E1B2E] font-bold text-center cursor-pointer transition-colors"
+            >
+              کپی آیدی اینستاگرام
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={activeActionModal === 'CALL'}
+        onClose={() => setActiveActionModal(null)}
+        title={`اطلاعات تماس با ${business.name}`}
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-4 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between gap-3">
+            <span className="font-bold text-[#061138]">شماره تماس مستقیم پذیرش:</span>
+            <span dir="ltr" className="font-mono text-base font-black text-[#0057FF]">
+              {business.phoneDisplay}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <a
+              href={`tel:${cleanDialPhone}`}
+              className="py-2.5 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white font-extrabold text-center inline-flex items-center justify-center gap-2 transition-colors"
+            >
+              <Phone className="w-4 h-4" />
+              <span>برقراری تماس تلفنی</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  void navigator.clipboard.writeText(cleanDialPhone);
+                } catch {
+                  // ignore
+                }
+                showToast('شماره تماس کپی شد.', 'success');
+              }}
+              className="py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-[#061138] font-bold text-center cursor-pointer transition-colors"
+            >
+              کپی شماره تماس
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={activeActionModal === 'MAP'}
+        onClose={() => setActiveActionModal(null)}
+        title={`نشانی و مسیریابی ${business.name}`}
+      >
+        <div className="space-y-4 text-xs">
+          <LocationMapPicker
+            city={business.city}
+            neighborhood={business.neighborhood}
+            address={business.address}
+            lat={business.mapLat}
+            lng={business.mapLng}
+            readOnly
+          />
+          <div className="flex justify-end gap-2">
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white font-extrabold text-center transition-colors"
+            >
+              باز کردن مستقیم در Google Maps و مسیریابی ↗
+            </a>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={activeActionModal === 'CONSULTATION'}
+        onClose={() => setActiveActionModal(null)}
+        title={`درخواست مشاوره رایگان با ${business.name}`}
+      >
+        {consultSubmitted ? (
+          <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-center space-y-2 text-xs">
+            <CheckCircle2 className="w-8 h-8 text-[#10B981] mx-auto" />
+            <p className="font-extrabold text-[#065F46] text-sm">
+              درخواست مشاوره شما برای پذیرش سالن ارسال شد
+            </p>
+            <p className="text-[#047857]">
+              کارشناسان «{business.name}» در ساعات کاری با شما تماس خواهند گرفت یا می‌توانید همین حالا تلفنی گفتگو کنید.
+            </p>
+            <div className="pt-2">
+              <a
+                href={`tel:${cleanDialPhone}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#059669] text-white font-extrabold"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>تماس مستقیم: {business.phoneDisplay}</span>
+              </a>
+            </div>
+          </div>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!consultQuestion.trim()) {
+                showToast('لطفاً سوال یا خدمت مورد نظر خود را برای مشاوره بنویسید.', 'warning');
+                return;
+              }
+              setConsultSubmitted(true);
+              showToast('درخواست مشاوره شما با موفقیت ثبت شد.', 'success');
+            }}
+            className="space-y-3.5 text-xs"
+          >
+            <FormField id="cons-phone" label="شماره تماس شما جهت پاسخگویی" required>
+              <Input
+                id="cons-phone"
+                dir="ltr"
+                value={consultPhone}
+                onChange={(e) => setConsultPhone(e.target.value)}
+                placeholder="09131234567"
+              />
+            </FormField>
+            <FormField id="cons-msg" label="موضوع مشاوره (مثلاً رنگ و لایت، خدمات عروس، فیشیال...)" required>
+              <Textarea
+                id="cons-msg"
+                rows={3}
+                value={consultQuestion}
+                onChange={(e) => setConsultQuestion(e.target.value)}
+                placeholder="سوال خود درباره تعرفه، ترکیب رنگ یا زمان‌بندی خدمت را بنویسید..."
+              />
+            </FormField>
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <a
+                href={`tel:${cleanDialPhone}`}
+                className="text-xs font-extrabold text-[#0057FF] hover:underline inline-flex items-center gap-1"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>تماس تلفنی فوری ({business.phoneDisplay})</span>
+              </a>
+              <Button type="submit" variant="primary" size="sm">
+                ارسال درخواست مشاوره
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* نوار چسبان پایین موبایل برای رزرو سریع — مطابق دکمه کپسولی تیره Capture4.PNG */}
       <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E6E0F5] px-4 py-3 flex items-center justify-between gap-3 shadow-[0_-4px_20px_-4px_rgba(30,27,46,0.10)]">

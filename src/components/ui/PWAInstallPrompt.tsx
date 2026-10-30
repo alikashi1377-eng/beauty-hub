@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
-import { Download, Share, Smartphone, PlusSquare, X, CheckCircle2 } from 'lucide-react';
-import { usePWAInstall } from '../../hooks/usePWAInstall';
+import React, { useEffect, useState } from 'react';
 import {
-  TIMETO_LOGO_IMAGE_PATH,
-  TIMETO_SHOWCASE_IMAGE_PATH,
-} from './TimetoLogo';
+  Download,
+  Share,
+  PlusSquare,
+  X,
+  CheckCircle2,
+  Smartphone,
+} from 'lucide-react';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { TIMETO_LOGO_IMAGE_PATH } from './TimetoLogo';
 
 /**
- * دکمه نصب اپلیکیشن در هدر + بنر پیشنهاد نصب روی موبایل (PWA Install Prompt)
+ * دکمه نصب اپلیکیشن + پاپ‌آپ شناور پیشنهاد نصب در پایین صفحه (پس از اسکرول یا مکث کوتاه)
  */
 export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({
   compact = false,
 }) => {
-  const { isInstalled, install } = usePWAInstall();
+  const { isInstalled, install, dismissBanner } = usePWAInstall();
   const [guideOpen, setGuideOpen] = useState(false);
 
   if (isInstalled) return null;
@@ -41,6 +45,10 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({
       <PWAInstallGuideModal
         isOpen={guideOpen}
         onClose={() => setGuideOpen(false)}
+        onConfirmInstalled={() => {
+          dismissBanner();
+          setGuideOpen(false);
+        }}
       />
     </>
   );
@@ -50,12 +58,39 @@ export const PWAMobileInstallBanner: React.FC = () => {
   const {
     isInstalled,
     isBannerDismissed,
+    isIOS,
     install,
     dismissBanner,
   } = usePWAInstall();
   const [guideOpen, setGuideOpen] = useState(false);
+  const [hasTriggeredByScrollOrDelay, setHasTriggeredByScrollOrDelay] =
+    useState(false);
 
-  if (isInstalled || isBannerDismissed) return null;
+  useEffect(() => {
+    if (typeof window === 'undefined' || isInstalled || isBannerDismissed) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (window.scrollY > 140) {
+        setHasTriggeredByScrollOrDelay(true);
+      }
+    };
+
+    const timer = window.setTimeout(() => {
+      setHasTriggeredByScrollOrDelay(true);
+    }, 4500);
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [isInstalled, isBannerDismissed]);
+
+  if (isInstalled || isBannerDismissed || !hasTriggeredByScrollOrDelay) {
+    return null;
+  }
 
   const handleAction = async () => {
     const res = await install();
@@ -66,7 +101,11 @@ export const PWAMobileInstallBanner: React.FC = () => {
 
   return (
     <>
-      <div className="lg:hidden mb-4 rounded-2xl bg-gradient-to-r from-[#061138] via-[#0B1D52] to-[#0044CC] text-white p-3 shadow-[0_10px_28px_-8px_rgba(6,17,56,0.5)] border border-[#00D4FF]/30 flex items-center justify-between gap-3">
+      <div
+        role="region"
+        aria-label="پاپ‌آپ نصب وب‌اپلیکیشن تایم تو"
+        className="fixed bottom-20 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:left-5 sm:w-96 z-40 rounded-2xl bg-gradient-to-r from-[#061138] via-[#0B1D52] to-[#0044CC] text-white p-3.5 shadow-[0_16px_40px_-8px_rgba(6,17,56,0.75)] border border-[#00E5FF]/40 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300"
+      >
         <div className="flex items-center gap-2.5 min-w-0">
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
@@ -76,10 +115,12 @@ export const PWAMobileInstallBanner: React.FC = () => {
           />
           <div className="min-w-0">
             <p className="text-xs font-extrabold text-white truncate">
-              نصب وب‌اپلیکیشن تایم تو (Timeto)
+              نصب اپلیکیشن تایم تو روی گوشی
             </p>
             <p className="text-[11px] text-[#BAE6FD] truncate">
-              دسترسی سریع‌تر و تمام‌صفحه روی گوشی شما
+              {isIOS
+                ? 'ویژه آیفون (iOS) و اندروید · تمام‌صفحه و سریع'
+                : 'دسترسی سریع و تمام‌صفحه بدون نیاز به مرورگر'}
             </p>
           </div>
         </div>
@@ -88,14 +129,14 @@ export const PWAMobileInstallBanner: React.FC = () => {
           <button
             type="button"
             onClick={() => void handleAction()}
-            className="px-3.5 py-1.5 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold cursor-pointer transition-colors shadow-xs"
+            className="px-3.5 py-2 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold cursor-pointer transition-colors shadow-xs"
           >
-            نصب روی گوشی
+            {isIOS ? 'نصب در آیفون' : 'نصب اپ'}
           </button>
           <button
             type="button"
             onClick={dismissBanner}
-            aria-label="بستن پیشنهاد نصب"
+            aria-label="بستن و عدم نمایش مجدد پیشنهاد نصب"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white/80 flex items-center justify-center cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
@@ -106,6 +147,10 @@ export const PWAMobileInstallBanner: React.FC = () => {
       <PWAInstallGuideModal
         isOpen={guideOpen}
         onClose={() => setGuideOpen(false)}
+        onConfirmInstalled={() => {
+          dismissBanner();
+          setGuideOpen(false);
+        }}
       />
     </>
   );
@@ -114,7 +159,8 @@ export const PWAMobileInstallBanner: React.FC = () => {
 const PWAInstallGuideModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-}> = ({ isOpen, onClose }) => {
+  onConfirmInstalled: () => void;
+}> = ({ isOpen, onClose, onConfirmInstalled }) => {
   const { isIOS, isInstallable, install } = usePWAInstall();
 
   if (!isOpen) return null;
@@ -127,7 +173,7 @@ const PWAInstallGuideModal: React.FC<{
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#061138]/75 backdrop-blur-sm p-4"
     >
       <div className="w-full max-w-md rounded-3xl bg-white border border-[#CBD5E1] shadow-2xl overflow-hidden">
-        <div className="relative py-6 px-5 bg-[#02081D] overflow-hidden flex flex-col items-center text-center gap-3">
+        <div className="relative py-5 px-5 bg-[#02081D] overflow-hidden flex flex-col items-center text-center gap-2.5">
           <button
             type="button"
             onClick={onClose}
@@ -140,30 +186,25 @@ const PWAInstallGuideModal: React.FC<{
             src={TIMETO_LOGO_IMAGE_PATH}
             alt="Timeto Mobile App Icon"
             referrerPolicy="no-referrer"
-            className="w-20 h-20 rounded-2xl object-cover border-2 border-[#00E5FF]/40 shadow-[0_0_28px_rgba(0,212,255,0.35)]"
+            className="w-16 h-16 rounded-2xl object-cover border-2 border-[#00E5FF]/40 shadow-[0_0_28px_rgba(0,212,255,0.35)]"
           />
           <div className="text-white space-y-1">
-            <span className="text-[11px] font-bold text-[#00E5FF] block">
-              نسخه وب‌اپلیکیشن موبایل (PWA)
+            <span className="text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1">
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>وب‌اپلیکیشن رسمی آیفون (iOS) و اندروید</span>
             </span>
             <h3 className="text-base font-extrabold">
-              نصب Timeto (تایم تو) روی صفحه اصلی گوشی
+              نصب Timeto روی صفحه اصلی گوشی در ۱۰ ثانیه
             </h3>
           </div>
         </div>
 
         <div className="p-5 space-y-4 text-right">
-          <p className="text-xs text-[#334155] leading-relaxed">
-            با افزودن <strong>تایم تو (Timeto)</strong> به صفحه اصلی موبایل، بدون
-            نیاز به مرورگر و دقیقاً مانند یک اپلیکیشن مستقل و تمام‌صفحه به نوبت‌ها
-            و سالن‌ها دسترسی خواهید داشت:
-          </p>
-
           {isInstallable ? (
             <button
               type="button"
               onClick={() => {
-                void install().then(() => onClose());
+                void install().then(() => onConfirmInstalled());
               }}
               className="w-full py-3 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer shadow-md"
             >
@@ -180,11 +221,11 @@ const PWAInstallGuideModal: React.FC<{
               <div>
                 <p className="font-extrabold text-[#0B132B]">
                   {isIOS
-                    ? '۱. در مرورگر Safari روی دکمه Share بزنید'
-                    : '۱. در مرورگر کروم یا موبایل منوی (⋮) یا Share را باز کنید'}
+                    ? '۱. در مرورگر Safari آیفون، دکمه Share (مربع و فلش پایین صفحه) را لمس کنید'
+                    : '۱. در نوار پایین Safari (آیفون) دکمه Share یا در Chrome منوی (⋮) را بزنید'}
                 </p>
                 <p className="text-[#475569] mt-0.5">
-                  آیکون اشتراک‌گذاری در نوار پایین یا منوی بالای مرورگر قرار دارد.
+                  در آیفون، اپل به دلایل امنیتی نصب تمام وب‌اپلیکیشن‌ها را از طریق منوی Share مرورگر Safari انجام می‌دهد.
                 </p>
               </div>
             </div>
@@ -195,11 +236,10 @@ const PWAInstallGuideModal: React.FC<{
               </div>
               <div>
                 <p className="font-extrabold text-[#0B132B]">
-                  ۲. گزینه «Add to Home Screen» (افزودن به صفحه اصلی) را انتخاب کنید
+                  ۲. گزینه «Add to Home Screen» را انتخاب و در بالا دکمه Add را بزنید
                 </p>
                 <p className="text-[#475569] mt-0.5">
-                  آیکون اختصاصی <strong>Timeto</strong> روی صفحه گوشی شما اضافه
-                  می‌شود.
+                  آیکون اختصاصی <strong>Timeto</strong> دقیقاً مانند یک اپلیکیشن بومی روی صفحه آیفون یا اندروید شما اضافه می‌شود.
                 </p>
               </div>
             </div>
@@ -212,13 +252,22 @@ const PWAInstallGuideModal: React.FC<{
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full py-2.5 rounded-full bg-[#061138] hover:bg-[#0A1D56] text-white text-xs font-extrabold cursor-pointer transition-colors"
-          >
-            متوجه شدم
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onConfirmInstalled}
+              className="w-full py-2.5 px-3 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold cursor-pointer transition-colors"
+            >
+              نصب کردم / دیگر نمایش نده
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full py-2.5 px-3 rounded-full bg-slate-100 hover:bg-slate-200 text-[#061138] text-xs font-bold cursor-pointer transition-colors"
+            >
+              فعلاً بستن
+            </button>
+          </div>
         </div>
       </div>
     </div>

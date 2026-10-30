@@ -86,42 +86,42 @@ export const TIMETO_INTRO_SPACES: IntroBeautySpaceCard[] = [
     id: 'space-1',
     numberLabel: '۰۱',
     title: 'آرایشگاه مردانه',
-    subtitle: 'فید تخصصی، استایل مو و پیرایش مدرن با نوبت‌دهی دقیق ساعتی',
+    subtitle: 'فید تخصصی و استایل مو',
     iconKey: 'barber',
   },
   {
     id: 'space-2',
     numberLabel: '۰۲',
-    title: 'سالن زیبایی بانوان',
-    subtitle: 'رنگ و لایت، شینیون، میکاپ تخصصی و احیای مو بدون انتظار در سالن',
+    title: 'سالن بانوان',
+    subtitle: 'رنگ، لایت و میکاپ تخصصی',
     iconKey: 'women-salon',
   },
   {
     id: 'space-3',
     numberLabel: '۰۳',
-    title: 'کلینیک زیبایی و پوست',
-    subtitle: 'فیشیال تخصصی، پاکسازی چندمرحله‌ای و خدمات جوانسازی پوست',
+    title: 'کلینیک زیبایی',
+    subtitle: 'فیشیال و جوانسازی پوست',
     iconKey: 'skin-clinic',
   },
   {
     id: 'space-4',
     numberLabel: '۰۴',
-    title: 'ناخن، مژه و ابرو',
-    subtitle: 'کاشت ژل و پودر، لمینت، مانیکور روسی و اکستنشن مژه',
+    title: 'ناخن و ژل',
+    subtitle: 'کاشت، لمینت و طراحی',
     iconKey: 'nail-lash',
   },
   {
     id: 'space-5',
     numberLabel: '۰۵',
-    title: 'اسپا، تراپی و مراقبت مو',
-    subtitle: 'پروتئین‌تراپی، کراتین، بوتاکس مو و خدمات ریلکسیشن',
+    title: 'اسپا و ماساژ',
+    subtitle: 'تراپی مو و ریلکسیشن',
     iconKey: 'spa-massage',
   },
   {
     id: 'space-6',
     numberLabel: '۰۶',
-    title: 'متخصصان مستقل زیبایی',
-    subtitle: 'تقویم اختصاصی برای آرایشگران و تراپیست‌های مستقل',
+    title: 'عروس و داماد VIP',
+    subtitle: 'گریم و تشریفات اختصاصی',
     iconKey: 'traditional-barber',
   },
 ];
@@ -130,42 +130,42 @@ export const SALON_OWNER_STACK_CARDS: SalonOwnerStackCard[] = [
   {
     id: 'stack-1',
     stepNumber: '۰۱',
-    badge: 'مدیریت مالی و رزرواسیون',
-    title: 'حساب‌وکتاب سالن، یک‌جا و شفاف',
+    badge: 'مدیریت مالی یکپارچه',
+    title: 'حساب‌وکتاب سالن، یک‌جا',
     description:
-      'از لحظه ثبت نوبت و دریافت بیعانه تا تسویه نهایی، همه تراکنش‌های سالن و سهم هر متخصص بدون کاغذبازی و خطای دستی در پیشخوان شما ثبت می‌شود.',
-    metricLabel: 'صرفه‌جویی در زمان مدیریت',
+      'درآمد هر روز، کارمزد کسرشده و مانده‌ی قابل تسویه — بدون اینکه چیزی را جایی یادداشت کنید، شفاف جلوی چشم شماست.',
+    metricLabel: 'مدیریت مالی سالن',
     metricValue: '۱۰۰٪ خودکار',
   },
   {
     id: 'stack-2',
     stepNumber: '۰۲',
     badge: 'پذیرش ۲۴ ساعته آنلاین',
-    title: 'نوبت‌ها بدون تلفن و بدون تداخل',
+    title: 'نوبت‌ها بدون تلفن',
     description:
-      'ساعت ۲ بامداد که سالن بسته است هم مشتری تقویم آزاد شما را می‌بیند و نوبتش را رزرو می‌کند؛ سیستم خودکار از هرگونه تداخل ساعت جلوگیری می‌کند.',
+      'تأیید، جابه‌جایی و لغو نوبت از داخل پنل؛ دیگر لازم نیست وسط کار سشوار یا میکاپ، گوشی را بردارید.',
     metricLabel: 'جذب نوبت در ساعات تعطیلی',
     metricValue: '۲۴ ساعته',
   },
   {
     id: 'stack-3',
     stepNumber: '۰۳',
-    badge: 'باشگاه مشتریان سالن',
-    title: 'انتقال راحت مشتریان قبلی و حضوری',
+    badge: 'کنترل کامل تقویم کاری',
+    title: 'برنامه‌ی کاری دست خودتان',
     description:
-      'مشتریان قدیمی سالن را به‌صورت تکی یا گروهی در چند ثانیه وارد کنید تا سابقه مراجعات، خدمات محبوب و یادآوری نوبت برایشان فعال شود.',
-    metricLabel: 'ثبت لیست مشتریان قبلی',
-    metricValue: 'در کمتر از ۱ دقیقه',
+      'ساعت کاری هر روز، وقت استراحت و تعطیلی‌ها را خودتان تعیین می‌کنید؛ خارج از آن کسی نوبت نمی‌گیرد.',
+    metricLabel: 'انعطاف تقویم متخصصان',
+    metricValue: 'لحظه‌ای و زنده',
   },
   {
     id: 'stack-4',
     stepNumber: '۰۴',
-    badge: 'کنترل کامل تقویم کاری',
-    title: 'برنامه کاری دست خودتان است',
+    badge: 'باشگاه مشتریان سالن',
+    title: 'انتقال راحت مشتریان قبلی',
     description:
-      'ساعات کاری، روزهای تعطیل، مدت زمان هر خدمت و تعرفه‌ها را هر زمان که بخواهید تغییر دهید؛ تقویم سالن در لحظه به‌روز می‌شود.',
-    metricLabel: 'انعطاف تقویم متخصصان',
-    metricValue: 'لحظه‌ای و زنده',
+      'مشتریان قدیمی سالن را در چند ثانیه وارد کنید تا سابقه مراجعات و پیامک یادآوری نوبت برایشان فعال شود.',
+    metricLabel: 'ثبت لیست مشتریان',
+    metricValue: 'کمتر از ۱ دقیقه',
   },
 ];
 
@@ -181,25 +181,25 @@ export const CLIENT_ANIMATED_FACTORS: ClientAnimatedFactor[] = [
   {
     id: 'factor-2',
     numberLabel: '۰۲',
-    title: 'یادآوری خودکار یک ساعت قبل',
+    title: 'یادآوری یک ساعت قبل',
     description:
       'پیامک تایید و یادآوری دقیق قبل از زمان نوبت برایتان ارسال می‌شود تا هیچ وقتی فراموش نشود.',
-    highlightText: 'ارسال پیامک و کد رهگیری آنی',
+    highlightText: 'ارسال پیامک یادآوری آنی',
   },
   {
     id: 'factor-3',
     numberLabel: '۰۳',
-    title: 'پرداخت امن و تعرفه کاملاً شفاف',
+    title: 'پرداخت امن و شفاف',
     description:
-      'قیمت دقیق هر خدمت و مدت زمان انجام آن را پیش از رزرو می‌بینید و مبلغ تا پایان نوبت نزد پلتفرم امانت می‌ماند.',
-    highlightText: 'ضمانت شفافیت قیمت',
+      'قیمت دقیق هر خدمت را پیش از رزرو می‌بینید و مبلغ تا پایان نوبت نزد پلتفرم امانت می‌ماند.',
+    highlightText: 'ضمانت امانت وجه',
   },
 ];
 
 export const WALLET_MOTION_FRAMES: WalletMotionFrame[] = [
   {
     frameIndex: 0,
-    balanceText: '۱۸,۴۵۰,۰۰۰',
+    balanceText: '۱۹,۳۰۸,۵۴۹',
     growthBadge: '+۱۴٪ رشد هفتگی',
     activeDayIndex: 2,
     liveToastText: 'رزرو جدید · فیشیال تخصصی پوست',
@@ -207,24 +207,24 @@ export const WALLET_MOTION_FRAMES: WalletMotionFrame[] = [
   },
   {
     frameIndex: 1,
-    balanceText: '۲۱,۹۰۰,۰۰۰',
-    growthBadge: '+۱۸٪ رشد هفتگی',
-    activeDayIndex: 3,
+    balanceText: '۲۴,۷۳۶,۶۰۹',
+    growthBadge: '+۱۹٪ رشد هفتگی',
+    activeDayIndex: 4,
     liveToastText: 'رزرو جدید · لایت و احیای مو',
     liveToastAmount: '+۱,۴۵۰,۰۰۰ تومان',
   },
   {
     frameIndex: 2,
-    balanceText: '۲۴,۶۵۰,۰۰۰',
-    growthBadge: '+۲۲٪ رشد هفتگی',
-    activeDayIndex: 4,
+    balanceText: '۲۸,۴۲۰,۰۰۰',
+    growthBadge: '+۲۳٪ رشد هفتگی',
+    activeDayIndex: 5,
     liveToastText: 'رزرو جدید · کاشت و لمینت ناخن',
     liveToastAmount: '+۴۸۰,۰۰۰ تومان',
   },
   {
     frameIndex: 3,
-    balanceText: '۲۷,۸۰۰,۰۰۰',
-    growthBadge: '+۲۶٪ رشد هفتگی',
+    balanceText: '۳۲,۸۵۰,۰۰۰',
+    growthBadge: '+۲۸٪ رشد هفتگی',
     activeDayIndex: 5,
     liveToastText: 'تسویه خودکار کیف پول سالن',
     liveToastAmount: 'واریز موفق به حساب',
@@ -232,14 +232,66 @@ export const WALLET_MOTION_FRAMES: WalletMotionFrame[] = [
 ];
 
 export const WALLET_WEEK_DAYS = [
-  { short: 'ش', heights: [42, 48, 52, 58] },
-  { short: 'ی', heights: [36, 44, 48, 52] },
-  { short: 'د', heights: [58, 66, 62, 68] },
-  { short: 'س', heights: [48, 76, 70, 74] },
-  { short: 'چ', heights: [62, 68, 88, 84] },
-  { short: 'پ', heights: [75, 82, 90, 100] },
-  { short: 'ج', heights: [32, 36, 40, 44] },
+  { short: 'ش', heights: [32, 38, 44, 48] },
+  { short: 'ی', heights: [28, 36, 42, 46] },
+  { short: 'د', heights: [54, 48, 52, 58] },
+  { short: 'س', heights: [44, 62, 58, 64] },
+  { short: 'چ', heights: [58, 78, 72, 76] },
+  { short: 'پ', heights: [72, 88, 96, 100] },
+  { short: 'ج', heights: [26, 30, 34, 38] },
 ];
+
+export interface HeroScrollStageInfo {
+  stageIndex: 0 | 1 | 2;
+  badgeText: string;
+  headlineTop: string;
+  headlineGradient: string;
+  subtitle: string;
+  floatingRightPill: string;
+  floatingLeftPill: string;
+  showLogoSpotlight: boolean;
+}
+
+export function computeHeroScrollStage(progressZeroToOne: number): HeroScrollStageInfo {
+  const p = Math.max(0, Math.min(1, progressZeroToOne));
+  if (p < 0.34) {
+    return {
+      stageIndex: 0,
+      badgeText: 'رزرو آنلاین نوبت سالن زیبایی',
+      headlineTop: 'نوبت سالن‌های زیبایی',
+      headlineGradient: 'بدون تماس، بدون انتظار',
+      subtitle:
+        'ساعت‌های خالی آرایشگاه‌ها و سالن‌های زیبایی را ببینید و در لحظه نوبت بگیرید.',
+      floatingRightPill: '⚡ مشاهده آنی ساعت‌های خالی',
+      floatingLeftPill: '✨ بدون نیاز به تماس تلفنی',
+      showLogoSpotlight: false,
+    };
+  }
+  if (p < 0.68) {
+    return {
+      stageIndex: 1,
+      badgeText: 'انتخاب آنلاین ساعت خالی · در ۳۰ ثانیه',
+      headlineTop: 'ساعت‌های خالی آرایشگاه‌ها',
+      headlineGradient: 'در یک نگاه، رزرو در لحظه',
+      subtitle:
+        'تعرفه شفاف خدمات، نمونه کارهای واقعی و تقویم آزاد متخصصان جلوی چشم شماست.',
+      floatingRightPill: '🔔 یادآوری خودکار ۱ ساعت قبل',
+      floatingLeftPill: '💳 پرداخت امن و تضمین بیعانه',
+      showLogoSpotlight: true,
+    };
+  }
+  return {
+    stageIndex: 2,
+    badgeText: 'تایم تو · زیست‌بوم هوشمند زیبایی',
+    headlineTop: 'وقت زیبایی تو، به انتخاب تو',
+    headlineGradient: 'مشتریان راضی، سالن همیشه فعال',
+    subtitle:
+      'همین حالا نقش خود را انتخاب کنید؛ سیستم انتخاب شما را برای مراجعات بعدی به خاطر می‌سپارد.',
+    floatingRightPill: '✓ تایید آنی در تقویم سالن',
+    floatingLeftPill: '📊 کیف پول و تسویه هوشمند',
+    showLogoSpotlight: true,
+  };
+}
 
 export function computePhoneCinematicStep(progressZeroToOne: number, autoTick: number): {
   activeStep: number;
@@ -266,3 +318,4 @@ export function computePhoneCinematicStep(progressZeroToOne: number, autoTick: n
   }
   return { activeStep: 3, selectedSlot: '۱۶:۰۰', isConfirmed: true };
 }
+
