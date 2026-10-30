@@ -1,31 +1,99 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="timeto-bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0A1D56" />
-      <stop offset="50%" stop-color="#061138" />
-      <stop offset="100%" stop-color="#030920" />
+    <radialGradient id="timeto-bg-glow" cx="50%" cy="46%" r="65%" fx="50%" fy="46%">
+      <stop offset="0%" stop-color="#07194A" />
+      <stop offset="55%" stop-color="#030B26" />
+      <stop offset="100%" stop-color="#010514" />
+    </radialGradient>
+
+    <!-- گرادینت بال افقی بالای حرف T -->
+    <linearGradient id="timeto-wing-grad" x1="72" y1="112" x2="346" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00F0FF" />
+      <stop offset="48%" stop-color="#00B8FF" />
+      <stop offset="85%" stop-color="#0066FF" />
+      <stop offset="100%" stop-color="#0040CC" />
     </linearGradient>
-    <linearGradient id="timeto-t-top" x1="36" y1="74" x2="162" y2="112" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00E5FF" />
-      <stop offset="100%" stop-color="#007BFF" />
+
+    <!-- گرادینت ستون خمیده سه‌بعدی حرف T -->
+    <linearGradient id="timeto-stem-grad" x1="330" y1="114" x2="210" y2="412" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1AF2FF" />
+      <stop offset="36%" stop-color="#00BAFF" />
+      <stop offset="74%" stop-color="#0072FF" />
+      <stop offset="100%" stop-color="#0047E0" />
     </linearGradient>
-    <linearGradient id="timeto-t-stem" x1="120" y1="74" x2="108" y2="204" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00D4FF" />
-      <stop offset="55%" stop-color="#0084FF" />
-      <stop offset="100%" stop-color="#0051FF" />
+
+    <!-- سایه درونی پایین راست ستون برای حجم سه‌بعدی دقیقاً مشابه لوگوی اصلی -->
+    <radialGradient id="timeto-stem-depth" cx="72%" cy="76%" r="48%">
+      <stop offset="0%" stop-color="#002B99" stop-opacity="0.72" />
+      <stop offset="70%" stop-color="#0051FF" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#00C8FF" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- هایلایت لبه پایین ستون -->
+    <linearGradient id="timeto-rim-light" x1="184" y1="340" x2="316" y2="410" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00D4FF" stop-opacity="0.1" />
+      <stop offset="65%" stop-color="#00E5FF" stop-opacity="0.55" />
+      <stop offset="100%" stop-color="#5CF4FF" stop-opacity="0.95" />
     </linearGradient>
-    <linearGradient id="timeto-clock" x1="168" y1="64" x2="212" y2="114" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#4DF0FF" />
-      <stop offset="100%" stop-color="#00C4FF" />
+
+    <!-- گرادینت دایره ساعت -->
+    <linearGradient id="timeto-clock-grad" x1="336" y1="118" x2="438" y2="218" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00D8FF" />
+      <stop offset="55%" stop-color="#00EEFF" />
+      <stop offset="100%" stop-color="#4DF7FF" />
     </linearGradient>
+
+    <!-- ماسک برش هاله تیره دور دایره ساعت -->
+    <mask id="timeto-clock-cutout">
+      <rect width="512" height="512" fill="white" />
+      <circle cx="386" cy="168" r="76" fill="black" />
+    </mask>
   </defs>
-  <rect width="256" height="256" rx="60" fill="url(#timeto-bg)" />
-  <rect x="3" y="3" width="250" height="250" rx="57" stroke="#1E40AF" stroke-opacity="0.45" stroke-width="4" />
-  <!-- Top horizontal wing of T -->
-  <path d="M84 72H158C136 86 118 106 112 114H56C47.1634 114 42 106.5 45.5 97.5C51.5 82 66.5 72 84 72Z" fill="url(#timeto-t-top)" />
-  <!-- Curved vertical stem of T -->
-  <path d="M158 72C145 82 138 96 138 114V168C138 187.882 121.882 204 102 204C87.6406 204 76 192.359 76 178V144C76 112 108 84 146 72H158Z" fill="url(#timeto-t-stem)" />
-  <!-- Clock badge at top right -->
-  <circle cx="186" cy="92" r="24" fill="url(#timeto-clock)" />
-  <path d="M184 79V93H196" stroke="#061138" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- پس‌زمینه سرمه‌ای عمیق اپ -->
+  <rect width="512" height="512" rx="112" fill="url(#timeto-bg-glow)" />
+
+  <g mask="url(#timeto-clock-cutout)">
+    <!-- بخش ۱: بال افقی چپ و بالای حرف T -->
+    <path
+      d="M192 114H346L218 220H98C78.1177 220 64 205.5 68.5 186C78.5 142 128 114 192 114Z"
+      fill="url(#timeto-wing-grad)"
+    />
+
+    <!-- زائده ظریف آبی تیره زیر برش ساعت -->
+    <path
+      d="M296 196H332V220H296V196Z"
+      fill="#0037B8"
+    />
+
+    <!-- بخش ۲: بدنه و ستون منحنی سه‌بعدی حرف T -->
+    <path
+      d="M346 114C276 156 186 232 184 334V346C184 383.555 214.445 414 252 414C289.555 414 320 383.555 320 346V162C320 140 330 124 346 114Z"
+      fill="url(#timeto-stem-grad)"
+    />
+
+    <!-- حجم‌دهی سه‌بعدی داخل ستون -->
+    <path
+      d="M346 114C276 156 186 232 184 334V346C184 383.555 214.445 414 252 414C289.555 414 320 383.555 320 346V162C320 140 330 124 346 114Z"
+      fill="url(#timeto-stem-depth)"
+    />
+
+    <!-- درخشش لبه منحنی پایین ستون -->
+    <path
+      d="M190 356C196 388 222 410 254 410C288 410 315 385 318 350"
+      stroke="url(#timeto-rim-light)"
+      stroke-width="6"
+      stroke-linecap="round"
+    />
+  </g>
+
+  <!-- بخش ۳: دایره فیروزه‌ای ساعت و عقربه L شکل -->
+  <circle cx="386" cy="168" r="56" fill="url(#timeto-clock-grad)" />
+  <path
+    d="M382 138V172H416"
+    stroke="#020924"
+    stroke-width="16"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

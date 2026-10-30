@@ -1,10 +1,8 @@
 import React from 'react';
 
-export const TIMETO_LOGO_IMAGE_PATH =
-  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
+export const TIMETO_LOGO_IMAGE_PATH = '/icon.svg';
 export const TIMETO_BRAND_LOGO_URL = TIMETO_LOGO_IMAGE_PATH;
-export const TIMETO_SHOWCASE_IMAGE_PATH =
-  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
+export const TIMETO_SHOWCASE_IMAGE_PATH = '/icon.svg';
 
 export const TimetoIconMark: React.FC<{
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -26,7 +24,7 @@ export const TimetoIconMark: React.FC<{
       <img
         src={TIMETO_LOGO_IMAGE_PATH}
         alt="لوگوی تایم تو (Timeto)"
-        className="w-full h-full object-cover"
+        className="w-full h-full object-contain"
       />
     </div>
   );
@@ -48,11 +46,7 @@ export const TimetoLogo: React.FC<{
   const resolvedTheme = theme ?? variant ?? 'light';
 
   const brandTextSize =
-    size === 'sm'
-      ? 'text-lg'
-      : size === 'lg'
-        ? 'text-2xl'
-        : 'text-xl';
+    size === 'sm' ? 'text-lg' : size === 'lg' ? 'text-2xl' : 'text-xl';
 
   const textColor = resolvedTheme === 'dark' ? 'text-white' : 'text-[#061138]';
   const badgeBg =
@@ -62,7 +56,7 @@ export const TimetoLogo: React.FC<{
 
   return (
     <div className="inline-flex items-center gap-2.5 select-none shrink-0">
-      {/* تصویر لوگوی اصلی Timeto */}
+      {/* لوگوی وکتور باکیفیت Timeto */}
       <TimetoIconMark size={size} />
 
       {/* تایپوگرافی برند Timeto | تایم تو */}
@@ -98,7 +92,7 @@ export const TimetoLogo: React.FC<{
 };
 
 /**
- * صفحه اسپلش / راه‌اندازی اولیه اپلیکیشن (هنگام بالا آمدن اپ) با لوگوی رسمی تایم تو
+ * صفحه اسپلش / پیش‌نمایش شروع اپلیکیشن با لوگوی وکتور شفاف و اندازه استاندارد اپ
  */
 export const TimetoStartupSplash: React.FC<{ visible: boolean }> = ({
   visible,
@@ -112,32 +106,30 @@ export const TimetoStartupSplash: React.FC<{ visible: boolean }> = ({
       className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#02081D] text-white transition-opacity duration-300"
     >
       <div className="relative flex flex-col items-center gap-5 px-6 text-center">
-        <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden border-2 border-[#00E5FF]/40 shadow-[0_0_48px_rgba(0,212,255,0.35)] bg-[#02081D]">
+        {/* آیکون اپ با ابعاد و حاشیه استاندارد iOS/Android و کیفیت وکتور بی‌نهایت */}
+        <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] overflow-hidden border border-[#00E5FF]/35 shadow-[0_0_44px_rgba(0,229,255,0.3)] bg-[#030B26] flex items-center justify-center">
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
-            alt="Timeto App Logo"
-            className="w-full h-full object-cover"
+            alt="Timeto App Icon"
+            className="w-full h-full object-contain"
           />
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           <div className="flex items-center justify-center gap-2">
             <span
               dir="ltr"
-              className="text-2xl sm:text-3xl font-black tracking-tight text-white"
+              className="text-2xl font-black tracking-wider text-white"
             >
               Timeto
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 border border-[#00E5FF]/40 text-xs font-extrabold text-[#00E5FF]">
+            <span className="px-2 py-0.5 rounded-full bg-[#00E5FF]/15 border border-[#00E5FF]/35 text-[11px] font-extrabold text-[#00E5FF]">
               تایم تو
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-slate-300 font-medium">
-            رزرو آنلاین سالن‌های زیبایی و متخصصان
-          </p>
         </div>
 
-        <div className="w-40 h-1.5 rounded-full bg-white/15 overflow-hidden mt-1">
+        <div className="w-32 h-1 rounded-full bg-white/12 overflow-hidden">
           <div className="h-full w-2/3 rounded-full bg-gradient-to-r from-[#0057FF] to-[#00E5FF] animate-pulse" />
         </div>
       </div>

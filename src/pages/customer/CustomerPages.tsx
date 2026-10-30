@@ -21,6 +21,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Heart,
+  LogOut,
   Scissors,
 } from 'lucide-react';
 import {
@@ -61,6 +62,7 @@ import {
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
 import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
+import { PWAProfileInstallRow } from '../../components/ui/PWAInstallPrompt';
 
 /** نوار مرحله‌به‌مرحله مینیمال، آیکون‌محور و قابل کلیک برای مسیر رزرو نوبت */
 const BookingFlowStepIndicator: React.FC<{
@@ -1407,11 +1409,13 @@ export const BookingResultPage: React.FC = () => {
   );
 };
 
-/** ۵. خلاصه حساب مشتری (/me) — مطابق پروفایل کاربری و امتیاز وفاداری در Capture5.PNG راست */
+/** ۵. خلاصه حساب مشتری (/me) */
 export const CustomerOverviewPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     dataMode,
     authUser,
+    logoutUser,
     appointments,
     businesses,
     specialists,
@@ -1424,7 +1428,6 @@ export const CustomerOverviewPage: React.FC = () => {
   const myAppointments = appointments.filter((a) => {
     if (!authUser) return a.id.startsWith('apt-live-');
     return (
-      a.customerPhone === authUser.phone ||
       a.customerName === authUser.fullName ||
       a.id.startsWith('apt-live-')
     );
@@ -1451,23 +1454,21 @@ export const CustomerOverviewPage: React.FC = () => {
 
   const displayName = authUser?.fullName?.trim() || 'کاربر تایم تو';
   const displayPhoneCity = authUser
-    ? `شماره همراه: ${toPersianDigits(authUser.phone)} · ${authUser.defaultCity || 'اصفهان'}`
+    ? `${toPersianDigits(authUser.phone)} · ${authUser.defaultCity || 'اصفهان'}`
     : 'برای مشاهده و مدیریت نوبت‌ها وارد حساب خود شوید';
 
   return (
-    <div className="space-y-6">
-      {/* هدر پروفایل مشتری با آواتار دایره‌ای و کارت ۲ ستونی امتیاز وفاداری */}
-      <Card className="rounded-[32px] p-6 sm:p-8 border border-[#CBD5E1] bg-white">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          <div className="lg:col-span-6 flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-right gap-4">
+    <div className="space-y-5">
+      {/* هدر پروفایل مشتری با آواتار، دکمه ویرایش و دکمه خروج */}
+      <Card className="rounded-[28px] p-5 sm:p-7 border border-[#CBD5E1] bg-white">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+          <div className="lg:col-span-7 flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-right gap-4">
             <Avatar name={displayName} size="xl" tone="rose" showPhoto={false} />
             <div className="space-y-1.5">
-              <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-bold">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-bold">
                 <Award className="w-3.5 h-3.5 text-[#0057FF]" />
                 <span>
-                  {completedCount > 0
-                    ? 'عضو فعال باشگاه مشتریان'
-                    : 'حساب کاربری جدید (بدون سابقه رزرو)'}
+                  {completedCount > 0 ? 'عضو باشگاه مشتریان' : 'حساب کاربری فعال'}
                 </span>
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
@@ -1476,57 +1477,62 @@ export const CustomerOverviewPage: React.FC = () => {
               <p className="text-xs text-[#64748B] tabular-nums">
                 {displayPhoneCity}
               </p>
-              <div className="pt-1 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              <div className="pt-1.5 flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <Link to="/search">
                   <Button variant="primary" size="sm">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>رزرو نوبت جدید</span>
-                  </Button>
-                </Link>
-                <Link to="/me/favorites">
-                  <Button variant="outline" size="sm">
-                    <Heart className="w-3.5 h-3.5 text-[#0057FF]" />
-                    <span>علاقه‌مندی‌ها ({toPersianDigits(totalFavoritesCount)})</span>
+                    <span>رزرو نوبت</span>
                   </Button>
                 </Link>
                 <Link to="/me/profile">
                   <Button variant="outline" size="sm">
-                    ویرایش پروفایل
+                    ویرایش نام و شماره
                   </Button>
                 </Link>
+                {authUser ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void logoutUser();
+                      navigate('/');
+                    }}
+                    className="text-[#DC2626] border-[#FECACA] hover:bg-[#FEF2F2]"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>خروج از حساب</span>
+                  </Button>
+                ) : null}
               </div>
             </div>
           </div>
 
-          {/* کارت ۲ ستونی باشگاه مشتریان و امتیاز وفاداری */}
-          <div className="lg:col-span-6 rounded-3xl bg-[#F3F6FC] border border-[#CBD5E1] p-5 grid grid-cols-2 gap-4 text-center">
-            <div className="border-l border-[#CBD5E1] pl-4 space-y-1">
-              <span className="text-xs font-bold text-[#0057FF] block">
-                امتیاز باشگاه مشتریان
+          {/* کارت ۲ ستونی امتیاز و نوبت‌ها */}
+          <div className="lg:col-span-5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] p-4 grid grid-cols-2 gap-3 text-center">
+            <div className="border-l border-[#CBD5E1] pl-3 space-y-0.5">
+              <span className="text-[11px] font-bold text-[#0057FF] block">
+                امتیاز وفاداری
               </span>
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#0057FF] tabular-nums">
+              <p className="text-2xl font-extrabold text-[#0057FF] tabular-nums">
                 {toPersianDigits(loyaltyPoints)}
               </p>
-              <span className="text-[11px] text-[#64748B] block">
-                با هر رزرو نوبت ۱۵۰ امتیاز دریافت می‌کنید
-              </span>
             </div>
 
-            <div className="space-y-1">
-              <span className="text-xs font-bold text-[#64748B] block">
-                نوبت‌های تکمیل‌شده
+            <div className="space-y-0.5">
+              <span className="text-[11px] font-bold text-[#64748B] block">
+                نوبت‌های انجام‌شده
               </span>
-              <p className="text-2xl sm:text-3xl font-extrabold text-[#061138] tabular-nums">
-                {toPersianDigits(completedCount)} نوبت
+              <p className="text-2xl font-extrabold text-[#061138] tabular-nums">
+                {toPersianDigits(completedCount)}
               </p>
-              <span className="text-[11px] text-[#10B981] font-bold inline-flex items-center justify-center gap-1">
-                <Check className="w-3.5 h-3.5" />
-                <span>{completedCount > 0 ? 'مشتری خوش‌حساب' : 'آماده اولین رزرو'}</span>
-              </span>
             </div>
           </div>
         </div>
       </Card>
+
+      {/* آیتم کوچک نصب اپ در پروفایل (اگر قبلاً نصب شده باشد خودکار مخفی است) */}
+      <PWAProfileInstallRow variant="card" />
 
       {dataMode === 'real' && !authUser ? (
         <Card className="rounded-3xl flex flex-wrap items-center justify-between gap-4 bg-[#FFFBEB] border-[#FDE68A]">
@@ -1697,7 +1703,6 @@ export const CustomerAppointmentsPage: React.FC = () => {
   const myAppointments = appointments.filter((a) => {
     if (!authUser) return a.id.startsWith('apt-live-');
     return (
-      a.customerPhone === authUser.phone ||
       a.customerName === authUser.fullName ||
       a.id.startsWith('apt-live-')
     );
@@ -1964,9 +1969,10 @@ export const CustomerFavoritesPage: React.FC = () => {
 
 /** ۸. ویرایش پروفایل مشتری (/me/profile) */
 export const CustomerProfilePage: React.FC = () => {
+  const navigate = useNavigate();
   const {
-    dataMode,
     authUser,
+    logoutUser,
     updateCustomerProfile,
     setAccountPassword,
   } = usePrototypeData();
@@ -1992,6 +1998,7 @@ export const CustomerProfilePage: React.FC = () => {
     try {
       await updateCustomerProfile({
         fullName: name.trim(),
+        phone: phone.trim(),
         defaultCity: city.trim(),
       });
     } finally {
@@ -2013,38 +2020,46 @@ export const CustomerProfilePage: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
-        kicker="حساب کاربری · اطلاعات شخصی و رمز عبور"
-        title="ویرایش مشخصات کاربری و تنظیم رمز عبور"
-        subtitle="مدیریت نام، شهر پیش‌فرض جست‌وجو، تعریف رمز عبور ثابت و تنظیمات پیامک یادآور نوبت"
+        kicker="حساب کاربری"
+        title="ویرایش مشخصات و امنیت"
+        subtitle="ویرایش نام، شماره موبایل و رمز عبور حساب کاربری"
         breadcrumbs={[
-          { label: 'حساب کاربری من', href: '/me' },
+          { label: 'حساب من', href: '/me' },
           { label: 'اطلاعات کاربری' },
         ]}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
-        <div className="lg:col-span-7 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-7 space-y-5">
           <Card padding="lg" className="rounded-3xl">
-            <form onSubmit={handleSave} className="space-y-5">
+            <form onSubmit={handleSave} className="space-y-4">
               <FormField id="cust-name" label="نام و نام خانوادگی" required>
                 <Input
                   id="cust-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  placeholder="نام و نام خانوادگی"
                 />
               </FormField>
-              <FormField id="cust-phone" label="شماره همراه">
+              <FormField
+                id="cust-phone"
+                label="شماره همراه (قابل ویرایش در صورت ثبت اشتباه)"
+                required
+              >
                 <Input
                   id="cust-phone"
                   dir="ltr"
+                  inputMode="tel"
                   value={phone}
-                  disabled={dataMode === 'real'}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) =>
+                    setPhone(normalizeIranMobileInput(e.target.value))
+                  }
+                  placeholder="0913..."
                 />
               </FormField>
-              <FormField id="cust-city" label="شهر پیش‌فرض جست‌وجو">
+              <FormField id="cust-city" label="شهر پیش‌فرض">
                 <Input
                   id="cust-city"
                   value={city}
@@ -2052,19 +2067,19 @@ export const CustomerProfilePage: React.FC = () => {
                 />
               </FormField>
 
-              <div className="pt-3 border-t border-[#E6E0F5]">
+              <div className="pt-2 border-t border-[#E6E0F5]">
                 <label className="flex items-center justify-between text-xs sm:text-sm font-bold text-[#1E1B2E] cursor-pointer py-1">
-                  <span>دریافت پیامک یادآور ۲۴ ساعت پیش از نوبت</span>
+                  <span>پیامک یادآور نوبت</span>
                   <input
                     type="checkbox"
                     checked={smsReminder}
                     onChange={(e) => setSmsReminder(e.target.checked)}
-                    className="accent-[#8B5CF6] w-4 h-4"
+                    className="accent-[#0057FF] w-4 h-4"
                   />
                 </label>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-1">
                 <Button type="submit" variant="primary" isLoading={isSaving}>
                   ذخیره تغییرات پروفایل
                 </Button>
@@ -2072,18 +2087,23 @@ export const CustomerProfilePage: React.FC = () => {
             </form>
           </Card>
 
-          <Card padding="lg" className="rounded-3xl space-y-4 border-2 border-[#0057FF]/20">
-            <div className="space-y-1">
-              <h3 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                تنظیم یا تغییر رمز عبور ثابت حساب کاربری
-              </h3>
-              <p className="text-xs text-[#64748B]">
-                با تعیین رمز عبور ثابت، در مراجعات بعدی بدون نیاز به دریافت کد پیامکی می‌توانید مستقیماً وارد شوید. در صورت فراموشی رمز نیز همیشه از صفحه ورود با کد پیامکی قابل بازیابی است.
-              </p>
-            </div>
-            <form onSubmit={handleSavePassword} className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+          <Card
+            padding="lg"
+            className="rounded-3xl space-y-3.5 border border-[#CBD5E1]"
+          >
+            <h3 className="text-sm font-extrabold text-[#061138]">
+              تغییر رمز عبور حساب
+            </h3>
+            <form
+              onSubmit={handleSavePassword}
+              className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3"
+            >
               <div className="flex-1">
-                <FormField id="cust-new-pass" label="رمز عبور جدید (حداقل ۶ کاراکتر)" required>
+                <FormField
+                  id="cust-new-pass"
+                  label="رمز عبور جدید (حداقل ۶ کاراکتر)"
+                  required
+                >
                   <Input
                     id="cust-new-pass"
                     type="password"
@@ -2095,30 +2115,55 @@ export const CustomerProfilePage: React.FC = () => {
                 </FormField>
               </div>
               <Button type="submit" variant="primary" isLoading={isSavingPass}>
-                ثبت رمز عبور ثابت
+                ثبت رمز جدید
               </Button>
             </form>
           </Card>
         </div>
 
-        <Card variant="muted" className="lg:col-span-5 rounded-3xl space-y-3">
-          <div className="flex items-center gap-3">
-            <Avatar name={name || 'کاربر'} size="lg" tone="rose" />
-            <div>
-              <h2 className="text-base font-extrabold text-[#061138]">
-                {name || 'کاربر Timeto'}
-              </h2>
-              <p className="text-xs text-[#6B6480] flex items-center gap-1 mt-0.5">
-                <MapPin className="w-3.5 h-3.5 text-[#8B5CF6]" />
-                <span>شهر پیش‌فرض: {city}</span>
-              </p>
+        <div className="lg:col-span-5 space-y-4">
+          {/* آیتم کوچک نصب اپ در پروفایل (در صورت نصب بودن مخفی است) */}
+          <PWAProfileInstallRow variant="card" />
+
+          <Card variant="muted" className="rounded-3xl space-y-4">
+            <div className="flex items-center gap-3">
+              <Avatar name={name || 'کاربر'} size="lg" tone="rose" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-extrabold text-[#061138] truncate">
+                  {name || 'کاربر Timeto'}
+                </h2>
+                <p
+                  dir="ltr"
+                  className="text-xs font-mono font-bold text-[#0057FF] text-right mt-0.5"
+                >
+                  {phone || '—'}
+                </p>
+                <p className="text-xs text-[#64748B] flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#0057FF]" />
+                  <span>{city}</span>
+                </p>
+              </div>
             </div>
-          </div>
-          <p className="text-xs text-[#6B6480] leading-relaxed pt-2 border-t border-[#E6E0F5]">
-            اطلاعات کاربری شما هنگام رزرو نوبت جدید به‌طور خودکار در فرم
-            تایید قرار می‌گیرد تا فرآیند رزرو سریع‌تر انجام شود.
-          </p>
-        </Card>
+
+            {authUser ? (
+              <div className="pt-3 border-t border-[#CBD5E1]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  fullWidth
+                  onClick={() => {
+                    void logoutUser();
+                    navigate('/');
+                  }}
+                  className="text-[#DC2626] border-[#FECACA] hover:bg-[#FEF2F2]"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>خروج از حساب و ورود با شماره دیگر</span>
+                </Button>
+              </div>
+            ) : null}
+          </Card>
+        </div>
       </div>
     </div>
   );

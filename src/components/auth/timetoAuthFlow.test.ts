@@ -13,7 +13,7 @@ test('generateSuggestedPassword returns a strong 8+ character password using pho
   assert.equal(suggested.length >= 8, true);
 });
 
-test('validateRegistrationStep1 enforces 11-digit mobile, 8+ char password, and matching confirmation', () => {
+test('validateRegistrationStep1 enforces 11-digit mobile, 8+ char password, matching confirmation, and phone uniqueness', () => {
   const invalidPhone = validateRegistrationStep1({
     phone: '0913123',
     password: 'Password123',
@@ -35,17 +35,27 @@ test('validateRegistrationStep1 enforces 11-digit mobile, 8+ char password, and 
   });
   assert.equal(mismatch.valid, false);
 
+  const duplicate = validateRegistrationStep1({
+    phone: '۰۹۱۳۸۲۰۱۰۴۲',
+    password: 'Timeto@1042',
+    confirmPassword: 'Timeto@1042',
+    existingPhones: ['09138201042'],
+  });
+  assert.equal(duplicate.valid, false);
+  assert.equal(duplicate.alreadyRegistered, true);
+
   const ok = validateRegistrationStep1({
     phone: '۰۹۱۳۸۲۰۱۰۴۲',
     password: 'Timeto@1042',
     confirmPassword: 'Timeto@1042',
+    existingPhones: ['09120000000'],
   });
   assert.equal(ok.valid, true);
   assert.equal(ok.normalizedPhone, '09138201042');
 });
 
 test('applyOtpDigitChange updates single box, advances focus, and detects 6-digit completion', () => {
-  let digits = ['', '', '', '', '', ''];
+  const digits = ['', '', '', '', '', ''];
   const step1 = applyOtpDigitChange(digits, 0, '۳');
   assert.equal(step1.digits[0], '3');
   assert.equal(step1.nextFocusIndex, 1);

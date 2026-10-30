@@ -32,6 +32,7 @@ export interface SavedMemoryAccount {
   businessType?: BusinessType;
   city?: string;
   neighborhood?: string;
+  joinedJalali?: string;
   updatedAt: number;
 }
 
@@ -46,14 +47,59 @@ export function generateSuggestedPassword(phone?: string): string {
   return `Timeto@${suffix}`;
 }
 
-/** اعتبارسنجی گام ۱ ثبت‌نام (شماره موبایل + رمز عبور حداقل ۸ کاراکتر + تکرار رمز) */
+/** خواندن حساب‌های ثبت‌شده در حافظه مرورگر با یکتاسازی بر اساس شماره ۱۱ رقمی نرمال‌شده */
+export function getSavedMemoryAccounts(): Record<string, SavedMemoryAccount> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+
+    const normalizedMap: Record<string, SavedMemoryAccount> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (!val || typeof val !== 'object') continue;
+      const acc = val as SavedMemoryAccount;
+      const cleanPhone = normalizeIranMobileInput(acc.phone || key);
+      if (!cleanPhone) continue;
+      const existing = normalizedMap[cleanPhone];
+      if (!existing || (acc.updatedAt || 0) >= (existing.updatedAt || 0)) {
+        normalizedMap[cleanPhone] = {
+          ...acc,
+          phone: cleanPhone,
+        };
+      }
+    }
+    return normalizedMap;
+  } catch {
+    return {};
+  }
+}
+
+/** بررسی اینکه آیا یک شماره موبایل قبلاً در سامانه ثبت‌نام شده است یا خیر */
+export function isPhoneAlreadyRegistered(
+  phone: string,
+  extraRegisteredPhones: string[] = []
+): boolean {
+  const clean = normalizeIranMobileInput(phone);
+  if (!isValidIranMobile(clean)) return false;
+  const accounts = getSavedMemoryAccounts();
+  if (accounts[clean]) return true;
+  return extraRegisteredPhones.some(
+    (p) => normalizeIranMobileInput(p) === clean
+  );
+}
+
+/** اعتبارسنجی گام ۱ ثبت‌نام (شماره موبایل یکتا + رمز عبور حداقل ۸ کاراکتر + تکرار رمز) */
 export function validateRegistrationStep1(params: {
   phone: string;
   password: string;
   confirmPassword: string;
+  existingPhones?: string[];
 }): {
   valid: boolean;
   normalizedPhone: string;
+  alreadyRegistered?: boolean;
   error?: string;
 } {
   const normalizedPhone = normalizeIranMobileInput(params.phone);
@@ -62,6 +108,15 @@ export function validateRegistrationStep1(params: {
       valid: false,
       normalizedPhone,
       error: 'لطفاً شماره موبایل ۱۱ رقمی معتبر با شروع 09 وارد کنید.',
+    };
+  }
+  if (isPhoneAlreadyRegistered(normalizedPhone, params.existingPhones)) {
+    return {
+      valid: false,
+      normalizedPhone,
+      alreadyRegistered: true,
+      error:
+        'این شماره موبایل قبلاً ثبت‌نام شده است. لطفاً از بخش «ورود به حساب» وارد شوید.',
     };
   }
   const pass = params.password.trim();
@@ -108,7 +163,6 @@ export function applyOtpDigitChange(
   }
 
   if (clean.length > 1) {
-    // اگر کاربر کد کامل را Paste کرد یا مرورگر WebOTP آن را پر کرد
     for (let i = 0; i < 6; i++) {
       if (clean[i]) {
         next[i] = clean[i];
@@ -156,25 +210,22 @@ export function validateRegistrationStep3Profile(params: {
   };
 }
 
-/** خواندن حساب‌های ثبت‌شده در حافظه مرورگر */
-export function getSavedMemoryAccounts(): Record<string, SavedMemoryAccount> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(SAVED_ACCOUNTS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-/** ذخیره حساب و رمز عبور در حافظه مرورگر جهت ورود خودکار و بدون دردسر در دفعات بعد */
+/** ذخیره حساب و رمز عبور در حافظه مرورگر با تضمین یکتایی شماره موبایل */
 export function saveMemoryAccount(account: SavedMemoryAccount): void {
   if (typeof window === 'undefined') return;
   try {
+    const cleanPhone = normalizeIranMobileInput(account.phone);
+    if (!cleanPhone) return;
     const map = getSavedMemoryAccounts();
-    map[account.phone] = account;
+    const prev = map[cleanPhone];
+    const merged: SavedMemoryAccount = {
+      ...prev,
+      ...account,
+      phone: cleanPhone,
+      joinedJalali: account.joinedJalali || prev?.joinedJalali || 'امروز',
+      updatedAt: Date.now(),
+    };
+    map[cleanPhone] = merged;
     window.localStorage.setItem(
       SAVED_ACCOUNTS_STORAGE_KEY,
       JSON.stringify(map)
@@ -182,23 +233,127 @@ export function saveMemoryAccount(account: SavedMemoryAccount): void {
     window.localStorage.setItem(
       LAST_SAVED_CREDENTIAL_KEY,
       JSON.stringify({
-        phone: account.phone,
-        password: account.password,
-        role: account.role,
-        fullName: account.fullName,
+        phone: cleanPhone,
+        password: merged.password,
+        role: merged.role,
+        fullName: merged.fullName,
       })
     );
-    // همگام‌سازی با جدول رمزهای قبلی برای پشتیبانی یکپارچه
     const legacyRaw =
       window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
     const legacy = JSON.parse(legacyRaw);
-    legacy[account.phone] = account.password;
+    legacy[cleanPhone] = merged.password;
     window.localStorage.setItem(
       'timeto_local_passwords_v1',
       JSON.stringify(legacy)
     );
   } catch {
     // ignore storage errors
+  }
+}
+
+/** ویرایش نام، شماره موبایل یا نقش یک حساب ثبت‌شده بدون ایجاد رکورد تکراری */
+export function updateMemoryAccountPhoneOrProfile(
+  oldPhone: string,
+  patch: {
+    newPhone?: string;
+    fullName?: string;
+    city?: string;
+    role?: AccountRoleChoice;
+    avatarUrl?: string;
+  }
+): { ok: boolean; error?: string; updatedAccount?: SavedMemoryAccount } {
+  if (typeof window === 'undefined') return { ok: true };
+  try {
+    const cleanOld = normalizeIranMobileInput(oldPhone);
+    const cleanNew = patch.newPhone
+      ? normalizeIranMobileInput(patch.newPhone)
+      : cleanOld;
+
+    if (!isValidIranMobile(cleanNew)) {
+      return {
+        ok: false,
+        error: 'شماره موبایل باید ۱۱ رقم معتبر با شروع 09 باشد.',
+      };
+    }
+
+    const map = getSavedMemoryAccounts();
+    if (cleanNew !== cleanOld && map[cleanNew]) {
+      return {
+        ok: false,
+        error: 'این شماره موبایل قبلاً برای حساب دیگری ثبت شده است.',
+      };
+    }
+
+    const existing = map[cleanOld] || {
+      phone: cleanOld,
+      password: generateSuggestedPassword(cleanNew),
+      firstName: patch.fullName?.split(' ')[0] || 'کاربر',
+      lastName: patch.fullName?.split(' ').slice(1).join(' ') || '',
+      fullName: patch.fullName || 'کاربر تایم تو',
+      role: patch.role || 'CUSTOMER',
+      city: patch.city || 'اصفهان',
+      joinedJalali: 'امروز',
+      updatedAt: Date.now(),
+    };
+
+    const nextFullName = patch.fullName?.trim() || existing.fullName;
+    const updated: SavedMemoryAccount = {
+      ...existing,
+      phone: cleanNew,
+      fullName: nextFullName,
+      firstName: nextFullName.split(' ')[0] || existing.firstName,
+      lastName: nextFullName.split(' ').slice(1).join(' ') || existing.lastName,
+      city: patch.city?.trim() || existing.city,
+      role: patch.role || existing.role,
+      avatarUrl: patch.avatarUrl ?? existing.avatarUrl,
+      updatedAt: Date.now(),
+    };
+
+    if (cleanNew !== cleanOld) {
+      delete map[cleanOld];
+    }
+    map[cleanNew] = updated;
+    window.localStorage.setItem(
+      SAVED_ACCOUNTS_STORAGE_KEY,
+      JSON.stringify(map)
+    );
+
+    const legacyRaw =
+      window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+    const legacy = JSON.parse(legacyRaw);
+    if (cleanNew !== cleanOld && legacy[cleanOld]) {
+      legacy[cleanNew] = legacy[cleanOld];
+      delete legacy[cleanOld];
+    } else if (updated.password) {
+      legacy[cleanNew] = updated.password;
+    }
+    window.localStorage.setItem(
+      'timeto_local_passwords_v1',
+      JSON.stringify(legacy)
+    );
+
+    return { ok: true, updatedAccount: updated };
+  } catch {
+    return { ok: false, error: 'خطا در بروزرسانی اطلاعات حساب.' };
+  }
+}
+
+/** حذف حساب کاربری از حافظه مرورگر (توسط مدیر کل یا هنگام اصلاح حساب اشتباه) */
+export function removeMemoryAccount(phone: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clean = normalizeIranMobileInput(phone);
+    const map = getSavedMemoryAccounts();
+    if (map[clean]) {
+      delete map[clean];
+      window.localStorage.setItem(
+        SAVED_ACCOUNTS_STORAGE_KEY,
+        JSON.stringify(map)
+      );
+    }
+  } catch {
+    // ignore
   }
 }
 

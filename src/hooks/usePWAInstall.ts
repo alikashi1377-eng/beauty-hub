@@ -5,7 +5,8 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-const DISMISS_STORAGE_KEY = 'timeto_pwa_installed_or_dismissed_v2';
+const INSTALLED_STORAGE_KEY = 'timeto_pwa_confirmed_installed_v3';
+const BANNER_DISMISS_STORAGE_KEY = 'timeto_pwa_banner_dismissed_v3';
 
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] =
@@ -23,17 +24,21 @@ export function usePWAInstall() {
       (window.navigator as unknown as { standalone?: boolean }).standalone ===
         true;
 
-    let savedInstalledOrDismissed = false;
+    let confirmedInstalled = false;
+    let bannerDismissed = false;
     try {
-      savedInstalledOrDismissed =
-        window.localStorage.getItem(DISMISS_STORAGE_KEY) === '1' ||
-        window.sessionStorage.getItem(DISMISS_STORAGE_KEY) === '1';
+      confirmedInstalled =
+        window.localStorage.getItem(INSTALLED_STORAGE_KEY) === '1';
+      bannerDismissed =
+        confirmedInstalled ||
+        window.localStorage.getItem(BANNER_DISMISS_STORAGE_KEY) === '1' ||
+        window.sessionStorage.getItem(BANNER_DISMISS_STORAGE_KEY) === '1';
     } catch {
       // ignore storage errors
     }
 
-    setIsInstalled(isStandalone || savedInstalledOrDismissed);
-    setIsBannerDismissed(savedInstalledOrDismissed);
+    setIsInstalled(isStandalone || confirmedInstalled);
+    setIsBannerDismissed(bannerDismissed);
 
     const ua = window.navigator.userAgent.toLowerCase();
     const ios =
@@ -58,7 +63,8 @@ export function usePWAInstall() {
       setIsBannerDismissed(true);
       setDeferredPrompt(null);
       try {
-        window.localStorage.setItem(DISMISS_STORAGE_KEY, '1');
+        window.localStorage.setItem(INSTALLED_STORAGE_KEY, '1');
+        window.localStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');
       } catch {
         // ignore
       }
@@ -78,10 +84,20 @@ export function usePWAInstall() {
 
   const dismissBanner = () => {
     setIsBannerDismissed(true);
-    setIsInstalled(true);
     try {
-      window.localStorage.setItem(DISMISS_STORAGE_KEY, '1');
-      window.sessionStorage.setItem(DISMISS_STORAGE_KEY, '1');
+      window.localStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');
+      window.sessionStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');
+    } catch {
+      // ignore
+    }
+  };
+
+  const confirmInstalled = () => {
+    setIsInstalled(true);
+    setIsBannerDismissed(true);
+    try {
+      window.localStorage.setItem(INSTALLED_STORAGE_KEY, '1');
+      window.localStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');
     } catch {
       // ignore
     }
@@ -94,7 +110,7 @@ export function usePWAInstall() {
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
-      dismissBanner();
+      confirmInstalled();
       setDeferredPrompt(null);
       return 'accepted';
     }
@@ -109,5 +125,6 @@ export function usePWAInstall() {
     isBannerDismissed,
     install,
     dismissBanner,
+    confirmInstalled,
   };
 }

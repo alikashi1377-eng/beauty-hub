@@ -219,7 +219,7 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
             <img
               src={TIMETO_BRAND_LOGO_URL}
               alt="تایم تو"
-              className="w-9 h-9 rounded-full object-cover border border-[#00E5FF]/50 shadow-[0_0_16px_rgba(0,229,255,0.35)]"
+              className="w-9 h-9 rounded-full object-contain border border-[#00E5FF]/50 shadow-[0_0_16px_rgba(0,229,255,0.35)]"
             />
             <span className="text-base sm:text-lg font-black tracking-[0.18em] text-white font-latin">
               Timeto
@@ -237,28 +237,28 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
       </header>
 
       {/* =====================================================================
-          HERO SECTION — استیج سه‌بعدی زنده با گوی نوری و شبکه کندویی درخشان
-          بدون هیچ فضای خالی اضافه؛ دکمه‌های نقش در اولین نگاه ۱۰۰٪ مشخص‌اند و با اسکرول یا زمان، نوشته‌ها و کارت‌های زنده تغییر می‌کنند
+          HERO SECTION — استیج سه‌بعدی بازطراحی‌شده با ارتفاع 90svh و داک انتخاب نقش
+          طراحی متوازن تا نوار تیکر متحرک در لبه پایین صفحه اول دیده شود
       ====================================================================== */}
       <section
         ref={heroSectionRef}
-        className="relative min-h-[calc(100svh-1rem)] pt-16 pb-8 px-4 sm:px-6 flex flex-col justify-between overflow-hidden"
+        className="relative min-h-[580px] h-[90svh] max-h-[820px] pt-17 pb-3 px-4 sm:px-6 flex flex-col justify-between overflow-hidden"
       >
         {/* ۱. پس‌زمینه سه‌بعدی عمیق: هاله‌های نوری + شبکه کندویی پرسپکتیو درخشان در کف صحنه */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {/* هاله نوری فیروزه‌ای/آبی پشت گوی سه‌بعدی */}
           <div
-            className="absolute left-1/2 top-[22%] -translate-x-1/2 -translate-y-1/2 w-[340px] h-[340px] sm:w-[540px] sm:h-[540px] rounded-full transition-transform duration-300 ease-out"
+            className="absolute left-1/2 top-[22%] -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] sm:w-[520px] sm:h-[520px] rounded-full transition-transform duration-300 ease-out"
             style={{
               background:
-                'radial-gradient(circle, rgba(0,229,255,0.42) 0%, rgba(0,87,255,0.26) 40%, rgba(2,7,24,0) 72%)',
-              transform: `scale(${1 + heroProgress * 0.25})`,
+                'radial-gradient(circle, rgba(0,229,255,0.42) 0%, rgba(0,87,255,0.24) 44%, rgba(2,7,24,0) 72%)',
+              transform: `scale(${1 + heroProgress * 0.22})`,
             }}
           />
 
           {/* بازتاب نوری روی کف استیج کندویی */}
           <div
-            className="absolute left-1/2 bottom-[8%] -translate-x-1/2 w-[380px] sm:w-[680px] h-[220px] rounded-full opacity-60 blur-2xl"
+            className="absolute left-1/2 bottom-[6%] -translate-x-1/2 w-[360px] sm:w-[660px] h-[200px] rounded-full opacity-60 blur-2xl"
             style={{
               background:
                 'radial-gradient(ellipse at center, rgba(0,229,255,0.38) 0%, rgba(0,87,255,0.22) 48%, rgba(2,7,24,0) 78%)',
@@ -267,13 +267,13 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
 
           {/* کف سه‌بعدی کندویی درخشان (3D Perspective Honeycomb Stage Floor) */}
           <div
-            className="absolute inset-x-0 bottom-[-10%] sm:bottom-[-14%] h-[58%] flex items-center justify-center"
+            className="absolute inset-x-0 bottom-[-12%] sm:bottom-[-15%] h-[54%] flex items-center justify-center"
             style={{
               perspective: '540px',
             }}
           >
             <div
-              className="w-[155vw] sm:w-[120vw] max-w-[1180px] h-[390px] sm:h-[490px] grid grid-cols-6 gap-2.5 sm:gap-3.5 p-3 transition-transform duration-200 ease-out"
+              className="w-[150vw] sm:w-[118vw] max-w-[1140px] h-[350px] sm:h-[450px] grid grid-cols-6 gap-2.5 sm:gap-3.5 p-3 transition-transform duration-200 ease-out"
               style={{
                 transform: `rotateX(${floorTiltDeg}deg) translateY(${floorTranslateY}px) scale(${floorScale})`,
                 transformStyle: 'preserve-3d',
@@ -287,8 +287,8 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
                   }}
                   className={`rounded-[20px] sm:rounded-[26px] border-2 transition-all duration-500 ${
                     tile.isGlowing
-                      ? 'bg-gradient-to-b from-[#00E5FF]/30 via-[#0057FF]/22 to-[#04123B]/95 border-[#00E5FF]/80 shadow-[0_0_32px_rgba(0,229,255,0.55),inset_0_2px_16px_rgba(0,229,255,0.45)]'
-                      : 'bg-[#061542]/80 border-[#00C6FF]/35 shadow-[0_0_14px_rgba(0,87,255,0.25),inset_0_1px_10px_rgba(0,198,255,0.2)]'
+                      ? 'bg-gradient-to-b from-[#00E5FF]/30 via-[#0057FF]/22 to-[#04123B]/95 border-[#00E5FF]/80 shadow-[0_0_30px_rgba(0,229,255,0.52),inset_0_2px_14px_rgba(0,229,255,0.42)]'
+                      : 'bg-[#061542]/75 border-[#00C6FF]/30 shadow-[0_0_12px_rgba(0,87,255,0.2),inset_0_1px_8px_rgba(0,198,255,0.18)]'
                   }`}
                 />
               ))}
@@ -296,117 +296,150 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
           </div>
 
           {/* گرادینت نرم برای کنتراست عالی نوشته‌ها روی کف نوری */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#020718]/65 via-transparent to-[#020718]/90" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#020718]/65 via-[#020718]/20 to-[#020718]/92" />
         </div>
 
-        {/* ۲. محتوای مرکزی Hero — موبایل‌فرست، زنده و واکنش‌گرا */}
-        <div className="relative z-10 max-w-xl mx-auto my-auto w-full text-center space-y-4 sm:space-y-5 pt-2">
-          {/* گوی کریستالی سه‌بعدی و لوگوی تایم تو */}
+        {/* ۲. محتوای مرکزی Hero (div:nth-of-type(2)) — بازطراحی مدرن با داک شیشه‌ای انتخاب نقش */}
+        <div className="relative z-10 max-w-xl mx-auto my-auto w-full text-center flex flex-col items-center gap-4 sm:gap-5">
+          {/* الف) گوی کریستالی سه‌بعدی تایم تو + کپسول زنده ۳ مرحله‌ای */}
           <div
-            className="relative mx-auto flex flex-col items-center justify-center transition-transform duration-300"
+            className="relative flex flex-col items-center justify-center transition-transform duration-300"
             style={{
               transform: `translate3d(0, ${orbTranslateY}px, 0) scale(${orbScale})`,
             }}
           >
-            <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center animate-timeto-orb">
-              <div className="absolute inset-[-12px] rounded-full border-2 border-[#00E5FF]/50 animate-timeto-ring pointer-events-none shadow-[0_0_20px_rgba(0,229,255,0.4)]" />
-              <div className="absolute inset-[-4px] rounded-full bg-gradient-to-tr from-[#0057FF] via-[#00E5FF] to-[#7CE8FF] opacity-45 blur-md" />
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full p-1 bg-gradient-to-b from-[#7CE8FF] via-[#00E5FF] to-[#0057FF] shadow-[0_0_50px_rgba(0,229,255,0.8),inset_0_2px_14px_rgba(255,255,255,0.8)] flex items-center justify-center overflow-hidden">
+            <div className="relative w-21 h-21 sm:w-25 sm:h-25 flex items-center justify-center animate-timeto-orb">
+              <div className="absolute inset-[-10px] rounded-full border-2 border-[#00E5FF]/45 animate-timeto-ring pointer-events-none shadow-[0_0_20px_rgba(0,229,255,0.35)]" />
+              <div className="absolute inset-[-3px] rounded-full bg-gradient-to-tr from-[#0057FF] via-[#00E5FF] to-[#7CE8FF] opacity-45 blur-md" />
+              <div className="relative w-18 h-18 sm:w-22 sm:h-22 rounded-full p-0.5 bg-gradient-to-b from-[#7CE8FF] via-[#00E5FF] to-[#0057FF] shadow-[0_0_44px_rgba(0,229,255,0.8),inset_0_2px_12px_rgba(255,255,255,0.75)] flex items-center justify-center overflow-hidden">
                 <img
                   src={TIMETO_BRAND_LOGO_URL}
                   alt="تایم تو"
-                  className="w-full h-full rounded-full object-cover"
+                  className="w-full h-full rounded-full object-contain"
                 />
               </div>
             </div>
 
-            {/* بج وضعیت زنده بالای تیتر */}
-            <div className="mt-3.5 flex items-center justify-center">
-              <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#071850]/90 backdrop-blur-md border border-[#00E5FF]/50 shadow-[0_0_24px_rgba(0,229,255,0.28)] text-xs font-extrabold text-[#00E5FF] transition-all duration-300">
-                <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
-                <span>{heroStage.badgeText}</span>
+            {/* کپسول وضعیت زنده یکپارچه با ۳ نقطه مرحله‌ای قابل کلیک */}
+            <div className="mt-3 inline-flex items-center gap-2.5 px-3.5 py-1 rounded-full bg-[#061544]/90 backdrop-blur-md border border-[#00E5FF]/40 shadow-[0_8px_24px_rgba(0,229,255,0.2)]">
+              <span className="text-[11px] font-extrabold text-[#00E5FF]">
+                {heroStage.badgeText}
               </span>
+              <span className="w-px h-3 bg-white/15" />
+              <div className="flex items-center gap-1" role="tablist" aria-label="مراحل معرفی">
+                {([0, 1, 2] as const).map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    aria-label={`مرحله ${idx + 1}`}
+                    onClick={() => setAutoHeroTick(idx)}
+                    className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                      heroStage.stageIndex === idx
+                        ? 'w-4 bg-[#00E5FF] shadow-[0_0_8px_rgba(0,229,255,0.9)]'
+                        : 'w-1.5 bg-white/30 hover:bg-white/60'
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* تیتر و زیرنویس پویا که در ۳ مرحله با انیمیشن تغییر می‌کنند */}
-          <div className="space-y-2.5 px-1">
-            <h1 className="text-[28px] sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.24] text-white transition-all duration-300">
-              <span className="block drop-shadow-[0_4px_18px_rgba(0,0,0,0.6)]">
+          {/* ب) تیتر و زیرنویس پویا با سلسله‌مراتب تایپوگرافی دقیق */}
+          <div className="space-y-2 px-1">
+            <h1 className="text-[27px] sm:text-5xl font-black tracking-tight leading-[1.24] text-white transition-all duration-300">
+              <span className="block drop-shadow-[0_4px_18px_rgba(0,0,0,0.65)]">
                 {heroStage.headlineTop}
               </span>
-              <span className="block mt-1.5 bg-gradient-to-l from-[#00E5FF] via-[#38BDF8] to-[#60A5FA] bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(0,229,255,0.35)]">
+              <span className="block mt-1.5 bg-gradient-to-l from-[#00E5FF] via-[#38BDF8] to-[#60A5FA] bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(0,229,255,0.38)]">
                 {heroStage.headlineGradient}
               </span>
             </h1>
 
-            <p className="text-xs sm:text-base text-slate-200 font-medium max-w-md mx-auto leading-relaxed min-h-[2.6rem]">
+            <p className="text-xs sm:text-sm text-slate-300 font-medium max-w-md mx-auto leading-relaxed">
               {heroStage.subtitle}
             </p>
           </div>
 
-          {/* کارت‌های زنده انیمیشنی که بین ۳ مرحله عوض می‌شوند و قابل لمس هستند */}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            <span className="px-3.5 py-1.5 rounded-full bg-[#081A52]/85 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] sm:text-xs font-extrabold text-white shadow-sm transition-all duration-300">
-              {heroStage.floatingRightPill}
-            </span>
-            <span className="px-3.5 py-1.5 rounded-full bg-[#0057FF]/30 backdrop-blur-md border border-[#00E5FF]/45 text-[11px] sm:text-xs font-extrabold text-[#00E5FF] shadow-sm transition-all duration-300">
-              {heroStage.floatingLeftPill}
-            </span>
-          </div>
-
-          {/* دو دکمه اصلی تعیین نقش کاربر — در اولین نمایش ۱۰۰٪ برجسته و مشخص */}
-          <div className="flex flex-col sm:flex-row items-stretch justify-center gap-3 max-w-md mx-auto pt-1">
-            <button
-              type="button"
-              onClick={onSelectCustomerRole}
-              className="group flex-1 flex items-center justify-center gap-2.5 px-6 py-4 rounded-full bg-gradient-to-l from-[#0057FF] via-[#00A3FF] to-[#00E5FF] text-[#020718] font-black text-sm sm:text-base shadow-[0_14px_38px_-6px_rgba(0,229,255,0.8)] hover:opacity-95 active:scale-[0.99] cursor-pointer transition-all whitespace-nowrap"
-            >
-              <span>سالن‌ها را ببین</span>
-              <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-            </button>
-
-            <button
-              type="button"
-              onClick={onSelectBusinessRole}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-4 rounded-full bg-[#051138]/92 hover:bg-[#0B1E5B] text-white border border-[#00E5FF]/45 font-extrabold text-sm sm:text-base shadow-[0_10px_28px_-8px_rgba(0,87,255,0.5)] active:scale-[0.99] cursor-pointer transition-all whitespace-nowrap"
-            >
-              <Store className="w-4 h-4 text-[#00E5FF]" />
-              <span>سالن خود را ثبت کنید</span>
-            </button>
-          </div>
-
-          {/* دکمه‌های ۳ مرحله‌ای برای جابه‌جایی دستی یا مشاهده چرخه انیمیشن */}
-          <div className="flex items-center justify-center gap-2 pt-1">
-            {[
-              { idx: 0 as const, label: 'معرفی' },
-              { idx: 1 as const, label: 'رزرو آنی' },
-              { idx: 2 as const, label: 'تایم تو' },
-            ].map((item) => (
+          {/* ج) داک شیشه‌ای انتخاب نقش (Role Gateway Dock) — تفکیک شفاف مشتری و سالن‌دار */}
+          <div className="w-full max-w-lg rounded-[26px] p-2.5 sm:p-3 bg-[#041032]/85 backdrop-blur-2xl border border-[#00E5FF]/30 shadow-[0_22px_55px_-12px_rgba(0,229,255,0.32)] space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* کارت ۱: ورود مشتریان (مشاهده سالن‌ها و رزرو آنی) */}
               <button
-                key={item.idx}
                 type="button"
-                onClick={() => setAutoHeroTick(item.idx)}
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-all ${
-                  heroStage.stageIndex === item.idx
-                    ? 'bg-[#00E5FF] text-[#020718] shadow-[0_0_12px_rgba(0,229,255,0.7)]'
-                    : 'bg-white/10 text-slate-300 hover:bg-white/20'
-                }`}
+                onClick={onSelectCustomerRole}
+                className="group relative flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-l from-[#0057FF] via-[#0094FF] to-[#00E5FF] text-[#020718] text-right shadow-[0_12px_30px_-6px_rgba(0,229,255,0.7)] hover:opacity-95 active:scale-[0.99] cursor-pointer transition-all"
               >
-                {item.label}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-10 h-10 rounded-xl bg-[#020718]/15 border border-[#020718]/15 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-5 h-5 text-[#020718]" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-sm sm:text-base font-black text-[#020718] truncate">
+                      سالن‌ها را ببین
+                    </span>
+                    <span className="block text-[11px] font-extrabold text-[#020718]/80 truncate mt-0.5">
+                      مشتری هستم · رزرو آنی نوبت
+                    </span>
+                  </div>
+                </div>
+                <span className="w-8 h-8 rounded-full bg-[#020718]/15 flex items-center justify-center shrink-0 transition-transform group-hover:-translate-x-1">
+                  <ArrowLeft className="w-4 h-4 text-[#020718]" />
+                </span>
               </button>
-            ))}
+
+              {/* کارت ۲: ورود و ثبت سالن زیبایی (ویژه سالن‌داران) */}
+              <button
+                type="button"
+                onClick={onSelectBusinessRole}
+                className="group relative flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-[#07194A]/95 hover:bg-[#0C2466] text-white border border-[#00E5FF]/40 text-right shadow-[0_10px_24px_-8px_rgba(0,87,255,0.45)] active:scale-[0.99] cursor-pointer transition-all"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-10 h-10 rounded-xl bg-[#00E5FF]/15 border border-[#00E5FF]/35 flex items-center justify-center shrink-0">
+                    <Store className="w-5 h-5 text-[#00E5FF]" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-sm sm:text-base font-extrabold text-white truncate">
+                      سالن خود را ثبت کنید
+                    </span>
+                    <span className="block text-[11px] font-bold text-[#94A3B8] truncate mt-0.5">
+                      سالن‌دار هستم · پنل مدیریت
+                    </span>
+                  </div>
+                </div>
+                <span className="w-8 h-8 rounded-full bg-white/8 border border-white/15 flex items-center justify-center shrink-0 transition-transform group-hover:-translate-x-1">
+                  <ArrowLeft className="w-4 h-4 text-[#00E5FF]" />
+                </span>
+              </button>
+            </div>
+
+            {/* نوار آیکون‌محور ویژگی‌های کلیدی در پایین داک */}
+            <div className="pt-1 pb-0.5 px-2 flex items-center justify-around gap-2 border-t border-white/10 text-[11px] font-bold text-slate-300">
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarCheck className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                <span>رزرو ۲۴ ساعته</span>
+              </span>
+              <span className="w-1 h-1 rounded-full bg-white/20" />
+              <span className="inline-flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                <span>پیامک یادآوری</span>
+              </span>
+              <span className="w-1 h-1 rounded-full bg-white/20" />
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+                <span>ضمانت نوبت</span>
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* نشانگر متحرک «اسکرول |» در پایین هیرو */}
+        {/* نشانگر ظریف اسکرول در پایین هیرو */}
         <button
           type="button"
           onClick={() => window.scrollTo({ top: 560, behavior: 'smooth' })}
-          className="relative z-10 mx-auto pt-3 flex flex-col items-center gap-1 text-slate-300 hover:text-[#00E5FF] cursor-pointer transition-opacity duration-300"
+          aria-label="اسکرول به بخش‌های بعدی"
+          className="relative z-10 mx-auto pt-1 flex flex-col items-center text-slate-400 hover:text-[#00E5FF] cursor-pointer transition-colors"
         >
-          <span className="text-[11px] font-bold tracking-wider">اسکرول</span>
-          <span className="w-0.5 h-6 rounded-full bg-gradient-to-b from-[#00E5FF] to-transparent animate-bounce" />
+          <ChevronDown className="w-5 h-5 text-[#00E5FF] animate-bounce" />
         </button>
       </section>
 
@@ -998,11 +1031,11 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
         ====================================================================== */}
         <section className="pt-4 pb-8 text-center space-y-6 max-w-lg mx-auto">
           <div className="flex flex-col items-center gap-3">
-            <div className="relative w-22 h-22 rounded-full p-1 bg-gradient-to-b from-[#00E5FF] to-[#0057FF] shadow-[0_0_40px_rgba(0,229,255,0.5)]">
+            <div className="relative w-22 h-22 rounded-full p-0.5 bg-gradient-to-b from-[#00E5FF] to-[#0057FF] shadow-[0_0_40px_rgba(0,229,255,0.5)]">
               <img
                 src={TIMETO_BRAND_LOGO_URL}
                 alt="تایم تو"
-                className="w-full h-full rounded-full object-cover"
+                className="w-full h-full rounded-full object-contain"
               />
             </div>
             <span className="text-lg font-black tracking-[0.28em] text-slate-200 font-latin">

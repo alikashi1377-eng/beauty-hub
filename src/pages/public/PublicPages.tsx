@@ -275,40 +275,53 @@ const OriginalCustomerHomePage: React.FC = () => {
 
   return (
     <div className="space-y-8 sm:space-y-11">
-      {/* ۱. بخش Hero صفحه اصلی مشتریان با جست‌وجوی هوشمند شناور */}
-      <section className="relative rounded-[28px] sm:rounded-[32px] border border-[#1E293B] bg-[#061138] shadow-[0_20px_48px_-18px_rgba(6,17,56,0.55)]">
-        <div className="absolute inset-0 rounded-[28px] sm:rounded-[32px] overflow-hidden pointer-events-none">
+      {/* ۱. بخش Hero صفحه اصلی مشتریان با استیج نوری و باکس جست‌وجوی هوشمند */}
+      <section className="relative rounded-[28px] sm:rounded-[34px] border border-[#00E5FF]/25 bg-[#040E2E] shadow-[0_24px_56px_-16px_rgba(4,14,46,0.65)]">
+        <div className="absolute inset-0 rounded-[28px] sm:rounded-[34px] overflow-hidden pointer-events-none">
           <img
             src={getBeautyPhotoUrl('سالن زیبایی لوکس در تایم تو', 'سالن زیبایی زنانه')}
             alt="سالن زیبایی لوکس در تایم تو"
-            className="w-full h-full object-cover object-center opacity-40"
+            className="w-full h-full object-cover object-center opacity-25 scale-105"
           />
-          <div className="absolute inset-0 bg-gradient-to-l from-[#061138]/95 via-[#061138]/85 to-[#061138]/70" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#040E2E]/85 via-[#040E2E]/80 to-[#040E2E]/96" />
+          <div
+            className="absolute left-1/2 top-0 -translate-x-1/2 w-[340px] sm:w-[560px] h-[220px] rounded-full blur-2xl opacity-65"
+            style={{
+              background:
+                'radial-gradient(ellipse at center, rgba(0,229,255,0.34) 0%, rgba(0,87,255,0.22) 50%, rgba(4,14,46,0) 78%)',
+            }}
+          />
         </div>
 
-        <div className="relative z-20 px-4 py-5 sm:px-8 sm:py-8 lg:py-9 max-w-3xl mx-auto text-center space-y-3.5 sm:space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/12 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] sm:text-xs font-extrabold text-[#00E5FF]">
-            <MapPin className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
-            <span>تایم تو (Timeto) · رزرو آنلاین سالن و متخصص در اصفهان و درچه</span>
-          </div>
+        <div className="relative z-20 px-4 py-6 sm:px-8 sm:py-9 max-w-3xl mx-auto text-center space-y-5">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-[#00E5FF]/35 text-[11px] font-extrabold text-[#00E5FF]">
+              <Sparkles className="w-3.5 h-3.5 text-[#00E5FF]" />
+              <span>رزرو آنلاین سالن‌های زیبایی و متخصصان</span>
+            </div>
 
-          <div className="space-y-1.5">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white leading-tight tracking-tight">
-              وقت زیبایی تو، به انتخاب تو
+            <h1 className="text-2xl sm:text-4xl font-black text-white leading-tight tracking-tight">
+              <span>وقت زیبایی تو، </span>
+              <span className="bg-gradient-to-l from-[#00E5FF] via-[#38BDF8] to-[#60A5FA] bg-clip-text text-transparent">
+                به انتخاب تو
+              </span>
             </h1>
-            <p className="text-xs sm:text-sm text-slate-200 font-medium max-w-lg mx-auto">
-              مقایسه تعرفه‌ها، مشاهده نمونه کارها و رزرو آنی نوبت بدون تماس تلفنی
+
+            <p className="text-xs sm:text-sm text-slate-300 font-medium max-w-md mx-auto">
+              ساعت‌های خالی را ببینید، تعرفه‌ها را مقایسه کنید و در لحظه نوبت بگیرید
             </p>
           </div>
 
           {/* باکس جست‌وجوی هوشمند (Smart Live Search) */}
-          <div className="relative z-30 text-right max-w-2xl mx-auto pt-0.5">
+          <div className="relative z-30 text-right max-w-2xl mx-auto">
             <form
               onSubmit={handleHeroSearch}
-              className="p-1.5 rounded-2xl sm:rounded-full bg-white border-2 border-[#00E5FF]/60 focus-within:border-[#0057FF] flex items-center gap-1.5 sm:gap-2 shadow-[0_12px_30px_-8px_rgba(0,0,0,0.45)] transition-colors"
+              className="p-1.5 sm:p-2 rounded-2xl sm:rounded-full bg-white border-2 border-[#00E5FF]/65 focus-within:border-[#0057FF] flex items-center gap-1.5 sm:gap-2 shadow-[0_16px_38px_-8px_rgba(0,229,255,0.28)] transition-all"
             >
-              <div className="flex-1 flex items-center gap-2 pr-3 pl-1 py-1 min-w-0">
-                <Search className="w-4 h-4 text-[#0057FF] shrink-0" />
+              <div className="flex-1 flex items-center gap-2.5 pr-3 pl-1 py-1 min-w-0">
+                <span className="w-8 h-8 rounded-xl sm:rounded-full bg-[#EFF6FF] flex items-center justify-center shrink-0">
+                  <Search className="w-4 h-4 text-[#0057FF]" />
+                </span>
                 <label htmlFor="hero-search" className="sr-only">
                   جست‌وجوی سالن، متخصص، خدمت یا محله
                 </label>
@@ -321,8 +334,8 @@ const OriginalCustomerHomePage: React.FC = () => {
                     setSearchKeyword(e.target.value);
                     setIsSearchFocused(true);
                   }}
-                  placeholder="نام سالن، متخصص، خدمت یا محله (مثلاً درچه، چهارباغ، فیشیال، ناخن)..."
-                  className="w-full text-xs sm:text-sm font-medium text-[#061138] placeholder:text-[#64748B] bg-transparent focus:outline-none truncate"
+                  placeholder="نام سالن، خدمت یا محله (مثلاً چهارباغ، درچه، فیشیال، ناخن)..."
+                  className="w-full text-xs sm:text-sm font-bold text-[#061138] placeholder:text-[#64748B] placeholder:font-medium bg-transparent focus:outline-none truncate"
                 />
                 {searchKeyword ? (
                   <button
@@ -338,7 +351,7 @@ const OriginalCustomerHomePage: React.FC = () => {
 
               <button
                 type="submit"
-                className="px-4 sm:px-6 py-2 rounded-xl sm:rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold shrink-0 cursor-pointer transition-colors shadow-[0_6px_18px_-4px_rgba(0,87,255,0.55)]"
+                className="px-4 sm:px-6 py-2.5 rounded-xl sm:rounded-full bg-gradient-to-l from-[#0057FF] to-[#0094FF] hover:opacity-95 text-white text-xs sm:text-sm font-black shrink-0 cursor-pointer transition-all shadow-[0_8px_20px_-4px_rgba(0,87,255,0.6)]"
               >
                 جست‌وجو
               </button>

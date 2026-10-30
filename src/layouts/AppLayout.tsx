@@ -87,6 +87,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     dismissToast,
     databaseError,
     refreshRealData,
+    openAuthModal,
   } = usePrototypeData();
 
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
@@ -113,6 +114,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     { to: '/me/appointments', label: 'نوبت‌های من' },
     { to: '/me/favorites', label: 'سالن‌های منتخب' },
     { to: '/me/profile', label: 'اطلاعات کاربری' },
+  ];
+
+  // تب‌های اصلی نوار چسبان پایین موبایل برای کاربران عادی (سوایپ افقی چپ و راست)
+  const publicPrimaryMobileRoutes = [
+    '/',
+    '/search',
+    '/categories',
+    '/me/appointments',
+    '/me',
   ];
 
   // لیست صفحه‌های قابل جابه‌جایی با سوایپ چپ و راست در پنل کسب‌وکار (/app/*)
@@ -156,13 +166,35 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       currentRoute,
       t.clientX - touchStartCoords.x,
       t.clientY - touchStartCoords.y,
-      68
+      50
     );
     setTouchStartCoords(null);
     if (nextRoute && nextRoute !== pathname) {
+      if (
+        !authUser &&
+        (nextRoute === '/me' || nextRoute.startsWith('/me/'))
+      ) {
+        openAuthModal({
+          initialScreen: 'LOGIN',
+          defaultRole: 'CUSTOMER',
+          redirectTo: nextRoute,
+          promptReason:
+            'برای ورود به بخش حساب کاربری یا نوبت‌های خود، ابتدا وارد شوید',
+        });
+        return;
+      }
       navigate(nextRoute);
     }
   };
+
+  const publicSwipeRouteList = isCustomerAccountArea
+    ? customerTabs.map((t) => t.to)
+    : publicPrimaryMobileRoutes;
+  const activePublicSwipeRoute = isCustomerAccountArea
+    ? pathname
+    : publicPrimaryMobileRoutes.includes(pathname)
+      ? pathname
+      : '';
 
   const pendingCount = appointments.filter(
     (a) => a.status === 'PENDING'
@@ -207,7 +239,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 <img
                   src={TIMETO_BRAND_LOGO_URL}
                   alt="تایم تو"
-                  className="w-9 h-9 rounded-2xl object-cover border border-[#CBD5E1] shrink-0 shadow-2xs"
+                  className="w-9 h-9 rounded-2xl object-contain bg-[#041136] p-0.5 border border-[#CBD5E1] shrink-0 shadow-2xs"
                 />
                 <div className="min-w-0">
                   <span className="text-xs sm:text-sm font-black text-[#061138] truncate block group-hover:text-[#0057FF] transition-colors">
@@ -272,13 +304,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
           {isCustomerAccountArea ? (
             <div className="bg-white border-b border-[#CBD5E1] shadow-2xs">
-              <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs font-extrabold text-[#061138]">
-                  حساب کاربری من
-                </span>
+              <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
                 <nav
                   aria-label="ناوبری حساب مشتری"
-                  className="flex flex-wrap items-center gap-1.5"
+                  className="flex items-center gap-1.5"
                 >
                   {customerTabs.map((tab) => (
                     <NavLink
@@ -286,7 +315,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                       to={tab.to}
                       end={tab.end}
                       className={({ isActive }) =>
-                        `px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                        `px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                           isActive
                             ? 'bg-[#0057FF] text-white shadow-[0_4px_12px_rgba(0,87,255,0.35)]'
                             : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF] hover:text-[#0057FF]'
@@ -302,20 +331,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           ) : null}
 
           <main
-            onTouchStart={isCustomerAccountArea ? handleMainTouchStart : undefined}
+            onTouchStart={
+              activePublicSwipeRoute ? handleMainTouchStart : undefined
+            }
             onTouchEnd={
-              isCustomerAccountArea
+              activePublicSwipeRoute
                 ? (e) =>
                     handleMainTouchEnd(
                       e,
-                      customerTabs.map((t) => t.to),
-                      pathname
+                      publicSwipeRouteList,
+                      activePublicSwipeRoute
                     )
                 : undefined
             }
             className="flex-1 max-w-[1240px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0"
           >
-            <PWAMobileInstallBanner />
             {children}
           </main>
 

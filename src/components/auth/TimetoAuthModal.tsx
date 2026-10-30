@@ -36,8 +36,7 @@ import {
   validateRegistrationStep3Profile,
 } from './timetoAuthFlow';
 
-const TIMETO_LOGO_URL =
-  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
+const TIMETO_LOGO_URL = '/icon.svg';
 
 export interface TimetoUnifiedAuthCardProps {
   initialScreen?: AuthFlowScreen;
@@ -60,6 +59,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const {
+    adminUsers,
+    businesses,
     requestOtpLogin,
     verifyOtpLogin,
     loginWithPassword,
@@ -275,10 +276,18 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   // ۳. ادامه از گام ۱ ثبت‌نام (شماره + رمز عبور + تکرار رمز) به گام ۲ (کد ۶ رقمی)
   const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const knownPhones = [
+      ...adminUsers.map((u) => u.phone || ''),
+      ...businesses
+        .filter((b) => !b.isSampleShowcase)
+        .map((b) => b.ownerPhone || b.phoneDisplay || ''),
+    ].filter(Boolean);
+
     const check = validateRegistrationStep1({
       phone,
       password: regPassword,
       confirmPassword: regConfirmPassword,
+      existingPhones: knownPhones,
     });
     if (!check.valid) {
       setError(check.error || 'اطلاعات واردشده معتبر نیست.');
@@ -948,9 +957,22 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               </div>
 
               {error ? (
-                <p className="rounded-xl bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-600 border border-rose-200">
-                  {error}
-                </p>
+                <div className="rounded-xl bg-rose-50 px-3 py-2.5 text-center text-xs font-bold text-rose-600 border border-rose-200 space-y-2">
+                  <p>{error}</p>
+                  {error.includes('قبلاً ثبت‌نام') ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('');
+                        setShowPasswordInputInLogin(true);
+                        setScreen('LOGIN');
+                      }}
+                      className="inline-flex items-center justify-center rounded-xl bg-[#0057FF] px-3 py-1.5 text-[11px] font-extrabold text-white cursor-pointer"
+                    >
+                      ورود با همین شماره ←
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
 
               <button

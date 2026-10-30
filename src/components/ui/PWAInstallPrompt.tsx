@@ -11,12 +11,12 @@ import { usePWAInstall } from '../../hooks/usePWAInstall';
 import { TIMETO_LOGO_IMAGE_PATH } from './TimetoLogo';
 
 /**
- * دکمه نصب اپلیکیشن + پاپ‌آپ شناور پیشنهاد نصب در پایین صفحه (پس از اسکرول یا مکث کوتاه)
+ * دکمه نصب اپلیکیشن
  */
 export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({
   compact = false,
 }) => {
-  const { isInstalled, install, dismissBanner } = usePWAInstall();
+  const { isInstalled, install, confirmInstalled } = usePWAInstall();
   const [guideOpen, setGuideOpen] = useState(false);
 
   if (isInstalled) return null;
@@ -46,7 +46,89 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({
         isOpen={guideOpen}
         onClose={() => setGuideOpen(false)}
         onConfirmInstalled={() => {
-          dismissBanner();
+          confirmInstalled();
+          setGuideOpen(false);
+        }}
+      />
+    </>
+  );
+};
+
+/**
+ * آیتم کوچک و خلوت «نصب اپ» مخصوص داخل پروفایل و منوی حساب کاربری
+ * در صورتی که اپ نصب شده باشد، به‌طور کامل مخفی می‌شود (return null).
+ */
+export const PWAProfileInstallRow: React.FC<{
+  variant?: 'card' | 'menu-row';
+}> = ({ variant = 'card' }) => {
+  const { isInstalled, install, confirmInstalled } = usePWAInstall();
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  if (isInstalled) return null;
+
+  const handleAction = async () => {
+    const res = await install();
+    if (res === 'manual_guide') {
+      setGuideOpen(true);
+    }
+  };
+
+  return (
+    <>
+      {variant === 'menu-row' ? (
+        <button
+          type="button"
+          onClick={() => void handleAction()}
+          className="w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-2xl bg-[#EFF6FF] hover:bg-[#E0ECFF] border border-[#0057FF]/25 text-right transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <img
+              src={TIMETO_LOGO_IMAGE_PATH}
+              alt="آیکون اپ تایم تو"
+              className="w-7 h-7 rounded-lg object-contain bg-[#02081D] shrink-0"
+            />
+            <span className="text-xs font-extrabold text-[#061138] truncate">
+              نصب وب‌اپلیکیشن
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0057FF] text-white text-[11px] font-extrabold shrink-0">
+            <Download className="w-3 h-3" />
+            <span>نصب</span>
+          </span>
+        </button>
+      ) : (
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white border border-[#00E5FF]/30 shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src={TIMETO_LOGO_IMAGE_PATH}
+              alt="Timeto App"
+              className="w-9 h-9 rounded-xl object-contain bg-[#02081D] border border-[#00E5FF]/35 shrink-0"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-white truncate">
+                نصب اپلیکیشن تایم تو
+              </p>
+              <p className="text-[11px] text-slate-300 truncate">
+                اجرای سریع و تمام‌صفحه روی گوشی
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleAction()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold shrink-0 cursor-pointer transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>نصب اپ</span>
+          </button>
+        </div>
+      )}
+
+      <PWAInstallGuideModal
+        isOpen={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        onConfirmInstalled={() => {
+          confirmInstalled();
           setGuideOpen(false);
         }}
       />
@@ -61,6 +143,7 @@ export const PWAMobileInstallBanner: React.FC = () => {
     isIOS,
     install,
     dismissBanner,
+    confirmInstalled,
   } = usePWAInstall();
   const [guideOpen, setGuideOpen] = useState(false);
   const [hasTriggeredByScrollOrDelay, setHasTriggeredByScrollOrDelay] =
@@ -110,17 +193,14 @@ export const PWAMobileInstallBanner: React.FC = () => {
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
             alt="Timeto App Icon"
-            referrerPolicy="no-referrer"
-            className="w-11 h-11 rounded-xl object-cover border border-[#00E5FF]/40 shrink-0"
+            className="w-10 h-10 rounded-xl object-contain bg-[#02081D] border border-[#00E5FF]/40 shrink-0"
           />
           <div className="min-w-0">
             <p className="text-xs font-extrabold text-white truncate">
-              نصب اپلیکیشن تایم تو روی گوشی
+              نصب اپلیکیشن تایم تو
             </p>
             <p className="text-[11px] text-[#BAE6FD] truncate">
-              {isIOS
-                ? 'ویژه آیفون (iOS) و اندروید · تمام‌صفحه و سریع'
-                : 'دسترسی سریع و تمام‌صفحه بدون نیاز به مرورگر'}
+              دسترسی سریع بدون مرورگر
             </p>
           </div>
         </div>
@@ -131,12 +211,12 @@ export const PWAMobileInstallBanner: React.FC = () => {
             onClick={() => void handleAction()}
             className="px-3.5 py-2 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold cursor-pointer transition-colors shadow-xs"
           >
-            {isIOS ? 'نصب در آیفون' : 'نصب اپ'}
+            {isIOS ? 'نصب' : 'نصب اپ'}
           </button>
           <button
             type="button"
             onClick={dismissBanner}
-            aria-label="بستن و عدم نمایش مجدد پیشنهاد نصب"
+            aria-label="بستن پیشنهاد نصب"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white/80 flex items-center justify-center cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
@@ -148,7 +228,7 @@ export const PWAMobileInstallBanner: React.FC = () => {
         isOpen={guideOpen}
         onClose={() => setGuideOpen(false)}
         onConfirmInstalled={() => {
-          dismissBanner();
+          confirmInstalled();
           setGuideOpen(false);
         }}
       />
@@ -156,7 +236,7 @@ export const PWAMobileInstallBanner: React.FC = () => {
   );
 };
 
-const PWAInstallGuideModal: React.FC<{
+export const PWAInstallGuideModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   onConfirmInstalled: () => void;
@@ -185,16 +265,15 @@ const PWAInstallGuideModal: React.FC<{
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
             alt="Timeto Mobile App Icon"
-            referrerPolicy="no-referrer"
-            className="w-16 h-16 rounded-2xl object-cover border-2 border-[#00E5FF]/40 shadow-[0_0_28px_rgba(0,212,255,0.35)]"
+            className="w-16 h-16 rounded-2xl object-contain bg-[#030B26] border border-[#00E5FF]/40 shadow-[0_0_28px_rgba(0,212,255,0.35)]"
           />
           <div className="text-white space-y-1">
             <span className="text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1">
               <Smartphone className="w-3.5 h-3.5" />
-              <span>وب‌اپلیکیشن رسمی آیفون (iOS) و اندروید</span>
+              <span>وب‌اپلیکیشن آیفون و اندروید</span>
             </span>
             <h3 className="text-base font-extrabold">
-              نصب Timeto روی صفحه اصلی گوشی در ۱۰ ثانیه
+              نصب Timeto روی صفحه اصلی گوشی
             </h3>
           </div>
         </div>
@@ -221,11 +300,8 @@ const PWAInstallGuideModal: React.FC<{
               <div>
                 <p className="font-extrabold text-[#0B132B]">
                   {isIOS
-                    ? '۱. در مرورگر Safari آیفون، دکمه Share (مربع و فلش پایین صفحه) را لمس کنید'
-                    : '۱. در نوار پایین Safari (آیفون) دکمه Share یا در Chrome منوی (⋮) را بزنید'}
-                </p>
-                <p className="text-[#475569] mt-0.5">
-                  در آیفون، اپل به دلایل امنیتی نصب تمام وب‌اپلیکیشن‌ها را از طریق منوی Share مرورگر Safari انجام می‌دهد.
+                    ? '۱. در Safari دکمه Share پایین صفحه را بزنید'
+                    : '۱. در مرورگر منوی (⋮) یا دکمه Share را بزنید'}
                 </p>
               </div>
             </div>
@@ -236,10 +312,7 @@ const PWAInstallGuideModal: React.FC<{
               </div>
               <div>
                 <p className="font-extrabold text-[#0B132B]">
-                  ۲. گزینه «Add to Home Screen» را انتخاب و در بالا دکمه Add را بزنید
-                </p>
-                <p className="text-[#475569] mt-0.5">
-                  آیکون اختصاصی <strong>Timeto</strong> دقیقاً مانند یک اپلیکیشن بومی روی صفحه آیفون یا اندروید شما اضافه می‌شود.
+                  ۲. گزینه «Add to Home Screen» را انتخاب کنید
                 </p>
               </div>
             </div>
@@ -247,25 +320,25 @@ const PWAInstallGuideModal: React.FC<{
             <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center gap-2.5 text-[#065F46]">
               <CheckCircle2 className="w-4 h-4 text-[#10B981] shrink-0" />
               <span className="font-bold">
-                اجرای تمام‌صفحه، سریع و بدون نوار آدرس مرورگر
+                اجرای تمام‌صفحه و سریع روی گوشی شما
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <button
               type="button"
               onClick={onConfirmInstalled}
               className="w-full py-2.5 px-3 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold cursor-pointer transition-colors"
             >
-              نصب کردم / دیگر نمایش نده
+              نصب کردم
             </button>
             <button
               type="button"
               onClick={onClose}
               className="w-full py-2.5 px-3 rounded-full bg-slate-100 hover:bg-slate-200 text-[#061138] text-xs font-bold cursor-pointer transition-colors"
             >
-              فعلاً بستن
+              بستن
             </button>
           </div>
         </div>

@@ -45,6 +45,8 @@ import {
 } from '../../types';
 import {
   formatPriceToman,
+  normalizeIranMobileInput,
+  resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../../utils/formatters';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
@@ -1228,117 +1230,480 @@ export const AdminBusinessesPage: React.FC = () => {
   );
 };
 
-/** ۳. مدیریت کاربران (/admin/users) */
+/** ۳. مدیریت کاربران و سالن‌داران در دو تب مجزا (/admin/users) */
 export const AdminUsersPage: React.FC = () => {
-  const { adminUsers } = usePrototypeData();
-  const [roleFilter, setRoleFilter] = useState('ALL');
+  const {
+    adminUsers,
+    businesses,
+    updateBusinessApproval,
+    updateAdminUserRecord,
+    deleteAdminUserRecord,
+  } = usePrototypeData();
+  const [activeTab, setActiveTab] = useState<
+    'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL'
+  >('CUSTOMERS');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [inspectingBusiness, setInspectingBusiness] =
+    useState<BusinessItem | null>(null);
+  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(
+    null
+  );
 
-  const sourceUsers = adminUsers.map((u) => ({
-    id: u.id,
-    name: u.fullName,
-    role: u.roleLabel,
-    phone: u.phone || u.phoneMasked,
-    city: u.city,
-    joinedJalali: u.joinedJalali || '—',
-    status: u.isActive ? 'فعال' : 'غیرفعال',
-  }));
+  // مودال ویرایش مشخصات و شماره موبایل کاربر توسط مدیر کل
+  const [editingUser, setEditingUser] = useState<{
+    phone: string;
+    fullName: string;
+    newPhone: string;
+    city: string;
+    role: 'CUSTOMER' | 'BUSINESS_OWNER';
+  } | null>(null);
 
-  const filtered = sourceUsers.filter((u) => {
-    const matchRole = roleFilter === 'ALL' || u.role.includes(roleFilter);
-    const q = searchQuery.trim();
-    const matchQuery =
-      !q ||
-      u.name.includes(q) ||
-      u.phone.includes(q) ||
-      u.city.includes(q);
-    return matchRole && matchQuery;
+  // تایید حذف حساب کاربری
+  const [deletingUser, setDeletingUser] = useState<{
+    phone: string;
+    name: string;
+  } | null>(null);
+
+  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+
+  const enrichedUsers = adminUsers.map((u) => {
+    const cleanPhone = normalizeIranMobileInput(u.phone || u.phoneMasked);
+    const matchedBiz = realBusinesses.find(
+      (b) =>
+        normalizeIranMobileInput(b.ownerPhone || b.phoneDisplay) === cleanPhone
+    );
+    const isSalonOwner =
+      Boolean(matchedBiz) ||
+      u.roleLabel.includes('سالن') ||
+      u.roleLabel.includes('کسب‌وکار');
+    const isPlatformAdmin = u.roleLabel.includes('مدیر کل');
+
+    return {
+      id: u.id,
+      name: u.fullName,
+      roleLabel: u.roleLabel,
+      roleType: isSalonOwner ? ('BUSINESS_OWNER' as const) : ('CUSTOMER' as const),
+      isPlatformAdmin,
+      phone: cleanPhone || u.phone || u.phoneMasked,
+      city: matchedBiz?.city || u.city || 'اصفهان',
+      neighborhood: matchedBiz?.neighborhood || '',
+      joinedJalali: u.joinedJalali || 'امروز',
+      status: u.isActive ? 'فعال' : 'غیرفعال',
+      matchedBusiness: matchedBiz || null,
+    };
   });
 
+  const customerUsers = enrichedUsers.filter(
+    (u) => u.roleType === 'CUSTOMER'
+  );
+  const businessOwnerUsers = enrichedUsers.filter(
+    (u) => u.roleType === 'BUSINESS_OWNER'
+  );
+
+  const tabSource =
+    activeTab === 'CUSTOMERS'
+      ? customerUsers
+      : activeTab === 'BUSINESS_OWNERS'
+        ? businessOwnerUsers
+        : enrichedUsers;
+
+  const filtered = tabSource.filter((u) => {
+    const q = searchQuery.trim();
+    if (!q) return true;
+    return (
+      u.name.includes(q) ||
+      u.phone.includes(q) ||
+      u.city.includes(q) ||
+      (u.matchedBusiness?.name && u.matchedBusiness.name.includes(q))
+    );
+  });
+
+  const tabOrder: Array<'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL'> = [
+    'CUSTOMERS',
+    'BUSINESS_OWNERS',
+    'ALL',
+  ];
+
+  const handleSaveEditUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    const ok = updateAdminUserRecord(editingUser.phone, {
+      fullName: editingUser.fullName.trim(),
+      newPhone: editingUser.newPhone.trim(),
+      city: editingUser.city.trim(),
+      role: editingUser.role,
+    });
+    if (ok) {
+      setEditingUser(null);
+    }
+  };
+
   return (
-    <div>
+    <div
+      onTouchStart={(e) => {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('input, select, textarea, button')) return;
+        const t = e.touches[0];
+        if (t) setTouchStart({ x: t.clientX, y: t.clientY });
+      }}
+      onTouchEnd={(e) => {
+        const t = e.changedTouches[0];
+        if (!touchStart || !t) return;
+        const nextTab = resolveAdjacentTabBySwipe(
+          tabOrder,
+          activeTab,
+          t.clientX - touchStart.x,
+          t.clientY - touchStart.y,
+          50
+        );
+        setTouchStart(null);
+        if (nextTab) {
+          setActiveTab(nextTab as 'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL');
+        }
+      }}
+      className="space-y-6"
+    >
       <PageHeader
-        kicker="نظارت و عملیات · حساب‌های کاربری واقعی"
-        title="مدیریت کاربران و صاحبان کسب‌وکار"
-        subtitle="مشاهده فهرست کامل کاربران ثبت‌نام‌شده همراه با شماره موبایل کامل (بدون سانسور)، نقش کاربری و تاریخ عضویت"
+        kicker="پنل مدیریت کلان · تفکیک مشتریان و سالن‌داران"
+        title="مدیریت کاربران عادی و صاحبان کسب‌وکار"
+        subtitle="مشاهده تمام ثبت‌نام‌های سامانه در دو تب مجزا همراه با شماره همراه کامل (یکتا برای هر حساب)، جزئیات سالن و امکان ویرایش یا حذف حساب‌های اشتباه"
         routePattern="/admin/users"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'کاربران سامانه' },
+          { label: 'کاربران و سالن‌داران' },
         ]}
       />
 
-      <Card className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <FormField id="adm-usr-search" label="جست‌وجوی نام یا شماره موبایل کاربر">
+      {/* تب‌های تفکیک‌شده: ۱. کاربران عادی (مشتریان)  ۲. صاحبان سالن‌ها (کسب‌وکارها)  ۳. همه حساب‌ها */}
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              id="admin-users-tab-customers"
+              onClick={() => setActiveTab('CUSTOMERS')}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+                activeTab === 'CUSTOMERS'
+                  ? 'bg-[#0057FF] text-white shadow-[0_6px_18px_-4px_rgba(0,87,255,0.45)]'
+                  : 'bg-[#F3F6FC] text-[#061138] border border-[#CBD5E1] hover:bg-[#E0ECFF]'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>کاربران عادی (مشتریان)</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] tabular-nums ${
+                  activeTab === 'CUSTOMERS'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white text-[#0057FF]'
+                }`}
+              >
+                {toPersianDigits(customerUsers.length)}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="admin-users-tab-owners"
+              onClick={() => setActiveTab('BUSINESS_OWNERS')}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+                activeTab === 'BUSINESS_OWNERS'
+                  ? 'bg-[#0057FF] text-white shadow-[0_6px_18px_-4px_rgba(0,87,255,0.45)]'
+                  : 'bg-[#F3F6FC] text-[#061138] border border-[#CBD5E1] hover:bg-[#E0ECFF]'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>صاحبان سالن‌ها (کسب‌وکارها)</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] tabular-nums ${
+                  activeTab === 'BUSINESS_OWNERS'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white text-[#0057FF]'
+                }`}
+              >
+                {toPersianDigits(businessOwnerUsers.length)}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="admin-users-tab-all"
+              onClick={() => setActiveTab('ALL')}
+              className={`inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'ALL'
+                  ? 'bg-[#061138] text-white'
+                  : 'bg-white text-[#475569] border border-[#CBD5E1] hover:bg-[#F8FAFC]'
+              }`}
+            >
+              <span>همه حساب‌ها ({toPersianDigits(enrichedUsers.length)})</span>
+            </button>
+          </div>
+
+          <span className="text-[11px] font-bold text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-1 rounded-full">
+            ✓ قانون یکتایی شماره فعال است (هر شماره همراه = فقط یک حساب)
+          </span>
+        </div>
+
+        <FormField
+          id="adm-usr-search"
+          label="جست‌وجوی سریع بر اساس نام، شماره موبایل (09...)، نام سالن یا شهر"
+        >
           <Input
             id="adm-usr-search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="نام کاربر یا شماره موبایل (0913...)"
-          />
-        </FormField>
-        <FormField id="adm-usr-role" label="فیلتر نقش کاربری">
-          <Select
-            id="adm-usr-role"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            options={[
-              { value: 'ALL', label: 'همه نقش‌ها' },
-              { value: 'مشتری', label: 'مشتری' },
-              { value: 'کسب‌وکار', label: 'مالک / عضو کسب‌وکار' },
-              { value: 'مدیر', label: 'مدیر کل / مدیر سالن' },
-            ]}
+            placeholder="نام کاربر، شماره موبایل یا نام سالن..."
           />
         </FormField>
       </Card>
 
       <ResponsiveTable
-        keyExtractor={(u) => u.id}
+        keyExtractor={(u) => `${u.phone}-${u.id}`}
         data={filtered}
+        emptyMessage={
+          activeTab === 'CUSTOMERS'
+            ? 'هنوز کاربر عادی (مشتری) با این مشخصات ثبت نشده است.'
+            : activeTab === 'BUSINESS_OWNERS'
+              ? 'هنوز صاحب سالنی در این بخش ثبت‌نام نکرده است.'
+              : 'هیچ حساب کاربری یافت نشد.'
+        }
         columns={[
           {
             key: 'name',
-            header: 'نام و نام خانوادگی کاربر',
+            header: 'نام و نام خانوادگی',
             render: (u) => (
-              <span className="font-extrabold text-[#1E1B2E]">{u.name}</span>
+              <div className="space-y-0.5">
+                <span className="font-extrabold text-[#061138] block">
+                  {u.name}
+                </span>
+                <span className="text-[11px] text-[#64748B] block">
+                  تاریخ عضویت: {u.joinedJalali}
+                </span>
+              </div>
+            ),
+          },
+          {
+            key: 'phone',
+            header: 'شماره همراه یکتا (بدون سانسور)',
+            render: (u) => (
+              <a
+                href={`tel:${u.phone}`}
+                dir="ltr"
+                className="inline-flex items-center gap-1.5 text-xs font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2.5 py-1 rounded-lg tabular-nums hover:underline"
+              >
+                <Phone className="w-3 h-3" />
+                <span>{u.phone}</span>
+              </a>
             ),
           },
           {
             key: 'role',
-            header: 'نقش در سامانه',
-            render: (u) => <StatusBadge label={u.role} tone="primary" />,
-          },
-          {
-            key: 'phone',
-            header: 'شماره همراه کامل',
+            header:
+              activeTab === 'BUSINESS_OWNERS'
+                ? 'مشخصات سالن و وضعیت تایید'
+                : 'نقش و جزئیات حساب',
             render: (u) => (
-              <span
-                dir="ltr"
-                className="text-xs font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2.5 py-1 rounded-lg tabular-nums"
-              >
-                {u.phone}
-              </span>
+              <div className="space-y-1">
+                <StatusBadge
+                  label={u.roleLabel}
+                  tone={
+                    u.isPlatformAdmin
+                      ? 'accent'
+                      : u.roleType === 'BUSINESS_OWNER'
+                        ? 'primary'
+                        : 'success'
+                  }
+                />
+                {u.matchedBusiness ? (
+                  <p className="text-[11px] text-[#334155]">
+                    وضعیت سالن:{' '}
+                    <strong className="text-[#061138]">
+                      {u.matchedBusiness.approvalStatus === 'APPROVED'
+                        ? 'تاییدشده'
+                        : u.matchedBusiness.approvalStatus === 'PENDING_REVIEW'
+                          ? 'در انتظار بررسی'
+                          : 'ردشده'}
+                    </strong>
+                  </p>
+                ) : null}
+              </div>
             ),
           },
           {
             key: 'city',
-            header: 'شهر و تاریخ عضویت',
+            header: 'شهر و محدوده',
             render: (u) => (
-              <span className="text-xs text-[#334155] tabular-nums">
-                {u.city} ({u.joinedJalali})
+              <span className="text-xs font-bold text-[#334155]">
+                {u.city}
+                {u.neighborhood ? ` · ${u.neighborhood}` : ''}
               </span>
             ),
           },
           {
-            key: 'status',
-            header: 'وضعیت',
-            render: (u) => <StatusBadge label={u.status} tone="success" />,
+            key: 'actions',
+            header: 'مدیریت، ویرایش یا حذف حساب',
+            render: (u) => (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {u.matchedBusiness ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setInspectingBusiness(u.matchedBusiness)}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>مشاهده پنل سالن</span>
+                  </Button>
+                ) : null}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setEditingUser({
+                      phone: u.phone,
+                      fullName: u.name,
+                      newPhone: u.phone,
+                      city: u.city,
+                      role: u.roleType,
+                    })
+                  }
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>ویرایش</span>
+                </Button>
+
+                {!u.isPlatformAdmin ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setDeletingUser({ phone: u.phone, name: u.name })
+                    }
+                    className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>حذف</span>
+                  </Button>
+                ) : null}
+              </div>
+            ),
           },
         ]}
       />
 
       <Pagination currentPage={page} totalPages={1} onPageChange={setPage} />
+
+      <BusinessFullInspectModal
+        business={inspectingBusiness}
+        onClose={() => setInspectingBusiness(null)}
+        onApprove={(id) => updateBusinessApproval(id, 'APPROVED')}
+        onReject={(id) => updateBusinessApproval(id, 'REJECTED')}
+      />
+
+      {/* مودال ویرایش مشخصات یا اصلاح شماره موبایل کاربر توسط مدیر کل */}
+      <Modal
+        isOpen={Boolean(editingUser)}
+        onClose={() => setEditingUser(null)}
+        title={`ویرایش مشخصات کاربر: ${editingUser?.fullName ?? ''}`}
+        description="می‌توانید نام، شماره همراه (با بررسی عدم تکرار) یا نقش کاربری را اصلاح کنید"
+      >
+        {editingUser ? (
+          <form onSubmit={handleSaveEditUser} className="space-y-4">
+            <FormField id="adm-edit-usr-name" label="نام و نام خانوادگی" required>
+              <Input
+                id="adm-edit-usr-name"
+                value={editingUser.fullName}
+                onChange={(e) =>
+                  setEditingUser({ ...editingUser, fullName: e.target.value })
+                }
+              />
+            </FormField>
+
+            <FormField
+              id="adm-edit-usr-phone"
+              label="شماره همراه ۱۱ رقمی (یکتا)"
+              required
+            >
+              <Input
+                id="adm-edit-usr-phone"
+                dir="ltr"
+                inputMode="tel"
+                value={editingUser.newPhone}
+                onChange={(e) =>
+                  setEditingUser({
+                    ...editingUser,
+                    newPhone: normalizeIranMobileInput(e.target.value),
+                  })
+                }
+              />
+            </FormField>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField id="adm-edit-usr-city" label="شهر">
+                <Input
+                  id="adm-edit-usr-city"
+                  value={editingUser.city}
+                  onChange={(e) =>
+                    setEditingUser({ ...editingUser, city: e.target.value })
+                  }
+                />
+              </FormField>
+
+              <FormField id="adm-edit-usr-role" label="نوع حساب کاربری">
+                <Select
+                  id="adm-edit-usr-role"
+                  value={editingUser.role}
+                  onChange={(e) =>
+                    setEditingUser({
+                      ...editingUser,
+                      role: e.target.value as 'CUSTOMER' | 'BUSINESS_OWNER',
+                    })
+                  }
+                  options={[
+                    { value: 'CUSTOMER', label: 'کاربر عادی (مشتری)' },
+                    {
+                      value: 'BUSINESS_OWNER',
+                      label: 'صاحب کسب‌وکار (سالن‌دار)',
+                    },
+                  ]}
+                />
+              </FormField>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingUser(null)}
+              >
+                انصراف
+              </Button>
+              <Button type="submit" variant="primary">
+                <Check className="w-4 h-4" />
+                <span>ذخیره تغییرات کاربر</span>
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Modal>
+
+      {/* دیالوگ تایید حذف حساب کاربری */}
+      <ConfirmationDialog
+        isOpen={Boolean(deletingUser)}
+        onClose={() => setDeletingUser(null)}
+        onConfirm={() => {
+          if (deletingUser) {
+            deleteAdminUserRecord(deletingUser.phone);
+            setDeletingUser(null);
+          }
+        }}
+        title="حذف حساب کاربری"
+        confirmLabel="بله، حساب حذف شود"
+        message={`آیا از حذف حساب کاربری «${deletingUser?.name ?? ''}» با شماره ${deletingUser?.phone ?? ''} اطمینان دارید؟ پس از حذف، این شماره آزاد شده و امکان ثبت‌نام مجدد خواهد داشت.`}
+      />
     </div>
   );
 };

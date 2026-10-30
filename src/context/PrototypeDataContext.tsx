@@ -53,7 +53,9 @@ import {
   AuthFlowScreen,
   getSavedMemoryAccounts,
   PERSISTED_SESSION_USER_KEY,
+  removeMemoryAccount,
   saveMemoryAccount,
+  updateMemoryAccountPhoneOrProfile,
 } from '../components/auth/timetoAuthFlow';
 import { saveVisitorRole } from '../components/home/timetoHomeData';
 
@@ -113,8 +115,19 @@ interface PrototypeDataContextValue {
   logoutUser: () => Promise<void>;
   updateCustomerProfile: (patch: {
     fullName?: string;
+    phone?: string;
     defaultCity?: string;
   }) => Promise<boolean>;
+  updateAdminUserRecord: (
+    phone: string,
+    patch: {
+      fullName?: string;
+      newPhone?: string;
+      city?: string;
+      role?: 'CUSTOMER' | 'BUSINESS_OWNER';
+    }
+  ) => boolean;
+  deleteAdminUserRecord: (phone: string) => void;
   refreshRealData: () => Promise<void>;
   selectedCity: string;
   setSelectedCity: (city: string) => void;
@@ -566,7 +579,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [customers, setCustomers] = useState<CustomerRecord[]>(() =>
     mergeManualCustomers([])
   );
-  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+  const [rawAdminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+  const [accountsRevision, setAccountsRevision] = useState<number>(0);
   const [ownedBusinessId, setOwnedBusinessId] = useState<string | null>(() => {
     try {
       return window.localStorage.getItem('timeto_owned_business_id_v1');
@@ -961,13 +975,32 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
         try {
           const sessionRes = await realApiClient.getCurrentUser();
-          setAuthUser(sessionRes.user);
+          const effectiveUser =
+            localPersistedUser && localPersistedUser.phone !== sessionRes.user.phone
+              ? localPersistedUser
+              : localPersistedUser
+                ? {
+                    ...sessionRes.user,
+                    fullName:
+                      localPersistedUser.fullName &&
+                      localPersistedUser.fullName !== 'کاربر تایم تو'
+                        ? localPersistedUser.fullName
+                        : sessionRes.user.fullName,
+                    roles: localPersistedUser.roles.length
+                      ? localPersistedUser.roles
+                      : sessionRes.user.roles,
+                    isPlatformAdmin:
+                      localPersistedUser.isPlatformAdmin ||
+                      sessionRes.user.isPlatformAdmin,
+                  }
+                : sessionRes.user;
+          setAuthUser(effectiveUser);
           setBookingDraft((prev) => ({
             ...prev,
-            customerName: sessionRes.user.fullName || prev.customerName,
-            customerPhone: sessionRes.user.phone || prev.customerPhone,
+            customerName: effectiveUser.fullName || prev.customerName,
+            customerPhone: effectiveUser.phone || prev.customerPhone,
           }));
-          await loadAuthenticatedRoleData(sessionRes.user);
+          await loadAuthenticatedRoleData(effectiveUser);
         } catch {
           if (localPersistedUser) {
             setAuthUser(localPersistedUser);
@@ -1352,6 +1385,46 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
+    try {
+      const deletedRaw =
+        window.localStorage.getItem('timeto_deleted_admin_phones_v1') || '[]';
+      const deletedPhones: string[] = JSON.parse(deletedRaw);
+      if (deletedPhones.includes(payload.phone)) {
+        window.localStorage.setItem(
+          'timeto_deleted_admin_phones_v1',
+          JSON.stringify(deletedPhones.filter((p) => p !== payload.phone))
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    if (payload.role === 'CUSTOMER') {
+      const customerNotif: AdminNotificationItem = {
+        id: `notif-usr-${Date.now()}`,
+        type: 'NEW_BUSINESS',
+        title: `ثبت‌نام کاربر جدید (مشتری): ${payload.fullName}`,
+        message: `کاربر عادی «${payload.fullName}» با شماره همراه ${payload.phone} در سامانه ثبت‌نام کرد.`,
+        ownerName: payload.fullName,
+        ownerPhone: payload.phone,
+        city: payload.salonInfo?.city || 'اصفهان',
+        createdAtJalali: 'امروز',
+        isRead: false,
+      };
+      setAdminNotifications((prev) => {
+        const next = [customerNotif, ...prev];
+        try {
+          window.localStorage.setItem(
+            'timeto_admin_notifications_v1',
+            JSON.stringify(next)
+          );
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    }
+
     saveMemoryAccount({
       phone: payload.phone,
       password: payload.password || 'Timeto@1234',
@@ -1370,6 +1443,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       neighborhood: payload.salonInfo?.neighborhood,
       updatedAt: Date.now(),
     });
+    setAccountsRevision((r) => r + 1);
 
     saveVisitorRole(payload.role);
     const sessionUser = buildSessionUserFromMemory(
@@ -1491,37 +1565,118 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const updateCustomerProfile = async (patch: {
     fullName?: string;
+    phone?: string;
     defaultCity?: string;
   }): Promise<boolean> => {
-    if (dataMode === 'real') {
-      try {
-        const res = await realApiClient.updateMyProfile(patch);
-        setAuthUser(res.user);
-        setBookingDraft((prev) => ({
-          ...prev,
-          customerName: res.user.fullName || prev.customerName,
-        }));
-        showToast(res.message, 'success');
-        return true;
-      } catch (err) {
+    const currentPhone = authUser?.phone || '';
+    const requestedPhone = patch.phone
+      ? normalizeIranMobile(patch.phone)
+      : currentPhone;
+
+    if (patch.phone && !/^09\d{9}$/.test(requestedPhone)) {
+      showToast(
+        'شماره موبایل باید ۱۱ رقم معتبر و با پیش‌شماره ۰۹ باشد.',
+        'warning'
+      );
+      return false;
+    }
+
+    if (currentPhone) {
+      const memUpdate = updateMemoryAccountPhoneOrProfile(currentPhone, {
+        newPhone: requestedPhone || currentPhone,
+        fullName: patch.fullName,
+        city: patch.defaultCity,
+      });
+      if (!memUpdate.ok) {
         showToast(
-          err instanceof Error
-            ? err.message
-            : 'خطا در بروزرسانی پروفایل کاربری در دیتابیس',
-          'danger'
+          memUpdate.error || 'خطا در بروزرسانی شماره موبایل یا مشخصات.',
+          'warning'
         );
         return false;
       }
     }
 
-    if (authUser) {
-      setAuthUser({
-        ...authUser,
-        fullName: patch.fullName ?? authUser.fullName,
-        defaultCity: patch.defaultCity ?? authUser.defaultCity,
-      });
+    if (
+      requestedPhone &&
+      currentPhone &&
+      requestedPhone !== currentPhone &&
+      rawAdminUsers.some(
+        (u) => normalizeIranMobile(u.phone || u.phoneMasked) === requestedPhone
+      )
+    ) {
+      showToast(
+        'این شماره موبایل قبلاً برای حساب دیگری ثبت شده است.',
+        'warning'
+      );
+      return false;
     }
-    showToast('تغییرات پروفایل ذخیره شد.');
+
+    try {
+      const overridesRaw =
+        window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
+      const overrides = JSON.parse(overridesRaw);
+      const targetPhoneKey = requestedPhone || currentPhone;
+      if (targetPhoneKey) {
+        if (currentPhone && currentPhone !== targetPhoneKey) {
+          delete overrides[currentPhone];
+        }
+        overrides[targetPhoneKey] = {
+          ...(overrides[targetPhoneKey] || {}),
+          ...(patch.fullName ? { fullName: patch.fullName.trim() } : {}),
+          ...(patch.defaultCity ? { city: patch.defaultCity.trim() } : {}),
+          phone: targetPhoneKey,
+        };
+        window.localStorage.setItem(
+          'timeto_admin_user_overrides_v1',
+          JSON.stringify(overrides)
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    if (dataMode === 'real') {
+      try {
+        const res = await realApiClient.updateMyProfile({
+          fullName: patch.fullName,
+          defaultCity: patch.defaultCity,
+        });
+        const updatedUser: AuthenticatedSessionUser = {
+          ...res.user,
+          fullName: patch.fullName?.trim() || res.user.fullName,
+          phone: requestedPhone || res.user.phone,
+          defaultCity: patch.defaultCity?.trim() || res.user.defaultCity,
+        };
+        setAuthUser(updatedUser);
+        setBookingDraft((prev) => ({
+          ...prev,
+          customerName: updatedUser.fullName || prev.customerName,
+          customerPhone: updatedUser.phone || prev.customerPhone,
+        }));
+        setAccountsRevision((r) => r + 1);
+        showToast('مشخصات کاربری و شماره همراه بروزرسانی شد.', 'success');
+        return true;
+      } catch {
+        // در صورت خطای شبکه یا حساب محلی، تغییرات روی نشست و حافظه اعمال شود
+      }
+    }
+
+    if (authUser) {
+      const updatedSession: AuthenticatedSessionUser = {
+        ...authUser,
+        fullName: patch.fullName?.trim() || authUser.fullName,
+        phone: requestedPhone || authUser.phone,
+        defaultCity: patch.defaultCity?.trim() || authUser.defaultCity,
+      };
+      setAuthUser(updatedSession);
+      setBookingDraft((prev) => ({
+        ...prev,
+        customerName: updatedSession.fullName || prev.customerName,
+        customerPhone: updatedSession.phone || prev.customerPhone,
+      }));
+    }
+    setAccountsRevision((r) => r + 1);
+    showToast('تغییرات پروفایل و شماره همراه ذخیره شد.');
     return true;
   };
 
@@ -3203,6 +3358,299 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     return completeSimulatedBooking();
   };
 
+  const adminUsers: AdminUserRecord[] = React.useMemo(() => {
+    void accountsRevision;
+    const byPhone = new Map<string, AdminUserRecord>();
+    let deletedPhones = new Set<string>();
+    let overrides: Record<
+      string,
+      {
+        fullName?: string;
+        city?: string;
+        roleLabel?: string;
+        phone?: string;
+      }
+    > = {};
+
+    try {
+      const delRaw =
+        window.localStorage.getItem('timeto_deleted_admin_phones_v1') || '[]';
+      deletedPhones = new Set<string>(JSON.parse(delRaw));
+      const ovRaw =
+        window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
+      overrides = JSON.parse(ovRaw);
+    } catch {
+      // ignore
+    }
+
+    // ۱. کاربران دریافت‌شده از سرور
+    for (const u of rawAdminUsers) {
+      const cleanPhone = normalizeIranMobile(u.phone || u.phoneMasked);
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      const ov = overrides[cleanPhone];
+      byPhone.set(cleanPhone, {
+        ...u,
+        id: u.id || `usr-${cleanPhone}`,
+        fullName: ov?.fullName || u.fullName || 'کاربر تایم تو',
+        phone: cleanPhone,
+        phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+        city: ov?.city || u.city || 'اصفهان',
+        roleLabel: ov?.roleLabel || u.roleLabel || 'مشتری',
+        joinedJalali: u.joinedJalali || 'ثبت‌شده',
+        isActive: u.isActive !== false,
+      });
+    }
+
+    // ۲. کسب‌وکارهای واقعی ثبت‌شده (صاحبان سالن‌ها)
+    for (const b of businesses) {
+      if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) continue;
+      const cleanPhone = normalizeIranMobile(b.ownerPhone || b.phoneDisplay);
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      const existing = byPhone.get(cleanPhone);
+      const ov = overrides[cleanPhone];
+      byPhone.set(cleanPhone, {
+        id: existing?.id || `usr-biz-${b.id}`,
+        fullName:
+          ov?.fullName || b.ownerName || existing?.fullName || `مدیریت ${b.name}`,
+        roleLabel:
+          ov?.roleLabel || `صاحب سالن (${b.name})`,
+        phone: cleanPhone,
+        phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+        city: ov?.city || b.city || existing?.city || 'اصفهان',
+        joinedJalali: b.createdAtJalali || existing?.joinedJalali || 'امروز',
+        isActive: true,
+      });
+    }
+
+    // ۳. تمام حساب‌های ثبت‌نام‌شده در حافظه مرورگر (مشتریان عادی و صاحبان سالن)
+    const memoryAccounts = getSavedMemoryAccounts();
+    for (const acc of Object.values(memoryAccounts)) {
+      const cleanPhone = normalizeIranMobile(acc.phone);
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      const existing = byPhone.get(cleanPhone);
+      const ov = overrides[cleanPhone];
+      const matchedBiz = businesses.find(
+        (b) =>
+          !b.isSampleShowcase &&
+          (b.id === acc.businessId ||
+            normalizeIranMobile(b.ownerPhone || b.phoneDisplay) === cleanPhone)
+      );
+      const isBizOwner = acc.role === 'BUSINESS_OWNER' || Boolean(matchedBiz);
+      const salonTitle = matchedBiz?.name || acc.businessName;
+
+      byPhone.set(cleanPhone, {
+        id: existing?.id || `usr-mem-${cleanPhone}`,
+        fullName:
+          ov?.fullName || acc.fullName || existing?.fullName || 'کاربر تایم تو',
+        roleLabel:
+          ov?.roleLabel ||
+          (isBizOwner
+            ? salonTitle
+              ? `صاحب سالن (${salonTitle})`
+              : 'صاحب کسب‌وکار (سالن‌دار)'
+            : existing?.roleLabel?.includes('سالن')
+              ? existing.roleLabel
+              : 'مشتری عادی'),
+        phone: cleanPhone,
+        phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+        city: ov?.city || acc.city || matchedBiz?.city || existing?.city || 'اصفهان',
+        joinedJalali: existing?.joinedJalali || 'امروز',
+        isActive: true,
+      });
+    }
+
+    // ۴. کاربر لاگین‌شده فعلی (در صورتی که هنوز در لیست نباشد)
+    if (authUser?.phone) {
+      const cleanPhone = normalizeIranMobile(authUser.phone);
+      if (/^09\d{9}$/.test(cleanPhone) && !deletedPhones.has(cleanPhone)) {
+        const existing = byPhone.get(cleanPhone);
+        const ov = overrides[cleanPhone];
+        const isSuper =
+          authUser.isPlatformAdmin ||
+          authUser.roles.includes('PLATFORM_ADMIN');
+        const isBiz = authUser.roles.includes('BUSINESS_OWNER');
+        byPhone.set(cleanPhone, {
+          id: existing?.id || authUser.userId || `usr-${cleanPhone}`,
+          fullName:
+            ov?.fullName ||
+            authUser.fullName ||
+            existing?.fullName ||
+            'کاربر تایم تو',
+          roleLabel:
+            ov?.roleLabel ||
+            existing?.roleLabel ||
+            (isSuper
+              ? 'مدیر کل پلتفرم'
+              : isBiz
+                ? 'صاحب کسب‌وکار (سالن‌دار)'
+                : 'مشتری عادی'),
+          phone: cleanPhone,
+          phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
+          city:
+            ov?.city || authUser.defaultCity || existing?.city || 'اصفهان',
+          joinedJalali: existing?.joinedJalali || 'فعال',
+          isActive: true,
+        });
+      }
+    }
+
+    return Array.from(byPhone.values());
+  }, [rawAdminUsers, businesses, authUser, accountsRevision]);
+
+  const updateAdminUserRecord = (
+    phone: string,
+    patch: {
+      fullName?: string;
+      newPhone?: string;
+      city?: string;
+      role?: 'CUSTOMER' | 'BUSINESS_OWNER';
+    }
+  ): boolean => {
+    const cleanOldPhone = normalizeIranMobile(phone);
+    const cleanNewPhone = patch.newPhone
+      ? normalizeIranMobile(patch.newPhone)
+      : cleanOldPhone;
+
+    if (!/^09\d{9}$/.test(cleanNewPhone)) {
+      showToast(
+        'شماره موبایل باید ۱۱ رقم و با پیش‌شماره ۰۹ باشد.',
+        'warning'
+      );
+      return false;
+    }
+
+    if (
+      cleanNewPhone !== cleanOldPhone &&
+      adminUsers.some((u) => normalizeIranMobile(u.phone || '') === cleanNewPhone)
+    ) {
+      showToast(
+        'این شماره موبایل قبلاً برای کاربر دیگری در سامانه ثبت شده است.',
+        'warning'
+      );
+      return false;
+    }
+
+    const memRes = updateMemoryAccountPhoneOrProfile(cleanOldPhone, {
+      newPhone: cleanNewPhone,
+      fullName: patch.fullName,
+      city: patch.city,
+      role: patch.role,
+    });
+    if (!memRes.ok) {
+      showToast(memRes.error || 'خطا در ویرایش مشخصات کاربر.', 'warning');
+      return false;
+    }
+
+    try {
+      const ovRaw =
+        window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
+      const ov = JSON.parse(ovRaw);
+      const prevOv = ov[cleanOldPhone] || {};
+      if (cleanNewPhone !== cleanOldPhone) {
+        delete ov[cleanOldPhone];
+      }
+      ov[cleanNewPhone] = {
+        ...prevOv,
+        ...(patch.fullName ? { fullName: patch.fullName.trim() } : {}),
+        ...(patch.city ? { city: patch.city.trim() } : {}),
+        ...(patch.role
+          ? {
+              roleLabel:
+                patch.role === 'BUSINESS_OWNER'
+                  ? 'صاحب کسب‌وکار (سالن‌دار)'
+                  : 'مشتری عادی',
+            }
+          : {}),
+        phone: cleanNewPhone,
+      };
+      window.localStorage.setItem(
+        'timeto_admin_user_overrides_v1',
+        JSON.stringify(ov)
+      );
+    } catch {
+      // ignore
+    }
+
+    setAdminUsers((prev) =>
+      prev.map((u) => {
+        if (normalizeIranMobile(u.phone || u.phoneMasked) !== cleanOldPhone) {
+          return u;
+        }
+        return {
+          ...u,
+          fullName: patch.fullName?.trim() || u.fullName,
+          phone: cleanNewPhone,
+          phoneMasked: formatMaskedPhoneDisplay(cleanNewPhone),
+          city: patch.city?.trim() || u.city,
+          roleLabel: patch.role
+            ? patch.role === 'BUSINESS_OWNER'
+              ? 'صاحب کسب‌وکار (سالن‌دار)'
+              : 'مشتری عادی'
+            : u.roleLabel,
+        };
+      })
+    );
+
+    if (authUser && normalizeIranMobile(authUser.phone) === cleanOldPhone) {
+      setAuthUser({
+        ...authUser,
+        fullName: patch.fullName?.trim() || authUser.fullName,
+        phone: cleanNewPhone,
+        defaultCity: patch.city?.trim() || authUser.defaultCity,
+      });
+    }
+
+    setAccountsRevision((r) => r + 1);
+    showToast('اطلاعات کاربر با موفقیت ویرایش و ذخیره شد.');
+    return true;
+  };
+
+  const deleteAdminUserRecord = (phone: string) => {
+    const cleanPhone = normalizeIranMobile(phone);
+    if (!cleanPhone) return;
+
+    removeMemoryAccount(cleanPhone);
+
+    try {
+      const delRaw =
+        window.localStorage.getItem('timeto_deleted_admin_phones_v1') || '[]';
+      const delList: string[] = JSON.parse(delRaw);
+      if (!delList.includes(cleanPhone)) {
+        delList.push(cleanPhone);
+        window.localStorage.setItem(
+          'timeto_deleted_admin_phones_v1',
+          JSON.stringify(delList)
+        );
+      }
+      const ovRaw =
+        window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
+      const ov = JSON.parse(ovRaw);
+      if (ov[cleanPhone]) {
+        delete ov[cleanPhone];
+        window.localStorage.setItem(
+          'timeto_admin_user_overrides_v1',
+          JSON.stringify(ov)
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    setAdminUsers((prev) =>
+      prev.filter(
+        (u) => normalizeIranMobile(u.phone || u.phoneMasked) !== cleanPhone
+      )
+    );
+    setAccountsRevision((r) => r + 1);
+    showToast('حساب کاربری انتخاب‌شده از فهرست کاربران حذف شد.', 'info');
+  };
+
   return (
     <PrototypeDataContext.Provider
       value={{
@@ -3223,6 +3671,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         resetPasswordWithOtp,
         logoutUser,
         updateCustomerProfile,
+        updateAdminUserRecord,
+        deleteAdminUserRecord,
         refreshRealData,
         selectedCity,
         setSelectedCity,
