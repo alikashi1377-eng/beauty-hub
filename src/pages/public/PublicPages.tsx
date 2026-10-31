@@ -638,59 +638,80 @@ const OriginalCustomerHomePage: React.FC = () => {
             </div>
           </div>
 
-          <div className="lg:col-span-5 rounded-3xl border border-[#CBD5E1] bg-white p-6 sm:p-7 flex flex-col justify-between gap-5 shadow-xs">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2">
-                <span className="inline-block px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
-                  {homeBannerSecondary?.sponsoredLabel ||
-                    'پیشنهاد ویژه · رزرو آنی'}
+          {sortedHomeSalons.length > 1 &&
+          homeBannerSecondary &&
+          homeBannerSecondary.id !== homeBannerPrimary?.id ? (
+            <div className="lg:col-span-5 rounded-3xl border border-[#CBD5E1] bg-white p-6 sm:p-7 flex flex-col justify-between gap-5 shadow-xs">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <span className="inline-block px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
+                    {homeBannerSecondary.sponsoredLabel ||
+                      'پیشنهاد ویژه · رزرو آنی'}
+                  </span>
+                  <h3 className="text-base sm:text-lg font-extrabold text-[#061138] leading-snug">
+                    {`${homeBannerSecondary.name} · ${homeBannerSecondary.neighborhood}`}
+                  </h3>
+                  <p className="text-xs text-[#334155] leading-relaxed line-clamp-2">
+                    {homeBannerSecondary.shortDescription}
+                  </p>
+                </div>
+                <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#CBD5E1] shadow-sm shrink-0">
+                  <img
+                    src={
+                      homeBannerSecondary.avatarUrl ||
+                      getBeautyPhotoUrl(homeBannerSecondary.name, 'پوست و فیشیال')
+                    }
+                    alt={homeBannerSecondary.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-[#64748B] block">
+                    شروع تعرفه خدمات
+                  </span>
+                  <span className="text-sm font-extrabold text-[#0057FF] tabular-nums">
+                    {formatPriceToman(homeBannerSecondary.startingPriceToman)}
+                  </span>
+                </div>
+                <Link
+                  to={`/salon/${homeBannerSecondary.slug}`}
+                  className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
+                >
+                  <span>مشاهده سالن</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="lg:col-span-5 rounded-3xl border border-[#CBD5E1] bg-white p-6 sm:p-7 flex flex-col justify-between gap-5 shadow-xs">
+              <div className="space-y-2.5">
+                <span className="inline-block px-3 py-1 rounded-full bg-[#EDE9FE] text-[#7C3AED] text-xs font-extrabold">
+                  پذیرش سالن‌ها و متخصصان جدید
                 </span>
                 <h3 className="text-base sm:text-lg font-extrabold text-[#061138] leading-snug">
-                  {homeBannerSecondary
-                    ? `${homeBannerSecondary.name} · ${homeBannerSecondary.neighborhood}`
-                    : 'فیشیال تخصصی پوست و آبرسانی عمیق با کلینیک سارا راد'}
+                  سالن زیبایی یا خدمات تخصصی خود را در تایم تو ثبت کنید
                 </h3>
-                <p className="text-xs text-[#334155] leading-relaxed line-clamp-2">
-                  {homeBannerSecondary?.shortDescription ||
-                    'پاکسازی چندمرحله‌ای، ماسک هیدروژلی و سرم‌تراپی ویژه انواع پوست.'}
+                <p className="text-xs text-[#334155] leading-relaxed">
+                  پروفایل اختصاصی سالن، منوی خدمات، تقویم نوبت‌دهی ۲۴ ساعته و باشگاه مشتریان خود را رایگان راه‌اندازی کنید.
                 </p>
               </div>
-              <div className="w-20 h-20 rounded-2xl overflow-hidden border border-[#CBD5E1] shadow-sm shrink-0">
-                <img
-                  src={
-                    homeBannerSecondary?.avatarUrl ||
-                    getBeautyPhotoUrl('کلینیک سارا راد', 'پوست و فیشیال')
-                  }
-                  alt={homeBannerSecondary?.name || 'پیشنهاد ویژه'}
-                  className="w-full h-full object-cover"
-                />
+              <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
+                <span className="text-xs font-extrabold text-[#059669]">
+                  شروع رایگان · فعال‌سازی آنی
+                </span>
+                <Link
+                  to="/business/register"
+                  className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
+                >
+                  <span>ثبت کسب‌وکار</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </Link>
               </div>
             </div>
-
-            <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
-              <div>
-                <span className="text-[11px] text-[#64748B] block">
-                  شروع تعرفه خدمات
-                </span>
-                <span className="text-sm font-extrabold text-[#0057FF] tabular-nums">
-                  {homeBannerSecondary
-                    ? formatPriceToman(homeBannerSecondary.startingPriceToman)
-                    : '۶۵۰,۰۰۰ تومان'}
-                </span>
-              </div>
-              <Link
-                to={
-                  homeBannerSecondary
-                    ? `/salon/${homeBannerSecondary.slug}`
-                    : '/pro/sara-rad'
-                }
-                className="px-4 py-2 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_6px_16px_-4px_rgba(0,87,255,0.4)]"
-              >
-                <span>مشاهده سالن</span>
-                <ArrowLeft className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </div>
+          )}
         </div>
       </section>
 
@@ -702,7 +723,7 @@ const OriginalCustomerHomePage: React.FC = () => {
               انتخاب مستقیم متخصص (Pro Care)
             </p>
             <h2 className="text-xl sm:text-2xl font-extrabold text-[#061138]">
-              متخصصان برجسته زیبایی، پوست و پیرایش اصفهان
+              متخصصان زیبایی، پوست و پیرایش اصفهان
             </h2>
           </div>
           <Link
@@ -757,7 +778,7 @@ const OriginalCustomerHomePage: React.FC = () => {
           ))}
         </div>
 
-        {spotlightSpecialist ? (
+        {spotlightSpecialist && specialists.length > 1 ? (
           <div className="rounded-3xl border border-[#CBD5E1] bg-white p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-center shadow-xs">
             <div className="lg:col-span-4 relative h-48 sm:h-60 rounded-2xl overflow-hidden">
               <img

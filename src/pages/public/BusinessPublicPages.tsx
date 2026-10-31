@@ -19,9 +19,14 @@ import {
   Image as ImageIcon,
   Users,
   Sparkles,
+  Trash2,
+  Flag,
+  MessageSquareReply,
+  AlertTriangle,
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { formatPriceToman, toPersianDigits } from '../../utils/formatters';
+import { validateReviewContent } from '../../utils/reviewModeration';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { FormField } from '../../components/ui/FormField';
@@ -49,12 +54,16 @@ export const BusinessPublicProfileView: React.FC<{
   const {
     dataMode,
     authUser,
+    ownedBusinessId,
     openAuthModal,
     businesses,
     services,
     specialists,
     reviews,
     addReview,
+    replyToReview,
+    reportReviewAbuse,
+    deleteReviewByAdmin,
     gallery,
     favoriteBusinessIds,
     toggleFavoriteBusiness,
@@ -70,9 +79,11 @@ export const BusinessPublicProfileView: React.FC<{
   const [reviewServiceTitle, setReviewServiceTitle] = useState<string>('');
   const [reviewComment, setReviewComment] = useState<string>('');
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
+  const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
+  const [replyDraftText, setReplyDraftText] = useState<string>('');
 
   const matchedSpecialist = specialists.find((sp) => sp.slug === slug);
-  const fallbackSlug = mode === 'pro' ? 'sara-rad' : 'royal-golzar';
+  const fallbackSlug = mode === 'pro' ? 'mahsa-kiani' : 'royal-golzar';
   const business =
     businesses.find((b) => b.slug === slug || b.id === slug) ??
     (matchedSpecialist
@@ -645,22 +656,52 @@ export const BusinessPublicProfileView: React.FC<{
                     از ۵ امتیاز
                   </p>
                   <p className="text-[11px] text-[#6B6480] tabular-nums">
-                    بر اساس {toPersianDigits(business.reviewCount)} دیدگاه
+                    بر اساس {toPersianDigits(bizReviews.length || business.reviewCount)} دیدگاه ثبت‌شده
                   </p>
                 </div>
                 <div className="sm:col-span-8 space-y-2 text-xs tabular-nums">
                   {[
-                    { stars: '۵ ستاره', pct: 86 },
-                    { stars: '۴ ستاره', pct: 11 },
-                    { stars: '۳ ستاره و کمتر', pct: 3 },
+                    {
+                      stars: '۵ ستاره (عالی)',
+                      pct:
+                        bizReviews.length > 0
+                          ? Math.round(
+                              (bizReviews.filter((r) => r.rating === 5).length /
+                                bizReviews.length) *
+                                100
+                            )
+                          : 86,
+                    },
+                    {
+                      stars: '۴ ستاره (خوب)',
+                      pct:
+                        bizReviews.length > 0
+                          ? Math.round(
+                              (bizReviews.filter((r) => r.rating === 4).length /
+                                bizReviews.length) *
+                                100
+                            )
+                          : 11,
+                    },
+                    {
+                      stars: '۳ ستاره و کمتر (انتقادی)',
+                      pct:
+                        bizReviews.length > 0
+                          ? Math.round(
+                              (bizReviews.filter((r) => r.rating <= 3).length /
+                                bizReviews.length) *
+                                100
+                            )
+                          : 3,
+                    },
                   ].map((row) => (
                     <div key={row.stars} className="flex items-center gap-3">
-                      <span className="w-24 text-[#6B6480] font-medium">
+                      <span className="w-36 text-[#6B6480] font-medium">
                         {row.stars}
                       </span>
                       <div className="flex-1 h-2 rounded-full bg-white overflow-hidden border border-[#E6E0F5]">
                         <div
-                          className="h-full bg-[#8B5CF6] rounded-full"
+                          className="h-full bg-[#8B5CF6] rounded-full transition-all duration-300"
                           style={{ width: `${row.pct}%` }}
                         />
                       </div>
@@ -673,30 +714,41 @@ export const BusinessPublicProfileView: React.FC<{
               </Card>
 
               <Card className="rounded-3xl space-y-4">
-                <h3 className="text-sm font-extrabold text-[#1E1B2E] border-b border-[#E6E0F5] pb-2.5">
-                  ثبت دیدگاه و تجربه مراجعه
-                </h3>
-                {dataMode === 'real' && !authUser ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#6B6480]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E0F5] pb-2.5">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-[#1E1B2E]">
+                      ثبت دیدگاه و امتیاز واقعی مراجعه
+                    </h3>
+                    <p className="text-[11px] text-[#6B6480] mt-0.5">
+                      ثبت نظرات منفی و انتقاد منصفانه (حتی ۱ ستاره) کاملاً آزاد است و بدون سانسور منتشر می‌شود. تنها الفاظ رکیک یا حروف بی‌معنی مسدود می‌شوند.
+                    </p>
+                  </div>
+                </div>
+
+                {!authUser ? (
+                  <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3 text-xs text-[#6B6480]">
                     <span>
-                      برای ثبت دیدگاه درباره این مرکز، ابتدا وارد حساب کاربری خود
-                      شوید.
+                      برای ثبت امتیاز و دیدگاه درباره «{business.name}»، ابتدا وارد حساب کاربری خود شوید.
                     </span>
-                    <Link to="/login">
-                      <Button variant="outline" size="sm">
-                        ورود با شماره موبایل
-                      </Button>
-                    </Link>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() =>
+                        openAuthModal({
+                          initialScreen: 'LOGIN',
+                          defaultRole: 'CUSTOMER',
+                          promptReason: `برای ثبت دیدگاه و امتیاز درباره «${business.name}»، وارد شوید یا ثبت‌نام کنید`,
+                        })
+                      }
+                    >
+                      ورود / ثبت‌نام سریع و ثبت نظر
+                    </Button>
                   </div>
                 ) : (
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
-                      if (
-                        !reviewComment.trim() ||
-                        reviewComment.trim().length < 3
-                      )
-                        return;
+                      if (!reviewComment.trim()) return;
                       setIsSubmittingReview(true);
                       try {
                         const ok = await addReview({
@@ -711,14 +763,15 @@ export const BusinessPublicProfileView: React.FC<{
                         });
                         if (ok) {
                           setReviewComment('');
+                          setReviewRating(5);
                         }
                       } finally {
                         setIsSubmittingReview(false);
                       }
                     }}
-                    className="space-y-3"
+                    className="space-y-3.5"
                   >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                       <FormField id="rev-service" label="خدمت دریافت‌شده">
                         <Select
                           id="rev-service"
@@ -745,42 +798,89 @@ export const BusinessPublicProfileView: React.FC<{
                           }
                         />
                       </FormField>
-                      <FormField id="rev-rating" label="امتیاز شما">
-                        <Select
-                          id="rev-rating"
-                          value={String(reviewRating)}
-                          onChange={(e) =>
-                            setReviewRating(Number(e.target.value))
-                          }
-                          options={[
-                            { value: '5', label: '۵ ستاره (عالی)' },
-                            { value: '4', label: '۴ ستاره (خوب)' },
-                            { value: '3', label: '۳ ستاره (متوسط)' },
-                            { value: '2', label: '۲ ستاره (ضعیف)' },
-                            { value: '1', label: '۱ ستاره (بسیار ضعیف)' },
-                          ]}
-                        />
-                      </FormField>
+
+                      <div className="space-y-1.5">
+                        <span className="block text-xs font-extrabold text-[#1E1B2E]">
+                          امتیاز شما به این مرکز (۱ تا ۵ ستاره):
+                        </span>
+                        <div className="flex items-center justify-between gap-2 p-2 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5]">
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((starVal) => (
+                              <button
+                                key={starVal}
+                                type="button"
+                                onClick={() => setReviewRating(starVal)}
+                                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                                  starVal <= reviewRating
+                                    ? 'bg-amber-400/20 text-amber-500 scale-105'
+                                    : 'bg-white text-slate-300 hover:text-amber-300'
+                                }`}
+                                title={`${toPersianDigits(starVal)} ستاره`}
+                              >
+                                <Star
+                                  className={`w-4 h-4 ${
+                                    starVal <= reviewRating ? 'fill-amber-400' : ''
+                                  }`}
+                                />
+                              </button>
+                            ))}
+                          </div>
+                          <span
+                            className={`text-xs font-extrabold px-2.5 py-1 rounded-xl ${
+                              reviewRating >= 4
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : reviewRating === 3
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-rose-50 text-rose-700'
+                            }`}
+                          >
+                            {reviewRating === 5
+                              ? '۵ ستاره (عالی)'
+                              : reviewRating === 4
+                                ? '۴ ستاره (خوب)'
+                                : reviewRating === 3
+                                  ? '۳ ستاره (متوسط)'
+                                  : reviewRating === 2
+                                    ? '۲ ستاره (انتقادی / ضعیف)'
+                                    : '۱ ستاره (ناراضی / بسیار ضعیف)'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <FormField id="rev-comment" label="متن دیدگاه" required>
+
+                    <FormField id="rev-comment" label="متن دیدگاه یا انتقاد شما" required>
                       <Textarea
                         id="rev-comment"
-                        rows={2}
+                        rows={3}
                         value={reviewComment}
                         onChange={(e) => setReviewComment(e.target.value)}
-                        placeholder="تجربه خود از کیفیت خدمات و نظم نوبت‌دهی را بنویسید..."
+                        placeholder="تجربه واقعی خود از کیفیت کار، برخورد پرسنل، قیمت یا نظم نوبت‌دهی را بنویسید (نظرات مثبت و انتقادهای منصفانه هر دو منتشر می‌شوند)..."
                       />
                     </FormField>
-                    <div className="flex justify-end">
+
+                    {reviewComment.trim().length >= 3 &&
+                      !validateReviewContent(reviewComment).valid && (
+                        <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
+                          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                          <span>{validateReviewContent(reviewComment).reason}</span>
+                        </div>
+                      )}
+
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                      <span className="text-[11px] text-[#6B6480]">
+                        ثبت به نام: <strong className="text-[#1E1B2E]">{authUser.fullName}</strong>
+                      </span>
                       <Button
                         type="submit"
                         variant="primary"
                         size="sm"
                         disabled={
-                          isSubmittingReview || reviewComment.trim().length < 3
+                          isSubmittingReview ||
+                          reviewComment.trim().length < 3 ||
+                          !validateReviewContent(reviewComment).valid
                         }
                       >
-                        {isSubmittingReview ? 'در حال ثبت...' : 'ثبت دیدگاه'}
+                        {isSubmittingReview ? 'در حال ثبت...' : 'ثبت و انتشار دیدگاه'}
                       </Button>
                     </div>
                   </form>
@@ -790,33 +890,183 @@ export const BusinessPublicProfileView: React.FC<{
               {bizReviews.length === 0 ? (
                 <EmptyState title="هنوز دیدگاهی برای این مرکز ثبت نشده است" />
               ) : (
-                bizReviews.map((rev) => (
-                  <Card key={rev.id} className="rounded-3xl space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <Avatar
-                          name={rev.authorName}
-                          size="sm"
-                          showPhoto={false}
-                        />
-                        <div>
-                          <span className="font-extrabold text-[#1E1B2E] block">
-                            {rev.authorName}
+                bizReviews.map((rev) => {
+                  const isSuperAdmin =
+                    Boolean(authUser?.isPlatformAdmin) ||
+                    Boolean(authUser?.roles?.includes('PLATFORM_ADMIN'));
+                  const isOwnerOfThisSalon =
+                    ownedBusinessId === business.id ||
+                    Boolean(
+                      authUser?.businessMemberships?.some(
+                        (m) =>
+                          m.businessId === business.id ||
+                          m.businessSlug === business.slug
+                      )
+                    );
+
+                  return (
+                    <Card key={rev.id} className="rounded-3xl space-y-3">
+                      <div className="flex items-center justify-between text-xs gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <Avatar
+                            name={rev.authorName}
+                            size="sm"
+                            showPhoto={false}
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-[#1E1B2E]">
+                                {rev.authorName}
+                              </span>
+                              {rev.rating <= 2 && (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                                  دیدگاه انتقادی مشتری
+                                </span>
+                              )}
+                              {rev.isReportedBySalon && isSuperAdmin && (
+                                <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+                                  گزارش‌شده توسط سالن
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-medium text-[#6B6480] text-[11px]">
+                              {rev.serviceTitle}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`tabular-nums font-extrabold px-2.5 py-1 rounded-xl ${
+                              rev.rating >= 4
+                                ? 'bg-amber-50 text-amber-600'
+                                : rev.rating === 3
+                                  ? 'bg-slate-100 text-slate-700'
+                                  : 'bg-rose-50 text-rose-600'
+                            }`}
+                          >
+                            ★ {toPersianDigits(rev.rating)} · {rev.dateJalali}
                           </span>
-                          <span className="font-medium text-[#6B6480] text-[11px]">
-                            {rev.serviceTitle}
-                          </span>
+
+                          {isSuperAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => void deleteReviewByAdmin(rev.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold cursor-pointer transition-colors"
+                              title="حذف دیدگاه حاوی فحاشی یا متن جفنگ توسط مدیر کل"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>حذف (فحاشی/جفنگ)</span>
+                            </button>
+                          )}
                         </div>
                       </div>
-                      <span className="tabular-nums text-[#F59E0B] font-bold">
-                        ★ {toPersianDigits(rev.rating)} · {rev.dateJalali}
-                      </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed">
-                      {rev.comment}
-                    </p>
-                  </Card>
-                ))
+
+                      <p className="text-xs sm:text-sm text-[#1E1B2E] leading-relaxed">
+                        {rev.comment}
+                      </p>
+
+                      {rev.salonReply && (
+                        <div className="p-3 rounded-2xl bg-[#FAF8FF] border-r-4 border-[#8B5CF6] space-y-1 text-xs">
+                          <div className="flex items-center justify-between text-[11px] text-[#8B5CF6] font-extrabold">
+                            <span>پاسخ مدیریت {business.name}</span>
+                            {rev.salonReplyDateJalali && (
+                              <span className="text-[#6B6480] font-normal">
+                                {rev.salonReplyDateJalali}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[#1E1B2E] leading-relaxed">
+                            {rev.salonReply}
+                          </p>
+                        </div>
+                      )}
+
+                      {(isOwnerOfThisSalon || isSuperAdmin) && (
+                        <div className="pt-2 border-t border-[#F3EEFF] flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (replyingReviewId === rev.id) {
+                                  setReplyingReviewId(null);
+                                } else {
+                                  setReplyingReviewId(rev.id);
+                                  setReplyDraftText(rev.salonReply || '');
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 text-[#8B5CF6] hover:underline font-bold cursor-pointer"
+                            >
+                              <MessageSquareReply className="w-3.5 h-3.5" />
+                              <span>
+                                {rev.salonReply
+                                  ? 'ویرایش پاسخ سالن'
+                                  : 'پاسخ رسمی سالن به این دیدگاه'}
+                              </span>
+                            </button>
+                          </div>
+
+                          {!rev.isReportedBySalon ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void reportReviewAbuse(
+                                  rev.id,
+                                  'گزارش فحاشی یا عبارات نامفهوم (جفنگ) جهت بررسی مدیر کل'
+                                )
+                              }
+                              className="inline-flex items-center gap-1 text-slate-500 hover:text-rose-600 font-semibold cursor-pointer"
+                            >
+                              <Flag className="w-3.5 h-3.5" />
+                              <span>گزارش فحاشی یا جفنگ به مدیر کل</span>
+                            </button>
+                          ) : (
+                            <span className="text-amber-700 font-semibold">
+                              گزارش تخلف برای بررسی مدیر کل ارسال شده است
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {replyingReviewId === rev.id && (
+                        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                          <Textarea
+                            rows={2}
+                            value={replyDraftText}
+                            onChange={(e) => setReplyDraftText(e.target.value)}
+                            placeholder="پاسخ محترمانه مدیریت سالن به دیدگاه یا انتقاد مشتری..."
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setReplyingReviewId(null)}
+                            >
+                              انصراف
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="primary"
+                              size="sm"
+                              onClick={async () => {
+                                const ok = await replyToReview(
+                                  rev.id,
+                                  replyDraftText
+                                );
+                                if (ok) {
+                                  setReplyingReviewId(null);
+                                }
+                              }}
+                            >
+                              ثبت پاسخ سالن
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })
               )}
             </div>
           ) : (

@@ -1230,19 +1230,25 @@ export const AdminBusinessesPage: React.FC = () => {
   );
 };
 
-/** ۳. مدیریت کاربران و سالن‌داران در دو تب مجزا (/admin/users) */
+/** ۳. مدیریت کاربران، سالن‌داران و نظارت بر دیدگاه‌ها (/admin/users) */
 export const AdminUsersPage: React.FC = () => {
   const {
     adminUsers,
     businesses,
+    reviews,
+    deleteReviewByAdmin,
+    replyToReview,
+    refreshRealData,
     updateBusinessApproval,
     updateAdminUserRecord,
     deleteAdminUserRecord,
   } = usePrototypeData();
   const [activeTab, setActiveTab] = useState<
-    'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL'
+    'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL' | 'REVIEWS'
   >('CUSTOMERS');
   const [searchQuery, setSearchQuery] = useState('');
+  const [reviewFilter, setReviewFilter] = useState<'ALL' | 'REPORTED' | 'CRITICAL'>('ALL');
+  const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
   const [page, setPage] = useState(1);
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
@@ -1319,10 +1325,26 @@ export const AdminUsersPage: React.FC = () => {
     );
   });
 
-  const tabOrder: Array<'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL'> = [
+  const reportedReviewsCount = reviews.filter((r) => r.isReportedBySalon).length;
+  const filteredReviews = reviews.filter((r) => {
+    if (reviewFilter === 'REPORTED' && !r.isReportedBySalon) return false;
+    if (reviewFilter === 'CRITICAL' && r.rating > 2) return false;
+    const q = searchQuery.trim();
+    if (!q) return true;
+    const biz = businesses.find((b) => b.id === r.businessId);
+    return (
+      r.authorName.includes(q) ||
+      r.comment.includes(q) ||
+      r.serviceTitle.includes(q) ||
+      (biz?.name && biz.name.includes(q))
+    );
+  });
+
+  const tabOrder: Array<'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL' | 'REVIEWS'> = [
     'CUSTOMERS',
     'BUSINESS_OWNERS',
     'ALL',
+    'REVIEWS',
   ];
 
   const handleSaveEditUser = (e: React.FormEvent) => {
@@ -1359,23 +1381,47 @@ export const AdminUsersPage: React.FC = () => {
         );
         setTouchStart(null);
         if (nextTab) {
-          setActiveTab(nextTab as 'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL');
+          setActiveTab(
+            nextTab as 'CUSTOMERS' | 'BUSINESS_OWNERS' | 'ALL' | 'REVIEWS'
+          );
         }
       }}
       className="space-y-6"
     >
       <PageHeader
-        kicker="پنل مدیریت کلان · تفکیک مشتریان و سالن‌داران"
-        title="مدیریت کاربران عادی و صاحبان کسب‌وکار"
-        subtitle="مشاهده تمام ثبت‌نام‌های سامانه در دو تب مجزا همراه با شماره همراه کامل (یکتا برای هر حساب)، جزئیات سالن و امکان ویرایش یا حذف حساب‌های اشتباه"
+        kicker="پنل مدیریت کلان · تفکیک مشتریان، سالن‌داران و نظارت بر دیدگاه‌ها"
+        title="مدیریت کاربران عادی، صاحبان کسب‌وکار و دیدگاه‌ها"
+        subtitle="مشاهده تمام ثبت‌نام‌های قدیمی و جدید سامانه (همگام با دیتابیس PostgreSQL) و مدیریت دیدگاه‌های حاوی فحاشی یا جفنگ بدون حذف نظرات منفی منصفانه"
         routePattern="/admin/users"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'کاربران و سالن‌داران' },
+          { label: 'کاربران و دیدگاه‌ها' },
         ]}
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isRefreshingUsers}
+            onClick={async () => {
+              setIsRefreshingUsers(true);
+              try {
+                await refreshRealData();
+              } finally {
+                setIsRefreshingUsers(false);
+              }
+            }}
+          >
+            <span>
+              {isRefreshingUsers
+                ? 'در حال دریافت از دیتابیس...'
+                : 'بروزرسانی لیست کاربران و دیدگاه‌ها'}
+            </span>
+          </Button>
+        }
       />
 
-      {/* تب‌های تفکیک‌شده: ۱. کاربران عادی (مشتریان)  ۲. صاحبان سالن‌ها (کسب‌وکارها)  ۳. همه حساب‌ها */}
+      {/* تب‌های تفکیک‌شده: ۱. کاربران عادی (مشتریان)  ۲. صاحبان سالن‌ها  ۳. همه حساب‌ها  ۴. نظارت بر دیدگاه‌ها */}
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -1437,164 +1483,332 @@ export const AdminUsersPage: React.FC = () => {
             >
               <span>همه حساب‌ها ({toPersianDigits(enrichedUsers.length)})</span>
             </button>
+
+            <button
+              type="button"
+              id="admin-users-tab-reviews"
+              onClick={() => setActiveTab('REVIEWS')}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer ${
+                activeTab === 'REVIEWS'
+                  ? 'bg-rose-600 text-white shadow-[0_6px_18px_-4px_rgba(225,29,72,0.45)]'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+              }`}
+            >
+              <span>نظارت بر دیدگاه‌ها (حذف فحاشی/جفنگ)</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] tabular-nums ${
+                  activeTab === 'REVIEWS'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white text-rose-700'
+                }`}
+              >
+                {toPersianDigits(reviews.length)}
+              </span>
+              {reportedReviewsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-[#061138] text-[10px] font-black">
+                  {toPersianDigits(reportedReviewsCount)} گزارش
+                </span>
+              )}
+            </button>
           </div>
 
           <span className="text-[11px] font-bold text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-1 rounded-full">
-            ✓ قانون یکتایی شماره فعال است (هر شماره همراه = فقط یک حساب)
+            ✓ همگام‌سازی خودکار کاربران قدیمی و جدید با دیتابیس فعال است
           </span>
         </div>
 
         <FormField
           id="adm-usr-search"
-          label="جست‌وجوی سریع بر اساس نام، شماره موبایل (09...)، نام سالن یا شهر"
+          label={
+            activeTab === 'REVIEWS'
+              ? 'جست‌وجو در متن دیدگاه‌ها، نام نویسنده یا نام سالن'
+              : 'جست‌وجوی سریع بر اساس نام، شماره موبایل (09...)، نام سالن یا شهر'
+          }
         >
           <Input
             id="adm-usr-search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="نام کاربر، شماره موبایل یا نام سالن..."
+            placeholder={
+              activeTab === 'REVIEWS'
+                ? 'جست‌وجوی متن نظر، نام مشتری یا سالن...'
+                : 'نام کاربر، شماره موبایل یا نام سالن...'
+            }
           />
         </FormField>
       </Card>
 
-      <ResponsiveTable
-        keyExtractor={(u) => `${u.phone}-${u.id}`}
-        data={filtered}
-        emptyMessage={
-          activeTab === 'CUSTOMERS'
-            ? 'هنوز کاربر عادی (مشتری) با این مشخصات ثبت نشده است.'
-            : activeTab === 'BUSINESS_OWNERS'
-              ? 'هنوز صاحب سالنی در این بخش ثبت‌نام نکرده است.'
-              : 'هیچ حساب کاربری یافت نشد.'
-        }
-        columns={[
-          {
-            key: 'name',
-            header: 'نام و نام خانوادگی',
-            render: (u) => (
-              <div className="space-y-0.5">
-                <span className="font-extrabold text-[#061138] block">
-                  {u.name}
-                </span>
-                <span className="text-[11px] text-[#64748B] block">
-                  تاریخ عضویت: {u.joinedJalali}
-                </span>
-              </div>
-            ),
-          },
-          {
-            key: 'phone',
-            header: 'شماره همراه یکتا (بدون سانسور)',
-            render: (u) => (
-              <a
-                href={`tel:${u.phone}`}
-                dir="ltr"
-                className="inline-flex items-center gap-1.5 text-xs font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2.5 py-1 rounded-lg tabular-nums hover:underline"
-              >
-                <Phone className="w-3 h-3" />
-                <span>{u.phone}</span>
-              </a>
-            ),
-          },
-          {
-            key: 'role',
-            header:
-              activeTab === 'BUSINESS_OWNERS'
-                ? 'مشخصات سالن و وضعیت تایید'
-                : 'نقش و جزئیات حساب',
-            render: (u) => (
-              <div className="space-y-1">
-                <StatusBadge
-                  label={u.roleLabel}
-                  tone={
-                    u.isPlatformAdmin
-                      ? 'accent'
-                      : u.roleType === 'BUSINESS_OWNER'
-                        ? 'primary'
-                        : 'success'
-                  }
-                />
-                {u.matchedBusiness ? (
-                  <p className="text-[11px] text-[#334155]">
-                    وضعیت سالن:{' '}
-                    <strong className="text-[#061138]">
-                      {u.matchedBusiness.approvalStatus === 'APPROVED'
-                        ? 'تاییدشده'
-                        : u.matchedBusiness.approvalStatus === 'PENDING_REVIEW'
-                          ? 'در انتظار بررسی'
-                          : 'ردشده'}
-                    </strong>
-                  </p>
-                ) : null}
-              </div>
-            ),
-          },
-          {
-            key: 'city',
-            header: 'شهر و محدوده',
-            render: (u) => (
-              <span className="text-xs font-bold text-[#334155]">
-                {u.city}
-                {u.neighborhood ? ` · ${u.neighborhood}` : ''}
-              </span>
-            ),
-          },
-          {
-            key: 'actions',
-            header: 'مدیریت، ویرایش یا حذف حساب',
-            render: (u) => (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {u.matchedBusiness ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setInspectingBusiness(u.matchedBusiness)}
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>مشاهده پنل سالن</span>
-                  </Button>
-                ) : null}
-
-                <Button
+      {activeTab === 'REVIEWS' ? (
+        <Card className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <p className="font-extrabold text-[#061138]">
+                سیاست ضدسانسور و حذف فحاشی/جفنگ در تایم‌تو:
+              </p>
+              <p className="text-[#475569]">
+                ۱. ثبت دیدگاه منفی و انتقاد منصفانه (۱ یا ۲ ستاره) حق طبیعی مشتری است و سالن‌دار امکان حذف آن را ندارد.
+                ۲. کلمات رکیک و حروف بی‌معنی (جفنگ) به صورت هوشمند هنگام ثبت مسدود می‌شوند و در صورت گزارش سالن‌دار، شما به عنوان مدیر کل می‌توانید آن را حذف کنید.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {[
+                { id: 'ALL', label: `همه دیدگاه‌ها (${toPersianDigits(reviews.length)})` },
+                {
+                  id: 'REPORTED',
+                  label: `گزارش‌شده توسط سالن (${toPersianDigits(reportedReviewsCount)})`,
+                },
+                {
+                  id: 'CRITICAL',
+                  label: `انتقادی ۱ و ۲ ستاره (${toPersianDigits(
+                    reviews.filter((r) => r.rating <= 2).length
+                  )})`,
+                },
+              ].map((flt) => (
+                <button
+                  key={flt.id}
                   type="button"
-                  variant="outline"
-                  size="sm"
                   onClick={() =>
-                    setEditingUser({
-                      phone: u.phone,
-                      fullName: u.name,
-                      newPhone: u.phone,
-                      city: u.city,
-                      role: u.roleType,
-                    })
+                    setReviewFilter(flt.id as 'ALL' | 'REPORTED' | 'CRITICAL')
                   }
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                    reviewFilter === flt.id
+                      ? 'bg-[#0057FF] text-white'
+                      : 'bg-white border border-[#CBD5E1] text-[#334155]'
+                  }`}
                 >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>ویرایش</span>
-                </Button>
+                  {flt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                {!u.isPlatformAdmin ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setDeletingUser({ phone: u.phone, name: u.name })
-                    }
-                    className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+          <div className="space-y-3">
+            {filteredReviews.length === 0 ? (
+              <p className="text-xs text-center text-[#64748B] py-8">
+                هیچ دیدگاهی با این فیلتر یافت نشد.
+              </p>
+            ) : (
+              filteredReviews.map((rev) => {
+                const targetBiz = businesses.find((b) => b.id === rev.businessId);
+                return (
+                  <div
+                    key={rev.id}
+                    className={`p-4 rounded-2xl border space-y-2.5 ${
+                      rev.isReportedBySalon
+                        ? 'bg-rose-50/60 border-rose-300'
+                        : 'bg-white border-[#E2E8F0]'
+                    }`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>حذف</span>
-                  </Button>
-                ) : null}
-              </div>
-            ),
-          },
-        ]}
-      />
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-extrabold text-[#061138]">
+                          {rev.authorName}
+                        </span>
+                        {rev.authorPhone && (
+                          <span
+                            dir="ltr"
+                            className="font-mono text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-700"
+                          >
+                            {rev.authorPhone}
+                          </span>
+                        )}
+                        <span className="text-[#64748B]">
+                          برای سالن:{' '}
+                          <strong className="text-[#0057FF]">
+                            {targetBiz?.name || rev.businessId}
+                          </strong>{' '}
+                          ({rev.serviceTitle})
+                        </span>
+                        {rev.isReportedBySalon && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                            گزارش فحاشی/جفنگ: {rev.reportReason || 'نیازمند بررسی'}
+                          </span>
+                        )}
+                      </div>
 
-      <Pagination currentPage={page} totalPages={1} onPageChange={setPage} />
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2.5 py-1 rounded-xl font-extrabold tabular-nums ${
+                            rev.rating <= 2
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          ★ {toPersianDigits(rev.rating)} از ۵ · {rev.dateJalali}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void deleteReviewByAdmin(rev.id)}
+                          className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف دیدگاه (فحاشی/جفنگ)</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    <p className="text-xs sm:text-sm text-[#1E293B] leading-relaxed">
+                      {rev.comment}
+                    </p>
+
+                    {rev.salonReply && (
+                      <div className="p-2.5 rounded-xl bg-slate-50 border-r-4 border-[#0057FF] text-xs text-[#334155]">
+                        <strong className="text-[#0057FF] block mb-0.5">
+                          پاسخ سالن:
+                        </strong>
+                        {rev.salonReply}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
+      ) : (
+        <>
+          <ResponsiveTable
+            keyExtractor={(u) => `${u.phone}-${u.id}`}
+            data={filtered}
+            emptyMessage={
+              activeTab === 'CUSTOMERS'
+                ? 'هنوز کاربر عادی (مشتری) با این مشخصات ثبت نشده است.'
+                : activeTab === 'BUSINESS_OWNERS'
+                  ? 'هنوز صاحب سالنی در این بخش ثبت‌نام نکرده است.'
+                  : 'هیچ حساب کاربری یافت نشد.'
+            }
+            columns={[
+              {
+                key: 'name',
+                header: 'نام و نام خانوادگی',
+                render: (u) => (
+                  <div className="space-y-0.5">
+                    <span className="font-extrabold text-[#061138] block">
+                      {u.name}
+                    </span>
+                    <span className="text-[11px] text-[#64748B] block">
+                      تاریخ عضویت: {u.joinedJalali}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'phone',
+                header: 'شماره همراه یکتا (بدون سانسور)',
+                render: (u) => (
+                  <a
+                    href={`tel:${u.phone}`}
+                    dir="ltr"
+                    className="inline-flex items-center gap-1.5 text-xs font-mono font-extrabold text-[#0057FF] bg-[#E0ECFF] px-2.5 py-1 rounded-lg tabular-nums hover:underline"
+                  >
+                    <Phone className="w-3 h-3" />
+                    <span>{u.phone}</span>
+                  </a>
+                ),
+              },
+              {
+                key: 'role',
+                header:
+                  activeTab === 'BUSINESS_OWNERS'
+                    ? 'مشخصات سالن و وضعیت تایید'
+                    : 'نقش و جزئیات حساب',
+                render: (u) => (
+                  <div className="space-y-1">
+                    <StatusBadge
+                      label={u.roleLabel}
+                      tone={
+                        u.isPlatformAdmin
+                          ? 'accent'
+                          : u.roleType === 'BUSINESS_OWNER'
+                            ? 'primary'
+                            : 'success'
+                      }
+                    />
+                    {u.matchedBusiness ? (
+                      <p className="text-[11px] text-[#334155]">
+                        وضعیت سالن:{' '}
+                        <strong className="text-[#061138]">
+                          {u.matchedBusiness.approvalStatus === 'APPROVED'
+                            ? 'تاییدشده'
+                            : u.matchedBusiness.approvalStatus === 'PENDING_REVIEW'
+                              ? 'در انتظار بررسی'
+                              : 'ردشده'}
+                        </strong>
+                      </p>
+                    ) : null}
+                  </div>
+                ),
+              },
+              {
+                key: 'city',
+                header: 'شهر و محدوده',
+                render: (u) => (
+                  <span className="text-xs font-bold text-[#334155]">
+                    {u.city}
+                    {u.neighborhood ? ` · ${u.neighborhood}` : ''}
+                  </span>
+                ),
+              },
+              {
+                key: 'actions',
+                header: 'مدیریت، ویرایش یا حذف حساب',
+                render: (u) => (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {u.matchedBusiness ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setInspectingBusiness(u.matchedBusiness)}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>مشاهده پنل سالن</span>
+                      </Button>
+                    ) : null}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setEditingUser({
+                          phone: u.phone,
+                          fullName: u.name,
+                          newPhone: u.phone,
+                          city: u.city,
+                          role: u.roleType,
+                        })
+                      }
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>ویرایش</span>
+                    </Button>
+
+                    {!u.isPlatformAdmin ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setDeletingUser({ phone: u.phone, name: u.name })
+                        }
+                        className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف</span>
+                      </Button>
+                    ) : null}
+                  </div>
+                ),
+              },
+            ]}
+          />
+
+          <Pagination currentPage={page} totalPages={1} onPageChange={setPage} />
+        </>
+      )}
 
       <BusinessFullInspectModal
         business={inspectingBusiness}

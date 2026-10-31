@@ -58,6 +58,7 @@ export interface ApiBootstrapResponse {
     customers?: CustomerRecord[];
     campaigns?: MarketingCampaignItem[];
     favoriteBusinessIds?: string[];
+    registeredUsers?: AdminUserRecord[];
   } | null;
 }
 
@@ -643,11 +644,107 @@ export const realApiClient = {
     rating: number;
     comment: string;
     dateJalali?: string;
+    authorName?: string;
+    authorPhone?: string;
   }): Promise<{ item: ReviewItem }> {
     return requestJson<{ ok: boolean; item: ReviewItem }>('/api/v1/reviews', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  },
+
+  async replyReview(
+    reviewId: string,
+    salonReply: string,
+    salonReplyDateJalali?: string
+  ): Promise<{ reviewId: string; salonReply: string; salonReplyDateJalali: string }> {
+    return requestJson<{
+      ok: boolean;
+      reviewId: string;
+      salonReply: string;
+      salonReplyDateJalali: string;
+    }>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/reply`, {
+      method: 'PATCH',
+      body: JSON.stringify({ salonReply, salonReplyDateJalali }),
+    });
+  },
+
+  async reportReview(
+    reviewId: string,
+    reportReason: string
+  ): Promise<{ reviewId: string; isReportedBySalon: boolean; reportReason: string }> {
+    return requestJson<{
+      ok: boolean;
+      reviewId: string;
+      isReportedBySalon: boolean;
+      reportReason: string;
+    }>(`/api/v1/reviews/${encodeURIComponent(reviewId)}/report`, {
+      method: 'POST',
+      body: JSON.stringify({ reportReason }),
+    });
+  },
+
+  async deleteReviewAdmin(reviewId: string): Promise<{ deleted: boolean; reviewId: string }> {
+    return requestJson<{ ok: boolean; deleted: boolean; reviewId: string }>(
+      `/api/v1/admin/reviews/${encodeURIComponent(reviewId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  async syncRegisteredAccounts(input: {
+    accounts: Array<{
+      phone: string;
+      fullName: string;
+      city?: string;
+      role?: 'customer' | 'owner' | 'admin';
+      password?: string;
+      joinedJalali?: string;
+    }>;
+    issueSessionForPhone?: string;
+  }): Promise<{
+    registeredUsers: AdminUserRecord[];
+    sessionToken?: string;
+    expiresAt?: string;
+    user?: AuthenticatedSessionUser;
+  }> {
+    const res = await requestJson<{
+      ok: boolean;
+      registeredUsers: AdminUserRecord[];
+      sessionToken?: string;
+      expiresAt?: string;
+      user?: AuthenticatedSessionUser;
+    }>('/api/v1/auth/register-sync', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (res.sessionToken) {
+      saveSessionTokenToStorage(res.sessionToken);
+    }
+    return res;
+  },
+
+  async updateAdminUser(
+    phone: string,
+    patch: Partial<Pick<AdminUserRecord, 'fullName' | 'city' | 'roleLabel' | 'isActive'>>
+  ): Promise<{ users: AdminUserRecord[] }> {
+    return requestJson<{ ok: boolean; users: AdminUserRecord[] }>(
+      `/api/v1/admin/users/${encodeURIComponent(phone)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }
+    );
+  },
+
+  async deleteAdminUser(phone: string): Promise<{ users: AdminUserRecord[] }> {
+    return requestJson<{ ok: boolean; users: AdminUserRecord[] }>(
+      `/api/v1/admin/users/${encodeURIComponent(phone)}`,
+      {
+        method: 'DELETE',
+      }
+    );
   },
 };
 

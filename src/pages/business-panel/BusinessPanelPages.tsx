@@ -4290,6 +4290,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
     businesses,
     appointments,
     customers,
+    reviews,
+    replyToReview,
+    reportReviewAbuse,
     activePlanId,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -4297,6 +4300,18 @@ export const BusinessAnalyticsPage: React.FC = () => {
     activePlanId,
     currentBiz?.subscriptionPlan
   );
+
+  const [replyingReviewId, setReplyingReviewId] = React.useState<string | null>(
+    null
+  );
+  const [replyDraftText, setReplyDraftText] = React.useState('');
+  const [reviewActionNotice, setReviewActionNotice] = React.useState<
+    string | null
+  >(null);
+
+  const bizReviews = currentBiz
+    ? reviews.filter((r) => r.businessId === currentBiz.id)
+    : [];
 
   const bizAppointments = currentBiz
     ? appointments.filter(
@@ -4362,7 +4377,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
       <PageHeader
         kicker="مالی · گزارش عملکرد"
         title="گزارش‌ها و آمار عملکرد سالن"
-        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و سهم هر لاین خدمتی از کل درآمد بر اساس نوبت‌های واقعی ثبت‌شده"
+        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و مدیریت دیدگاه‌های ثبت‌شده توسط مشتریان"
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -4412,6 +4427,155 @@ export const BusinessAnalyticsPage: React.FC = () => {
           </p>
         </Card>
       </div>
+
+      {/* بخش مدیریت دیدگاه‌ها و پاسخگویی به مشتریان (برای تمام پلن‌ها فعال است) */}
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
+          <div>
+            <h2 className="text-base font-extrabold text-[#1E1B2E]">
+              دیدگاه‌های مشتریان و پاسخگویی رسمی سالن ({toPersianDigits(bizReviews.length)})
+            </h2>
+            <p className="text-xs text-[#6B6480] mt-0.5">
+              جهت حفظ شفافیت پلتفرم، دیدگاه‌های منفی و انتقادات محترمانه قابل حذف توسط سالن نیستند اما می‌توانید به آن‌ها پاسخ رسمی بدهید. در صورت وجود فحاشی یا عبارات جفنگ، دکمه گزارش به مدیر کل را بزنید تا بررسی و حذف شود.
+            </p>
+          </div>
+        </div>
+
+        {reviewActionNotice ? (
+          <div className="p-3 rounded-xl bg-[#ECFDF5] border border-[#10B981]/30 text-xs font-bold text-[#065F46]">
+            {reviewActionNotice}
+          </div>
+        ) : null}
+
+        {bizReviews.length === 0 ? (
+          <div className="p-6 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1">
+            <p className="text-xs font-extrabold text-[#061138]">
+              هنوز دیدگاهی برای سالن شما ثبت نشده است
+            </p>
+            <p className="text-[11px] text-[#64748B]">
+              وقتی مشتریان در صفحه عمومی سالن شما امتیاز و نظر ثبت کنند، در این بخش نمایش داده می‌شود.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {bizReviews.map((rev) => (
+              <div
+                key={rev.id}
+                className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-2.5"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-extrabold text-[#1E1B2E]">
+                      {rev.authorName}
+                    </span>
+                    <StatusBadge
+                      label={rev.serviceTitle || 'خدمات سالن'}
+                      tone="neutral"
+                    />
+                    {rev.isReportedBySalon ? (
+                      <span className="px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold">
+                        گزارش‌شده به مدیر کل جهت بررسی فحاشی/جفنگ
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span
+                      className={`font-extrabold ${
+                        rev.rating <= 2 ? 'text-[#E11D48]' : 'text-[#F59E0B]'
+                      }`}
+                    >
+                      {'★'.repeat(rev.rating)}
+                      {'☆'.repeat(Math.max(0, 5 - rev.rating))} (
+                      {toPersianDigits(rev.rating)} از ۵)
+                    </span>
+                    <span className="text-[#6B6480]">{rev.dateJalali}</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#4B445C] leading-6">{rev.comment}</p>
+
+                {rev.salonReply ? (
+                  <div className="mr-3 p-3 rounded-xl bg-white border-r-4 border-[#8B5CF6] space-y-1">
+                    <p className="text-[11px] font-extrabold text-[#6D28D9]">
+                      پاسخ شما (مدیریت سالن):
+                    </p>
+                    <p className="text-xs text-[#1E1B2E] leading-5">
+                      {rev.salonReply}
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="pt-2 border-t border-[#E6E0F5] flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyingReviewId(
+                        replyingReviewId === rev.id ? null : rev.id
+                      );
+                      setReplyDraftText(rev.salonReply || '');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#F3EEFF] text-[#6D28D9] border border-[#DDD6FE] text-[11px] font-bold transition-colors cursor-pointer"
+                  >
+                    {rev.salonReply ? 'ویرایش پاسخ سالن' : 'ثبت پاسخ رسمی به مشتری'}
+                  </button>
+                  {!rev.isReportedBySalon ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        reportReviewAbuse(
+                          rev.id,
+                          'گزارش فحاشی یا متن جفنگ توسط مدیر سالن جهت بررسی و حذف توسط مدیر کل'
+                        );
+                        setReviewActionNotice(
+                          'گزارش فحاشی/جفنگ برای این دیدگاه ثبت شد و در پنل مدیر کل (/admin/users) جهت حذف قرار گرفت.'
+                        );
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#FFFBEB] hover:bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A] text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      گزارش فحاشی یا جفنگ به مدیر کل
+                    </button>
+                  ) : null}
+                </div>
+
+                {replyingReviewId === rev.id ? (
+                  <div className="pt-2 space-y-2">
+                    <textarea
+                      rows={2}
+                      value={replyDraftText}
+                      onChange={(e) => setReplyDraftText(e.target.value)}
+                      placeholder="پاسخ محترمانه مدیریت سالن به این دیدگاه..."
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-[#DDD6FE] text-xs focus:outline-none focus:border-[#8B5CF6]"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!replyDraftText.trim()) return;
+                          replyToReview(rev.id, replyDraftText.trim());
+                          setReplyingReviewId(null);
+                          setReviewActionNotice(
+                            'پاسخ مدیریت سالن با موفقیت ثبت و زیر دیدگاه مشتری نمایش داده شد.'
+                          );
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-[#8B5CF6] text-white text-xs font-bold cursor-pointer"
+                      >
+                        ذخیره پاسخ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReplyingReviewId(null)}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-[#E6E0F5] text-xs font-semibold text-[#6B6480] cursor-pointer"
+                      >
+                        انصراف
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <div
         className={`grid grid-cols-1 lg:grid-cols-12 gap-6 ${

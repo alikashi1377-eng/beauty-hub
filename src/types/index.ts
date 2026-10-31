@@ -88,10 +88,15 @@ export interface ReviewItem {
   businessId: string;
   specialistSlug?: string;
   authorName: string;
+  authorPhone?: string;
   serviceTitle: string;
   rating: number;
   dateJalali: string;
   comment: string;
+  salonReply?: string;
+  salonReplyDateJalali?: string;
+  isReportedBySalon?: boolean;
+  reportReason?: string;
 }
 
 export interface GalleryItem {

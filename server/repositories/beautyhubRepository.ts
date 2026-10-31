@@ -34,6 +34,7 @@ import {
   TimeSlotAvailabilityItem,
   WorkingHourItem,
 } from '../../src/types';
+import { validateReviewContent } from '../../src/utils/reviewModeration';
 
 export type VisualTheme = 'rose' | 'slate' | 'emerald' | 'violet';
 
@@ -45,6 +46,7 @@ export interface BootstrapPayload {
   reviews: ReviewItem[];
   gallery: GalleryItem[];
   plans: SubscriptionPlanItem[];
+  registeredUsers?: AdminUserRecord[];
 }
 
 export interface CustomerPrivatePayload {
@@ -86,6 +88,349 @@ export async function ensureExtendedMetaTables(
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+}
+
+const SEED_DUMMY_PHONES = new Set([
+  '09120000001',
+  '09120000002',
+  '09120000003',
+  '09120000004',
+  '09120000005',
+  '09120000006',
+  '09120000007',
+  '09120000008',
+  '09120000009',
+  '09131112233',
+  '09132223344',
+  '09133334455',
+  '09134445566',
+  '09135556677',
+  '09136667788',
+  '09137778899',
+]);
+
+export interface ReviewModerationMetaEntry {
+  authorPhone?: string;
+  salonReply?: string;
+  salonReplyDateJalali?: string;
+  isReportedBySalon?: boolean;
+  reportReason?: string;
+}
+
+export async function getReviewModerationMetaMap(
+  client: PoolClient | Pool
+): Promise<Record<string, ReviewModerationMetaEntry>> {
+  try {
+    const res = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'review_moderation_meta' LIMIT 1`
+    );
+    if (
+      res.rowCount &&
+      res.rows[0]?.value_json &&
+      typeof res.rows[0].value_json === 'object'
+    ) {
+      return res.rows[0].value_json as Record<string, ReviewModerationMetaEntry>;
+    }
+  } catch {
+    // ignore if table not ready
+  }
+  return {};
+}
+
+export async function buildMergedRegisteredUsersList(
+  client: PoolClient | Pool
+): Promise<AdminUserRecord[]> {
+  await ensureExtendedMetaTables(client);
+  const byPhone = new Map<string, AdminUserRecord>();
+
+  let registryMap: Record<
+    string,
+    {
+      phone?: string;
+      fullName?: string;
+      role?: string;
+      city?: string;
+      businessId?: string;
+      businessName?: string;
+      joinedJalali?: string;
+    }
+  > = {};
+  let overridesMap: Record<
+    string,
+    {
+      fullName?: string;
+      city?: string;
+      roleLabel?: string;
+      phone?: string;
+    }
+  > = {};
+  let deletedPhones = new Set<string>();
+
+  try {
+    const kvRes = await client.query(
+      `
+      SELECT key, value_json
+      FROM platform_kv_store
+      WHERE key IN (
+        'registered_accounts_registry',
+        'admin_user_overrides_registry',
+        'deleted_admin_phones_registry'
+      )
+      `
+    );
+    for (const row of kvRes.rows) {
+      if (
+        row.key === 'registered_accounts_registry' &&
+        row.value_json &&
+        typeof row.value_json === 'object'
+      ) {
+        if (Array.isArray(row.value_json)) {
+          const nextMap: typeof registryMap = {};
+          for (const item of row.value_json as Array<Record<string, unknown>>) {
+            const p = String(item?.phone || '')
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+              .replace(/\D/g, '');
+            if (/^09\d{9}$/.test(p)) {
+              nextMap[p] = {
+                phone: p,
+                fullName: String(item.fullName || 'کاربر تایم تو'),
+                role: String(item.roleLabel || '').includes('سالن') || String(item.roleLabel || '').includes('کسب')
+                  ? 'BUSINESS_OWNER'
+                  : String(item.role || 'CUSTOMER'),
+                city: String(item.city || 'اصفهان'),
+                joinedJalali: String(item.joinedJalali || 'امروز'),
+              };
+            }
+          }
+          registryMap = nextMap;
+        } else {
+          registryMap = row.value_json as typeof registryMap;
+        }
+      } else if (
+        row.key === 'admin_user_overrides_registry' &&
+        row.value_json &&
+        typeof row.value_json === 'object'
+      ) {
+        overridesMap = row.value_json as typeof overridesMap;
+      } else if (
+        row.key === 'deleted_admin_phones_registry' &&
+        Array.isArray(row.value_json)
+      ) {
+        deletedPhones = new Set(
+          row.value_json.map((p: unknown) =>
+            String(p || '')
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+              .replace(/\D/g, '')
+          )
+        );
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // ۱. خواندن تمام کاربران جدول users در PostgreSQL
+  try {
+    const usrRes = await client.query(`
+      SELECT
+        u.id::text AS id,
+        u.full_name,
+        u.phone,
+        COALESCE(u.default_city, 'اصفهان') AS city,
+        u.is_active,
+        to_char(u.created_at, 'YYYY/MM/DD') AS created_date,
+        EXISTS (
+          SELECT 1 FROM platform_admins pa
+          WHERE pa.user_id = u.id AND pa.is_active = TRUE
+        ) AS is_admin,
+        EXISTS (
+          SELECT 1 FROM business_members bm
+          WHERE bm.user_id = u.id AND bm.is_active = TRUE
+        ) OR EXISTS (
+          SELECT 1 FROM businesses b2
+          WHERE b2.owner_user_id = u.id
+        ) AS is_business_member,
+        (
+          SELECT b3.name FROM businesses b3
+          WHERE b3.owner_user_id = u.id
+          ORDER BY b3.created_at DESC LIMIT 1
+        ) AS owned_business_name
+      FROM users u
+      ORDER BY u.created_at DESC
+      LIMIT 500
+    `);
+
+    for (const r of usrRes.rows) {
+      const cleanPhone = String(r.phone || '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/\D/g, '');
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      // حذف شماره‌های آزمایشی اولیه سید دیتابیس مگر اینکه واقعاً در رجیستری ثبت‌نام کرده باشند
+      if (SEED_DUMMY_PHONES.has(cleanPhone) && !registryMap[cleanPhone]) {
+        continue;
+      }
+
+      const ov = overridesMap[cleanPhone];
+      const reg = registryMap[cleanPhone];
+      const fullPhonePersian = toPersianDigitsServer(cleanPhone);
+      const isAdmin = Boolean(r.is_admin) || cleanPhone === '09138201042';
+      const isBiz =
+        Boolean(r.is_business_member) || reg?.role === 'BUSINESS_OWNER';
+      const bizTitle = r.owned_business_name
+        ? String(r.owned_business_name)
+        : reg?.businessName;
+
+      byPhone.set(cleanPhone, {
+        id: String(r.id),
+        fullName:
+          ov?.fullName ||
+          reg?.fullName ||
+          (r.full_name &&
+          !String(r.full_name).includes('کاربر BeautyHub') &&
+          !String(r.full_name).includes('کاربر تایم تو')
+            ? String(r.full_name)
+            : reg?.fullName || String(r.full_name || 'کاربر تایم تو')),
+        phone: fullPhonePersian,
+        phoneMasked: fullPhonePersian,
+        roleLabel:
+          ov?.roleLabel ||
+          (isAdmin
+            ? 'مدیر کل پلتفرم'
+            : isBiz
+              ? bizTitle
+                ? `صاحب سالن (${bizTitle})`
+                : 'صاحب کسب‌وکار (سالن‌دار)'
+              : 'مشتری عادی'),
+        city: String(ov?.city || reg?.city || r.city || 'اصفهان'),
+        joinedJalali:
+          reg?.joinedJalali ||
+          toPersianDigitsServer(String(r.created_date || '1405/08/01')),
+        isActive: r.is_active !== false,
+      });
+    }
+  } catch {
+    // ignore if query fails in mock test
+  }
+
+  // ۲. خواندن تمام صاحبان کسب‌وکارهای واقعی ثبت‌شده در جدول businesses
+  try {
+    const bizOwnersRes = await client.query(`
+      SELECT
+        b.id::text AS biz_id,
+        b.legacy_demo_id,
+        b.name AS biz_name,
+        b.city,
+        b.phone_display,
+        to_char(b.created_at, 'YYYY/MM/DD') AS created_date,
+        u.phone AS owner_phone,
+        u.full_name AS owner_full_name,
+        bme.extra_json
+      FROM businesses b
+      LEFT JOIN users u ON u.id = b.owner_user_id
+      LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+      WHERE b.legacy_demo_id IS NULL
+         OR b.legacy_demo_id NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+      ORDER BY b.created_at DESC
+    `);
+
+    for (const b of bizOwnersRes.rows) {
+      const extra =
+        b.extra_json && typeof b.extra_json === 'object'
+          ? (b.extra_json as Record<string, unknown>)
+          : {};
+      if (extra.isSampleShowcase) continue;
+      const rawPhone = String(
+        extra.ownerPhone || b.owner_phone || b.phone_display || ''
+      );
+      const cleanPhone = rawPhone
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/\D/g, '');
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      if (SEED_DUMMY_PHONES.has(cleanPhone) && !registryMap[cleanPhone]) {
+        continue;
+      }
+      const existing = byPhone.get(cleanPhone);
+      const ov = overridesMap[cleanPhone];
+      const fullPhonePersian = toPersianDigitsServer(cleanPhone);
+      const ownerName = String(
+        ov?.fullName ||
+          extra.ownerName ||
+          b.owner_full_name ||
+          existing?.fullName ||
+          `مدیریت ${b.biz_name}`
+      );
+      byPhone.set(cleanPhone, {
+        id: existing?.id || `usr-biz-${b.biz_id}`,
+        fullName: ownerName,
+        phone: fullPhonePersian,
+        phoneMasked: fullPhonePersian,
+        roleLabel:
+          ov?.roleLabel || `صاحب سالن (${String(b.biz_name || 'سالن زیبایی')})`,
+        city: String(ov?.city || b.city || existing?.city || 'اصفهان'),
+        joinedJalali:
+          existing?.joinedJalali ||
+          toPersianDigitsServer(String(b.created_date || 'امروز')),
+        isActive: true,
+      });
+    }
+  } catch {
+    // ignore
+  }
+
+  // ۳. خواندن تمام حساب‌های ثبت‌نام‌شده در رجیستری مرکزی platform_kv_store
+  for (const [keyPhone, acc] of Object.entries(registryMap)) {
+    const cleanPhone = String(acc?.phone || keyPhone || '')
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+      .replace(/\D/g, '');
+    if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+      continue;
+    }
+    const existing = byPhone.get(cleanPhone);
+    const ov = overridesMap[cleanPhone];
+    const fullPhonePersian = toPersianDigitsServer(cleanPhone);
+    const isSuper = cleanPhone === '09138201042';
+    const isBiz =
+      acc?.role === 'BUSINESS_OWNER' ||
+      Boolean(acc?.businessName) ||
+      Boolean(existing?.roleLabel?.includes('سالن'));
+    const bizTitle = acc?.businessName;
+
+    byPhone.set(cleanPhone, {
+      id: existing?.id || `usr-reg-${cleanPhone}`,
+      fullName:
+        ov?.fullName ||
+        acc?.fullName ||
+        existing?.fullName ||
+        'کاربر تایم تو',
+      phone: fullPhonePersian,
+      phoneMasked: fullPhonePersian,
+      roleLabel:
+        ov?.roleLabel ||
+        (isSuper
+          ? 'مدیر کل پلتفرم'
+          : isBiz
+            ? bizTitle
+              ? `صاحب سالن (${bizTitle})`
+              : existing?.roleLabel?.includes('سالن')
+                ? existing.roleLabel
+                : 'صاحب کسب‌وکار (سالن‌دار)'
+            : 'مشتری عادی'),
+      city: ov?.city || acc?.city || existing?.city || 'اصفهان',
+      joinedJalali: acc?.joinedJalali || existing?.joinedJalali || 'امروز',
+      isActive: true,
+    });
+  }
+
+  return Array.from(byPhone.values());
 }
 
 function mergeBusinessRowWithExtra(
@@ -764,92 +1109,136 @@ export async function getBootstrapPayload(
       serviceCount: Number(r.service_count),
     }));
 
-    const businesses: BusinessItem[] = bizRes.rows.map((r) =>
-      mergeBusinessRowWithExtra(
-        {
-          id: String(r.external_id),
-          slug: String(r.slug),
-          name: String(r.name),
-          type: r.type as BusinessType,
-          typeLabel: String(r.type_label),
-          categorySlug: String(r.primary_category_slug),
-          city: String(r.city),
-          neighborhood: String(r.neighborhood),
-          address: String(r.address),
-          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
-          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
-          rating: Number(r.rating_avg),
-          reviewCount: Number(r.review_count),
-          startingPriceToman: Number(r.starting_price_toman),
-          verifiedBadge: Boolean(r.verified_badge),
-          shortDescription: String(r.short_description),
-          aboutText: String(r.about_text),
-          phoneDisplay: String(r.phone_display),
-          instagramHandle: r.instagram_handle
-            ? String(r.instagram_handle)
-            : undefined,
-          workingHours: whByBusinessId.get(String(r.id)) ?? [],
-          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
-          approvalStatus: r.approval_status as ApprovalStatus,
-          subscriptionPlan: String(r.subscription_plan),
-          subscriptionStatus: r.subscription_status as SubscriptionStatus,
-          featured: Boolean(r.is_featured),
-        },
-        r.extra_json,
-        r.legacy_demo_id
+    const hiddenSampleBizIds = new Set([
+      'biz-2',
+      'biz-3',
+      'biz-4',
+      'biz-5',
+      'biz-6',
+      'biz-7',
+      'biz-8',
+    ]);
+    const hiddenSampleSpcIds = new Set([
+      'spc-2',
+      'spc-3',
+      'spc-4',
+      'spc-5',
+      'spc-6',
+    ]);
+
+    const businesses: BusinessItem[] = bizRes.rows
+      .filter((r) => !hiddenSampleBizIds.has(String(r.external_id)))
+      .map((r) =>
+        mergeBusinessRowWithExtra(
+          {
+            id: String(r.external_id),
+            slug: String(r.slug),
+            name: String(r.name),
+            type: r.type as BusinessType,
+            typeLabel: String(r.type_label),
+            categorySlug: String(r.primary_category_slug),
+            city: String(r.city),
+            neighborhood: String(r.neighborhood),
+            address: String(r.address),
+            mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+            mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+            rating: Number(r.rating_avg),
+            reviewCount: Number(r.review_count),
+            startingPriceToman: Number(r.starting_price_toman),
+            verifiedBadge: Boolean(r.verified_badge),
+            shortDescription: String(r.short_description),
+            aboutText: String(r.about_text),
+            phoneDisplay: String(r.phone_display),
+            instagramHandle: r.instagram_handle
+              ? String(r.instagram_handle)
+              : undefined,
+            workingHours: whByBusinessId.get(String(r.id)) ?? [],
+            visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+            approvalStatus: r.approval_status as ApprovalStatus,
+            subscriptionPlan: String(r.subscription_plan),
+            subscriptionStatus: r.subscription_status as SubscriptionStatus,
+            featured: Boolean(r.is_featured),
+          },
+          r.extra_json,
+          r.legacy_demo_id
+        )
+      );
+
+    const services: ServiceItem[] = srvRes.rows
+      .filter((r) => !hiddenSampleBizIds.has(String(r.business_external_id)))
+      .map((r) => ({
+        id: String(r.external_id),
+        businessId: String(r.business_external_id),
+        title: String(r.title),
+        categorySlug: String(r.category_slug),
+        category: String(r.category_label),
+        durationMinutes: Number(r.duration_minutes),
+        priceToman: Number(r.price_toman),
+        description: String(r.description),
+        isPopular: Boolean(r.is_popular),
+        isActive: Boolean(r.is_active),
+      }));
+
+    const specialists: SpecialistItem[] = spcRes.rows
+      .filter(
+        (r) =>
+          !hiddenSampleSpcIds.has(String(r.external_id)) &&
+          !hiddenSampleBizIds.has(String(r.business_external_id))
       )
-    );
+      .map((r) => ({
+        id: String(r.external_id),
+        slug: String(r.slug),
+        fullName: String(r.full_name),
+        roleTitle: String(r.role_title),
+        businessId: String(r.business_external_id),
+        experienceYears: Number(r.experience_years),
+        rating: Number(r.rating_avg),
+        reviewCount: Number(r.review_count),
+        specialties: Array.isArray(r.specialties)
+          ? r.specialties.map(String)
+          : [],
+        bio: String(r.bio),
+        isIndependent: Boolean(r.is_independent),
+        isActive: Boolean(r.is_active),
+        city: String(r.city),
+        startingPriceToman: Number(r.starting_price_toman),
+      }));
 
-    const services: ServiceItem[] = srvRes.rows.map((r) => ({
-      id: String(r.external_id),
-      businessId: String(r.business_external_id),
-      title: String(r.title),
-      categorySlug: String(r.category_slug),
-      category: String(r.category_label),
-      durationMinutes: Number(r.duration_minutes),
-      priceToman: Number(r.price_toman),
-      description: String(r.description),
-      isPopular: Boolean(r.is_popular),
-      isActive: Boolean(r.is_active),
-    }));
+    const reviewMetaMap = await getReviewModerationMetaMap(client);
 
-    const specialists: SpecialistItem[] = spcRes.rows.map((r) => ({
-      id: String(r.external_id),
-      slug: String(r.slug),
-      fullName: String(r.full_name),
-      roleTitle: String(r.role_title),
-      businessId: String(r.business_external_id),
-      experienceYears: Number(r.experience_years),
-      rating: Number(r.rating_avg),
-      reviewCount: Number(r.review_count),
-      specialties: Array.isArray(r.specialties)
-        ? r.specialties.map(String)
-        : [],
-      bio: String(r.bio),
-      isIndependent: Boolean(r.is_independent),
-      isActive: Boolean(r.is_active),
-      city: String(r.city),
-      startingPriceToman: Number(r.starting_price_toman),
-    }));
+    const reviews: ReviewItem[] = revRes.rows
+      .filter((r) => !hiddenSampleBizIds.has(String(r.business_external_id)))
+      .map((r) => {
+        const revId = String(r.external_id);
+        const meta = reviewMetaMap[revId] || {};
+        return {
+          id: revId,
+          businessId: String(r.business_external_id),
+          specialistSlug: r.specialist_slug
+            ? String(r.specialist_slug)
+            : undefined,
+          authorName: String(r.author_name),
+          authorPhone: meta.authorPhone,
+          serviceTitle: String(r.service_title),
+          rating: Number(r.rating),
+          dateJalali: String(r.date_jalali),
+          comment: String(r.comment),
+          salonReply: meta.salonReply,
+          salonReplyDateJalali: meta.salonReplyDateJalali,
+          isReportedBySalon: Boolean(meta.isReportedBySalon),
+          reportReason: meta.reportReason,
+        };
+      });
 
-    const reviews: ReviewItem[] = revRes.rows.map((r) => ({
-      id: String(r.external_id),
-      businessId: String(r.business_external_id),
-      specialistSlug: r.specialist_slug ? String(r.specialist_slug) : undefined,
-      authorName: String(r.author_name),
-      serviceTitle: String(r.service_title),
-      rating: Number(r.rating),
-      dateJalali: String(r.date_jalali),
-      comment: String(r.comment),
-    }));
-
-    const gallery: GalleryItem[] = galRes.rows.map((r) => ({
-      id: String(r.external_id),
-      businessId: String(r.business_external_id),
-      title: String(r.title),
-      categoryLabel: String(r.category_label),
-      theme: (r.theme as VisualTheme) || 'violet',
-    }));
+    const gallery: GalleryItem[] = galRes.rows
+      .filter((r) => !hiddenSampleBizIds.has(String(r.business_external_id)))
+      .map((r) => ({
+        id: String(r.external_id),
+        businessId: String(r.business_external_id),
+        title: String(r.title),
+        categoryLabel: String(r.category_label),
+        theme: (r.theme as VisualTheme) || 'violet',
+      }));
 
     const plans: SubscriptionPlanItem[] = planRes.rows.map((r) => {
       const comp =
@@ -874,6 +1263,8 @@ export async function getBootstrapPayload(
       };
     });
 
+    const registeredUsers = await buildMergedRegisteredUsersList(client);
+
     return {
       categories,
       businesses,
@@ -882,6 +1273,7 @@ export async function getBootstrapPayload(
       reviews,
       gallery,
       plans,
+      registeredUsers,
     };
   } finally {
     client.release();
@@ -3524,48 +3916,60 @@ export async function getAdminOverviewPayloadInDb(
       serviceCount: Number(r.service_count),
     }));
 
-    const businesses: BusinessItem[] = bizRes.rows.map((r) =>
-      mergeBusinessRowWithExtra(
-        {
-          id: String(r.external_id),
-          slug: String(r.slug),
-          name: String(r.name),
-          type: r.type as BusinessType,
-          typeLabel: String(r.type_label),
-          categorySlug: String(r.primary_category_slug),
-          city: String(r.city),
-          neighborhood: String(r.neighborhood),
-          address: String(r.address),
-          mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
-          mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
-          rating: Number(r.rating_avg),
-          reviewCount: Number(r.review_count),
-          startingPriceToman: Number(r.starting_price_toman),
-          verifiedBadge: Boolean(r.verified_badge),
-          shortDescription: String(r.short_description),
-          aboutText: String(r.about_text),
-          phoneDisplay: String(r.phone_display),
-          ownerName: r.owner_full_name ? String(r.owner_full_name) : undefined,
-          ownerPhone: r.owner_phone
-            ? toPersianDigitsServer(String(r.owner_phone))
-            : String(r.phone_display),
-          createdAtJalali: toPersianDigitsServer(
-            String(r.created_date || '1405/08/01')
-          ),
-          instagramHandle: r.instagram_handle
-            ? String(r.instagram_handle)
-            : undefined,
-          workingHours: whByBusinessId.get(String(r.id)) ?? [],
-          visualTheme: (r.visual_theme as VisualTheme) || 'violet',
-          approvalStatus: r.approval_status as ApprovalStatus,
-          subscriptionPlan: String(r.subscription_plan),
-          subscriptionStatus: r.subscription_status as SubscriptionStatus,
-          featured: Boolean(r.is_featured),
-        },
-        r.extra_json,
-        r.legacy_demo_id
-      )
-    );
+    const excludedLegacyBizIds = new Set([
+      'biz-2',
+      'biz-3',
+      'biz-4',
+      'biz-5',
+      'biz-6',
+      'biz-7',
+      'biz-8',
+    ]);
+
+    const businesses: BusinessItem[] = bizRes.rows
+      .filter((r) => !excludedLegacyBizIds.has(String(r.external_id)))
+      .map((r) =>
+        mergeBusinessRowWithExtra(
+          {
+            id: String(r.external_id),
+            slug: String(r.slug),
+            name: String(r.name),
+            type: r.type as BusinessType,
+            typeLabel: String(r.type_label),
+            categorySlug: String(r.primary_category_slug),
+            city: String(r.city),
+            neighborhood: String(r.neighborhood),
+            address: String(r.address),
+            mapLat: r.map_lat !== null ? Number(r.map_lat) : undefined,
+            mapLng: r.map_lng !== null ? Number(r.map_lng) : undefined,
+            rating: Number(r.rating_avg),
+            reviewCount: Number(r.review_count),
+            startingPriceToman: Number(r.starting_price_toman),
+            verifiedBadge: Boolean(r.verified_badge),
+            shortDescription: String(r.short_description),
+            aboutText: String(r.about_text),
+            phoneDisplay: String(r.phone_display),
+            ownerName: r.owner_full_name ? String(r.owner_full_name) : undefined,
+            ownerPhone: r.owner_phone
+              ? toPersianDigitsServer(String(r.owner_phone))
+              : String(r.phone_display),
+            createdAtJalali: toPersianDigitsServer(
+              String(r.created_date || '1405/08/01')
+            ),
+            instagramHandle: r.instagram_handle
+              ? String(r.instagram_handle)
+              : undefined,
+            workingHours: whByBusinessId.get(String(r.id)) ?? [],
+            visualTheme: (r.visual_theme as VisualTheme) || 'violet',
+            approvalStatus: r.approval_status as ApprovalStatus,
+            subscriptionPlan: String(r.subscription_plan),
+            subscriptionStatus: r.subscription_status as SubscriptionStatus,
+            featured: Boolean(r.is_featured),
+          },
+          r.extra_json,
+          r.legacy_demo_id
+        )
+      );
 
     const plans: SubscriptionPlanItem[] = planRes.rows.map((r) => {
       const comp =
@@ -3590,7 +3994,7 @@ export async function getAdminOverviewPayloadInDb(
       };
     });
 
-    const users: AdminUserRecord[] = usrRes.rows.map((r) => {
+    const directUsers: AdminUserRecord[] = usrRes.rows.map((r) => {
       const fullPhonePersian = toPersianDigitsServer(String(r.phone || ''));
       return {
         id: String(r.id),
@@ -3600,13 +4004,28 @@ export async function getAdminOverviewPayloadInDb(
         roleLabel: r.is_admin
           ? 'مدیر کل پلتفرم'
           : r.is_business_member
-            ? 'مالک / عضو کسب‌وکار'
-            : 'مشتری',
+            ? 'صاحب کسب‌وکار'
+            : 'مشتری عادی',
         city: String(r.city || 'اصفهان'),
         joinedJalali: toPersianDigitsServer(String(r.created_date || '1405/08/01')),
         isActive: Boolean(r.is_active),
       };
     });
+
+    const mergedRegistryUsers = await buildMergedRegisteredUsersList(client);
+    const combinedByPhone = new Map<string, AdminUserRecord>();
+    for (const u of mergedRegistryUsers) {
+      const clean = toEnglishDigits(u.phone || u.phoneMasked || '').replace(/\D/g, '');
+      if (clean) combinedByPhone.set(clean, u);
+    }
+    for (const u of directUsers) {
+      const clean = toEnglishDigits(u.phone || u.phoneMasked || '').replace(/\D/g, '');
+      if (clean && !SEED_DUMMY_PHONES.has(clean) && !combinedByPhone.has(clean)) {
+        combinedByPhone.set(clean, u);
+      }
+    }
+    const users: AdminUserRecord[] =
+      combinedByPhone.size > 0 ? Array.from(combinedByPhone.values()) : directUsers;
 
     const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
       id: String(r.external_id),
@@ -3973,7 +4392,7 @@ export async function updateCustomerProfileInDb(
  */
 export async function createReviewInDb(
   pool: Pool,
-  actorUser: AuthenticatedUser,
+  actorUser: AuthenticatedUser | null,
   input: {
     businessId: string;
     specialistSlug?: string;
@@ -3981,24 +4400,58 @@ export async function createReviewInDb(
     rating: number;
     comment: string;
     dateJalali?: string;
+    authorName?: string;
+    authorPhone?: string;
   }
 ): Promise<ReviewItem> {
   const comment = (input.comment ?? '').trim();
   const serviceTitle = (input.serviceTitle ?? 'خدمات زیبایی').trim();
   const rating = Math.round(Number(input.rating) || 0);
-  if (!comment || comment.length < 3 || rating < 1 || rating > 5) {
+  if (!comment || rating < 1 || rating > 5) {
     throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const moderation = validateReviewContent(comment);
+  if (!moderation.valid) {
+    throw new Error(moderation.code ?? 'INVALID_INPUT_PAYLOAD');
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const biz = await resolveBusinessUuid(client, input.businessId);
-    if (biz.approvalStatus !== 'APPROVED') {
+    if (biz.approvalStatus === 'REJECTED') {
       throw new Error('BUSINESS_NOT_APPROVED');
     }
 
-    const authorName = (actorUser.fullName || 'کاربر BeautyHub').trim();
+    let customerUserId = actorUser?.userId ?? null;
+    const cleanPhone = toEnglishDigits(
+      input.authorPhone || actorUser?.phone || ''
+    ).replace(/\D/g, '');
+    const authorName = (
+      input.authorName ||
+      actorUser?.fullName ||
+      'کاربر تایم‌تو'
+    ).trim();
+
+    if (!customerUserId) {
+      const effectivePhone = /^09\d{9}$/.test(cleanPhone)
+        ? cleanPhone
+        : `0999${String(Date.now()).slice(-7)}`;
+      const upsertedUserRes = await client.query(
+        `
+        INSERT INTO users (phone, full_name, default_city, is_active)
+        VALUES ($1, $2, 'اصفهان', TRUE)
+        ON CONFLICT (phone) DO UPDATE SET
+          full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), users.full_name),
+          updated_at = NOW()
+        RETURNING id
+        `,
+        [effectivePhone, authorName]
+      );
+      customerUserId = String(upsertedUserRes.rows[0].id);
+    }
+
     const dateJalali = (input.dateJalali || '۱۴۰۵/۰۸/۰۵').trim();
 
     const insertRes = await client.query(
@@ -4026,7 +4479,7 @@ export async function createReviewInDb(
       `,
       [
         biz.id,
-        actorUser.userId,
+        customerUserId,
         input.specialistSlug?.trim() || null,
         authorName,
         serviceTitle,
@@ -4056,15 +4509,35 @@ export async function createReviewInDb(
       [biz.id]
     );
 
-    await client.query('COMMIT');
     const row = insertRes.rows[0];
+    const reviewExternalId = String(row.external_id);
+
+    if (cleanPhone) {
+      await ensureExtendedMetaTables(client);
+      const metaMap = await getReviewModerationMetaMap(client);
+      metaMap[reviewExternalId] = {
+        ...(metaMap[reviewExternalId] ?? {}),
+        authorPhone: toPersianDigitsServer(cleanPhone),
+      };
+      await client.query(
+        `
+        INSERT INTO platform_kv_store (key, value_json, updated_at)
+        VALUES ('review_moderation_meta', $1::jsonb, NOW())
+        ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+        `,
+        [JSON.stringify(metaMap)]
+      );
+    }
+
+    await client.query('COMMIT');
     return {
-      id: String(row.external_id),
+      id: reviewExternalId,
       businessId: biz.externalId,
       specialistSlug: row.specialist_slug
         ? String(row.specialist_slug)
         : undefined,
       authorName: String(row.author_name),
+      authorPhone: cleanPhone ? toPersianDigitsServer(cleanPhone) : undefined,
       serviceTitle: String(row.service_title),
       rating: Number(row.rating),
       dateJalali: String(row.date_jalali),
@@ -4468,3 +4941,503 @@ export async function verifyOtpInDb(
     client.release();
   }
 }
+
+/**
+ * ثبت پاسخ مدیریت سالن به دیدگاه مشتری
+ */
+export async function replyToReviewInDb(
+  pool: Pool,
+  reviewIdRaw: string,
+  replyTextRaw: string,
+  dateJalaliRaw?: string
+): Promise<{ reviewId: string; salonReply: string; salonReplyDateJalali: string }> {
+  const reviewId = (reviewIdRaw || '').trim();
+  const salonReply = (replyTextRaw || '').trim();
+  if (!reviewId || !salonReply) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+  const salonReplyDateJalali = (dateJalaliRaw || '۱۴۰۵/۰۸/۰۵').trim();
+
+  const client = await pool.connect();
+  try {
+    await ensureExtendedMetaTables(client);
+    const metaMap = await getReviewModerationMetaMap(client);
+    metaMap[reviewId] = {
+      ...(metaMap[reviewId] ?? {}),
+      salonReply,
+      salonReplyDateJalali,
+    };
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('review_moderation_meta', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(metaMap)]
+    );
+    return { reviewId, salonReply, salonReplyDateJalali };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * گزارش دیدگاه حاوی فحاشی یا جفنگ توسط صاحب سالن به مدیر کل
+ * توجه: دیدگاه‌های انتقادی محترمانه حذف نمی‌شوند و فقط برای بررسی مدیر کل علامت‌گذاری می‌شوند.
+ */
+export async function reportReviewInDb(
+  pool: Pool,
+  reviewIdRaw: string,
+  reasonRaw: string
+): Promise<{ reviewId: string; isReportedBySalon: boolean; reportReason: string }> {
+  const reviewId = (reviewIdRaw || '').trim();
+  const reportReason = (reasonRaw || 'گزارش فحاشی یا متن نامفهوم').trim();
+  if (!reviewId) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await ensureExtendedMetaTables(client);
+    const metaMap = await getReviewModerationMetaMap(client);
+    metaMap[reviewId] = {
+      ...(metaMap[reviewId] ?? {}),
+      isReportedBySalon: true,
+      reportReason,
+    };
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('review_moderation_meta', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(metaMap)]
+    );
+    return { reviewId, isReportedBySalon: true, reportReason };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * حذف دیدگاه حاوی توهین/جفنگ توسط مدیر کل پلتفرم و بروزرسانی میانگین امتیاز سالن
+ */
+export async function deleteReviewInDb(
+  pool: Pool,
+  reviewIdRaw: string
+): Promise<{ deleted: boolean; reviewId: string }> {
+  const reviewId = (reviewIdRaw || '').trim();
+  if (!reviewId) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const findRes = await client.query(
+      `
+      SELECT id, business_id
+      FROM reviews
+      WHERE id::text = $1 OR legacy_demo_id = $1
+      LIMIT 1
+      `,
+      [reviewId]
+    );
+
+    if (findRes.rowCount && findRes.rows[0]) {
+      const targetUuid = String(findRes.rows[0].id);
+      const businessUuid = String(findRes.rows[0].business_id);
+
+      await client.query(`DELETE FROM reviews WHERE id = $1`, [targetUuid]);
+
+      await client.query(
+        `
+        UPDATE businesses
+        SET
+          rating_avg = COALESCE((
+            SELECT ROUND(AVG(rating)::numeric, 1)
+            FROM reviews
+            WHERE business_id = $1 AND is_published = TRUE
+          ), 5.0),
+          review_count = (
+            SELECT COUNT(*)::int
+            FROM reviews
+            WHERE business_id = $1 AND is_published = TRUE
+          ),
+          updated_at = NOW()
+        WHERE id = $1
+        `,
+        [businessUuid]
+      );
+    }
+
+    await ensureExtendedMetaTables(client);
+    const metaMap = await getReviewModerationMetaMap(client);
+    if (metaMap[reviewId]) {
+      delete metaMap[reviewId];
+      await client.query(
+        `
+        INSERT INTO platform_kv_store (key, value_json, updated_at)
+        VALUES ('review_moderation_meta', $1::jsonb, NOW())
+        ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+        `,
+        [JSON.stringify(metaMap)]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { deleted: true, reviewId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * همگام‌سازی و ثبت دائمی حساب‌های کاربری ثبت‌نام‌شده (مشتری عادی و صاحب سالن) در دیتابیس PostgreSQL
+ * تا تمام کاربران قدیمی و جدید در پنل مدیریت کل (/admin/users) از هر مرورگر و دستگاهی قابل مشاهده باشند.
+ */
+export async function syncRegisteredAccountsInDb(
+  pool: Pool,
+  accountsInput: Array<{
+    phone: string;
+    fullName: string;
+    city?: string;
+    role?: 'customer' | 'owner' | 'admin';
+    password?: string;
+    joinedJalali?: string;
+  }>,
+  options?: {
+    issueSessionForPhone?: string;
+    requestIp?: string;
+    userAgent?: string;
+  }
+): Promise<{
+  registeredUsers: AdminUserRecord[];
+  sessionToken?: string;
+  expiresAt?: string;
+  user?: AuthenticatedUser;
+}> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_passwords (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    const existingKvRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'registered_accounts_registry' LIMIT 1`
+    );
+    const registryList: Array<Record<string, unknown>> = Array.isArray(
+      existingKvRes.rows[0]?.value_json
+    )
+      ? [...(existingKvRes.rows[0].value_json as Array<Record<string, unknown>>)]
+      : existingKvRes.rows[0]?.value_json &&
+          typeof existingKvRes.rows[0].value_json === 'object'
+        ? Object.values(
+            existingKvRes.rows[0].value_json as Record<string, Record<string, unknown>>
+          )
+        : [];
+
+    const deletedRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'deleted_admin_phones_registry' LIMIT 1`
+    );
+    const deletedPhones = new Set<string>(
+      Array.isArray(deletedRes.rows[0]?.value_json)
+        ? (deletedRes.rows[0].value_json as string[]).map((p) =>
+            toEnglishDigits(String(p)).replace(/\D/g, '')
+          )
+        : []
+    );
+
+    let issuedSessionToken: string | undefined;
+    let issuedExpiresAt: string | undefined;
+    let issuedUser: AuthenticatedUser | undefined;
+    const targetSessionPhone = toEnglishDigits(
+      options?.issueSessionForPhone || ''
+    ).replace(/\D/g, '');
+
+    for (const acc of accountsInput) {
+      const cleanPhone = toEnglishDigits(acc.phone || '').replace(/\D/g, '');
+      if (!/^09\d{9}$/.test(cleanPhone) || SEED_DUMMY_PHONES.has(cleanPhone)) {
+        continue;
+      }
+
+      // اگر کاربر دوباره ثبت‌نام کرد، از لیست حذف‌شده‌ها خارج شود
+      if (targetSessionPhone && cleanPhone === targetSessionPhone) {
+        deletedPhones.delete(cleanPhone);
+      } else if (deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+
+      const fullName = (acc.fullName || 'کاربر تایم‌تو').trim();
+      const city = (acc.city || 'اصفهان').trim();
+      const roleLabel =
+        acc.role === 'admin' || cleanPhone === '09134337596'
+          ? 'مدیر کل پلتفرم'
+          : acc.role === 'owner'
+            ? 'صاحب کسب‌وکار'
+            : 'مشتری عادی';
+
+      const userUpsertRes = await client.query(
+        `
+        INSERT INTO users (phone, full_name, default_city, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (phone) DO UPDATE SET
+          full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), users.full_name),
+          default_city = COALESCE(NULLIF(EXCLUDED.default_city, ''), users.default_city),
+          updated_at = NOW()
+        RETURNING id, is_active
+        `,
+        [cleanPhone, fullName, city]
+      );
+      const userId = String(userUpsertRes.rows[0].id);
+
+      if (acc.password && acc.password.trim().length >= 4) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        const derived = crypto
+          .scryptSync(acc.password.trim(), salt, 32)
+          .toString('hex');
+        const pwdHash = `scrypt$${salt}$${derived}`;
+        await client.query(
+          `
+          INSERT INTO user_passwords (user_id, password_hash, updated_at)
+          VALUES ($1, $2, NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            password_hash = EXCLUDED.password_hash,
+            updated_at = NOW()
+          `,
+          [userId, pwdHash]
+        );
+      }
+
+      const existingIdx = registryList.findIndex(
+        (item) =>
+          toEnglishDigits(String(item.phone || '')).replace(/\D/g, '') ===
+          cleanPhone
+      );
+      const recordObj = {
+        id: existingIdx >= 0 ? String(registryList[existingIdx].id || `usr-${cleanPhone}`) : `usr-${cleanPhone}`,
+        fullName,
+        phone: toPersianDigitsServer(cleanPhone),
+        phoneMasked: toPersianDigitsServer(cleanPhone),
+        roleLabel,
+        city,
+        joinedJalali:
+          acc.joinedJalali ||
+          (existingIdx >= 0 ? String(registryList[existingIdx].joinedJalali || '۱۴۰۵/۰۸/۰۵') : '۱۴۰۵/۰۸/۰۵'),
+        isActive: true,
+      };
+      if (existingIdx >= 0) {
+        registryList[existingIdx] = {
+          ...registryList[existingIdx],
+          ...recordObj,
+        };
+      } else {
+        registryList.unshift(recordObj);
+      }
+
+      if (targetSessionPhone && cleanPhone === targetSessionPhone) {
+        const sessionSecret = resolveSessionSecret();
+        const rawSessionSecretPart = crypto.randomBytes(32).toString('hex');
+        const refreshTokenHash = hashSessionSecretPart(rawSessionSecretPart);
+        const safeIp = (options?.requestIp || '127.0.0.1').trim().slice(0, 45);
+        const safeUa = (options?.userAgent || 'web').slice(0, 500);
+
+        const sessionInsertRes = await client.query(
+          `
+          INSERT INTO user_sessions (
+            user_id,
+            refresh_token_hash,
+            ip_address,
+            user_agent,
+            expires_at
+          )
+          VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')
+          RETURNING id, expires_at
+          `,
+          [userId, refreshTokenHash, safeIp, safeUa]
+        );
+        const sessionId = String(sessionInsertRes.rows[0].id);
+        issuedExpiresAt = new Date(
+          String(sessionInsertRes.rows[0].expires_at)
+        ).toISOString();
+        const loadedUser = await loadUserPermissionsByUserId(
+          client,
+          userId,
+          sessionId
+        );
+        if (loadedUser) {
+          issuedUser = loadedUser;
+          issuedSessionToken = signSessionToken(
+            sessionId,
+            rawSessionSecretPart,
+            sessionSecret
+          );
+        }
+      }
+    }
+
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('registered_accounts_registry', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(registryList)]
+    );
+
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('deleted_admin_phones_registry', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(Array.from(deletedPhones))]
+    );
+
+    const registeredUsers = await buildMergedRegisteredUsersList(client);
+    await client.query('COMMIT');
+    return {
+      registeredUsers,
+      sessionToken: issuedSessionToken,
+      expiresAt: issuedExpiresAt,
+      user: issuedUser,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * ویرایش مشخصات یا وضعیت کاربر توسط مدیر کل پلتفرم در PostgreSQL
+ */
+export async function updateAdminUserInDb(
+  pool: Pool,
+  phoneRaw: string,
+  patch: Partial<Pick<AdminUserRecord, 'fullName' | 'city' | 'roleLabel' | 'isActive'>>
+): Promise<AdminUserRecord[]> {
+  const cleanPhone = toEnglishDigits(phoneRaw || '').replace(/\D/g, '');
+  if (!cleanPhone) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
+
+    await client.query(
+      `
+      UPDATE users
+      SET
+        full_name = COALESCE($2, full_name),
+        default_city = COALESCE($3, default_city),
+        is_active = COALESCE($4, is_active),
+        updated_at = NOW()
+      WHERE phone = $1
+      `,
+      [
+        cleanPhone,
+        patch.fullName?.trim() || null,
+        patch.city?.trim() || null,
+        typeof patch.isActive === 'boolean' ? patch.isActive : null,
+      ]
+    );
+
+    const overridesRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'admin_user_overrides_registry' LIMIT 1`
+    );
+    const overridesMap: Record<string, Partial<AdminUserRecord>> =
+      overridesRes.rows[0]?.value_json &&
+      typeof overridesRes.rows[0].value_json === 'object'
+        ? { ...(overridesRes.rows[0].value_json as Record<string, Partial<AdminUserRecord>>) }
+        : {};
+
+    overridesMap[cleanPhone] = {
+      ...(overridesMap[cleanPhone] ?? {}),
+      ...(patch.fullName !== undefined ? { fullName: patch.fullName.trim() } : {}),
+      ...(patch.city !== undefined ? { city: patch.city.trim() } : {}),
+      ...(patch.roleLabel !== undefined ? { roleLabel: patch.roleLabel.trim() } : {}),
+      ...(typeof patch.isActive === 'boolean' ? { isActive: patch.isActive } : {}),
+    };
+
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('admin_user_overrides_registry', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(overridesMap)]
+    );
+
+    const users = await buildMergedRegisteredUsersList(client);
+    await client.query('COMMIT');
+    return users;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * حذف کاربر توسط مدیر کل پلتفرم در PostgreSQL
+ */
+export async function deleteAdminUserInDb(
+  pool: Pool,
+  phoneRaw: string
+): Promise<AdminUserRecord[]> {
+  const cleanPhone = toEnglishDigits(phoneRaw || '').replace(/\D/g, '');
+  if (!cleanPhone) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
+
+    const deletedRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'deleted_admin_phones_registry' LIMIT 1`
+    );
+    const deletedSet = new Set<string>(
+      Array.isArray(deletedRes.rows[0]?.value_json)
+        ? (deletedRes.rows[0].value_json as string[]).map((p) =>
+            toEnglishDigits(String(p)).replace(/\D/g, '')
+          )
+        : []
+    );
+    deletedSet.add(cleanPhone);
+
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('deleted_admin_phones_registry', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(Array.from(deletedSet))]
+    );
+
+    const users = await buildMergedRegisteredUsersList(client);
+    await client.query('COMMIT');
+    return users;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+

@@ -48,6 +48,7 @@ import {
 } from '../types';
 import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
 import { computeSelectedServicesSummary } from '../utils/formatters';
+import { validateReviewContent } from '../utils/reviewModeration';
 import {
   AccountRoleChoice,
   AuthFlowScreen,
@@ -199,6 +200,9 @@ interface PrototypeDataContextValue {
     rating: number;
     comment: string;
   }) => Promise<boolean>;
+  replyToReview: (reviewId: string, replyText: string) => Promise<boolean>;
+  reportReviewAbuse: (reviewId: string, reason: string) => Promise<boolean>;
+  deleteReviewByAdmin: (reviewId: string) => Promise<boolean>;
   plans: SubscriptionPlanItem[];
   updatePlan: (planId: string, patch: Partial<SubscriptionPlanItem>) => void;
   adPackages: AdPackageItem[];
@@ -425,6 +429,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [authUser?.phone]);
   const mergeBusinessOverrides = (list: BusinessItem[]): BusinessItem[] => {
     try {
+      const excludedSampleIds = new Set([
+        'biz-2',
+        'biz-3',
+        'biz-4',
+        'biz-5',
+        'biz-6',
+        'biz-7',
+        'biz-8',
+      ]);
       const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
       const localOnbRaw = window.localStorage.getItem(
@@ -436,6 +449,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const byIdOrSlug = new Map<string, BusinessItem>();
       for (const b of list) {
+        if (excludedSampleIds.has(b.id)) continue;
         const isSample =
           Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
         const merged = overrides[b.id]
@@ -446,6 +460,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
       for (const lb of localOnbList) {
+        if (excludedSampleIds.has(lb.id)) continue;
         const alreadyExists = Array.from(byIdOrSlug.values()).some(
           (x) => x.id === lb.id || x.slug === lb.slug
         );
@@ -457,8 +472,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // اطمینان از حضور سالن‌های نمونه نمایشی برای ویترین عمومی سایت
+      // اطمینان از حضور تنها ۱ سالن نمونه نمایشی برای ویترین عمومی سایت
       for (const sb of SAMPLE_BUSINESSES) {
+        if (excludedSampleIds.has(sb.id)) continue;
         const alreadyExists = Array.from(byIdOrSlug.values()).some(
           (x) => x.id === sb.id || x.slug === sb.slug
         );
@@ -935,9 +951,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           return Array.from(map.values());
         });
         setReviews(() => {
+          let deletedRevIds = new Set<string>();
+          let localRevs: ReviewItem[] = [];
+          let revMeta: Record<string, Partial<ReviewItem>> = {};
+          try {
+            const delRaw =
+              window.localStorage.getItem('timeto_deleted_review_ids_v1') || '[]';
+            deletedRevIds = new Set<string>(JSON.parse(delRaw));
+            const savedRaw =
+              window.localStorage.getItem('timeto_local_reviews_v1') || '[]';
+            localRevs = JSON.parse(savedRaw);
+            const metaRaw =
+              window.localStorage.getItem('timeto_review_moderation_meta_v1') ||
+              '{}';
+            revMeta = JSON.parse(metaRaw);
+          } catch {
+            // ignore
+          }
           const map = new Map<string, ReviewItem>();
-          for (const r of SAMPLE_REVIEWS) map.set(r.id, r);
-          for (const r of response.data!.reviews) map.set(r.id, r);
+          for (const r of SAMPLE_REVIEWS) {
+            if (!deletedRevIds.has(r.id)) {
+              map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
+            }
+          }
+          for (const r of response.data!.reviews) {
+            if (!deletedRevIds.has(r.id)) {
+              map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
+            }
+          }
+          for (const r of localRevs) {
+            if (r && r.id && !deletedRevIds.has(r.id)) {
+              map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
+            }
+          }
           return Array.from(map.values());
         });
         setGallery(() => {
@@ -956,8 +1002,48 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setAppointments([]);
         setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
-        setAdminUsers([]);
+        setAdminUsers(response.data.registeredUsers ?? []);
         setOwnedBusinessId(localOwnedBizId);
+
+        // همگام‌سازی خودکار حساب‌های ثبت‌نام‌شده قدیمی و جدید مرورگر با دیتابیس PostgreSQL
+        try {
+          const memoryAccounts = Object.values(getSavedMemoryAccounts());
+          const syncPayloadAccounts = memoryAccounts.map((acc) => ({
+            phone: acc.phone,
+            fullName: acc.fullName,
+            city: acc.city || 'اصفهان',
+            role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
+              | 'owner'
+              | 'customer',
+            password: acc.password,
+          }));
+          if (
+            localPersistedUser?.phone &&
+            !syncPayloadAccounts.some((a) => a.phone === localPersistedUser.phone)
+          ) {
+            syncPayloadAccounts.push({
+              phone: localPersistedUser.phone,
+              fullName: localPersistedUser.fullName || 'کاربر تایم تو',
+              city: localPersistedUser.defaultCity || 'اصفهان',
+              role: localPersistedUser.roles.includes('BUSINESS_OWNER')
+                ? 'owner'
+                : 'customer',
+              password: '',
+            });
+          }
+          if (syncPayloadAccounts.length > 0) {
+            void realApiClient
+              .syncRegisteredAccounts({ accounts: syncPayloadAccounts })
+              .then((syncRes) => {
+                if (Array.isArray(syncRes.registeredUsers)) {
+                  setAdminUsers(syncRes.registeredUsers);
+                }
+              })
+              .catch(() => {});
+          }
+        } catch {
+          // ignore
+        }
 
         const firstRealBiz = response.data.businesses[0];
         const firstRealSrv = response.data.services[0];
@@ -1446,7 +1532,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     setAccountsRevision((r) => r + 1);
 
     saveVisitorRole(payload.role);
-    const sessionUser = buildSessionUserFromMemory(
+    let sessionUser = buildSessionUserFromMemory(
       payload.phone,
       payload.fullName,
       payload.role
@@ -1457,6 +1543,54 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       customerName: payload.fullName || prev.customerName,
       customerPhone: payload.phone || prev.customerPhone,
     }));
+
+    // ثبت دائمی کاربر جدید (مشتری یا صاحب سالن) در دیتابیس PostgreSQL و صدور نشست واقعی سرور
+    if (dataMode === 'real') {
+      try {
+        const allLocalAccounts = Object.values(getSavedMemoryAccounts()).map(
+          (acc) => ({
+            phone: acc.phone,
+            fullName: acc.fullName,
+            city: acc.city || 'اصفهان',
+            role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
+              | 'owner'
+              | 'customer',
+            password: acc.password,
+          })
+        );
+        const syncRes = await realApiClient.syncRegisteredAccounts({
+          accounts: allLocalAccounts.length
+            ? allLocalAccounts
+            : [
+                {
+                  phone: payload.phone,
+                  fullName: payload.fullName,
+                  city: payload.salonInfo?.city || 'اصفهان',
+                  role: payload.role === 'BUSINESS_OWNER' ? 'owner' : 'customer',
+                  password: payload.password,
+                },
+              ],
+          issueSessionForPhone: payload.phone,
+        });
+        if (Array.isArray(syncRes.registeredUsers)) {
+          setAdminUsers(syncRes.registeredUsers);
+        }
+        if (syncRes.user) {
+          sessionUser = {
+            ...syncRes.user,
+            fullName: payload.fullName || syncRes.user.fullName,
+            roles:
+              payload.role === 'BUSINESS_OWNER' &&
+              !syncRes.user.roles.includes('BUSINESS_OWNER')
+                ? [...syncRes.user.roles, 'BUSINESS_OWNER']
+                : syncRes.user.roles,
+          };
+          setAuthUser(sessionUser);
+        }
+      } catch {
+        // ادامه با حساب محلی در صورت خطای شبکه
+      }
+    }
 
     return sessionUser;
   };
@@ -2736,6 +2870,50 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast('پرونده مشتری از لیست حذف شد.', 'info');
   };
 
+  const recalculateBusinessAndSpecialistRating = (
+    targetBusinessId: string,
+    nextReviews: ReviewItem[],
+    targetSpecialistSlug?: string
+  ) => {
+    const bizReviews = nextReviews.filter((r) => r.businessId === targetBusinessId);
+    const count = bizReviews.length;
+    const avg =
+      count > 0
+        ? Math.round(
+            (bizReviews.reduce((sum, r) => sum + Number(r.rating || 5), 0) /
+              count) *
+              10
+          ) / 10
+        : 5.0;
+
+    setBusinesses((prev) =>
+      prev.map((b) =>
+        b.id === targetBusinessId
+          ? { ...b, rating: avg, reviewCount: count }
+          : b
+      )
+    );
+
+    if (targetSpecialistSlug) {
+      const spcReviews = nextReviews.filter(
+        (r) => r.specialistSlug === targetSpecialistSlug
+      );
+      if (spcReviews.length > 0) {
+        const spcAvg =
+          Math.round(
+            (spcReviews.reduce((sum, r) => sum + Number(r.rating || 5), 0) /
+              spcReviews.length) *
+              10
+          ) / 10;
+        setSpecialists((prev) =>
+          prev.map((sp) =>
+            sp.slug === targetSpecialistSlug ? { ...sp, rating: spcAvg } : sp
+          )
+        );
+      }
+    }
+  };
+
   const addReview = async (input: {
     businessId: string;
     specialistSlug?: string;
@@ -2743,20 +2921,61 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     rating: number;
     comment: string;
   }): Promise<boolean> => {
+    const moderation = validateReviewContent(input.comment);
+    if (!moderation.valid) {
+      showToast(
+        moderation.reason || 'متن دیدگاه نامعتبر است.',
+        'warning'
+      );
+      return false;
+    }
+
+    const authorName = authUser?.fullName || 'کاربر تایم‌تو';
+    const authorPhone = authUser?.phone || undefined;
+
     if (dataMode === 'real') {
       try {
-        const res = await realApiClient.createReview(input);
-        setReviews((prev) => [res.item, ...prev]);
-        showToast('دیدگاه و امتیاز شما در پایگاه داده ثبت شد.');
+        const res = await realApiClient.createReview({
+          ...input,
+          authorName,
+          authorPhone,
+        });
+        setReviews((prev) => {
+          const next = [res.item, ...prev.filter((r) => r.id !== res.item.id)];
+          try {
+            const savedRaw =
+              window.localStorage.getItem('timeto_local_reviews_v1') || '[]';
+            const savedList: ReviewItem[] = JSON.parse(savedRaw);
+            window.localStorage.setItem(
+              'timeto_local_reviews_v1',
+              JSON.stringify([
+                res.item,
+                ...savedList.filter((r) => r.id !== res.item.id),
+              ])
+            );
+          } catch {
+            // ignore
+          }
+          recalculateBusinessAndSpecialistRating(
+            input.businessId,
+            next,
+            input.specialistSlug
+          );
+          return next;
+        });
+        showToast('دیدگاه و امتیاز شما با موفقیت ثبت و منتشر شد.');
         return true;
       } catch (err) {
-        showToast(
-          err instanceof Error
-            ? err.message
-            : 'خطا در ثبت دیدگاه در دیتابیس',
-          'danger'
-        );
-        return false;
+        if (
+          err instanceof ApiClientError &&
+          (err.errorCode === 'PROHIBITED_PROFANITY' ||
+            err.errorCode === 'GIBBERISH' ||
+            err.errorCode === 'TOO_SHORT')
+        ) {
+          showToast(err.message, 'warning');
+          return false;
+        }
+        // اگر سالن محلی بود و هنوز در دیتابیس ثبت نشده بود، در وضعیت کلاینت ذخیره شود
       }
     }
 
@@ -2764,14 +2983,220 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       id: `rev-${Date.now()}`,
       businessId: input.businessId,
       specialistSlug: input.specialistSlug,
-      authorName: authUser?.fullName || 'المیرا شمس',
+      authorName,
+      authorPhone,
       serviceTitle: input.serviceTitle,
       rating: input.rating,
       dateJalali: '۱۴۰۵/۰۸/۰۵',
-      comment: input.comment,
+      comment: input.comment.trim(),
     };
-    setReviews((prev) => [newReview, ...prev]);
-    showToast('دیدگاه شما ثبت شد.');
+    setReviews((prev) => {
+      const next = [newReview, ...prev];
+      try {
+        const savedRaw =
+          window.localStorage.getItem('timeto_local_reviews_v1') || '[]';
+        const savedList: ReviewItem[] = JSON.parse(savedRaw);
+        window.localStorage.setItem(
+          'timeto_local_reviews_v1',
+          JSON.stringify([newReview, ...savedList])
+        );
+      } catch {
+        // ignore
+      }
+      recalculateBusinessAndSpecialistRating(
+        input.businessId,
+        next,
+        input.specialistSlug
+      );
+      return next;
+    });
+    showToast('دیدگاه و امتیاز شما با موفقیت ثبت و منتشر شد.');
+    return true;
+  };
+
+  const replyToReview = async (
+    reviewId: string,
+    replyText: string
+  ): Promise<boolean> => {
+    const cleanReply = replyText.trim();
+    if (!cleanReply) {
+      showToast('لطفاً متن پاسخ مدیریت سالن را وارد کنید.', 'warning');
+      return false;
+    }
+
+    const moderation = validateReviewContent(cleanReply);
+    if (!moderation.valid && moderation.code === 'PROHIBITED_PROFANITY') {
+      showToast(
+        'پاسخ مدیریت سالن نباید حاوی الفاظ توهین‌آمیز باشد.',
+        'warning'
+      );
+      return false;
+    }
+
+    const replyDate = '۱۴۰۵/۰۸/۰۵';
+    if (dataMode === 'real') {
+      try {
+        await realApiClient.replyReview(reviewId, cleanReply, replyDate);
+      } catch {
+        // ادامه با ذخیره در وضعیت محلی
+      }
+    }
+
+    try {
+      const metaRaw =
+        window.localStorage.getItem('timeto_review_moderation_meta_v1') || '{}';
+      const meta = JSON.parse(metaRaw);
+      meta[reviewId] = {
+        ...(meta[reviewId] || {}),
+        salonReply: cleanReply,
+        salonReplyDateJalali: replyDate,
+      };
+      window.localStorage.setItem(
+        'timeto_review_moderation_meta_v1',
+        JSON.stringify(meta)
+      );
+    } catch {
+      // ignore
+    }
+
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.id === reviewId
+          ? {
+              ...r,
+              salonReply: cleanReply,
+              salonReplyDateJalali: replyDate,
+            }
+          : r
+      )
+    );
+    showToast('پاسخ مدیریت سالن زیر دیدگاه مشتری ثبت شد.');
+    return true;
+  };
+
+  const reportReviewAbuse = async (
+    reviewId: string,
+    reason: string
+  ): Promise<boolean> => {
+    const cleanReason =
+      reason.trim() || 'گزارش فحاشی، توهین یا متن جفنگ جهت بررسی مدیر کل';
+    const targetRev = reviews.find((r) => r.id === reviewId);
+
+    if (dataMode === 'real') {
+      try {
+        await realApiClient.reportReview(reviewId, cleanReason);
+      } catch {
+        // ادامه با ذخیره محلی
+      }
+    }
+
+    try {
+      const metaRaw =
+        window.localStorage.getItem('timeto_review_moderation_meta_v1') || '{}';
+      const meta = JSON.parse(metaRaw);
+      meta[reviewId] = {
+        ...(meta[reviewId] || {}),
+        isReportedBySalon: true,
+        reportReason: cleanReason,
+      };
+      window.localStorage.setItem(
+        'timeto_review_moderation_meta_v1',
+        JSON.stringify(meta)
+      );
+    } catch {
+      // ignore
+    }
+
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.id === reviewId
+          ? {
+              ...r,
+              isReportedBySalon: true,
+              reportReason: cleanReason,
+            }
+          : r
+      )
+    );
+
+    if (targetRev) {
+      const targetBiz = businesses.find((b) => b.id === targetRev.businessId);
+      const reportNotif: AdminNotificationItem = {
+        id: `notif-rev-${Date.now()}`,
+        type: 'NEW_SUPPORT_TICKET',
+        title: `گزارش دیدگاه نامناسب در «${targetBiz?.name || 'سالن'}»`,
+        message: `صاحب سالن دیدگاه «${targetRev.authorName}» را به علت «${cleanReason}» برای بررسی فحاشی/جفنگ گزارش کرد.`,
+        businessId: targetRev.businessId,
+        businessName: targetBiz?.name,
+        ownerName: targetRev.authorName,
+        createdAtJalali: 'امروز',
+        isRead: false,
+      };
+      setAdminNotifications((prev) => {
+        const next = [reportNotif, ...prev];
+        try {
+          window.localStorage.setItem(
+            'timeto_admin_notifications_v1',
+            JSON.stringify(next)
+          );
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    }
+
+    showToast(
+      'گزارش شما برای مدیر کل ارسال شد. توجه: دیدگاه‌های منفی محترمانه حذف نمی‌شوند و فقط فحاشی یا جفنگ توسط مدیر کل پاک می‌شود.',
+      'info'
+    );
+    return true;
+  };
+
+  const deleteReviewByAdmin = async (reviewId: string): Promise<boolean> => {
+    const targetRev = reviews.find((r) => r.id === reviewId);
+    if (dataMode === 'real') {
+      try {
+        await realApiClient.deleteReviewAdmin(reviewId);
+      } catch {
+        // ادامه با حذف در کلاینت
+      }
+    }
+
+    try {
+      const delRaw =
+        window.localStorage.getItem('timeto_deleted_review_ids_v1') || '[]';
+      const delList: string[] = JSON.parse(delRaw);
+      if (!delList.includes(reviewId)) {
+        delList.push(reviewId);
+        window.localStorage.setItem(
+          'timeto_deleted_review_ids_v1',
+          JSON.stringify(delList)
+        );
+      }
+      const savedRaw =
+        window.localStorage.getItem('timeto_local_reviews_v1') || '[]';
+      const savedList: ReviewItem[] = JSON.parse(savedRaw);
+      window.localStorage.setItem(
+        'timeto_local_reviews_v1',
+        JSON.stringify(savedList.filter((r) => r.id !== reviewId))
+      );
+    } catch {
+      // ignore
+    }
+
+    setReviews((prev) => {
+      const next = prev.filter((r) => r.id !== reviewId);
+      if (targetRev) {
+        recalculateBusinessAndSpecialistRating(
+          targetRev.businessId,
+          next,
+          targetRev.specialistSlug
+        );
+      }
+      return next;
+    });
+    showToast('دیدگاه حاوی توهین/جفنگ توسط مدیر کل حذف شد و امتیاز سالن بروزرسانی گردید.', 'info');
     return true;
   };
 
@@ -3606,149 +4031,178 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     }
 
-    setAccountsRevision((r) => r + 1);
-    showToast('اطلاعات کاربر با موفقیت ویرایش و ذخیره شد.');
-    return true;
-  };
-
-  const deleteAdminUserRecord = (phone: string) => {
-    const cleanPhone = normalizeIranMobile(phone);
-    if (!cleanPhone) return;
-
-    removeMemoryAccount(cleanPhone);
-
-    try {
-      const delRaw =
-        window.localStorage.getItem('timeto_deleted_admin_phones_v1') || '[]';
-      const delList: string[] = JSON.parse(delRaw);
-      if (!delList.includes(cleanPhone)) {
-        delList.push(cleanPhone);
-        window.localStorage.setItem(
-          'timeto_deleted_admin_phones_v1',
-          JSON.stringify(delList)
-        );
+      if (dataMode === 'real') {
+        void realApiClient
+          .updateAdminUser(cleanOldPhone, {
+            fullName: patch.fullName?.trim(),
+            city: patch.city?.trim(),
+            roleLabel: patch.role
+              ? patch.role === 'BUSINESS_OWNER'
+                ? 'صاحب کسب‌وکار (سالن‌دار)'
+                : 'مشتری عادی'
+              : undefined,
+          })
+          .then((res) => {
+            if (Array.isArray(res.users)) setAdminUsers(res.users);
+          })
+          .catch(() => {});
       }
-      const ovRaw =
-        window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
-      const ov = JSON.parse(ovRaw);
-      if (ov[cleanPhone]) {
-        delete ov[cleanPhone];
-        window.localStorage.setItem(
-          'timeto_admin_user_overrides_v1',
-          JSON.stringify(ov)
-        );
-      }
-    } catch {
-      // ignore
-    }
 
-    setAdminUsers((prev) =>
-      prev.filter(
-        (u) => normalizeIranMobile(u.phone || u.phoneMasked) !== cleanPhone
-      )
+      setAccountsRevision((r) => r + 1);
+      showToast('اطلاعات کاربر با موفقیت ویرایش و ذخیره شد.');
+      return true;
+    };
+
+    const deleteAdminUserRecord = (phone: string) => {
+      const cleanPhone = normalizeIranMobile(phone);
+      if (!cleanPhone) return;
+
+      removeMemoryAccount(cleanPhone);
+
+      try {
+        const delRaw =
+          window.localStorage.getItem('timeto_deleted_admin_phones_v1') || '[]';
+        const delList: string[] = JSON.parse(delRaw);
+        if (!delList.includes(cleanPhone)) {
+          delList.push(cleanPhone);
+          window.localStorage.setItem(
+            'timeto_deleted_admin_phones_v1',
+            JSON.stringify(delList)
+          );
+        }
+        const ovRaw =
+          window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
+        const ov = JSON.parse(ovRaw);
+        if (ov[cleanPhone]) {
+          delete ov[cleanPhone];
+          window.localStorage.setItem(
+            'timeto_admin_user_overrides_v1',
+            JSON.stringify(ov)
+          );
+        }
+      } catch {
+        // ignore
+      }
+
+      if (dataMode === 'real') {
+        void realApiClient
+          .deleteAdminUser(cleanPhone)
+          .then((res) => {
+            if (Array.isArray(res.users)) setAdminUsers(res.users);
+          })
+          .catch(() => {});
+      }
+
+      setAdminUsers((prev) =>
+        prev.filter(
+          (u) => normalizeIranMobile(u.phone || u.phoneMasked) !== cleanPhone
+        )
+      );
+      setAccountsRevision((r) => r + 1);
+      showToast('حساب کاربری انتخاب‌شده از فهرست کاربران حذف شد.', 'info');
+    };
+
+    return (
+      <PrototypeDataContext.Provider
+        value={{
+          dataMode,
+          databaseError,
+          isLoadingInitialData,
+          authUser,
+          ownedBusinessId,
+          isAuthModalOpen,
+          authModalOptions,
+          openAuthModal,
+          closeAuthModal,
+          completeUnifiedAuthSession,
+          requestOtpLogin,
+          verifyOtpLogin,
+          loginWithPassword,
+          setAccountPassword,
+          resetPasswordWithOtp,
+          logoutUser,
+          updateCustomerProfile,
+          updateAdminUserRecord,
+          deleteAdminUserRecord,
+          refreshRealData,
+          selectedCity,
+          setSelectedCity,
+          favoriteBusinessIds,
+          toggleFavoriteBusiness,
+          favoriteSpecialistIds,
+          toggleFavoriteSpecialist,
+          businesses,
+          currentBusiness,
+          updateBusinessProfile,
+          updateBusinessWorkingHours,
+          updateBusinessApproval,
+          services,
+          addService,
+          updateService,
+          deleteService,
+          specialists,
+          addSpecialist,
+          updateSpecialist,
+          appointments,
+          updateAppointmentStatus,
+          categories,
+          addCategory,
+          updateCategory,
+          deleteCategory,
+          reorderCategory,
+          gallery,
+          addGalleryItem,
+          removeGalleryItem,
+          campaigns,
+          addCampaign,
+          customers,
+          addCustomer,
+          addCustomersBulk,
+          updateCustomer,
+          deleteCustomer,
+          adminUsers,
+          reviews,
+          addReview,
+          replyToReview,
+          reportReviewAbuse,
+          deleteReviewByAdmin,
+          plans,
+          updatePlan,
+          adPackages,
+          updateAdPackage,
+          paymentConfig,
+          updatePaymentConfig,
+          paymentOrders,
+          submitPaymentOrder,
+          reviewPaymentOrder,
+          smsLogs,
+          sendBusinessCustomerSms,
+          adminNotifications,
+          markAdminNotificationRead,
+          clearAllAdminNotifications,
+          adminNotificationSettings,
+          updateAdminNotificationSettings,
+          supportTickets,
+          submitSupportTicket,
+          replySupportTicket,
+          activePlanId,
+          setActivePlanId,
+          onboardingDraft,
+          updateOnboardingDraft,
+          submitBusinessOnboarding,
+          bookingDraft,
+          updateBookingDraft,
+          completeSimulatedBooking,
+          submitBooking,
+          toast,
+          showToast,
+          dismissToast,
+        }}
+      >
+        {children}
+      </PrototypeDataContext.Provider>
     );
-    setAccountsRevision((r) => r + 1);
-    showToast('حساب کاربری انتخاب‌شده از فهرست کاربران حذف شد.', 'info');
   };
-
-  return (
-    <PrototypeDataContext.Provider
-      value={{
-        dataMode,
-        databaseError,
-        isLoadingInitialData,
-        authUser,
-        ownedBusinessId,
-        isAuthModalOpen,
-        authModalOptions,
-        openAuthModal,
-        closeAuthModal,
-        completeUnifiedAuthSession,
-        requestOtpLogin,
-        verifyOtpLogin,
-        loginWithPassword,
-        setAccountPassword,
-        resetPasswordWithOtp,
-        logoutUser,
-        updateCustomerProfile,
-        updateAdminUserRecord,
-        deleteAdminUserRecord,
-        refreshRealData,
-        selectedCity,
-        setSelectedCity,
-        favoriteBusinessIds,
-        toggleFavoriteBusiness,
-        favoriteSpecialistIds,
-        toggleFavoriteSpecialist,
-        businesses,
-        currentBusiness,
-        updateBusinessProfile,
-        updateBusinessWorkingHours,
-        updateBusinessApproval,
-        services,
-        addService,
-        updateService,
-        deleteService,
-        specialists,
-        addSpecialist,
-        updateSpecialist,
-        appointments,
-        updateAppointmentStatus,
-        categories,
-        addCategory,
-        updateCategory,
-        deleteCategory,
-        reorderCategory,
-        gallery,
-        addGalleryItem,
-        removeGalleryItem,
-        campaigns,
-        addCampaign,
-        customers,
-        addCustomer,
-        addCustomersBulk,
-        updateCustomer,
-        deleteCustomer,
-        adminUsers,
-        reviews,
-        addReview,
-        plans,
-        updatePlan,
-        adPackages,
-        updateAdPackage,
-        paymentConfig,
-        updatePaymentConfig,
-        paymentOrders,
-        submitPaymentOrder,
-        reviewPaymentOrder,
-        smsLogs,
-        sendBusinessCustomerSms,
-        adminNotifications,
-        markAdminNotificationRead,
-        clearAllAdminNotifications,
-        adminNotificationSettings,
-        updateAdminNotificationSettings,
-        supportTickets,
-        submitSupportTicket,
-        replySupportTicket,
-        activePlanId,
-        setActivePlanId,
-        onboardingDraft,
-        updateOnboardingDraft,
-        submitBusinessOnboarding,
-        bookingDraft,
-        updateBookingDraft,
-        completeSimulatedBooking,
-        submitBooking,
-        toast,
-        showToast,
-        dismissToast,
-      }}
-    >
-      {children}
-    </PrototypeDataContext.Provider>
-  );
-};
 
 export function usePrototypeData(): PrototypeDataContextValue {
   const ctx = useContext(PrototypeDataContext);

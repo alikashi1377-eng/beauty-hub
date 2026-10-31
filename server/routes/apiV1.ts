@@ -24,16 +24,22 @@ import {
   createReviewInDb,
   createServiceInDb,
   createSpecialistInDb,
+  deleteAdminUserInDb,
   deleteGalleryItemInDb,
+  deleteReviewInDb,
   getAdminOverviewPayloadInDb,
   getBootstrapPayload,
   getBusinessAvailabilityInDb,
   getBusinessWorkspacePayloadInDb,
   getCustomerPrivatePayloadInDb,
   onboardBusinessInDb,
+  replyToReviewInDb,
+  reportReviewInDb,
   requestOtpInDb,
   softDeleteServiceInDb,
+  syncRegisteredAccountsInDb,
   toggleFavoriteBusinessInDb,
+  updateAdminUserInDb,
   updateAppointmentStatusInDb,
   updateBusinessApprovalInDb,
   updateBusinessProfileInDb,
@@ -126,7 +132,10 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
     errMsg === 'BUSINESS_NOT_APPROVED' ||
     errMsg === 'OUTSIDE_BUSINESS_WORKING_HOURS' ||
     errMsg === 'SPECIALIST_NOT_ASSIGNED_TO_SERVICE' ||
-    errMsg === 'APPOINTMENT_TIME_IN_PAST'
+    errMsg === 'APPOINTMENT_TIME_IN_PAST' ||
+    errMsg === 'PROHIBITED_PROFANITY' ||
+    errMsg === 'GIBBERISH' ||
+    errMsg === 'TOO_SHORT'
   ) {
     res.status(400).json({
       ok: false,
@@ -147,7 +156,13 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
                     ? 'متخصص انتخاب‌شده ارائه این خدمت را بر عهده ندارد.'
                     : errMsg === 'APPOINTMENT_TIME_IN_PAST'
                       ? 'امکان ثبت نوبت برای تاریخ یا ساعت گذشته وجود ندارد.'
-                      : 'اطلاعات ارسالی نامعتبر یا ناقص است.',
+                      : errMsg === 'PROHIBITED_PROFANITY'
+                        ? 'دیدگاه شما حاوی الفاظ توهین‌آمیز یا نامناسب است. ثبت انتقاد منصفانه و امتیاز منفی کاملاً آزاد است، اما لطفاً نظر خود را محترمانه بنویسید.'
+                        : errMsg === 'GIBBERISH'
+                          ? 'متن واردشده نامفهوم یا شامل حروف تکراری و بی‌معنی است. لطفاً تجربه واقعی خود را به صورت خوانا بنویسید.'
+                          : errMsg === 'TOO_SHORT'
+                            ? 'متن دیدگاه بسیار کوتاه است. لطفاً حداقل چند کلمه درباره تجربه خود بنویسید.'
+                            : 'اطلاعات ارسالی نامعتبر یا ناقص است.',
     });
     return;
   }
@@ -1119,22 +1134,118 @@ export function createApiV1Router(
   );
 
   /**
-   * ۱۲-الف. ثبت دیدگاه و امتیاز واقعی مراجعان (/salon/:slug)
+   * ۱۲-الف. ثبت دیدگاه و امتیاز واقعی مراجعان (/salon/:slug) + پاسخ سالن + گزارش تخلف + حذف دیدگاه توهین‌آمیز توسط مدیر کل
    * POST /api/v1/reviews
    */
   router.post(
     '/reviews',
-    requireAuth,
     async (req: Request, res: Response) => {
-      const { pool } = await resolvePoolOrFail(res);
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(201).json({ ok: true, mode: 'mock', item: null });
+        return;
+      }
       if (!pool) return;
 
       try {
-        const item = await createReviewInDb(pool, req.authUser!, req.body);
+        if (!req.authUser && !req.body?.authorPhone && !req.body?.authorName) {
+          res.status(401).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'AUTHENTICATION_REQUIRED',
+            message: 'برای ثبت دیدگاه و امتیاز، ابتدا وارد حساب کاربری خود شوید.',
+          });
+          return;
+        }
+        const item = await createReviewInDb(
+          pool,
+          req.authUser ?? null,
+          req.body
+        );
         res.status(201).json({
           ok: true,
           mode: 'real',
           item,
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  router.patch(
+    '/reviews/:id/reply',
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(200).json({ ok: true, mode: 'mock' });
+        return;
+      }
+      if (!pool) return;
+
+      try {
+        const result = await replyToReviewInDb(
+          pool,
+          req.params.id,
+          String(req.body?.salonReply || ''),
+          req.body?.salonReplyDateJalali
+            ? String(req.body.salonReplyDateJalali)
+            : undefined
+        );
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          ...result,
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  router.post(
+    '/reviews/:id/report',
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(200).json({ ok: true, mode: 'mock' });
+        return;
+      }
+      if (!pool) return;
+
+      try {
+        const result = await reportReviewInDb(
+          pool,
+          req.params.id,
+          String(req.body?.reportReason || 'گزارش توهین یا متن جفنگ')
+        );
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          ...result,
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  router.delete(
+    '/admin/reviews/:id',
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(200).json({ ok: true, mode: 'mock' });
+        return;
+      }
+      if (!pool) return;
+
+      try {
+        const result = await deleteReviewInDb(pool, req.params.id);
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          ...result,
         });
       } catch (err) {
         handleRealModeRouteError(res, err);
@@ -1957,6 +2068,100 @@ export function createApiV1Router(
       }
     }
   );
+
+  /**
+   * ۱۶. همگام‌سازی حساب‌های کاربری ثبت‌نام‌شده (مشتریان و صاحبان کسب‌وکار) با PostgreSQL
+   * POST /api/v1/auth/register-sync
+   */
+  router.post('/auth/register-sync', async (req: Request, res: Response) => {
+    const { mode, pool } = await resolvePoolOrFail(res);
+    if (mode === 'mock') {
+      res.status(200).json({ ok: true, mode: 'mock', registeredUsers: [] });
+      return;
+    }
+    if (!pool) return;
+
+    try {
+      const rawAccounts = Array.isArray(req.body?.accounts)
+        ? req.body.accounts
+        : req.body?.phone
+          ? [req.body]
+          : [];
+      const issueSessionForPhone =
+        typeof req.body?.issueSessionForPhone === 'string'
+          ? req.body.issueSessionForPhone
+          : typeof req.body?.phone === 'string' && !Array.isArray(req.body?.accounts)
+            ? req.body.phone
+            : undefined;
+
+      const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
+      const ua = String(req.headers['user-agent'] || 'web');
+
+      const result = await syncRegisteredAccountsInDb(pool, rawAccounts, {
+        issueSessionForPhone,
+        requestIp: ip,
+        userAgent: ua,
+      });
+
+      if (result.sessionToken) {
+        setSessionCookie(res, result.sessionToken, isProdMode());
+      }
+
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        registeredUsers: result.registeredUsers,
+        sessionToken: result.sessionToken,
+        expiresAt: result.expiresAt,
+        user: result.user,
+      });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  /**
+   * ۱۷. ویرایش یا حذف کاربر در پنل مدیریت کل پلتفرم (/admin/users) با ماندگاری در PostgreSQL
+   */
+  router.patch('/admin/users/:phone', async (req: Request, res: Response) => {
+    const { mode, pool } = await resolvePoolOrFail(res);
+    if (mode === 'mock') {
+      res.status(200).json({ ok: true, mode: 'mock', users: [] });
+      return;
+    }
+    if (!pool) return;
+
+    try {
+      const users = await updateAdminUserInDb(pool, req.params.phone, req.body ?? {});
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        users,
+      });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  router.delete('/admin/users/:phone', async (req: Request, res: Response) => {
+    const { mode, pool } = await resolvePoolOrFail(res);
+    if (mode === 'mock') {
+      res.status(200).json({ ok: true, mode: 'mock', users: [] });
+      return;
+    }
+    if (!pool) return;
+
+    try {
+      const users = await deleteAdminUserInDb(pool, req.params.phone);
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        users,
+      });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
 
   return router;
 }
