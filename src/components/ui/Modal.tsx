@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Button } from './Button';
 
@@ -21,15 +21,56 @@ export const Modal: React.FC<ModalProps> = ({
   footer,
   size = 'md',
 }) => {
+  const pushedHistoryRef = useRef<boolean>(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
+    if (!isOpen || typeof window === 'undefined') {
+      if (
+        pushedHistoryRef.current &&
+        typeof window !== 'undefined' &&
+        window.history.state?.timetoOverlay === 'modal'
+      ) {
+        pushedHistoryRef.current = false;
+        try {
+          window.history.back();
+        } catch {
+          // ignore
+        }
+      } else {
+        pushedHistoryRef.current = false;
+      }
+      return;
+    }
+
+    try {
+      window.history.pushState({ timetoOverlay: 'modal' }, '');
+      pushedHistoryRef.current = true;
+    } catch {
+      // ignore
+    }
+
+    const handlePopState = () => {
+      if (pushedHistoryRef.current) {
+        pushedHistoryRef.current = false;
+        onCloseRef.current();
       }
     };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCloseRef.current();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -39,6 +80,11 @@ export const Modal: React.FC<ModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div
         className={`w-full ${
@@ -54,7 +100,9 @@ export const Modal: React.FC<ModalProps> = ({
               {title}
             </h2>
             {description ? (
-              <p className="text-xs font-normal text-[#6B6480] mt-0.5 line-clamp-1">{description}</p>
+              <p className="text-xs font-normal text-[#6B6480] mt-0.5 line-clamp-1">
+                {description}
+              </p>
             ) : null}
           </div>
           <Button

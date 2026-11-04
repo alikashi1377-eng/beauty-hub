@@ -338,6 +338,7 @@ export const BusinessStoriesBar: React.FC = () => {
   const [activeSlideIndex, setActiveSlideIndex] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [progressPct, setProgressPct] = useState<number>(0);
+  const pushedHistoryRef = React.useRef<boolean>(false);
 
   const activeStory =
     activeStoryIndex !== null
@@ -349,17 +350,59 @@ export const BusinessStoriesBar: React.FC = () => {
     const target = BUSINESS_DASHBOARD_STORIES[index];
     if (!target) return;
     setSeenIds((prev) => markStoryIdAsSeen(prev, target.id));
+    if (activeStoryIndex === null && typeof window !== 'undefined') {
+      try {
+        window.history.pushState({ timetoOverlay: 'story' }, '');
+        pushedHistoryRef.current = true;
+      } catch {
+        // ignore
+      }
+    }
     setActiveStoryIndex(index);
     setActiveSlideIndex(0);
     setProgressPct(0);
     setIsPaused(false);
   };
 
-  const closeViewer = () => {
+  const closeViewer = (fromPopState = false) => {
     setActiveStoryIndex(null);
     setActiveSlideIndex(0);
     setProgressPct(0);
+    if (!fromPopState && pushedHistoryRef.current && typeof window !== 'undefined') {
+      pushedHistoryRef.current = false;
+      try {
+        if (window.history.state?.timetoOverlay === 'story') {
+          window.history.back();
+        }
+      } catch {
+        // ignore
+      }
+    } else {
+      pushedHistoryRef.current = false;
+    }
   };
+
+  // مدیریت دکمه بازگشت موبایل/مرورگر (Back) و دکمه Escape برای بستن استوری بدون خروج از اپ
+  useEffect(() => {
+    if (activeStoryIndex === null) return;
+    const handlePopState = () => {
+      pushedHistoryRef.current = false;
+      setActiveStoryIndex(null);
+      setActiveSlideIndex(0);
+      setProgressPct(0);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeViewer(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeStoryIndex]);
 
   const stepStory = (direction: 'NEXT' | 'PREV') => {
     if (activeStoryIndex === null) return;
@@ -370,7 +413,7 @@ export const BusinessStoriesBar: React.FC = () => {
       direction,
     });
     if (res.shouldClose) {
-      closeViewer();
+      closeViewer(false);
       return;
     }
     const nextStory = BUSINESS_DASHBOARD_STORIES[res.storyIndex];
@@ -403,8 +446,15 @@ export const BusinessStoriesBar: React.FC = () => {
   }, [progressPct, activeStoryIndex]);
 
   const handleStoryActionClick = (href: string) => {
-    closeViewer();
-    navigate(href);
+    const hadHistoryEntry =
+      pushedHistoryRef.current &&
+      typeof window !== 'undefined' &&
+      window.history.state?.timetoOverlay === 'story';
+    pushedHistoryRef.current = false;
+    setActiveStoryIndex(null);
+    setActiveSlideIndex(0);
+    setProgressPct(0);
+    navigate(href, { replace: hadHistoryEntry });
   };
 
   return (
@@ -482,7 +532,7 @@ export const BusinessStoriesBar: React.FC = () => {
           aria-modal="true"
           aria-label={activeSlide.headline}
           className="fixed inset-0 z-50 bg-[#02081D]/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
-          onClick={closeViewer}
+          onClick={() => closeViewer(false)}
         >
           <div
             className="relative w-full max-w-[400px] aspect-[9/16] max-h-[90vh] rounded-[32px] overflow-hidden border border-white/20 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.85)] flex flex-col justify-between select-none"
@@ -559,7 +609,7 @@ export const BusinessStoriesBar: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={closeViewer}
+                    onClick={() => closeViewer(false)}
                     aria-label="بستن استوری"
                     className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white cursor-pointer"
                   >

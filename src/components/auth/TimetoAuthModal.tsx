@@ -1444,6 +1444,56 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 export const TimetoAuthModal: React.FC = () => {
   const { isAuthModalOpen, authModalOptions, closeAuthModal } =
     usePrototypeData();
+  const pushedHistoryRef = useRef<boolean>(false);
+  const closeRef = useRef(closeAuthModal);
+  closeRef.current = closeAuthModal;
+
+  useEffect(() => {
+    if (!isAuthModalOpen || typeof window === 'undefined') {
+      if (
+        pushedHistoryRef.current &&
+        typeof window !== 'undefined' &&
+        window.history.state?.timetoOverlay === 'auth-modal'
+      ) {
+        pushedHistoryRef.current = false;
+        try {
+          window.history.back();
+        } catch {
+          // ignore
+        }
+      } else {
+        pushedHistoryRef.current = false;
+      }
+      return;
+    }
+
+    try {
+      window.history.pushState({ timetoOverlay: 'auth-modal' }, '');
+      pushedHistoryRef.current = true;
+    } catch {
+      // ignore
+    }
+
+    const handlePopState = () => {
+      if (pushedHistoryRef.current) {
+        pushedHistoryRef.current = false;
+        closeRef.current();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeRef.current();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAuthModalOpen]);
 
   if (!isAuthModalOpen) return null;
 

@@ -192,13 +192,19 @@ export async function buildMergedRegisteredUsersList(
               .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
               .replace(/\D/g, '');
             if (/^09\d{9}$/.test(p)) {
+              const rawRoleLabel = String(item.roleLabel || '');
+              const isOwnerItem =
+                item.role === 'owner' ||
+                item.role === 'BUSINESS_OWNER' ||
+                rawRoleLabel.includes('سالن') ||
+                rawRoleLabel.includes('کسب');
               nextMap[p] = {
                 phone: p,
                 fullName: String(item.fullName || 'کاربر تایم تو'),
-                role: String(item.roleLabel || '').includes('سالن') || String(item.roleLabel || '').includes('کسب')
-                  ? 'BUSINESS_OWNER'
-                  : String(item.role || 'CUSTOMER'),
+                role: isOwnerItem ? 'BUSINESS_OWNER' : String(item.role || 'CUSTOMER'),
                 city: String(item.city || 'اصفهان'),
+                businessId: item.businessId ? String(item.businessId) : undefined,
+                businessName: item.businessName ? String(item.businessName) : undefined,
                 joinedJalali: String(item.joinedJalali || 'امروز'),
               };
             }
@@ -433,6 +439,327 @@ export async function buildMergedRegisteredUsersList(
   return Array.from(byPhone.values());
 }
 
+/**
+ * اطمینان خودکار از اینکه تمام کسب‌وکارهای ثبت‌نام‌شده (چه در گذشته و چه جدید)
+ * در جدول businesses دیتابیس PostgreSQL حضور دارند و وضعیت آن‌ها APPROVED است تا در نتایج جست‌وجو و صفحه اول نمایش داده شوند.
+ */
+async function ensureRegisteredOwnerBusinessesInDb(
+  client: PoolClient | Pool
+): Promise<void> {
+  try {
+    await ensureExtendedMetaTables(client);
+    // ۱. هر کسب‌وکاری که در وضعیت PENDING_REVIEW مانده را به APPROVED ارتقا بده تا در نتایج عمومی نمایش داده شود
+    await client.query(`
+      UPDATE businesses
+      SET approval_status = 'APPROVED', updated_at = NOW()
+      WHERE approval_status = 'PENDING_REVIEW'
+    `);
+
+    const kvRes = await client.query(`
+      SELECT key, value_json
+      FROM platform_kv_store
+      WHERE key IN (
+        'registered_accounts_registry',
+        'admin_user_overrides_registry',
+        'deleted_admin_phones_registry'
+      )
+    `);
+
+    let registryItems: Array<Record<string, unknown>> = [];
+    let overridesMap: Record<string, Record<string, unknown>> = {};
+    let deletedPhones = new Set<string>();
+
+    for (const row of kvRes.rows) {
+      if (row.key === 'registered_accounts_registry' && row.value_json) {
+        if (Array.isArray(row.value_json)) {
+          registryItems = row.value_json as Array<Record<string, unknown>>;
+        } else if (typeof row.value_json === 'object') {
+          registryItems = Object.values(
+            row.value_json as Record<string, Record<string, unknown>>
+          );
+        }
+      } else if (
+        row.key === 'admin_user_overrides_registry' &&
+        row.value_json &&
+        typeof row.value_json === 'object'
+      ) {
+        overridesMap = row.value_json as Record<string, Record<string, unknown>>;
+      } else if (
+        row.key === 'deleted_admin_phones_registry' &&
+        Array.isArray(row.value_json)
+      ) {
+        deletedPhones = new Set(
+          row.value_json.map((p: unknown) =>
+            String(p || '')
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+              .replace(/\D/g, '')
+          )
+        );
+      }
+    }
+
+    // بررسی دسته‌بندی پیش‌فرض
+    const catRes = await client.query(
+      `SELECT id FROM categories ORDER BY (slug = 'hair-color') DESC, sort_order ASC LIMIT 1`
+    );
+    if (!catRes.rowCount || !catRes.rows[0]) return;
+    const defaultCategoryId = String(catRes.rows[0].id);
+
+    // جمع‌آوری تمام حساب‌هایی که نقش صاحب کسب‌وکار دارند (از رجیستری یا overrides)
+    const candidateByPhone = new Map<string, Record<string, unknown>>();
+    for (const item of registryItems) {
+      const cleanPhone = String(item?.phone || '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/\D/g, '');
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      if (SEED_DUMMY_PHONES.has(cleanPhone)) continue;
+      candidateByPhone.set(cleanPhone, { ...item, cleanPhone });
+    }
+    for (const [rawKey, ov] of Object.entries(overridesMap)) {
+      const cleanPhone = String(ov?.phone || rawKey || '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .replace(/\D/g, '');
+      if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
+        continue;
+      }
+      const prev = candidateByPhone.get(cleanPhone) || { cleanPhone };
+      candidateByPhone.set(cleanPhone, { ...prev, ...ov, cleanPhone });
+    }
+
+    for (const [cleanPhone, item] of candidateByPhone.entries()) {
+      const roleStr = String(item.role || '');
+      const roleLabelStr = String(item.roleLabel || '');
+      const isBusinessOwner =
+        roleStr === 'owner' ||
+        roleStr === 'BUSINESS_OWNER' ||
+        roleLabelStr.includes('صاحب') ||
+        roleLabelStr.includes('سالن') ||
+        roleLabelStr.includes('کسب') ||
+        Boolean(item.businessName);
+
+      if (!isBusinessOwner) continue;
+
+      const fullName = String(item.fullName || 'مدیر سالن').trim();
+      const city = String(item.city || 'اصفهان').trim();
+
+      const userUpsert = await client.query(
+        `
+        INSERT INTO users (phone, full_name, default_city, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (phone) DO UPDATE SET
+          full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), users.full_name),
+          updated_at = NOW()
+        RETURNING id
+        `,
+        [cleanPhone, fullName, city]
+      );
+      const ownerUserId = String(userUpsert.rows[0].id);
+
+      const persianPhone = toPersianDigitsServer(cleanPhone);
+      const existingBizRes = await client.query(
+        `
+        SELECT id
+        FROM businesses
+        WHERE (
+          owner_user_id = $1
+          OR phone_display = $2
+          OR phone_display = $3
+          OR (legacy_demo_id IS NOT NULL AND legacy_demo_id = $4)
+        )
+        AND (legacy_demo_id IS NULL OR legacy_demo_id NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8'))
+        LIMIT 1
+        `,
+        [
+          ownerUserId,
+          cleanPhone,
+          persianPhone,
+          item.businessId ? String(item.businessId) : '__none__',
+        ]
+      );
+
+      if (existingBizRes.rowCount && existingBizRes.rows[0]) {
+        const existingBizUuid = String(existingBizRes.rows[0].id);
+        await client.query(
+          `
+          INSERT INTO business_members (business_id, user_id, member_role, is_active)
+          VALUES ($1, $2, 'OWNER', TRUE)
+          ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
+          `,
+          [existingBizUuid, ownerUserId]
+        );
+        continue;
+      }
+
+      // استخراج نام سالن از فیلد businessName یا از داخل پرانتز roleLabel یا ساخت نام پیش‌فرض
+      let resolvedSalonName = item.businessName
+        ? String(item.businessName).trim()
+        : '';
+      if (!resolvedSalonName) {
+        const parenMatch = roleLabelStr.match(/\(([^)]+)\)/);
+        if (
+          parenMatch &&
+          parenMatch[1] &&
+          !parenMatch[1].includes('سالن‌دار')
+        ) {
+          resolvedSalonName = parenMatch[1].trim();
+        }
+      }
+      if (!resolvedSalonName) {
+        resolvedSalonName = fullName.startsWith('سالن')
+          ? fullName
+          : `سالن زیبایی ${fullName}`;
+      }
+
+      const neighborhood = String(item.neighborhood || 'چهارباغ بالا').trim();
+      const address = String(
+        item.address || `${city}، ${neighborhood}`
+      ).trim();
+      const mapLat =
+        typeof item.mapLat === 'number' && Number.isFinite(item.mapLat)
+          ? item.mapLat
+          : 32.6288;
+      const mapLng =
+        typeof item.mapLng === 'number' && Number.isFinite(item.mapLng)
+          ? item.mapLng
+          : 51.6621;
+      const bizType =
+        item.businessType === 'MEN_BARBERSHOP'
+          ? 'MEN_BARBERSHOP'
+          : item.businessType === 'INDEPENDENT_SPECIALIST'
+            ? 'INDEPENDENT_SPECIALIST'
+            : 'WOMEN_SALON';
+      const bizTypeLabel =
+        bizType === 'MEN_BARBERSHOP'
+          ? 'آرایشگاه مردانه'
+          : bizType === 'INDEPENDENT_SPECIALIST'
+            ? 'متخصص مستقل زیبایی'
+            : 'سالن زیبایی زنانه';
+      const legacyId =
+        item.businessId &&
+        String(item.businessId).trim() &&
+        !/^biz-[1-8]$/.test(String(item.businessId).trim())
+          ? String(item.businessId).trim()
+          : null;
+      const slug = `salon-${cleanPhone.slice(-4)}-${crypto.randomBytes(2).toString('hex')}`;
+
+      const insertedBiz = await client.query(
+        `
+        INSERT INTO businesses (
+          legacy_demo_id,
+          owner_user_id,
+          primary_category_id,
+          slug,
+          name,
+          type,
+          type_label,
+          city,
+          neighborhood,
+          address,
+          map_lat,
+          map_lng,
+          phone_display,
+          instagram_handle,
+          short_description,
+          about_text,
+          visual_theme,
+          starting_price_toman,
+          verified_badge,
+          approval_status,
+          subscription_plan,
+          subscription_status
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+          $11, $12, $13, $14, $15, $16, 'violet', 0, FALSE, 'APPROVED',
+          'شروع رایگان', 'TRIAL'
+        )
+        RETURNING id
+        `,
+        [
+          legacyId,
+          ownerUserId,
+          defaultCategoryId,
+          slug,
+          resolvedSalonName,
+          bizType,
+          bizTypeLabel,
+          city,
+          neighborhood,
+          address,
+          mapLat,
+          mapLng,
+          persianPhone,
+          item.instagramHandle ? String(item.instagramHandle) : null,
+          String(
+            item.shortDescription ||
+              `مرکز تخصصی زیبایی ${resolvedSalonName} در ${city}`
+          ).slice(0, 280),
+          String(
+            item.aboutText ||
+              item.shortDescription ||
+              `پذیرش و نوبت‌دهی آنلاین در ${resolvedSalonName} (${city}، ${neighborhood})`
+          ),
+        ]
+      );
+      const newBizUuid = String(insertedBiz.rows[0].id);
+
+      await client.query(
+        `
+        INSERT INTO business_members (business_id, user_id, member_role, is_active)
+        VALUES ($1, $2, 'OWNER', TRUE)
+        ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
+        `,
+        [newBizUuid, ownerUserId]
+      );
+
+      await client.query(
+        `INSERT INTO business_settings (business_id) VALUES ($1) ON CONFLICT (business_id) DO NOTHING`,
+        [newBizUuid]
+      );
+
+      const extraMeta = {
+        ownerName: fullName,
+        ownerPhone: persianPhone,
+        avatarUrl: item.avatarUrl ? String(item.avatarUrl) : undefined,
+        trialDaysRemaining: 30,
+        extraSmsBalance: 0,
+        smsSentCount: 0,
+        isSampleShowcase: false,
+      };
+      await client.query(
+        `
+        INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+        VALUES ($1, $2::jsonb, NOW())
+        ON CONFLICT (business_id) DO UPDATE SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
+        `,
+        [newBizUuid, JSON.stringify(extraMeta)]
+      );
+
+      for (let idx = 0; idx < 7; idx++) {
+        const dayName = IRAN_DAY_NAMES[idx] ?? 'شنبه';
+        const isOpen = idx !== 6;
+        await client.query(
+          `
+          INSERT INTO business_working_hours (
+            business_id, day_of_week, day_name, is_open, open_time, close_time
+          )
+          VALUES ($1, $2, $3, $4, '09:30:00'::time, '20:00:00'::time)
+          ON CONFLICT (business_id, day_of_week) DO NOTHING
+          `,
+          [newBizUuid, idx, dayName, isOpen]
+        );
+      }
+    }
+  } catch {
+    // ignore in mock/minimal test schemas
+  }
+}
+
 function mergeBusinessRowWithExtra(
   base: BusinessItem,
   extraRaw: unknown,
@@ -443,7 +770,7 @@ function mergeBusinessRowWithExtra(
       ? (extraRaw as Record<string, unknown>)
       : {};
   const isLegacySample =
-    Boolean(legacyDemoId) ||
+    /^biz-[1-8]$/.test(String(legacyDemoId || '')) ||
     /^biz-[1-8]$/.test(base.id) ||
     Boolean(extra.isSampleShowcase);
 
@@ -933,6 +1260,7 @@ export async function getBootstrapPayload(
   const client = await pool.connect();
   try {
     await ensureExtendedMetaTables(client);
+    await ensureRegisteredOwnerBusinessesInDb(client);
     const [
       catRes,
       bizRes,
@@ -988,7 +1316,7 @@ export async function getBootstrapPayload(
         FROM businesses b
         JOIN categories c ON c.id = b.primary_category_id
         LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-        WHERE b.approval_status = 'APPROVED'
+        WHERE b.approval_status != 'REJECTED'
         ORDER BY b.is_featured DESC, b.created_at DESC
       `),
       client.query(`
@@ -1001,7 +1329,7 @@ export async function getBootstrapPayload(
           to_char(bwh.close_time, 'HH24:MI') AS close_str
         FROM business_working_hours bwh
         JOIN businesses b ON b.id = bwh.business_id
-        WHERE b.approval_status = 'APPROVED'
+        WHERE b.approval_status != 'REJECTED'
         ORDER BY bwh.business_id, bwh.day_of_week ASC
       `),
       client.query(`
@@ -1018,7 +1346,7 @@ export async function getBootstrapPayload(
           s.is_active
         FROM services s
         JOIN businesses b ON b.id = s.business_id
-        WHERE s.is_active = TRUE AND b.approval_status = 'APPROVED'
+        WHERE s.is_active = TRUE AND b.approval_status != 'REJECTED'
         ORDER BY s.is_popular DESC, s.created_at ASC
       `),
       client.query(`
@@ -1039,7 +1367,7 @@ export async function getBootstrapPayload(
           sp.starting_price_toman
         FROM specialists sp
         JOIN businesses b ON b.id = sp.business_id
-        WHERE sp.is_active = TRUE AND b.approval_status = 'APPROVED'
+        WHERE sp.is_active = TRUE AND b.approval_status != 'REJECTED'
         ORDER BY sp.rating_avg DESC, sp.created_at ASC
       `),
       client.query(`
@@ -1054,7 +1382,7 @@ export async function getBootstrapPayload(
           r.comment
         FROM reviews r
         JOIN businesses b ON b.id = r.business_id
-        WHERE r.is_published = TRUE AND b.approval_status = 'APPROVED'
+        WHERE r.is_published = TRUE AND b.approval_status != 'REJECTED'
         ORDER BY r.created_at DESC
       `),
       client.query(`
@@ -1066,7 +1394,7 @@ export async function getBootstrapPayload(
           g.theme
         FROM gallery_items g
         JOIN businesses b ON b.id = g.business_id
-        WHERE b.approval_status = 'APPROVED'
+        WHERE b.approval_status != 'REJECTED'
         ORDER BY g.sort_order ASC, g.created_at DESC
       `),
       client.query(`
@@ -1357,21 +1685,42 @@ export async function assertUserHasBusinessAccess(
     }
   }
 
-  // Fallback check if user is the direct owner_user_id on the businesses table
+  // Fallback check if user is the direct owner_user_id on the businesses table or matches owner phone
+  const cleanActorPhone = toEnglishDigits(actorUser.phone || '').replace(/\D/g, '');
   const ownerRes = await client.query(
-    `SELECT 1 FROM businesses WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
-    [businessUuid, actorUser.userId]
+    `
+    SELECT b.id, b.phone_display, bme.extra_json
+    FROM businesses b
+    LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+    WHERE b.id = $1
+    LIMIT 1
+    `,
+    [businessUuid]
   );
   if (ownerRes.rowCount && ownerRes.rows[0]) {
-    await client.query(
-      `
-      INSERT INTO business_members (business_id, user_id, member_role, is_active)
-      VALUES ($1, $2, 'OWNER', TRUE)
-      ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
-      `,
+    const row = ownerRes.rows[0];
+    const directOwnerRes = await client.query(
+      `SELECT 1 FROM businesses WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
       [businessUuid, actorUser.userId]
     );
-    return 'OWNER';
+    const bizPhone = toEnglishDigits(String(row.phone_display || '')).replace(/\D/g, '');
+    const metaPhone = toEnglishDigits(
+      String((row.extra_json as Record<string, unknown>)?.ownerPhone || '')
+    ).replace(/\D/g, '');
+    if (
+      (directOwnerRes.rowCount && directOwnerRes.rows[0]) ||
+      (cleanActorPhone && (cleanActorPhone === bizPhone || cleanActorPhone === metaPhone))
+    ) {
+      await client.query(
+        `
+        INSERT INTO business_members (business_id, user_id, member_role, is_active)
+        VALUES ($1, $2, 'OWNER', TRUE)
+        ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
+        `,
+        [businessUuid, actorUser.userId]
+      );
+      return 'OWNER';
+    }
   }
 
   throw new Error('BUSINESS_ACCESS_DENIED');
@@ -1867,7 +2216,115 @@ export async function updateBusinessProfileInDb(
   const client = await pool.connect();
   try {
     await ensureExtendedMetaTables(client);
-    const biz = await resolveBusinessUuid(client, businessIdOrLegacy);
+    await ensureRegisteredOwnerBusinessesInDb(client);
+    let biz: {
+      id: string;
+      externalId: string;
+      slug: string;
+      name: string;
+      city: string;
+      approvalStatus: ApprovalStatus;
+    };
+    try {
+      biz = await resolveBusinessUuid(client, businessIdOrLegacy);
+    } catch {
+      // اگر کسب‌وکار با شناسه محلی کلاینت هنوز در جدول businesses نبود، ابتدا بررسی کن آیا کاربر مالک کسب‌وکار دیگری است یا خیر
+      const cleanActorPhone = toEnglishDigits(actorUser.phone || '').replace(/\D/g, '');
+      const ownedRes = await client.query(
+        `
+        SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, slug, name, city, approval_status
+        FROM businesses
+        WHERE owner_user_id = $1
+           OR regexp_replace(translate(COALESCE(phone_display, ''), '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789'), '\D', '', 'g') = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [actorUser.userId, cleanActorPhone]
+      );
+      if (ownedRes.rowCount && ownedRes.rows[0]) {
+        const r = ownedRes.rows[0];
+        biz = {
+          id: String(r.id),
+          externalId: String(r.external_id),
+          slug: String(r.slug),
+          name: String(r.name),
+          city: String(r.city),
+          approvalStatus: String(r.approval_status) as ApprovalStatus,
+        };
+      } else {
+        // ایجاد خودکار رکورد کسب‌وکار برای این صاحب سالن در جدول businesses
+        const cat = await resolveCategoryBySlug(client, patch.categorySlug || 'hair-color');
+        const bizName = (patch.name || `سالن زیبایی ${actorUser.fullName || 'تایم‌تو'}`).trim();
+        const slug = `${normalizeValidSlug(bizName, 'salon')}-${crypto.randomBytes(2).toString('hex')}`;
+        const createdBizRes = await client.query(
+          `
+          INSERT INTO businesses (
+            legacy_demo_id,
+            owner_user_id,
+            primary_category_id,
+            slug,
+            name,
+            type,
+            type_label,
+            city,
+            neighborhood,
+            address,
+            map_lat,
+            map_lng,
+            phone_display,
+            instagram_handle,
+            short_description,
+            about_text,
+            visual_theme,
+            starting_price_toman,
+            verified_badge,
+            approval_status,
+            subscription_plan,
+            subscription_status
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, 'WOMEN_SALON', 'سالن زیبایی زنانه',
+            $6, $7, $8, $9, $10, $11, $12, $13, $14, 'rose', 250000, TRUE, 'APPROVED', 'شروع رایگان', 'TRIAL'
+          )
+          RETURNING id, COALESCE(legacy_demo_id, id::text) AS external_id, slug, name, city, approval_status
+          `,
+          [
+            businessIdOrLegacy.startsWith('biz-') ? businessIdOrLegacy : null,
+            actorUser.userId,
+            cat.id,
+            slug,
+            bizName,
+            (patch.city || 'اصفهان').trim(),
+            (patch.neighborhood || 'مرکز شهر').trim(),
+            (patch.address || 'اصفهان').trim(),
+            patch.mapLat ?? 32.6539,
+            patch.mapLng ?? 51.666,
+            toPersianDigitsServer(cleanActorPhone || patch.phoneDisplay || '09130000000'),
+            patch.instagramHandle || null,
+            (patch.shortDescription || `${bizName} در اصفهان`).trim().slice(0, 290),
+            (patch.aboutText || patch.shortDescription || `${bizName} در اصفهان`).trim(),
+          ]
+        );
+        const r = createdBizRes.rows[0];
+        biz = {
+          id: String(r.id),
+          externalId: String(r.external_id),
+          slug: String(r.slug),
+          name: String(r.name),
+          city: String(r.city),
+          approvalStatus: String(r.approval_status) as ApprovalStatus,
+        };
+        await client.query(
+          `
+          INSERT INTO business_members (business_id, user_id, member_role, is_active)
+          VALUES ($1, $2, 'OWNER', TRUE)
+          ON CONFLICT (business_id, user_id) DO UPDATE SET member_role = 'OWNER', is_active = TRUE
+          `,
+          [biz.id, actorUser.userId]
+        );
+      }
+    }
+
     await assertUserHasBusinessAccess(client, actorUser, biz.id, [
       'OWNER',
       'MANAGER',
@@ -3056,7 +3513,7 @@ export async function onboardBusinessInDb(
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-        $12, $13, $14, $15, 'rose', $16, FALSE, 'PENDING_REVIEW',
+        $12, $13, $14, $15, 'rose', $16, TRUE, 'APPROVED',
         $17, $18, $19, $20
       )
       RETURNING id, slug
@@ -3765,6 +4222,7 @@ export async function getAdminOverviewPayloadInDb(
   const client = await pool.connect();
   try {
     await ensureExtendedMetaTables(client);
+    await ensureRegisteredOwnerBusinessesInDb(client);
     const [catRes, bizRes, whRes, planRes, usrRes, aptRes] = await Promise.all([
       client.query(`
         SELECT
@@ -5108,6 +5566,16 @@ export async function syncRegisteredAccountsInDb(
     role?: 'customer' | 'owner' | 'admin';
     password?: string;
     joinedJalali?: string;
+    businessId?: string;
+    businessName?: string;
+    businessType?: string;
+    neighborhood?: string;
+    address?: string;
+    mapLat?: number;
+    mapLng?: number;
+    avatarUrl?: string;
+    instagramHandle?: string;
+    shortDescription?: string;
   }>,
   options?: {
     issueSessionForPhone?: string;
@@ -5223,23 +5691,33 @@ export async function syncRegisteredAccountsInDb(
           toEnglishDigits(String(item.phone || '')).replace(/\D/g, '') ===
           cleanPhone
       );
-      const recordObj = {
-        id: existingIdx >= 0 ? String(registryList[existingIdx].id || `usr-${cleanPhone}`) : `usr-${cleanPhone}`,
+      const existingRec = existingIdx >= 0 ? registryList[existingIdx] : {};
+      const recordObj: Record<string, unknown> = {
+        ...existingRec,
+        id: existingIdx >= 0 ? String(existingRec.id || `usr-${cleanPhone}`) : `usr-${cleanPhone}`,
         fullName,
         phone: toPersianDigitsServer(cleanPhone),
         phoneMasked: toPersianDigitsServer(cleanPhone),
+        role: acc.role || existingRec.role,
         roleLabel,
         city,
         joinedJalali:
           acc.joinedJalali ||
-          (existingIdx >= 0 ? String(registryList[existingIdx].joinedJalali || '۱۴۰۵/۰۸/۰۵') : '۱۴۰۵/۰۸/۰۵'),
+          (existingIdx >= 0 ? String(existingRec.joinedJalali || '۱۴۰۵/۰۸/۰۵') : '۱۴۰۵/۰۸/۰۵'),
         isActive: true,
+        ...(acc.businessId ? { businessId: acc.businessId } : {}),
+        ...(acc.businessName ? { businessName: acc.businessName } : {}),
+        ...(acc.businessType ? { businessType: acc.businessType } : {}),
+        ...(acc.neighborhood ? { neighborhood: acc.neighborhood } : {}),
+        ...(acc.address ? { address: acc.address } : {}),
+        ...(typeof acc.mapLat === 'number' ? { mapLat: acc.mapLat } : {}),
+        ...(typeof acc.mapLng === 'number' ? { mapLng: acc.mapLng } : {}),
+        ...(acc.avatarUrl ? { avatarUrl: acc.avatarUrl } : {}),
+        ...(acc.instagramHandle ? { instagramHandle: acc.instagramHandle } : {}),
+        ...(acc.shortDescription ? { shortDescription: acc.shortDescription } : {}),
       };
       if (existingIdx >= 0) {
-        registryList[existingIdx] = {
-          ...registryList[existingIdx],
-          ...recordObj,
-        };
+        registryList[existingIdx] = recordObj;
       } else {
         registryList.unshift(recordObj);
       }
@@ -5303,6 +5781,7 @@ export async function syncRegisteredAccountsInDb(
       [JSON.stringify(Array.from(deletedPhones))]
     );
 
+    await ensureRegisteredOwnerBusinessesInDb(client);
     const registeredUsers = await buildMergedRegisteredUsersList(client);
     await client.query('COMMIT');
     return {

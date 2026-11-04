@@ -2871,8 +2871,8 @@ export const BusinessProfileEditPage: React.FC = () => {
     currentBiz?.instagramHandle ?? ''
   );
   const [address, setAddress] = useState(currentBiz?.address ?? '');
-  const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 32.6362);
-  const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.665);
+  const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 32.6288);
+  const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.6621);
   const [shortDesc, setShortDesc] = useState(
     currentBiz?.shortDescription ?? ''
   );
@@ -2887,6 +2887,23 @@ export const BusinessProfileEditPage: React.FC = () => {
     currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
   );
   const [savedNotice, setSavedNotice] = useState(false);
+
+  useEffect(() => {
+    if (!currentBiz) return;
+    setName(currentBiz.name ?? '');
+    setAvatarUrl(currentBiz.avatarUrl ?? '');
+    setInstagramHandle(currentBiz.instagramHandle ?? '');
+    setAddress(currentBiz.address ?? '');
+    setMapLat(currentBiz.mapLat ?? 32.6288);
+    setMapLng(currentBiz.mapLng ?? 51.6621);
+    setShortDesc(currentBiz.shortDescription ?? '');
+    setAboutText(currentBiz.aboutText ?? '');
+    setBankCardNumber(currentBiz.bankCardNumber ?? '');
+    setBankShebaNumber(currentBiz.bankShebaNumber ?? '');
+    setBankAccountHolder(
+      currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
+    );
+  }, [currentBiz?.id]);
 
   if (!currentBiz) {
     return (
@@ -2994,9 +3011,22 @@ export const BusinessProfileEditPage: React.FC = () => {
               onSelectLocation={(coords) => {
                 setMapLat(coords.lat);
                 setMapLng(coords.lng);
+                const nextAddress = coords.suggestedAddress || address;
                 if (coords.suggestedAddress) {
                   setAddress(coords.suggestedAddress);
                 }
+                updateBusinessProfile(currentBiz.id, {
+                  mapLat: coords.lat,
+                  mapLng: coords.lng,
+                  address: nextAddress,
+                  neighborhood: coords.neighborhood || currentBiz.neighborhood,
+                });
+                updateOnboardingDraft({
+                  mapLat: coords.lat,
+                  mapLng: coords.lng,
+                  address: nextAddress,
+                  neighborhood: coords.neighborhood || currentBiz.neighborhood,
+                });
               }}
             />
 

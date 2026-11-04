@@ -452,22 +452,38 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         if (excludedSampleIds.has(b.id)) continue;
         const isSample =
           Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
-        const merged = overrides[b.id]
+        const rawMerged = overrides[b.id]
           ? { ...b, ...overrides[b.id], isSampleShowcase: isSample }
           : { ...b, isSampleShowcase: isSample };
+        const merged: BusinessItem = {
+          ...rawMerged,
+          approvalStatus:
+            rawMerged.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+        };
         byIdOrSlug.set(b.id, merged);
       }
 
       // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
       for (const lb of localOnbList) {
         if (excludedSampleIds.has(lb.id)) continue;
-        const alreadyExists = Array.from(byIdOrSlug.values()).some(
-          (x) => x.id === lb.id || x.slug === lb.slug
-        );
+        const lbCleanPhone = (lb.ownerPhone || lb.phoneDisplay || '').replace(/\D/g, '');
+        const alreadyExists = Array.from(byIdOrSlug.values()).some((x) => {
+          const xCleanPhone = (x.ownerPhone || x.phoneDisplay || '').replace(/\D/g, '');
+          return (
+            x.id === lb.id ||
+            x.slug === lb.slug ||
+            (lbCleanPhone.length >= 10 && xCleanPhone === lbCleanPhone && !x.isSampleShowcase)
+          );
+        });
         if (!alreadyExists) {
-          const mergedLb = overrides[lb.id]
+          const rawMergedLb = overrides[lb.id]
             ? { ...lb, ...overrides[lb.id] }
             : lb;
+          const mergedLb: BusinessItem = {
+            ...rawMergedLb,
+            approvalStatus:
+              rawMergedLb.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
+          };
           byIdOrSlug.set(lb.id, mergedLb);
         }
       }
@@ -791,8 +807,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       startingPriceToman: 0,
       shortDescription: '',
       aboutText: '',
-      verifiedBadge: false,
-      approvalStatus: 'PENDING_REVIEW',
+      verifiedBadge: true,
+      approvalStatus: 'APPROVED',
       subscriptionPlan: 'شروع رایگان',
       subscriptionStatus: SubscriptionStatus.Trial,
       trialDaysRemaining: 30,
@@ -1008,15 +1024,61 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         // همگام‌سازی خودکار حساب‌های ثبت‌نام‌شده قدیمی و جدید مرورگر با دیتابیس PostgreSQL
         try {
           const memoryAccounts = Object.values(getSavedMemoryAccounts());
-          const syncPayloadAccounts = memoryAccounts.map((acc) => ({
-            phone: acc.phone,
-            fullName: acc.fullName,
-            city: acc.city || 'اصفهان',
-            role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
-              | 'owner'
-              | 'customer',
-            password: acc.password,
-          }));
+          const localOnbList: BusinessItem[] = (() => {
+            try {
+              return JSON.parse(
+                window.localStorage.getItem(
+                  'timeto_local_onboarded_businesses_v1'
+                ) || '[]'
+              );
+            } catch {
+              return [];
+            }
+          })();
+          const overrides: Record<string, Partial<BusinessItem>> = (() => {
+            try {
+              return JSON.parse(
+                window.localStorage.getItem('timeto_biz_overrides_v2') || '{}'
+              );
+            } catch {
+              return {};
+            }
+          })();
+
+          const syncPayloadAccounts = memoryAccounts.map((acc) => {
+            const matchedBiz = localOnbList.find(
+              (b) =>
+                b.id === acc.businessId ||
+                b.ownerPhone === acc.phone ||
+                b.phoneDisplay === acc.phone
+            );
+            const ov =
+              (acc.businessId ? overrides[acc.businessId] : undefined) ||
+              (matchedBiz ? overrides[matchedBiz.id] : undefined) ||
+              {};
+            return {
+              phone: acc.phone,
+              fullName: acc.fullName,
+              city: ov.city || matchedBiz?.city || acc.city || 'اصفهان',
+              role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
+                | 'owner'
+                | 'customer',
+              password: acc.password,
+              businessId: acc.businessId || matchedBiz?.id,
+              businessName: ov.name || acc.businessName || matchedBiz?.name,
+              businessType: acc.businessType || matchedBiz?.type,
+              neighborhood:
+                ov.neighborhood || acc.neighborhood || matchedBiz?.neighborhood,
+              address: ov.address || matchedBiz?.address,
+              mapLat: ov.mapLat ?? matchedBiz?.mapLat,
+              mapLng: ov.mapLng ?? matchedBiz?.mapLng,
+              avatarUrl: ov.avatarUrl || acc.avatarUrl || matchedBiz?.avatarUrl,
+              instagramHandle:
+                ov.instagramHandle || matchedBiz?.instagramHandle,
+              shortDescription:
+                ov.shortDescription || matchedBiz?.shortDescription,
+            };
+          });
           if (
             localPersistedUser?.phone &&
             !syncPayloadAccounts.some((a) => a.phone === localPersistedUser.phone)
@@ -1029,6 +1091,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 ? 'owner'
                 : 'customer',
               password: '',
+              businessId: localOwnedBizId || undefined,
+              businessName: undefined,
+              businessType: undefined,
+              neighborhood: undefined,
+              address: undefined,
+              mapLat: undefined,
+              mapLng: undefined,
+              avatarUrl: undefined,
+              instagramHandle: undefined,
+              shortDescription: undefined,
             });
           }
           if (syncPayloadAccounts.length > 0) {
@@ -1037,6 +1109,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               .then((syncRes) => {
                 if (Array.isArray(syncRes.registeredUsers)) {
                   setAdminUsers(syncRes.registeredUsers);
+                }
+                if (
+                  Array.isArray(syncRes.businesses) &&
+                  syncRes.businesses.length > 0
+                ) {
+                  setBusinesses(mergeBusinessOverrides(syncRes.businesses));
                 }
               })
               .catch(() => {});
@@ -1409,8 +1487,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           startingPriceToman: 0,
           shortDescription: `مرکز تخصصی زیبایی ${salonName} در ${salonCity}`,
           aboutText: '',
-          verifiedBadge: false,
-          approvalStatus: 'PENDING_REVIEW',
+          verifiedBadge: true,
+          approvalStatus: 'APPROVED',
           subscriptionPlan: 'شروع رایگان',
           subscriptionStatus: SubscriptionStatus.Trial,
           trialDaysRemaining: 30,
@@ -1556,6 +1634,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               | 'owner'
               | 'customer',
             password: acc.password,
+            businessId: acc.businessId,
+            businessName: acc.businessName,
+            businessType: acc.businessType,
+            neighborhood: acc.neighborhood,
+            avatarUrl: acc.avatarUrl,
           })
         );
         const syncRes = await realApiClient.syncRegisteredAccounts({
@@ -1568,12 +1651,23 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                   city: payload.salonInfo?.city || 'اصفهان',
                   role: payload.role === 'BUSINESS_OWNER' ? 'owner' : 'customer',
                   password: payload.password,
+                  businessId: createdBusinessId,
+                  businessName: payload.salonInfo?.businessName,
+                  businessType: payload.salonInfo?.businessType,
+                  neighborhood: payload.salonInfo?.neighborhood,
+                  avatarUrl: payload.avatarUrl,
                 },
               ],
           issueSessionForPhone: payload.phone,
         });
         if (Array.isArray(syncRes.registeredUsers)) {
           setAdminUsers(syncRes.registeredUsers);
+        }
+        if (
+          Array.isArray(syncRes.businesses) &&
+          syncRes.businesses.length > 0
+        ) {
+          setBusinesses(mergeBusinessOverrides(syncRes.businesses));
         }
         if (syncRes.user) {
           sessionUser = {
@@ -1899,8 +1993,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     patch: Partial<BusinessItem>
   ) => {
     setBusinesses((prev) => {
-      const next = prev.map((b) =>
-        b.id === businessId ? { ...b, ...patch } : b
+      const existsInPrev = prev.some((b) => b.id === businessId);
+      const baseList =
+        !existsInPrev && currentBusiness && currentBusiness.id === businessId
+          ? [currentBusiness, ...prev]
+          : prev;
+      const next = baseList.map((b) =>
+        b.id === businessId ? { ...b, ...patch, approvalStatus: 'APPROVED' as ApprovalStatus } : b
       );
       try {
         const overridesRaw =
@@ -1909,11 +2008,29 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         overrides[businessId] = {
           ...(overrides[businessId] || {}),
           ...patch,
+          approvalStatus: 'APPROVED',
         };
         window.localStorage.setItem(
           'timeto_biz_overrides_v2',
           JSON.stringify(overrides)
         );
+
+        const localOnbRaw =
+          window.localStorage.getItem('timeto_local_onboarded_businesses_v1') ||
+          '[]';
+        const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
+        if (localOnbList.some((lb) => lb.id === businessId)) {
+          window.localStorage.setItem(
+            'timeto_local_onboarded_businesses_v1',
+            JSON.stringify(
+              localOnbList.map((lb) =>
+                lb.id === businessId
+                  ? { ...lb, ...patch, approvalStatus: 'APPROVED' as ApprovalStatus }
+                  : lb
+              )
+            )
+          );
+        }
       } catch {
         // ignore storage errors
       }
@@ -1924,15 +2041,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       void realApiClient
         .updateBusinessProfile(businessId, patch)
         .then(() => {
-          showToast('اطلاعات پروفایل و جایگاه کسب‌وکار ذخیره شد.');
+          showToast('اطلاعات پروفایل و موقعیت نقشه کسب‌وکار ذخیره شد.');
         })
         .catch(() => {
-          showToast('تغییرات جایگاه و مشخصات کسب‌وکار اعمال شد.');
+          showToast('تغییرات موقعیت نقشه و مشخصات کسب‌وکار اعمال شد.');
         });
       return;
     }
 
-    showToast('اطلاعات پروفایل کسب‌وکار بروزرسانی شد.');
+    showToast('اطلاعات پروفایل و موقعیت نقشه کسب‌وکار بروزرسانی شد.');
   };
 
   const updatePlan = (planId: string, patch: Partial<SubscriptionPlanItem>) => {
@@ -3591,8 +3708,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       aboutText:
         onboardingDraft.shortDescription ||
         'پذیرش منظم آنلاین با کادر مجرب و رعایت کامل استانداردهای بهداشتی.',
-      verifiedBadge: false,
-      approvalStatus: 'PENDING_REVIEW',
+      verifiedBadge: true,
+      approvalStatus: 'APPROVED',
       subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان',
       subscriptionStatus: isFreePlan
         ? SubscriptionStatus.Trial

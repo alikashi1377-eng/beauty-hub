@@ -701,10 +701,21 @@ export const realApiClient = {
       role?: 'customer' | 'owner' | 'admin';
       password?: string;
       joinedJalali?: string;
+      businessId?: string;
+      businessName?: string;
+      businessType?: string;
+      neighborhood?: string;
+      address?: string;
+      mapLat?: number;
+      mapLng?: number;
+      avatarUrl?: string;
+      instagramHandle?: string;
+      shortDescription?: string;
     }>;
     issueSessionForPhone?: string;
   }): Promise<{
     registeredUsers: AdminUserRecord[];
+    businesses?: BusinessItem[];
     sessionToken?: string;
     expiresAt?: string;
     user?: AuthenticatedSessionUser;
@@ -712,6 +723,7 @@ export const realApiClient = {
     const res = await requestJson<{
       ok: boolean;
       registeredUsers: AdminUserRecord[];
+      businesses?: BusinessItem[];
       sessionToken?: string;
       expiresAt?: string;
       user?: AuthenticatedSessionUser;

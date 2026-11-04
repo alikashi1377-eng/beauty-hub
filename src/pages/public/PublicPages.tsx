@@ -145,13 +145,13 @@ const OriginalCustomerHomePage: React.FC = () => {
     ? businesses
         .filter(
           (b) =>
-            b.approvalStatus === 'APPROVED' &&
+            b.approvalStatus !== 'REJECTED' &&
             (b.name.toLowerCase().includes(normalizedQuery) ||
               b.neighborhood.toLowerCase().includes(normalizedQuery) ||
               b.typeLabel.toLowerCase().includes(normalizedQuery) ||
               b.shortDescription.toLowerCase().includes(normalizedQuery))
         )
-        .slice(0, 4)
+        .slice(0, 6)
     : [];
 
   const smartMatchedSpecialists = normalizedQuery
@@ -195,7 +195,7 @@ const OriginalCustomerHomePage: React.FC = () => {
   };
 
   const approvedSalons = businesses.filter(
-    (b) => b.approvalStatus === 'APPROVED'
+    (b) => b.approvalStatus !== 'REJECTED'
   );
   const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
     const aSpon = Number(Boolean(a.isSponsored));
@@ -204,10 +204,13 @@ const OriginalCustomerHomePage: React.FC = () => {
     if (aSpon && bSpon) {
       return (a.sponsoredOrder ?? 99) - (b.sponsoredOrder ?? 99);
     }
+    const aReal = Number(!a.isSampleShowcase && !/^biz-[1-8]$/.test(a.id));
+    const bReal = Number(!b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id));
+    if (bReal !== aReal) return bReal - aReal;
     return b.rating - a.rating;
   });
 
-  const featuredBusinesses = sortedHomeSalons.slice(0, 6);
+  const featuredBusinesses = sortedHomeSalons.slice(0, 12);
   const homeBannerPrimary =
     sortedHomeSalons.find(
       (b) =>
@@ -1139,7 +1142,7 @@ export const SearchPage: React.FC = () => {
     searchParams.get('category') ?? 'ALL'
   );
   const [typeFilter, setTypeFilter] = useState<BusinessType | 'ALL'>('ALL');
-  const [maxPrice, setMaxPrice] = useState<number>(1000000);
+  const [maxPrice, setMaxPrice] = useState<number>(10000000);
   const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<SortOption>('recommended');
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
@@ -1213,7 +1216,7 @@ export const SearchPage: React.FC = () => {
     setTypeFilter('ALL');
     setCategoryFilter('ALL');
     setNeighborhoodFilter('ALL');
-    setMaxPrice(1000000);
+    setMaxPrice(10000000);
     setMinRating(0);
     setSortBy('recommended');
     setSearchParams({});

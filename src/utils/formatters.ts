@@ -177,6 +177,7 @@ export function filterBusinesses(
   const sortBy = options.sortBy ?? 'recommended';
 
   const filtered = businesses.filter((item) => {
+    if (item.approvalStatus === 'REJECTED') return false;
     const matchesType = selectedType === 'ALL' || item.type === selectedType;
     const matchesCity = selectedCity === 'ALL' || item.city === selectedCity;
     const matchesCategory =
@@ -216,6 +217,9 @@ export function filterBusinesses(
         const bOrder = b.sponsoredOrder ?? 99;
         if (aOrder !== bOrder) return aOrder - bOrder;
       }
+      const aReal = Number(!a.isSampleShowcase && !/^biz-[1-8]$/.test(a.id));
+      const bReal = Number(!b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id));
+      if (bReal !== aReal) return bReal - aReal;
       return (
         Number(Boolean(b.featured)) - Number(Boolean(a.featured)) ||
         b.rating - a.rating

@@ -2107,10 +2107,19 @@ export function createApiV1Router(
         setSessionCookie(res, result.sessionToken, isProdMode());
       }
 
+      let syncedBusinesses: unknown[] | undefined;
+      try {
+        const bootstrapPayload = await getBootstrapPayload(pool);
+        syncedBusinesses = bootstrapPayload.businesses;
+      } catch {
+        // ignore fallback
+      }
+
       res.status(200).json({
         ok: true,
         mode: 'real',
         registeredUsers: result.registeredUsers,
+        businesses: syncedBusinesses,
         sessionToken: result.sessionToken,
         expiresAt: result.expiresAt,
         user: result.user,
