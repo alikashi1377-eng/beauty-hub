@@ -53,8 +53,18 @@ export function usePWAInstall() {
     setIsIOS(ios);
     setIsMobileDevice(mobile);
 
+    const existingGlobalPrompt = (
+      window as unknown as { __deferredPwaPrompt?: BeforeInstallPromptEvent | null }
+    ).__deferredPwaPrompt;
+    if (existingGlobalPrompt) {
+      setDeferredPrompt(existingGlobalPrompt);
+    }
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
+      (
+        window as unknown as { __deferredPwaPrompt?: BeforeInstallPromptEvent | null }
+      ).__deferredPwaPrompt = e as BeforeInstallPromptEvent;
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
 
@@ -62,6 +72,9 @@ export function usePWAInstall() {
       setIsInstalled(true);
       setIsBannerDismissed(true);
       setDeferredPrompt(null);
+      (
+        window as unknown as { __deferredPwaPrompt?: BeforeInstallPromptEvent | null }
+      ).__deferredPwaPrompt = null;
       try {
         window.localStorage.setItem(INSTALLED_STORAGE_KEY, '1');
         window.localStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');

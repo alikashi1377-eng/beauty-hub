@@ -1001,6 +1001,52 @@ export function createApiV1Router(
 
       try {
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
+
+        // ارسال پیامک اطلاع‌رسانی فوری نوبت جدید به شماره موبایل صاحب کسب‌وکار
+        try {
+          const config = customEnv ?? loadServerEnv();
+          const effectiveSms = customEnv
+            ? config.sms
+            : resolveEffectiveSmsConfig(config.sms);
+          if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+            const bizRes = await pool.query(
+              `
+              SELECT b.phone_display, bme.extra_json
+              FROM businesses b
+              LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+              WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
+              LIMIT 1
+              `,
+              [String(req.body?.businessSlug || item.businessSlug || '')]
+            );
+            const row = bizRes.rows[0];
+            const extra =
+              row?.extra_json && typeof row.extra_json === 'object'
+                ? (row.extra_json as Record<string, unknown>)
+                : {};
+            const rawOwnerPhone = String(
+              extra.ownerPhone || row?.phone_display || ''
+            )
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/\D/g, '');
+            const cleanOwnerPhone =
+              rawOwnerPhone.length === 10 && rawOwnerPhone.startsWith('9')
+                ? `0${rawOwnerPhone}`
+                : rawOwnerPhone;
+
+            if (/^09\d{9}$/.test(cleanOwnerPhone)) {
+              void sendOtpSmsViaGateway(
+                cleanOwnerPhone,
+                `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
+                effectiveSms,
+                config.nodeEnv
+              ).catch(() => {});
+            }
+          }
+        } catch {
+          // خطای ارسال پیامک جانبی مانع ثبت نوبت نشود
+        }
+
         res.status(201).json({
           ok: true,
           mode: 'real',
@@ -1032,6 +1078,45 @@ export function createApiV1Router(
           status,
           cancelledReason
         );
+
+        // ارسال پیامک اطلاع‌رسانی تایید یا لغو نوبت به مشتری
+        if (status === 'CONFIRMED' || status === 'CANCELLED') {
+          try {
+            const config = customEnv ?? loadServerEnv();
+            const effectiveSms = customEnv
+              ? config.sms
+              : resolveEffectiveSmsConfig(config.sms);
+            if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+              const aptRes = await pool.query(
+                `
+                SELECT customer_phone, date_jalali, time_slot_label
+                FROM appointments
+                WHERE id::text = $1 OR legacy_demo_id = $1 OR reference_code = $1
+                LIMIT 1
+                `,
+                [req.params.id]
+              );
+              const aptRow = aptRes.rows[0];
+              const custPhone = String(aptRow?.customer_phone || '').replace(
+                /\D/g,
+                ''
+              );
+              if (/^09\d{9}$/.test(custPhone)) {
+                const statusWord =
+                  status === 'CONFIRMED' ? 'تایید شد' : 'لغو شد';
+                void sendOtpSmsViaGateway(
+                  custPhone,
+                  `نوبت ${aptRow.date_jalali} ساعت ${aptRow.time_slot_label} ${statusWord}`,
+                  effectiveSms,
+                  config.nodeEnv
+                ).catch(() => {});
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         res.status(200).json({
           ok: true,
           mode: 'real',

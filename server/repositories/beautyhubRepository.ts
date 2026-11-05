@@ -825,6 +825,30 @@ function mergeBusinessRowWithExtra(
       typeof extra.ownerPhone === 'string' && extra.ownerPhone
         ? extra.ownerPhone
         : base.ownerPhone,
+    bankCardNumber:
+      typeof extra.bankCardNumber === 'string' && extra.bankCardNumber
+        ? extra.bankCardNumber
+        : base.bankCardNumber,
+    bankShebaNumber:
+      typeof extra.bankShebaNumber === 'string' && extra.bankShebaNumber
+        ? extra.bankShebaNumber
+        : base.bankShebaNumber,
+    bankAccountHolder:
+      typeof extra.bankAccountHolder === 'string' && extra.bankAccountHolder
+        ? extra.bankAccountHolder
+        : base.bankAccountHolder,
+    depositEnabled:
+      extra.depositEnabled !== undefined
+        ? Boolean(extra.depositEnabled)
+        : base.depositEnabled ?? false,
+    depositPercent:
+      typeof extra.depositPercent === 'number'
+        ? extra.depositPercent
+        : base.depositPercent ?? 30,
+    walletBalanceToman:
+      typeof extra.walletBalanceToman === 'number'
+        ? extra.walletBalanceToman
+        : base.walletBalanceToman ?? 0,
   };
 }
 
@@ -2423,6 +2447,12 @@ export async function updateBusinessProfileInDb(
       'avatarUrl',
       'ownerName',
       'ownerPhone',
+      'bankCardNumber',
+      'bankShebaNumber',
+      'bankAccountHolder',
+      'depositEnabled',
+      'depositPercent',
+      'walletBalanceToman',
     ];
     for (const k of extKeys) {
       if (patch[k] !== undefined) {
@@ -2819,7 +2849,7 @@ export async function createAppointmentInDb(
         $16::timestamptz,
         $16::timestamptz + ($8::smallint * INTERVAL '1 minute'),
         $16::timestamptz + (($8::smallint + $9::smallint) * INTERVAL '1 minute'),
-        'CONFIRMED',
+        'PENDING',
         $17
       )
       RETURNING
@@ -2863,7 +2893,7 @@ export async function createAppointmentInDb(
         changed_by_user_id,
         note
       )
-      VALUES ($1, NULL, 'CONFIRMED', $2, 'ثبت رزرو آنلاین توسط مشتری')
+      VALUES ($1, NULL, 'PENDING', $2, 'ثبت رزرو آنلاین توسط مشتری (در انتظار تایید سالن)')
       `,
       [aptRow.id, actorUser.userId]
     );

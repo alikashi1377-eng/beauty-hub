@@ -148,6 +148,9 @@ export interface BusinessItem {
   bankCardNumber?: string;
   bankShebaNumber?: string;
   bankAccountHolder?: string;
+  depositEnabled?: boolean;
+  depositPercent?: number;
+  walletBalanceToman?: number;
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;

@@ -911,7 +911,19 @@ export const AppointmentCard: React.FC<{
   onViewDetails?: (apt: AppointmentItem) => void;
   onCancelDemo?: (apt: AppointmentItem) => void;
 }> = ({ appointment, onViewDetails, onCancelDemo }) => {
+  const { businesses } = usePrototypeData();
   const statusMeta = getAppointmentStatusMeta(appointment.status);
+  const matchedBiz = businesses.find(
+    (b) =>
+      b.id === appointment.businessId ||
+      b.slug === appointment.businessSlug ||
+      b.name === appointment.businessName
+  );
+  const rawSalonPhone = matchedBiz?.phoneDisplay || matchedBiz?.ownerPhone || '';
+  const cleanSalonPhone = rawSalonPhone
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[^\d+]/g, '');
+
   return (
     <Card className="rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[#E6E0F5] hover:border-[#A78BFA] transition-colors">
       <div className="flex items-start gap-3.5">
@@ -923,10 +935,6 @@ export const AppointmentCard: React.FC<{
             <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
             <span className="tabular-nums font-bold text-[#1E1B2E]">
               {appointment.dateJalali} · ساعت {appointment.timeSlot}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span dir="ltr" className="font-mono text-[#8B5CF6] font-semibold">
-              {appointment.referenceCode}
             </span>
           </div>
           <h3 className="text-sm sm:text-base font-extrabold text-[#1E1B2E]">
@@ -943,7 +951,19 @@ export const AppointmentCard: React.FC<{
         <span className="text-sm font-extrabold text-[#7C3AED] tabular-nums ml-2">
           {formatPriceToman(appointment.priceToman)}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {rawSalonPhone && appointment.status !== 'CANCELLED' ? (
+            <a
+              href={`tel:${cleanSalonPhone}`}
+              className="px-3 py-1.5 rounded-full bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] border border-[#BFDBFE] text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
+              title="تماس اختیاری با سالن جهت هماهنگی"
+            >
+              <span>تماس با سالن:</span>
+              <span dir="ltr" className="font-mono">
+                {rawSalonPhone}
+              </span>
+            </a>
+          ) : null}
           {onViewDetails ? (
             <Button
               variant="outline"

@@ -96,7 +96,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     '',
     '',
   ]);
-  const [demoOtpCode, setDemoOtpCode] = useState<string>('392633');
   const [otpTimerSeconds, setOtpTimerSeconds] = useState<number>(110);
   const otpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -143,14 +142,58 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     return () => window.clearInterval(timer);
   }, [screen, otpTimerSeconds]);
 
-  // فوکوس خودکار روی اولین خانه کد ۶ رقمی هنگام ورود به مرحله تأیید
+  // فوکوس خودکار روی اولین خانه کد ۶ رقمی و خواندن خودکار پیامک دریافتی با WebOTP API
   useEffect(() => {
-    if (screen === 'REGISTER_STEP_2_OTP' || screen === 'LOGIN_OTP_VERIFY') {
-      const t = window.setTimeout(() => {
-        otpInputsRef.current[0]?.focus();
-      }, 80);
-      return () => window.clearTimeout(t);
+    if (
+      screen !== 'REGISTER_STEP_2_OTP' &&
+      screen !== 'LOGIN_OTP_VERIFY' &&
+      screen !== 'RESET_PASSWORD'
+    ) {
+      return;
     }
+    const t = window.setTimeout(() => {
+      otpInputsRef.current[0]?.focus();
+    }, 80);
+
+    let abortController: AbortController | null = null;
+    if (
+      typeof window !== 'undefined' &&
+      'OTPCredential' in window &&
+      navigator.credentials &&
+      typeof navigator.credentials.get === 'function'
+    ) {
+      abortController = new AbortController();
+      navigator.credentials
+        .get({
+          otp: { transport: ['sms'] },
+          signal: abortController.signal,
+        } as CredentialRequestOptions)
+        .then((credential) => {
+          const otpCred = credential as { code?: string } | null;
+          const cleanCode = toEnglishDigitsClient(otpCred?.code || '')
+            .replace(/\D/g, '')
+            .slice(0, 6);
+          if (cleanCode.length === 6) {
+            setOtpDigits(cleanCode.split(''));
+            if (
+              screen === 'REGISTER_STEP_2_OTP' ||
+              screen === 'LOGIN_OTP_VERIFY'
+            ) {
+              void handleVerifyOtpBoxes(cleanCode);
+            }
+          }
+        })
+        .catch(() => {
+          // نادیده گرفتن لغو یا عدم پشتیبانی مرورگر از WebOTP
+        });
+    }
+
+    return () => {
+      window.clearTimeout(t);
+      if (abortController) {
+        abortController.abort();
+      }
+    };
   }, [screen]);
 
   const suggestedPassword = generateSuggestedPassword(phone);
@@ -259,8 +302,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     setIsSubmitting(true);
     try {
       await requestOtpLogin(normalizedPhone);
-      const generated = String(Math.floor(100000 + Math.random() * 900000));
-      setDemoOtpCode(generated);
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
       setScreen('LOGIN_OTP_VERIFY');
@@ -312,8 +353,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       } catch {
         // ignore
       }
-      const generated = '392633';
-      setDemoOtpCode(generated);
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
       setScreen('REGISTER_STEP_2_OTP');
@@ -349,28 +388,38 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   };
 
   const handleVerifyOtpBoxes = async (explicitCode?: string) => {
-    const code = explicitCode || otpDigits.join('');
+    const code = toEnglishDigitsClient(explicitCode || otpDigits.join(''))
+      .replace(/\D/g, '')
+      .slice(0, 6);
     if (!/^\d{6}$/.test(code)) {
-      setError('لطفاً کد ۶ رقمی ارسال‌شده را کامل وارد کنید.');
+      setError('لطفاً کد ۶ رقمی پیامک‌شده را کامل وارد کنید.');
       return;
     }
     setError('');
     setIsSubmitting(true);
 
     try {
+      const normalizedPhone = normalizeIranMobileInput(phone);
+      // تایید واقعی کد پیامک‌شده در سرور برای هر دو حالت ثبت‌نام و ورود
+      const user = await verifyOtpLogin(normalizedPhone, code);
+
       if (screen === 'LOGIN_OTP_VERIFY') {
-        const normalizedPhone = normalizeIranMobileInput(phone);
         const accounts = getSavedMemoryAccounts();
         const existingAcc = accounts[normalizedPhone];
         const isSuperAdmin = normalizedPhone === '09138201042';
+        const hasRealProfileName =
+          Boolean(existingAcc?.fullName) ||
+          Boolean(
+            user.fullName &&
+              user.fullName !== 'کاربر تایم تو' &&
+              user.fullName !== 'کاربر BeautyHub'
+          );
 
-        // اگر کاربر قبلاً ثبت‌نام نکرده و ادمین نیست، او را به مرحله تکمیل نام (پروفایل) هدایت کنیم
-        if (!existingAcc && !isSuperAdmin) {
+        if (!hasRealProfileName && !isSuperAdmin) {
           setScreen('REGISTER_STEP_3_PROFILE');
           return;
         }
 
-        const user = await verifyOtpLogin(normalizedPhone, code);
         const isBiz = user.roles.includes('BUSINESS_OWNER');
         const dest =
           redirectTo ||
@@ -379,12 +428,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         return;
       }
 
-      // در حالت ثبت‌نام جدید: رفتن به گام ۳ (پروفایل: عکس + نام و نام خانوادگی)
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // در حالت ثبت‌نام جدید پس از تایید واقعی کد پیامک‌شده، رفتن به گام ۳ (پروفایل: عکس + نام و نام خانوادگی)
       setScreen('REGISTER_STEP_3_PROFILE');
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'کد واردشده معتبر نیست.'
+        err instanceof Error ? err.message : 'کد واردشده صحیح نیست.'
       );
     } finally {
       setIsSubmitting(false);
@@ -1028,24 +1076,13 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-2 text-center">
+              <div className="space-y-1 text-center">
                 <p className="text-xs font-bold text-slate-600">
-                  کد ۶ رقمی ارسال شده را وارد کنید
+                  کد ۶ رقمی پیامک‌شده به شماره همراه خود را وارد کنید
                 </p>
-
-                {/* نوار کمک‌کننده تست سریع برای درج خودکار کد ۶ رقمی */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const digits = demoOtpCode.split('');
-                    setOtpDigits(digits);
-                    void handleVerifyOtpBoxes(demoOtpCode);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#EFF6FF] border border-[#0057FF]/25 px-3 py-1 text-[11px] font-extrabold text-[#0057FF] hover:bg-[#E0ECFF] cursor-pointer"
-                >
-                  <span>کد پیامک‌شده: {toPersianDigits(demoOtpCode)}</span>
-                  <span className="underline">(کلیک برای درج خودکار)</span>
-                </button>
+                <p className="text-[11px] font-medium text-slate-400">
+                  در صورت دریافت پیامک روی گوشی، کد به صورت خودکار درج می‌شود
+                </p>
               </div>
 
               {/* ۶ خانه مجزای عدد (دقیقاً مطابق عکس ۴ و ۵) */}
@@ -1061,6 +1098,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     }}
                     type="text"
                     inputMode="numeric"
+                    autoComplete={idx === 0 ? 'one-time-code' : 'off'}
                     maxLength={6}
                     value={digit}
                     aria-label={`رقم ${idx + 1} کد تایید`}
@@ -1103,9 +1141,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
+                      const clean = normalizeIranMobileInput(phone);
                       setOtpTimerSeconds(110);
                       setOtpDigits(['', '', '', '', '', '']);
-                      showToast('کد تأیید ۶ رقمی مجدداً ارسال شد.', 'info');
+                      setError('');
+                      void requestOtpLogin(clean);
                     }}
                     className="font-black text-[#0057FF] hover:underline cursor-pointer"
                   >
@@ -1167,8 +1207,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setFirstName(e.target.value);
                       setError('');
                     }}
-                    placeholder="مثلاً سارا"
-                    className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                    className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   <User className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-slate-500" />
                 </div>
@@ -1186,8 +1225,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setLastName(e.target.value);
                       setError('');
                     }}
-                    placeholder="مثلاً رضایی"
-                    className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                    className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   <User className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-slate-500" />
                 </div>
@@ -1357,7 +1395,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
               <div className="space-y-1.5">
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
-                  کد ۶ رقمی پیامک‌شده (کد تست: {toPersianDigits(demoOtpCode)})
+                  کد ۶ رقمی پیامک‌شده به شماره همراه شما
                 </label>
                 <div dir="ltr" className="grid grid-cols-6 gap-2">
                   {otpDigits.map((digit, idx) => (
@@ -1365,6 +1403,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       key={idx}
                       type="text"
                       inputMode="numeric"
+                      autoComplete={idx === 0 ? 'one-time-code' : 'off'}
                       maxLength={6}
                       value={digit}
                       onChange={(e) => handleOtpBoxChange(idx, e.target.value)}

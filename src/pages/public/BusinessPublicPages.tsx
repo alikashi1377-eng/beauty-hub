@@ -46,6 +46,7 @@ import {
   Tabs,
 } from '../../components/ui/MarketplaceComponents';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
+import { BusinessQrCodeCard } from '../../components/business/BusinessQrCodeCard';
 
 export const BusinessPublicProfileView: React.FC<{
   mode: 'salon' | 'pro';
@@ -158,22 +159,26 @@ export const BusinessPublicProfileView: React.FC<{
       ? `${matchedSpecialist.fullName} — ${matchedSpecialist.roleTitle}`
       : business.name;
 
-  const heroBannerUrl = getBeautyPhotoUrl(
-    displayName,
-    business.typeLabel,
-    mode === 'pro' ? 'botanical' : undefined
-  );
+  const heroBannerUrl =
+    mode === 'pro' && matchedSpecialist
+      ? matchedSpecialist.avatarUrl ||
+        business.avatarUrl ||
+        getBeautyPhotoUrl(displayName, business.typeLabel, 'botanical')
+      : business.avatarUrl ||
+        getBeautyPhotoUrl(displayName, business.typeLabel);
 
   const proAvatarUrl =
     mode === 'pro' && matchedSpecialist
-      ? getSpecialistAvatarUrl(
+      ? matchedSpecialist.avatarUrl ||
+        getSpecialistAvatarUrl(
           matchedSpecialist.fullName,
           matchedSpecialist.roleTitle
         )
-      : getBeautyPhotoUrl(business.name, business.typeLabel);
+      : business.avatarUrl ||
+        getBeautyPhotoUrl(business.name, business.typeLabel);
 
   const [activeActionModal, setActiveActionModal] = useState<
-    'INSTAGRAM' | 'CONSULTATION' | 'CALL' | 'MAP' | null
+    'INSTAGRAM' | 'CONSULTATION' | 'MAP' | 'QR_SHARE' | null
   >(null);
   const [consultQuestion, setConsultQuestion] = useState('');
   const [consultPhone, setConsultPhone] = useState(authUser?.phone || '');
@@ -183,9 +188,6 @@ export const BusinessPublicProfileView: React.FC<{
     .trim()
     .replace(/^@/, '');
   const instagramUrl = `https://www.instagram.com/${cleanInstaHandle}`;
-  const cleanDialPhone = (business.phoneDisplay || '09131234567')
-    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-    .replace(/[^\d+]/g, '');
   const googleMapsUrl = `https://www.google.com/maps?q=${business.mapLat ?? 32.6362},${business.mapLng ?? 51.665}`;
 
   const quickActions = [
@@ -203,11 +205,6 @@ export const BusinessPublicProfileView: React.FC<{
       },
     },
     {
-      label: 'تماس',
-      icon: <Phone className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => setActiveActionModal('CALL'),
-    },
-    {
       label: 'مسیریابی',
       icon: <MapPin className="w-5 h-5 text-[#8B5CF6]" />,
       onClick: () => {
@@ -219,16 +216,9 @@ export const BusinessPublicProfileView: React.FC<{
       },
     },
     {
-      label: 'اشتراک‌گذاری',
+      label: 'کیوآرکد و لینک',
       icon: <Share2 className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => {
-        try {
-          void navigator.clipboard.writeText(window.location.href);
-        } catch {
-          // ignore
-        }
-        showToast('لینک اختصاصی پروفایل سالن کپی شد.', 'success');
-      },
+      onClick: () => setActiveActionModal('QR_SHARE'),
     },
   ];
 
@@ -319,8 +309,8 @@ export const BusinessPublicProfileView: React.FC<{
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
-                onClick={() => showToast('لینک پروفایل کپی شد.')}
-                aria-label="اشتراک‌گذاری"
+                onClick={() => setActiveActionModal('QR_SHARE')}
+                aria-label="کیوآرکد و اشتراک‌گذاری"
                 className="w-10 h-10 rounded-full bg-white/92 hover:bg-white backdrop-blur-md flex items-center justify-center text-[#1E1B2E] shadow-sm cursor-pointer transition-transform active:scale-95"
               >
                 <Share2 className="w-4 h-4" />
@@ -406,9 +396,9 @@ export const BusinessPublicProfileView: React.FC<{
               </div>
             </div>
 
-            {/* ۵ دکمه دایره‌ای دسترسی سریع (وب‌سایت/اینستاگرام، مشاوره، تماس، مسیریابی، اشتراک) — دقیقاً مطابق Capture4.PNG */}
+            {/* ۴ دکمه دایره‌ای دسترسی سریع (اینستاگرام، مشاوره، مسیریابی، کیوآرکد) — شماره تماس پس از ثبت نوبت نمایش داده می‌شود */}
             <div className="lg:col-span-5 flex flex-col items-center lg:items-end justify-between gap-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-[#E6E0F5]">
-              <div className="grid grid-cols-5 gap-2.5 sm:gap-3.5 w-full max-w-sm">
+              <div className="grid grid-cols-4 gap-2.5 sm:gap-3.5 w-full max-w-sm">
                 {quickActions.map((act) => (
                   <button
                     key={act.label}
@@ -1131,7 +1121,7 @@ export const BusinessPublicProfileView: React.FC<{
               </div>
               <div className="flex items-center gap-1.5 text-[#10B981] pt-1">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span>ثبت آنی همراه با کد رهگیری</span>
+                <span>ثبت آنی و اطلاع‌رسانی فوری به سالن</span>
               </div>
             </div>
 
@@ -1278,44 +1268,6 @@ export const BusinessPublicProfileView: React.FC<{
       </Modal>
 
       <Modal
-        isOpen={activeActionModal === 'CALL'}
-        onClose={() => setActiveActionModal(null)}
-        title={`اطلاعات تماس با ${business.name}`}
-      >
-        <div className="space-y-4 text-xs">
-          <div className="p-4 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] flex items-center justify-between gap-3">
-            <span className="font-bold text-[#061138]">شماره تماس مستقیم پذیرش:</span>
-            <span dir="ltr" className="font-mono text-base font-black text-[#0057FF]">
-              {business.phoneDisplay}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <a
-              href={`tel:${cleanDialPhone}`}
-              className="py-2.5 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white font-extrabold text-center inline-flex items-center justify-center gap-2 transition-colors"
-            >
-              <Phone className="w-4 h-4" />
-              <span>برقراری تماس تلفنی</span>
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  void navigator.clipboard.writeText(cleanDialPhone);
-                } catch {
-                  // ignore
-                }
-                showToast('شماره تماس کپی شد.', 'success');
-              }}
-              className="py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-[#061138] font-bold text-center cursor-pointer transition-colors"
-            >
-              کپی شماره تماس
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
         isOpen={activeActionModal === 'MAP'}
         onClose={() => setActiveActionModal(null)}
         title={`نشانی و مسیریابی ${business.name}`}
@@ -1354,17 +1306,8 @@ export const BusinessPublicProfileView: React.FC<{
               درخواست مشاوره شما برای پذیرش سالن ارسال شد
             </p>
             <p className="text-[#047857]">
-              کارشناسان «{business.name}» در ساعات کاری با شما تماس خواهند گرفت یا می‌توانید همین حالا تلفنی گفتگو کنید.
+              کارشناسان «{business.name}» در ساعات کاری با شماره شما تماس خواهند گرفت. همچنین با ثبت نوبت آنلاین، شماره تماس مستقیم سالن در رسید نهایی شما نمایش داده می‌شود.
             </p>
-            <div className="pt-2">
-              <a
-                href={`tel:${cleanDialPhone}`}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#059669] text-white font-extrabold"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>تماس مستقیم: {business.phoneDisplay}</span>
-              </a>
-            </div>
           </div>
         ) : (
           <form
@@ -1398,19 +1341,29 @@ export const BusinessPublicProfileView: React.FC<{
               />
             </FormField>
             <div className="flex items-center justify-between gap-2 pt-1">
-              <a
-                href={`tel:${cleanDialPhone}`}
-                className="text-xs font-extrabold text-[#0057FF] hover:underline inline-flex items-center gap-1"
-              >
-                <Phone className="w-3.5 h-3.5" />
-                <span>تماس تلفنی فوری ({business.phoneDisplay})</span>
-              </a>
+              <span className="text-[11px] text-[#64748B]">
+                شماره تماس مستقیم سالن پس از ثبت نوبت آنلاین نمایش داده می‌شود
+              </span>
               <Button type="submit" variant="primary" size="sm">
                 ارسال درخواست مشاوره
               </Button>
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={activeActionModal === 'QR_SHARE'}
+        onClose={() => setActiveActionModal(null)}
+        title={`کیوآرکد اختصاصی و لینک رزرو ${business.name}`}
+      >
+        <BusinessQrCodeCard
+          businessName={business.name}
+          slug={business.slug}
+          city={business.city}
+          neighborhood={business.neighborhood}
+          compact
+        />
       </Modal>
 
       {/* نوار چسبان پایین موبایل برای رزرو سریع — مطابق دکمه کپسولی تیره Capture4.PNG */}

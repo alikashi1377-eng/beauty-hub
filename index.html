@@ -21,6 +21,13 @@
     <link rel="alternate icon" type="image/png" href="/pwa-192x192.png" />
     <link rel="preload" href="/fonts/Estedad-Variable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/PlusJakartaSans-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      window.__deferredPwaPrompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__deferredPwaPrompt = e;
+      });
+    </script>
   </head>
   <body class="bg-[#F4F7FB] text-[#0B132B] antialiased selection:bg-[#0057FF] selection:text-white">
     <div id="root">

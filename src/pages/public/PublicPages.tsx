@@ -1587,11 +1587,11 @@ export const CategoriesPage: React.FC = () => {
               </div>
 
               <div className="p-2.5 sm:p-4 flex-1 flex flex-col justify-between gap-2">
-                <p className="text-[11px] sm:text-xs text-[#475569] line-clamp-2 leading-relaxed">
+                <p className="hidden sm:block text-xs text-[#475569] line-clamp-2 leading-relaxed">
                   {category.subtitle}
                 </p>
 
-                <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] sm:text-xs font-extrabold text-[#0057FF]">
+                <div className="sm:pt-2 sm:border-t sm:border-[#F1F5F9] flex items-center justify-between text-[11px] sm:text-xs font-extrabold text-[#0057FF]">
                   <span>مشاهده مراکز</span>
                   <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
                 </div>

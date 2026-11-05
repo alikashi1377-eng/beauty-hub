@@ -268,15 +268,7 @@ export const BookingStepPage: React.FC = () => {
   );
   const [isLoadingSlots, setIsLoadingSlots] = useState<boolean>(false);
 
-  const upcomingDays =
-    dataMode === 'real'
-      ? getUpcomingJalaliDays(6)
-      : [
-          { date: '۱۴۰۵/۰۸/۰۳', label: 'یکشنبه ۳ آبان', tag: 'امروز' },
-          { date: '۱۴۰۵/۰۸/۰۴', label: 'دوشنبه ۴ آبان', tag: 'فردا' },
-          { date: '۱۴۰۵/۰۸/۰۵', label: 'سه‌شنبه ۵ آبان', tag: 'ظرفیت باز' },
-          { date: '۱۴۰۵/۰۸/۰۶', label: 'چهارشنبه ۶ آبان', tag: 'آخر هفته' },
-        ];
+  const upcomingDays = getUpcomingJalaliDays(14);
 
   useEffect(() => {
     if (!business) return;
@@ -453,27 +445,42 @@ export const BookingStepPage: React.FC = () => {
   const timeSlotOptions: TimeSlotAvailabilityItem[] =
     dataMode === 'real' ? (realSlots ?? []) : mockTimeSlotOptions;
 
-  const calendarDays30 = Array.from({ length: 30 }, (_, idx) => idx + 1);
   const selectedDayIdx = Math.max(
     0,
     upcomingDays.findIndex((d) => d.date === bookingDraft.dateJalali)
   );
+  const selectedDayObj = upcomingDays[selectedDayIdx] ?? upcomingDays[0];
+  const leadingEmptyCells = Array.from(
+    { length: upcomingDays[0]?.jalaliWeekdayIndex ?? 0 },
+    (_, i) => i
+  );
+  const salonAvatar =
+    business.avatarUrl && business.avatarUrl.trim()
+      ? business.avatarUrl
+      : getBeautyPhotoUrl(business.name, business.typeLabel);
 
   return (
     <div className="pb-28 lg:pb-8">
-      {/* هدر فشرده اطلاعات سالن */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-1">
-            <Link to={`/salon/${business.slug}`} className="hover:text-[#0057FF] font-bold">
-              {business.name}
-            </Link>
-            <span>/</span>
-            <span>رزرو نوبت آنلاین</span>
+      {/* هدر فشرده اطلاعات سالن با تصویر پروفایل یکپارچه */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <img
+            src={salonAvatar}
+            alt={business.name}
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#CBD5E1] shadow-2xs shrink-0"
+          />
+          <div>
+            <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-0.5">
+              <Link to={`/salon/${business.slug}`} className="hover:text-[#0057FF] font-bold">
+                {business.name}
+              </Link>
+              <span>/</span>
+              <span>رزرو نوبت آنلاین</span>
+            </div>
+            <h1 className="text-base sm:text-2xl font-extrabold text-[#061138]">
+              رزرو نوبت در {business.name}
+            </h1>
           </div>
-          <h1 className="text-lg sm:text-2xl font-extrabold text-[#061138]">
-            رزرو نوبت در {business.name}
-          </h1>
         </div>
         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold">
           <MapPin className="w-3.5 h-3.5" />
@@ -654,10 +661,10 @@ export const BookingStepPage: React.FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {bizSpecialists.map((sp) => {
                 const isSelected = selectedSpecialist?.id === sp.id;
-                const spAvatar = getSpecialistAvatarUrl(
-                  sp.fullName,
-                  sp.roleTitle
-                );
+                const spAvatar =
+                  sp.avatarUrl && sp.avatarUrl.trim()
+                    ? sp.avatarUrl
+                    : getSpecialistAvatarUrl(sp.fullName, sp.roleTitle);
                 return (
                   <button
                     key={sp.id}
@@ -709,7 +716,7 @@ export const BookingStepPage: React.FC = () => {
             </div>
           </Card>
 
-          {/* گام ۳: انتخاب روز و ساعت مراجعه */}
+          {/* گام ۳: انتخاب روز و ساعت مراجعه (تقویم یکپارچه و دقیق شمسی بدون تکرار) */}
           <Card
             id="booking-step-3"
             className="rounded-3xl space-y-5 scroll-mt-32"
@@ -721,15 +728,15 @@ export const BookingStepPage: React.FC = () => {
                 </span>
                 <div>
                   <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                    انتخاب روز و ساعت مراجعه
+                    انتخاب تاریخ و ساعت مراجعه
                   </h2>
                   <p className="text-xs text-[#475569]">
-                    روز و ساعت دلخواه خود را از ظرفیت‌های آزاد انتخاب کنید
+                    روز مورد نظر خود را از تقویم شمسی انتخاب کنید
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 bg-[#F8FAFC] px-3 py-1.5 rounded-full border border-[#CBD5E1]">
+              <div className="flex items-center gap-2 bg-[#EFF6FF] px-3 py-1.5 rounded-full border border-[#0057FF]/25">
                 <button
                   type="button"
                   disabled={selectedDayIdx <= 0}
@@ -743,8 +750,10 @@ export const BookingStepPage: React.FC = () => {
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-extrabold text-[#061138] tabular-nums px-2">
-                  آبان ۱۴۰۵ ({bookingDraft.dateJalali})
+                <span className="text-xs font-extrabold text-[#061138] tabular-nums px-1.5">
+                  {selectedDayObj
+                    ? `${selectedDayObj.fullLabel} (${selectedDayObj.yearPersian})`
+                    : bookingDraft.dateJalali}
                 </span>
                 <button
                   type="button"
@@ -765,78 +774,94 @@ export const BookingStepPage: React.FC = () => {
               </div>
             </div>
 
-            {/* قرص‌های انتخاب سریع روزهای آینده */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {upcomingDays.map((d) => {
-                const isSelected = bookingDraft.dateJalali === d.date;
-                return (
-                  <button
-                    key={d.date}
-                    type="button"
-                    onClick={() => {
-                      setActiveStepIndicator(3);
-                      updateBookingDraft({ dateJalali: d.date });
-                    }}
-                    className={`p-3 rounded-2xl border text-xs cursor-pointer tabular-nums transition-all text-right ${
-                      isSelected
-                        ? 'bg-[#0057FF] text-white border-[#0057FF] font-bold shadow-xs'
-                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:bg-[#F8FAFC]'
-                    }`}
-                  >
-                    <p className="font-extrabold">{d.label}</p>
-                    <p
-                      className={`text-[11px] mt-1 ${
-                        isSelected ? 'text-white/85' : 'text-[#475569]'
-                      }`}
-                    >
-                      {d.date} · {d.tag}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
+            {/* تقویم یکپارچه و دقیق شمسی با تطبیق ۱۰۰٪ روز هفته */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3">
+              <div className="flex items-center justify-between text-xs font-extrabold text-[#061138] px-1">
+                <span>
+                  تقویم نوبت‌دهی {selectedDayObj?.monthNamePersian}{' '}
+                  {selectedDayObj?.yearPersian}
+                </span>
+                <span className="text-[11px] font-bold text-[#0057FF]">
+                  {selectedDayObj?.tag === 'امروز' || selectedDayObj?.tag === 'فردا'
+                    ? `${selectedDayObj.tag} · ${selectedDayObj.fullLabel}`
+                    : selectedDayObj?.fullLabel}
+                </span>
+              </div>
 
-            {/* شبکه تقویم ماهانه */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-2.5">
-              <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-[#475569] pb-2 border-b border-[#CBD5E1]">
-                {['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'].map((wd) => (
-                  <span key={wd}>{wd}</span>
+              <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-extrabold text-[#475569] pb-2 border-b border-[#E2E8F0]">
+                {[
+                  { short: 'ش', full: 'شنبه' },
+                  { short: 'ی', full: 'یکشنبه' },
+                  { short: 'د', full: 'دوشنبه' },
+                  { short: 'س', full: 'سه‌شنبه' },
+                  { short: 'چ', full: 'چهارشنبه' },
+                  { short: 'پ', full: 'پنجشنبه' },
+                  { short: 'ج', full: 'جمعه' },
+                ].map((wd) => (
+                  <span key={wd.full} className="py-0.5">
+                    <span className="sm:hidden">{wd.short}</span>
+                    <span className="hidden sm:inline">{wd.full}</span>
+                  </span>
                 ))}
               </div>
 
-              <div className="grid grid-cols-7 gap-1.5 text-center">
-                {calendarDays30.map((dayNum) => {
-                  const mappedIndex = dayNum - 3;
-                  const mappedUpcoming =
-                    mappedIndex >= 0 && mappedIndex < upcomingDays.length
-                      ? upcomingDays[mappedIndex]
-                      : null;
-                  const isActive =
-                    mappedUpcoming &&
-                    bookingDraft.dateJalali === mappedUpcoming.date;
+              <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+                {leadingEmptyCells.map((emptyIdx) => (
+                  <div
+                    key={`empty-${emptyIdx}`}
+                    aria-hidden="true"
+                    className="h-14 sm:h-16 rounded-xl bg-slate-100/50 border border-dashed border-slate-200/70"
+                  />
+                ))}
+
+                {upcomingDays.map((dayItem, idx) => {
+                  const isSelected = bookingDraft.dateJalali === dayItem.date;
+                  const isToday = idx === 0;
+                  const isFriday = dayItem.dayName === 'جمعه';
 
                   return (
                     <button
-                      key={dayNum}
+                      key={dayItem.date}
                       type="button"
-                      disabled={!mappedUpcoming}
                       onClick={() => {
-                        if (mappedUpcoming) {
-                          setActiveStepIndicator(3);
-                          updateBookingDraft({
-                            dateJalali: mappedUpcoming.date,
-                          });
-                        }
+                        setActiveStepIndicator(3);
+                        updateBookingDraft({ dateJalali: dayItem.date });
                       }}
-                      className={`h-8 w-8 sm:h-9 sm:w-9 mx-auto rounded-full text-xs tabular-nums flex items-center justify-center transition-all ${
-                        isActive
-                          ? 'bg-[#0057FF] text-white font-extrabold shadow-sm scale-105 cursor-pointer'
-                          : mappedUpcoming
-                          ? 'bg-white text-[#061138] font-bold border border-[#94A3B8] hover:border-[#0057FF] cursor-pointer'
-                          : 'text-[#94A3B8] cursor-default'
+                      className={`h-14 sm:h-16 rounded-xl border p-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer tabular-nums ${
+                        isSelected
+                          ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)] scale-[1.02]'
+                          : isToday
+                            ? 'bg-[#EFF6FF] text-[#061138] border-[#0057FF]/40 hover:border-[#0057FF]'
+                            : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] hover:bg-[#F8FAFC]'
                       }`}
                     >
-                      {toPersianDigits(dayNum)}
+                      <span
+                        className={`text-[10px] font-bold leading-none ${
+                          isSelected
+                            ? 'text-[#00E5FF]'
+                            : isToday
+                              ? 'text-[#0057FF]'
+                              : isFriday
+                                ? 'text-rose-500'
+                                : 'text-[#64748B]'
+                        }`}
+                      >
+                        {idx === 0
+                          ? 'امروز'
+                          : idx === 1
+                            ? 'فردا'
+                            : dayItem.dayName}
+                      </span>
+                      <span className="text-sm sm:text-base font-black leading-tight">
+                        {dayItem.dayNumberPersian}
+                      </span>
+                      <span
+                        className={`text-[9px] font-semibold leading-none ${
+                          isSelected ? 'text-white/85' : 'text-[#64748B]'
+                        }`}
+                      >
+                        {dayItem.monthNamePersian}
+                      </span>
                     </button>
                   );
                 })}
@@ -1046,11 +1071,13 @@ export const BookingConfirmPage: React.FC = () => {
     specialists,
     bookingDraft,
     updateBookingDraft,
+    updateBusinessProfile,
     submitBooking,
   } = usePrototypeData();
 
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [payDepositOnline, setPayDepositOnline] = useState(true);
 
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
@@ -1083,6 +1110,17 @@ export const BookingConfirmPage: React.FC = () => {
     );
   }
 
+  const isDepositActive = Boolean(business.depositEnabled);
+  const depositPercent = business.depositPercent || 30;
+  const depositAmountToman = isDepositActive
+    ? Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100)
+    : 0;
+  const remainingInSalonToman = Math.max(
+    0,
+    selectedServicesSummary.totalPriceToman -
+      (isDepositActive && payDepositOnline ? depositAmountToman : 0)
+  );
+
   const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (dataMode === 'real' && !authUser) {
@@ -1106,6 +1144,12 @@ export const BookingConfirmPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       await submitBooking();
+      if (isDepositActive && payDepositOnline && depositAmountToman > 0) {
+        updateBusinessProfile(business.id, {
+          walletBalanceToman:
+            (business.walletBalanceToman ?? 0) + depositAmountToman,
+        });
+      }
       navigate('/booking/result');
     } catch (err) {
       setFormError(
@@ -1205,6 +1249,34 @@ export const BookingConfirmPage: React.FC = () => {
               </strong>
             </div>
           </div>
+
+          {isDepositActive ? (
+            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-extrabold text-[#065F46]">
+                  پرداخت بیعانه آنلاین سالن ({toPersianDigits(depositPercent)}٪ مبلغ خدمت)
+                </span>
+                <span className="font-black text-[#059669] text-sm tabular-nums">
+                  {formatPriceToman(depositAmountToman)}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#047857] leading-relaxed">
+                مبلغ بیعانه مستقیماً در کیف پول اختصاصی سالن «{business.name}» ثبت شده و از صورت‌حساب حضوری شما کسر می‌گردد. باقی‌مانده قابل پرداخت در سالن:{' '}
+                <strong className="tabular-nums">
+                  {formatPriceToman(remainingInSalonToman)}
+                </strong>
+              </p>
+              <label className="inline-flex items-center gap-2 font-bold text-[#065F46] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={payDepositOnline}
+                  onChange={(e) => setPayDepositOnline(e.target.checked)}
+                  className="accent-[#059669] w-4 h-4"
+                />
+                <span>پرداخت همزمان بیعانه و قطعی‌سازی آنی نوبت</span>
+              </label>
+            </div>
+          ) : null}
         </Card>
 
         <Card padding="lg" className="rounded-3xl">
@@ -1276,8 +1348,7 @@ export const BookingConfirmPage: React.FC = () => {
             <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
               <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
               <span>
-                با ثبت نهایی، زمان انتخابی به نام شما رزرو شده و کد رهگیری
-                نوبت بلافاصله صادر می‌گردد.
+                با ثبت نهایی، نوبت شما بلافاصله از طریق پیامک و اعلان پنل به اطلاع صاحب کسب‌وکار می‌رسد تا تایید شود. همچنین شماره تماس مستقیم سالن در رسید نهایی نمایش داده خواهد شد.
               </span>
             </div>
 
@@ -1294,7 +1365,11 @@ export const BookingConfirmPage: React.FC = () => {
                 size="lg"
                 isLoading={isSubmitting}
               >
-                <span>ثبت نهایی نوبت</span>
+                <span>
+                  {isDepositActive && payDepositOnline
+                    ? `پرداخت بیعانه (${formatPriceToman(depositAmountToman)}) و ثبت نوبت`
+                    : 'ثبت نهایی نوبت'}
+                </span>
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </div>
@@ -1324,12 +1399,16 @@ export const BookingResultPage: React.FC = () => {
     specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
     specialists[0];
 
+  const cleanSalonPhone = (business?.phoneDisplay || business?.ownerPhone || '09131234567')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[^\d+]/g, '');
+
   return (
     <div>
       <PageHeader
         kicker="رزرو آنلاین نوبت · رسید نوبت"
         title="نوبت شما با موفقیت ثبت شد"
-        subtitle="جزئیات نوبت و کد رهگیری شما در زیر درج شده و در بخش «نوبت‌های من» قابل پیگیری است."
+        subtitle="درخواست نوبت شما بلافاصله برای صاحب کسب‌وکار ارسال شد و از طریق بخش «نوبت‌های من» قابل مشاهده است."
         breadcrumbs={[
           { label: 'تایید نوبت', href: '/booking/confirm' },
           { label: 'رسید رزرو' },
@@ -1342,17 +1421,17 @@ export const BookingResultPage: React.FC = () => {
             <CalendarCheck className="w-7 h-7" />
           </div>
           <div>
-            <StatusBadge label="نوبت ثبت‌شده" tone="success" />
+            <StatusBadge
+              label="ثبت شد · ارسال‌شده برای تایید سالن"
+              tone="success"
+            />
           </div>
-          <h2 className="text-xl font-extrabold text-[#061138] pt-1">
-            کد رهگیری نوبت:{' '}
-            <span
-              dir="ltr"
-              className="font-mono text-[#0057FF] bg-[#E0E7FF] px-3 py-1 rounded-xl border border-[#BFDBFE]"
-            >
-              {bookingDraft.lastReferenceCode ?? 'TM-403990'}
-            </span>
+          <h2 className="text-base sm:text-lg font-extrabold text-[#061138] pt-1">
+            نوبت شما در تقویم «{business?.name ?? 'سالن'}» ثبت گردید
           </h2>
+          <p className="text-xs text-[#475569] max-w-md mx-auto leading-relaxed">
+            پیامک و اعلان فوری نوبت برای صاحب کسب‌وکار ارسال شد تا نوبت شما را تایید کند.
+          </p>
         </div>
 
         <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3 text-xs sm:text-sm">
@@ -1390,6 +1469,29 @@ export const BookingResultPage: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {/* نمایش شماره تماس مستقیم سالن فقط پس از ثبت نوبت (اختیاری جهت اطمینان مشتری) */}
+        {business ? (
+          <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <p className="font-extrabold text-[#061138]">
+                شماره تماس مستقیم «{business.name}» (اختیاری)
+              </p>
+              <p className="text-[11px] text-[#475569] leading-relaxed">
+                نوبت شما در سیستم ثبت شده است؛ در صورت تمایل برای هماهنگی یا اطمینان بیشتر می‌توانید با سالن تماس بگیرید:
+              </p>
+            </div>
+            <a
+              href={`tel:${cleanSalonPhone}`}
+              className="px-4 py-2.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white font-extrabold inline-flex items-center gap-2 shrink-0 shadow-xs transition-colors"
+            >
+              <span dir="ltr" className="font-mono text-xs">
+                {business.phoneDisplay || business.ownerPhone}
+              </span>
+              <span>· تماس با سالن</span>
+            </a>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
           <Link to="/me/appointments">
@@ -1693,7 +1795,8 @@ export const CustomerOverviewPage: React.FC = () => {
 
 /** ۶. نوبت‌های من (/me/appointments) */
 export const CustomerAppointmentsPage: React.FC = () => {
-  const { authUser, appointments, updateAppointmentStatus } = usePrototypeData();
+  const { authUser, appointments, businesses, updateAppointmentStatus } =
+    usePrototypeData();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AppointmentItem | null>(
@@ -1776,11 +1879,10 @@ export const CustomerAppointmentsPage: React.FC = () => {
       <Modal
         isOpen={Boolean(selectedApt)}
         onClose={() => setSelectedApt(null)}
-        title="جزئیات نوبت"
-        description={selectedApt?.referenceCode}
+        title="جزئیات نوبت و شماره تماس سالن"
       >
         {selectedApt ? (
-          <div className="space-y-2.5 text-xs">
+          <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
               <span className="text-[#6B6480]">مرکز زیبایی:</span>
               <span className="font-bold text-[#1E1B2E]">
@@ -1803,12 +1905,42 @@ export const CustomerAppointmentsPage: React.FC = () => {
                 {selectedApt.dateJalali} ساعت {selectedApt.timeSlot}
               </span>
             </div>
-            <div className="flex justify-between pt-1">
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
               <span className="text-[#6B6480]">مبلغ خدمت:</span>
               <span className="font-bold text-[#8B5CF6] tabular-nums">
                 {formatPriceToman(selectedApt.priceToman)}
               </span>
             </div>
+            {(() => {
+              const matchedBiz = businesses.find(
+                (b) =>
+                  b.id === selectedApt.businessId ||
+                  b.slug === selectedApt.businessSlug ||
+                  b.name === selectedApt.businessName
+              );
+              const rawPhone =
+                matchedBiz?.phoneDisplay || matchedBiz?.ownerPhone || '';
+              if (!rawPhone) return null;
+              const dialPhone = rawPhone
+                .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+                .replace(/[^\d+]/g, '');
+              return (
+                <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-between gap-2 pt-2">
+                  <span className="font-bold text-[#061138]">
+                    تلفن هماهنگی سالن (اختیاری):
+                  </span>
+                  <a
+                    href={`tel:${dialPhone}`}
+                    className="px-3.5 py-1.5 rounded-full bg-[#0057FF] text-white font-extrabold inline-flex items-center gap-1.5"
+                  >
+                    <span dir="ltr" className="font-mono">
+                      {rawPhone}
+                    </span>
+                    <span>· تماس</span>
+                  </a>
+                </div>
+              );
+            })()}
           </div>
         ) : null}
       </Modal>

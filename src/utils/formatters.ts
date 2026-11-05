@@ -354,9 +354,23 @@ export interface UpcomingJalaliDayItem {
   dayMonthLabel: string;
   fullLabel: string;
   tag: string;
+  dayNumberPersian: string;
+  monthNamePersian: string;
+  yearPersian: string;
+  jalaliWeekdayIndex: number;
 }
 
-export function getUpcomingJalaliDays(count = 7): UpcomingJalaliDayItem[] {
+const JALALI_WEEKDAY_ORDER: Record<string, number> = {
+  شنبه: 0,
+  یکشنبه: 1,
+  دوشنبه: 2,
+  'سه‌شنبه': 3,
+  چهارشنبه: 4,
+  پنجشنبه: 5,
+  جمعه: 6,
+};
+
+export function getUpcomingJalaliDays(count = 14): UpcomingJalaliDayItem[] {
   const result: UpcomingJalaliDayItem[] = [];
   const now = new Date();
 
@@ -378,16 +392,32 @@ export function getUpcomingJalaliDays(count = 7): UpcomingJalaliDayItem[] {
     month: 'long',
   });
 
+  const monthOnlyFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    timeZone: 'Asia/Tehran',
+    month: 'long',
+  });
+
   for (let i = 0; i < count; i++) {
     const target = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
     const parts = numericFormatter.formatToParts(target);
     const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
     const dateJalali = toPersianDigits(`${map.year}/${map.month}/${map.day}`);
-    const dayName = weekdayFormatter.format(target);
+    const dayName = weekdayFormatter.format(target).trim();
     const dayMonthLabel = dayMonthFormatter.format(target);
+    const monthNamePersian = monthOnlyFormatter.format(target);
+    const dayNumberPersian = toPersianDigits(Number(map.day || '1'));
+    const yearPersian = toPersianDigits(String(map.year || '1405'));
     const fullLabel = `${dayName} ${dayMonthLabel}`;
+    const jalaliWeekdayIndex =
+      JALALI_WEEKDAY_ORDER[dayName] ?? (target.getDay() + 1) % 7;
     const tag =
-      i === 0 ? 'امروز' : i === 1 ? 'فردا' : dayName === 'جمعه' ? 'آخر هفته' : 'ظرفیت باز';
+      i === 0
+        ? 'امروز'
+        : i === 1
+          ? 'فردا'
+          : dayName === 'جمعه'
+            ? 'آخر هفته'
+            : 'ظرفیت باز';
 
     result.push({
       date: dateJalali,
@@ -397,6 +427,10 @@ export function getUpcomingJalaliDays(count = 7): UpcomingJalaliDayItem[] {
       dayMonthLabel,
       fullLabel,
       tag,
+      dayNumberPersian,
+      monthNamePersian,
+      yearPersian,
+      jalaliWeekdayIndex,
     });
   }
 

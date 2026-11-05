@@ -76,6 +76,7 @@ import {
   computeBusinessProfileCompletion,
 } from '../../components/business/BusinessProfileCompletionWidget';
 import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
+import { BusinessQrCodeCard } from '../../components/business/BusinessQrCodeCard';
 
 /** بررسی رایگان بودن پلن فعلی کسب‌وکار */
 const isFreeSubscriptionPlan = (
@@ -359,8 +360,11 @@ export const BusinessDashboardPage: React.FC = () => {
                         <span className="text-sm font-extrabold text-[#061138]">
                           {apt.customerName}
                         </span>
-                        <span className="font-mono text-[11px] font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded-md">
-                          {apt.referenceCode}
+                        <span
+                          dir="ltr"
+                          className="font-mono text-[11px] font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded-md"
+                        >
+                          {apt.customerPhoneMasked}
                         </span>
                       </div>
                       <p className="text-xs text-[#475569] truncate">
@@ -783,9 +787,9 @@ export const BusinessCalendarPage: React.FC = () => {
                                 {matched.serviceTitle}
                               </p>
                               <p className="text-[10px] text-[#8B5CF6]">
-                                کد پیگیری:{' '}
+                                تلفن مراجع:{' '}
                                 <span dir="ltr" className="font-mono font-bold">
-                                  {matched.referenceCode}
+                                  {matched.customerPhoneMasked}
                                 </span>
                               </p>
                             </button>
@@ -1087,11 +1091,14 @@ export const BusinessAppointmentsPage: React.FC = () => {
           data={filtered}
           columns={[
             {
-              key: 'code',
-              header: 'کد پیگیری',
+              key: 'phone',
+              header: 'شماره تماس مشتری',
               render: (r) => (
-                <span className="font-mono text-xs font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded-md">
-                  {r.referenceCode}
+                <span
+                  dir="ltr"
+                  className="font-mono text-xs font-bold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#BFDBFE]"
+                >
+                  {r.customerPhoneMasked}
                 </span>
               ),
             },
@@ -2886,6 +2893,14 @@ export const BusinessProfileEditPage: React.FC = () => {
   const [bankAccountHolder, setBankAccountHolder] = useState(
     currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
   );
+  const [depositEnabled, setDepositEnabled] = useState<boolean>(
+    Boolean(currentBiz?.depositEnabled)
+  );
+  const [depositPercent, setDepositPercent] = useState<number>(
+    currentBiz?.depositPercent && currentBiz.depositPercent > 0
+      ? currentBiz.depositPercent
+      : 30
+  );
   const [savedNotice, setSavedNotice] = useState(false);
 
   useEffect(() => {
@@ -2902,6 +2917,12 @@ export const BusinessProfileEditPage: React.FC = () => {
     setBankShebaNumber(currentBiz.bankShebaNumber ?? '');
     setBankAccountHolder(
       currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
+    );
+    setDepositEnabled(Boolean(currentBiz.depositEnabled));
+    setDepositPercent(
+      currentBiz.depositPercent && currentBiz.depositPercent > 0
+        ? currentBiz.depositPercent
+        : 30
     );
   }, [currentBiz?.id]);
 
@@ -2935,6 +2956,8 @@ export const BusinessProfileEditPage: React.FC = () => {
       bankCardNumber: cleanCard || undefined,
       bankShebaNumber: cleanSheba ? `IR${cleanSheba}` : undefined,
       bankAccountHolder: bankAccountHolder.trim() || undefined,
+      depositEnabled,
+      depositPercent,
     });
     updateOnboardingDraft({
       businessName: name,
@@ -3134,6 +3157,81 @@ export const BusinessProfileEditPage: React.FC = () => {
                   placeholder="IR120170000000123456789012"
                 />
               </FormField>
+
+              {/* تنظیمات دریافت بیعانه آنلاین رزرو و کیف پول سالن */}
+              <div className="pt-3 border-t border-[#E2E8F0] space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-extrabold text-[#061138]">
+                      تنظیمات دریافت بیعانه آنلاین هنگام رزرو نوبت
+                    </h4>
+                    <p className="text-[11px] text-[#64748B] mt-0.5">
+                      با فعال‌سازی بیعانه، بخشی از مبلغ خدمت هنگام رزرو توسط مشتری پرداخت شده و الباقی در سالن تسویه می‌شود.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={depositEnabled}
+                    onClick={() => setDepositEnabled((prev) => !prev)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold border transition-colors cursor-pointer ${
+                      depositEnabled
+                        ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                        : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
+                    }`}
+                  >
+                    {depositEnabled
+                      ? 'دریافت بیعانه آنلاین: فعال ✓'
+                      : 'دریافت بیعانه آنلاین: غیرفعال'}
+                  </button>
+                </div>
+
+                {depositEnabled ? (
+                  <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-[#061138]">
+                        درصد بیعانه دریافتی از مشتری هنگام ثبت نوبت:
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {[20, 30, 50].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setDepositPercent(pct)}
+                            className={`px-3 py-1 rounded-xl text-xs font-extrabold border cursor-pointer transition-colors ${
+                              depositPercent === pct
+                                ? 'bg-[#061138] text-white border-[#061138]'
+                                : 'bg-[#F8FAFC] text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
+                            }`}
+                          >
+                            {toPersianDigits(pct)}٪ مبلغ خدمت
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-[#047857] bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-2.5 py-1.5 font-semibold">
+                      نحوه تسویه با سالن: مبالغ بیعانه پرداختی مشتریان بلافاصله در «کیف پول سالن» شما ثبت می‌شود و به شماره شبا / کارت بانکی بالا واریز و تسویه می‌گردد.
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="p-3 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-bold text-[#BAE6FD]">
+                        موجودی کیف پول بیعانه‌های دریافتی سالن
+                      </p>
+                      <p className="text-xs font-black text-white tabular-nums mt-0.5">
+                        {formatPriceToman(currentBiz.walletBalanceToman ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-[#00E5FF]">
+                    تسویه خودکار به شبا / کارت ثبت‌شده
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 flex items-center gap-3">
@@ -3149,56 +3247,76 @@ export const BusinessProfileEditPage: React.FC = () => {
           </form>
         </Card>
 
-        <Card variant="muted" className="lg:col-span-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-[#8B5CF6]">
-              پیش‌نمایش کارت و موقعیت در پروفایل عمومی
-            </span>
-            <StatusBadge label="زنده" tone="primary" />
-          </div>
-          <VisualMediaIllustration
-            theme="violet"
-            categoryLabel={currentBiz.typeLabel}
-            title={name}
-            city={currentBiz.city}
-          />
-          <div className="space-y-2">
-            <h3 className="text-sm font-extrabold text-[#1E1B2E]">{name}</h3>
-            <p className="text-xs text-[#6B6480] leading-relaxed">
-              {shortDesc}
-            </p>
-            <div className="pt-2 border-t border-[#E6E0F5] space-y-1.5 text-xs">
-              <p className="text-[#6B6480] flex items-start gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-[#8B5CF6] shrink-0 mt-0.5" />
-                <span>{address}</span>
-              </p>
-              {instagramHandle.trim() ? (
-                <p className="flex items-center justify-between gap-2 pt-0.5">
-                  <span className="inline-flex items-center gap-1 text-[#6B6480]">
-                    <Instagram className="w-3.5 h-3.5 text-[#8B5CF6]" />
-                    <span>صفحه اینستاگرام:</span>
-                  </span>
-                  <span
-                    dir="ltr"
-                    className="font-mono font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded border border-[#EDE9FE]"
-                  >
-                    {instagramHandle.trim().startsWith('@')
-                      ? instagramHandle.trim()
-                      : `@${instagramHandle.trim()}`}
-                  </span>
-                </p>
-              ) : null}
+        <div className="lg:col-span-5 space-y-5">
+          <Card variant="muted" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-[#8B5CF6]">
+                پیش‌نمایش کارت و موقعیت در پروفایل عمومی
+              </span>
+              <StatusBadge label="زنده" tone="primary" />
             </div>
-            <LocationMapPicker
-              city={currentBiz.city}
-              neighborhood={currentBiz.neighborhood}
-              address={address}
-              lat={mapLat}
-              lng={mapLng}
-              readOnly
-            />
-          </div>
-        </Card>
+            {avatarUrl || currentBiz.avatarUrl ? (
+              <div className="relative h-44 rounded-2xl overflow-hidden border border-[#E6E0F5] bg-[#1E1B2E]">
+                <img
+                  src={avatarUrl || currentBiz.avatarUrl}
+                  alt={name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <VisualMediaIllustration
+                theme="violet"
+                categoryLabel={currentBiz.typeLabel}
+                title={name}
+                city={currentBiz.city}
+              />
+            )}
+            <div className="space-y-2">
+              <h3 className="text-sm font-extrabold text-[#1E1B2E]">{name}</h3>
+              <p className="text-xs text-[#6B6480] leading-relaxed">
+                {shortDesc}
+              </p>
+              <div className="pt-2 border-t border-[#E6E0F5] space-y-1.5 text-xs">
+                <p className="text-[#6B6480] flex items-start gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#8B5CF6] shrink-0 mt-0.5" />
+                  <span>{address}</span>
+                </p>
+                {instagramHandle.trim() ? (
+                  <p className="flex items-center justify-between gap-2 pt-0.5">
+                    <span className="inline-flex items-center gap-1 text-[#6B6480]">
+                      <Instagram className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                      <span>صفحه اینستاگرام:</span>
+                    </span>
+                    <span
+                      dir="ltr"
+                      className="font-mono font-bold text-[#8B5CF6] bg-[#EDE9FE] px-2 py-0.5 rounded border border-[#EDE9FE]"
+                    >
+                      {instagramHandle.trim().startsWith('@')
+                        ? instagramHandle.trim()
+                        : `@${instagramHandle.trim()}`}
+                    </span>
+                  </p>
+                ) : null}
+              </div>
+              <LocationMapPicker
+                city={currentBiz.city}
+                neighborhood={currentBiz.neighborhood}
+                address={address}
+                lat={mapLat}
+                lng={mapLng}
+                readOnly
+              />
+            </div>
+          </Card>
+
+          <BusinessQrCodeCard
+            businessName={name || currentBiz.name}
+            slug={currentBiz.slug}
+            city={currentBiz.city}
+            neighborhood={currentBiz.neighborhood}
+            compact
+          />
+        </div>
       </div>
     </div>
   );

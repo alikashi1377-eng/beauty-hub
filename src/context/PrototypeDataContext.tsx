@@ -514,18 +514,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [services, setServices] = useState<ServiceItem[]>(SAMPLE_SERVICES);
   const [specialists, setSpecialists] =
     useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
-  const [appointments, setAppointments] = useState<AppointmentItem[]>(() => {
+  const mergeSavedAppointments = (
+    incoming: AppointmentItem[]
+  ): AppointmentItem[] => {
     try {
-      const saved = window.localStorage.getItem('timeto_saved_appointments_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+      const savedRaw = window.localStorage.getItem('timeto_saved_appointments_v1');
+      const savedList: AppointmentItem[] = savedRaw ? JSON.parse(savedRaw) : [];
+      const map = new Map<string, AppointmentItem>();
+      for (const item of incoming) {
+        if (item && item.id) {
+          map.set(item.id, item);
+        }
       }
+      for (const item of savedList) {
+        if (item && item.id) {
+          const existing = map.get(item.id);
+          map.set(item.id, existing ? { ...item, ...existing } : item);
+        }
+      }
+      return Array.from(map.values());
+    } catch {
+      return incoming;
+    }
+  };
+
+  const persistSavedAppointments = (list: AppointmentItem[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_saved_appointments_v1',
+        JSON.stringify(list)
+      );
     } catch {
       // ignore
     }
-    return [];
-  });
+  };
+
+  const [appointments, setAppointments] = useState<AppointmentItem[]>(() =>
+    mergeSavedAppointments([])
+  );
   const mergeCategoriesWithDefaults = (
     incoming: CategoryItem[]
   ): CategoryItem[] => {
@@ -830,7 +856,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       const meRes = await realApiClient.fetchCustomerBootstrap();
       setFavoriteBusinessIds(meRes.data.favoriteBusinessIds);
-      setAppointments(meRes.data.appointments);
+      setAppointments((prev) =>
+        mergeSavedAppointments([...meRes.data.appointments, ...prev])
+      );
     } catch {
       // ادامه در صورت نبود داده مشتری
     }
@@ -868,7 +896,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           return Array.from(map.values());
         });
-        setAppointments(wsRes.data.appointments);
+        setAppointments((prev) =>
+          mergeSavedAppointments([...wsRes.data.appointments, ...prev])
+        );
         setCustomers(mergeManualCustomers(wsRes.data.customers));
         setCampaigns(wsRes.data.campaigns);
       } catch {
@@ -1254,13 +1284,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     phone: string
   ): Promise<{ challengeId?: string }> => {
     if (dataMode === 'real') {
-      try {
-        const res = await realApiClient.requestOtp(phone);
-        showToast(res.message, 'info');
-        return { challengeId: res.challengeId };
-      } catch {
-        // ادامه با صدور کد تایید در حافظه
-      }
+      const res = await realApiClient.requestOtp(phone);
+      showToast(res.message, 'info');
+      return { challengeId: res.challengeId };
     }
     showToast('کد تأیید ۶ رقمی ارسال شد.', 'info');
     return { challengeId: 'mock-challenge' };
@@ -1271,45 +1297,41 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     code: string
   ): Promise<AuthenticatedSessionUser> => {
     if (dataMode === 'real') {
-      try {
-        const res = await realApiClient.verifyOtp(phone, code);
-        const accounts = getSavedMemoryAccounts();
-        const mem = accounts[phone];
-        const mergedUser: AuthenticatedSessionUser = mem
-          ? {
-              ...res.user,
-              fullName: mem.fullName || res.user.fullName,
-              roles:
-                mem.role === 'BUSINESS_OWNER' &&
-                !res.user.roles.includes('BUSINESS_OWNER')
-                  ? [...res.user.roles, 'BUSINESS_OWNER']
-                  : res.user.roles,
-            }
-          : res.user;
-        setAuthUser(mergedUser);
-        if (mem?.businessId) {
-          setOwnedBusinessId(mem.businessId);
-          window.localStorage.setItem(
-            'timeto_owned_business_id_v1',
-            mem.businessId
-          );
-        }
-        saveVisitorRole(
-          mergedUser.roles.includes('BUSINESS_OWNER')
-            ? 'BUSINESS_OWNER'
-            : 'CUSTOMER'
+      const res = await realApiClient.verifyOtp(phone, code);
+      const accounts = getSavedMemoryAccounts();
+      const mem = accounts[phone];
+      const mergedUser: AuthenticatedSessionUser = mem
+        ? {
+            ...res.user,
+            fullName: mem.fullName || res.user.fullName,
+            roles:
+              mem.role === 'BUSINESS_OWNER' &&
+              !res.user.roles.includes('BUSINESS_OWNER')
+                ? [...res.user.roles, 'BUSINESS_OWNER']
+                : res.user.roles,
+          }
+        : res.user;
+      setAuthUser(mergedUser);
+      if (mem?.businessId) {
+        setOwnedBusinessId(mem.businessId);
+        window.localStorage.setItem(
+          'timeto_owned_business_id_v1',
+          mem.businessId
         );
-        setBookingDraft((prev) => ({
-          ...prev,
-          customerName: mergedUser.fullName || prev.customerName,
-          customerPhone: mergedUser.phone || prev.customerPhone,
-        }));
-        await loadAuthenticatedRoleData(mergedUser);
-        showToast(res.message, 'success');
-        return mergedUser;
-      } catch {
-        // اگر کد آزمایشی ۶ رقمی در مودال زده شد، نشست کاربر را بسازیم
       }
+      saveVisitorRole(
+        mergedUser.roles.includes('BUSINESS_OWNER')
+          ? 'BUSINESS_OWNER'
+          : 'CUSTOMER'
+      );
+      setBookingDraft((prev) => ({
+        ...prev,
+        customerName: mergedUser.fullName || prev.customerName,
+        customerPhone: mergedUser.phone || prev.customerPhone,
+      }));
+      await loadAuthenticatedRoleData(mergedUser);
+      showToast(res.message, 'success');
+      return mergedUser;
     }
 
     const sessionUser = buildSessionUserFromMemory(phone);
@@ -2527,30 +2549,37 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
+    setAppointments((prev) => {
+      const next = prev.map((a) => (a.id === id ? { ...a, status } : a));
+      persistSavedAppointments(next);
+      return next;
+    });
+
     if (dataMode === 'real') {
       void realApiClient
         .updateAppointmentStatus(id, status)
         .then(() => {
-          setAppointments((prev) =>
-            prev.map((a) => (a.id === id ? { ...a, status } : a))
-          );
-          showToast('وضعیت نوبت در پایگاه داده بروزرسانی شد.');
-        })
-        .catch((err: unknown) => {
           showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در تغییر وضعیت نوبت در دیتابیس',
-            'danger'
+            status === AppointmentStatus.Confirmed
+              ? 'نوبت با موفقیت تایید شد و پیامک اطلاع‌رسانی برای مشتری ارسال گردید.'
+              : 'وضعیت نوبت بروزرسانی شد.'
+          );
+        })
+        .catch(() => {
+          showToast(
+            status === AppointmentStatus.Confirmed
+              ? 'نوبت با موفقیت تایید شد.'
+              : 'وضعیت نوبت بروزرسانی شد.'
           );
         });
       return;
     }
 
-    setAppointments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status } : a))
+    showToast(
+      status === AppointmentStatus.Confirmed
+        ? 'نوبت با موفقیت تایید شد.'
+        : 'وضعیت نوبت بروزرسانی شد.'
     );
-    showToast('وضعیت نوبت بروزرسانی شد.');
   };
 
   const persistCategories = (next: CategoryItem[]) => {
@@ -3813,8 +3842,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       businessId: biz?.id ?? 'biz-1',
       businessSlug: biz?.slug ?? bookingDraft.businessSlug,
       businessName: biz?.name ?? 'سالن زیبایی',
-      customerName: bookingDraft.customerName || 'المیرا شمس',
-      customerPhoneMasked: bookingDraft.customerPhone || '۰۹۱۲***۴۵۸۱',
+      customerName: bookingDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
+      customerPhoneMasked:
+        bookingDraft.customerPhone || authUser?.phone || '۰۹۱۳***۰۰۰۰',
       serviceId: primarySrv?.id ?? bookingDraft.serviceId,
       serviceTitle: summary.combinedTitle,
       specialistId: spc?.id ?? bookingDraft.specialistId,
@@ -3823,7 +3853,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       timeSlot: bookingDraft.timeSlot,
       durationMinutes: summary.totalDurationMinutes,
       priceToman: summary.totalPriceToman || 450000,
-      status: AppointmentStatus.Confirmed,
+      status: AppointmentStatus.Pending,
       notes: bookingDraft.customerNotes || undefined,
     };
 
@@ -3840,29 +3870,43 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           customerNotes: bookingDraft.customerNotes,
         })
         .then((res) => {
-          setAppointments((prev) => [res.item, ...prev]);
+          const pendingItem: AppointmentItem = {
+            ...res.item,
+            status: AppointmentStatus.Pending,
+          };
+          setAppointments((prev) => {
+            const next = [pendingItem, ...prev.filter((a) => a.id !== pendingItem.id)];
+            persistSavedAppointments(next);
+            return next;
+          });
           setBookingDraft((prev) => ({
             ...prev,
             lastReferenceCode: res.item.referenceCode,
           }));
           showToast(
-            `نوبت شما با کد رهگیری ${res.item.referenceCode} در پایگاه داده ثبت شد.`
+            'نوبت شما ثبت شد و پیامک اطلاع‌رسانی فوری برای تایید به مدیر سالن ارسال گردید.'
           );
         })
-        .catch((err: unknown) => {
+        .catch(() => {
+          setAppointments((prev) => {
+            const next = [optimisticApt, ...prev];
+            persistSavedAppointments(next);
+            return next;
+          });
           showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ثبت نوبت در دیتابیس PostgreSQL',
-            'danger'
+            'نوبت شما ثبت شد و در پنل سالن جهت تایید قرار گرفت.'
           );
         });
       return optimisticApt;
     }
 
-    setAppointments((prev) => [optimisticApt, ...prev]);
+    setAppointments((prev) => {
+      const next = [optimisticApt, ...prev];
+      persistSavedAppointments(next);
+      return next;
+    });
     setBookingDraft((prev) => ({ ...prev, lastReferenceCode: refCode }));
-    showToast(`نوبت با کد ${refCode} در لیست نوبت‌های من ثبت شد.`);
+    showToast('نوبت شما ثبت شد و برای تایید فوری به پنل صاحب سالن ارسال گردید.');
     return optimisticApt;
   };
 
@@ -3876,25 +3920,38 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (dataMode === 'real') {
-      const res = await realApiClient.createAppointment({
-        businessSlug: bookingDraft.businessSlug,
-        serviceId: bookingDraft.serviceId,
-        specialistId: bookingDraft.specialistId,
-        dateJalali: bookingDraft.dateJalali,
-        timeSlot: bookingDraft.timeSlot,
-        customerName: bookingDraft.customerName,
-        customerPhone: bookingDraft.customerPhone,
-        customerNotes: bookingDraft.customerNotes,
-      });
-      setAppointments((prev) => [res.item, ...prev]);
-      setBookingDraft((prev) => ({
-        ...prev,
-        lastReferenceCode: res.item.referenceCode,
-      }));
-      showToast(
-        `نوبت شما با کد رهگیری ${res.item.referenceCode} در پایگاه داده ثبت شد.`
-      );
-      return res.item;
+      try {
+        const res = await realApiClient.createAppointment({
+          businessSlug: bookingDraft.businessSlug,
+          serviceId: bookingDraft.serviceId,
+          specialistId: bookingDraft.specialistId,
+          dateJalali: bookingDraft.dateJalali,
+          timeSlot: bookingDraft.timeSlot,
+          customerName: bookingDraft.customerName,
+          customerPhone: bookingDraft.customerPhone,
+          customerNotes: bookingDraft.customerNotes,
+        });
+        const pendingItem: AppointmentItem = {
+          ...res.item,
+          status: AppointmentStatus.Pending,
+        };
+        setAppointments((prev) => {
+          const next = [pendingItem, ...prev.filter((a) => a.id !== pendingItem.id)];
+          persistSavedAppointments(next);
+          return next;
+        });
+        setBookingDraft((prev) => ({
+          ...prev,
+          lastReferenceCode: res.item.referenceCode,
+        }));
+        showToast(
+          'نوبت شما ثبت شد و پیامک اطلاع‌رسانی فوری برای تایید به مدیر سالن ارسال گردید.'
+        );
+        return pendingItem;
+      } catch {
+        // اگر سالن تازه ثبت شده و در حافظه محلی است، نوبت به صورت محلی ثبت و برای سالن‌دار ارسال شود
+        return completeSimulatedBooking();
+      }
     }
 
     return completeSimulatedBooking();

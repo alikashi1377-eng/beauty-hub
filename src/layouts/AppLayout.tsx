@@ -28,7 +28,11 @@ import {
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { TimetoAuthModal } from '../components/auth/TimetoAuthModal';
-import { resolveAdjacentTabBySwipe } from '../utils/formatters';
+import {
+  resolveAdjacentTabBySwipe,
+  toPersianDigits,
+} from '../utils/formatters';
+import { AppointmentStatus } from '../types';
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -83,6 +87,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     isLoadingInitialData,
     currentBusiness,
     appointments,
+    updateAppointmentStatus,
     toast,
     dismissToast,
     databaseError,
@@ -196,9 +201,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       ? pathname
       : '';
 
-  const pendingCount = appointments.filter(
-    (a) => a.status === 'PENDING'
-  ).length;
+  const businessAppointments = currentBusiness
+    ? appointments.filter(
+        (a) =>
+          a.businessId === currentBusiness.id ||
+          a.businessSlug === currentBusiness.slug ||
+          a.businessName === currentBusiness.name
+      )
+    : appointments;
+  const pendingBusinessAppointments = businessAppointments.filter(
+    (a) => a.status === AppointmentStatus.Pending
+  );
+  const pendingCount = pendingBusinessAppointments.length;
 
   return (
     <div
@@ -256,11 +270,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   type="button"
                   onClick={() => setNotificationsOpen(true)}
                   aria-label="اعلان‌های پنل کسب‌وکار"
-                  className="p-2.5 rounded-full border border-[#CBD5E1] text-[#334155] hover:bg-[#E0ECFF] hover:text-[#0057FF] cursor-pointer relative transition-colors"
+                  className="px-3 py-2 rounded-full border border-[#CBD5E1] text-[#334155] hover:bg-[#E0ECFF] hover:text-[#0057FF] cursor-pointer relative inline-flex items-center gap-1.5 transition-colors"
                 >
                   <Bell className="w-4 h-4" />
                   {pendingCount > 0 ? (
-                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#EF4444] border-2 border-white" />
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-black tabular-nums animate-pulse">
+                      {toPersianDigits(pendingCount)} نوبت جدید
+                    </span>
                   ) : null}
                 </button>
 
@@ -269,6 +285,47 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               </div>
             </div>
           </header>
+
+          {/* نوار هشدار فوری نوبت جدید برای صاحب کسب‌وکار — تا هیچ نوبتی فراموش نشود */}
+          {pendingBusinessAppointments.length > 0 ? (
+            <div className="bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white px-4 sm:px-6 py-2.5 border-b border-[#00E5FF]/35 shadow-sm">
+              <div className="max-w-[1140px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] animate-ping shrink-0" />
+                  <p className="font-extrabold truncate">
+                    نوبت جدید در انتظار تایید شما:{' '}
+                    <span className="text-[#00E5FF]">
+                      {pendingBusinessAppointments[0].customerName}
+                    </span>{' '}
+                    ({pendingBusinessAppointments[0].serviceTitle} ·{' '}
+                    {pendingBusinessAppointments[0].dateJalali} ساعت{' '}
+                    {pendingBusinessAppointments[0].timeSlot})
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateAppointmentStatus(
+                        pendingBusinessAppointments[0].id,
+                        AppointmentStatus.Confirmed
+                      )
+                    }
+                    className="px-3.5 py-1 rounded-full bg-[#10B981] hover:bg-[#059669] text-white font-extrabold text-xs cursor-pointer transition-colors shadow-xs"
+                  >
+                    ✓ تایید فوری نوبت
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotificationsOpen(true)}
+                    className="px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white font-bold text-[11px] cursor-pointer transition-colors"
+                  >
+                    مشاهده همه ({toPersianDigits(pendingCount)})
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* نوار تب‌های زیرمجموعه در صورت وجود زیربخش (نوبت‌ها، سالن من، مشتریان، مالی و پلن) */}
           <BusinessCategorySubTabs />
@@ -356,6 +413,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         </>
       )}
 
+      <PWAMobileInstallBanner />
       <TimetoAuthModal />
 
       {toast ? (
@@ -381,28 +439,69 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         }
       >
         <div className="space-y-3 text-xs">
-          {appointments.length === 0 ? (
+          {businessAppointments.length === 0 ? (
             <p className="text-[#334155] py-3 text-center">
-              اعلان جدیدی برای کسب‌وکار شما ثبت نشده است.
+              اعلان یا نوبت جدیدی برای کسب‌وکار شما ثبت نشده است.
             </p>
           ) : (
-            appointments.slice(0, 4).map((apt) => (
+            businessAppointments.slice(0, 6).map((apt) => (
               <div
                 key={apt.id}
-                className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1]"
+                className={`p-3.5 rounded-2xl border space-y-2 ${
+                  apt.status === AppointmentStatus.Pending
+                    ? 'bg-[#FFFBEB] border-[#F59E0B]'
+                    : 'bg-[#F3F6FC] border-[#CBD5E1]'
+                }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-bold text-[#061138]">
+                  <p className="font-extrabold text-[#061138]">
                     {apt.customerName} — {apt.serviceTitle}
                   </p>
-                  <span className="text-[11px] font-mono text-[#0057FF]">
-                    {apt.referenceCode}
+                  <span
+                    dir="ltr"
+                    className="text-[11px] font-mono font-bold text-[#0057FF]"
+                  >
+                    {apt.customerPhoneMasked}
                   </span>
                 </div>
-                <p className="text-[#334155] mt-1 leading-relaxed">
-                  تاریخ {apt.dateJalali} ساعت {apt.timeSlot} · متخصص:{' '}
-                  {apt.specialistName}
-                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[#334155] leading-relaxed">
+                    تاریخ {apt.dateJalali} ساعت {apt.timeSlot} · متخصص:{' '}
+                    {apt.specialistName}
+                  </p>
+                  {apt.status === AppointmentStatus.Pending ? (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Confirmed
+                          )
+                        }
+                        className="px-3 py-1 rounded-full bg-[#10B981] hover:bg-[#059669] text-white font-extrabold text-[11px] cursor-pointer"
+                      >
+                        ✓ تایید نوبت
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Cancelled
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] cursor-pointer"
+                      >
+                        لغو
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
+                      تاییدشده ✓
+                    </span>
+                  )}
+                </div>
               </div>
             ))
           )}

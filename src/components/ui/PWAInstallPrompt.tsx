@@ -140,7 +140,6 @@ export const PWAMobileInstallBanner: React.FC = () => {
   const {
     isInstalled,
     isBannerDismissed,
-    isIOS,
     install,
     dismissBanner,
     confirmInstalled,
@@ -155,14 +154,14 @@ export const PWAMobileInstallBanner: React.FC = () => {
     }
 
     const handleScroll = () => {
-      if (window.scrollY > 140) {
+      if (window.scrollY > 80) {
         setHasTriggeredByScrollOrDelay(true);
       }
     };
 
     const timer = window.setTimeout(() => {
       setHasTriggeredByScrollOrDelay(true);
-    }, 4500);
+    }, 3000);
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
@@ -187,36 +186,31 @@ export const PWAMobileInstallBanner: React.FC = () => {
       <div
         role="region"
         aria-label="پاپ‌آپ نصب وب‌اپلیکیشن تایم تو"
-        className="fixed bottom-20 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:left-5 sm:w-96 z-40 rounded-2xl bg-gradient-to-r from-[#061138] via-[#0B1D52] to-[#0044CC] text-white p-3.5 shadow-[0_16px_40px_-8px_rgba(6,17,56,0.75)] border border-[#00E5FF]/40 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300"
+        className="fixed bottom-20 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:left-5 sm:w-88 z-40 rounded-2xl bg-[#061138] text-white px-3.5 py-3 shadow-[0_16px_40px_-8px_rgba(6,17,56,0.85)] border border-[#00E5FF]/45 flex items-center justify-between gap-2.5 animate-in fade-in slide-in-from-bottom-4 duration-300"
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
-            alt="Timeto App Icon"
-            className="w-10 h-10 rounded-xl object-contain bg-[#02081D] border border-[#00E5FF]/40 shrink-0"
+            alt="Timeto"
+            className="w-9 h-9 rounded-xl object-contain bg-[#02081D] border border-[#00E5FF]/40 shrink-0"
           />
-          <div className="min-w-0">
-            <p className="text-xs font-extrabold text-white truncate">
-              نصب اپلیکیشن تایم تو
-            </p>
-            <p className="text-[11px] text-[#BAE6FD] truncate">
-              دسترسی سریع بدون مرورگر
-            </p>
-          </div>
+          <p className="text-xs font-extrabold text-white truncate">
+            نصب اپلیکیشن تایم تو
+          </p>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => void handleAction()}
-            className="px-3.5 py-2 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold cursor-pointer transition-colors shadow-xs"
+            className="px-4 py-1.5 rounded-full bg-[#00E5FF] hover:bg-[#38BDF8] text-[#061138] text-xs font-extrabold cursor-pointer transition-colors shadow-xs"
           >
-            {isIOS ? 'نصب' : 'نصب اپ'}
+            نصب
           </button>
           <button
             type="button"
             onClick={dismissBanner}
-            aria-label="بستن پیشنهاد نصب"
+            aria-label="بستن"
             className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white/80 flex items-center justify-center cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
