@@ -4,9 +4,12 @@ import {
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CreditCard,
+  Megaphone,
   Pause,
   Play,
   Scissors,
@@ -17,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toPersianDigits } from '../../utils/formatters';
 import { TIMETO_BRAND_LOGO_URL } from '../ui/TimetoLogo';
+import { usePrototypeData } from '../../context/PrototypeDataContext';
 
 export interface BusinessStorySlide {
   id: string;
@@ -331,14 +335,60 @@ const StoryIconGraphic: React.FC<{
 
 export const BusinessStoriesBar: React.FC = () => {
   const navigate = useNavigate();
+  const {
+    currentBusiness,
+    platformBusinessNotices,
+    markPlatformBusinessNoticeRead,
+  } = usePrototypeData();
   const [seenIds, setSeenIds] = useState<string[]>(() =>
     getInitialSeenStoryIds()
   );
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return (
+        window.localStorage.getItem('timeto_stories_accordion_collapsed_v1') ===
+        '1'
+      );
+    } catch {
+      return false;
+    }
+  });
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
   const [activeSlideIndex, setActiveSlideIndex] = useState<number>(0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [progressPct, setProgressPct] = useState<number>(0);
   const pushedHistoryRef = React.useRef<boolean>(false);
+
+  const bizId = currentBusiness?.id || 'biz-owner-zero';
+  const relevantAdminNotices = platformBusinessNotices.filter(
+    (n) => n.targetBusinessId === 'ALL' || n.targetBusinessId === bizId
+  );
+  const unreadAdminNotices = relevantAdminNotices.filter(
+    (n) => !n.readByBusinessIds.includes(bizId)
+  );
+
+  // اگر اطلاعیه یا پیام خوانده‌نشده جدیدی از سمت مدیر پلتفرم آمده باشد، آکاردئون به صورت خودکار باز شود
+  useEffect(() => {
+    if (unreadAdminNotices.length > 0 && isCollapsed) {
+      setIsCollapsed(false);
+    }
+  }, [unreadAdminNotices.length, isCollapsed]);
+
+  const toggleAccordion = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(
+          'timeto_stories_accordion_collapsed_v1',
+          next ? '1' : '0'
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   const activeStory =
     activeStoryIndex !== null
@@ -459,70 +509,162 @@ export const BusinessStoriesBar: React.FC = () => {
 
   return (
     <>
-      {/* نوار استوری‌های آموزشی و اطلاعیه‌های بالای پیشخوان سالن */}
+      {/* نوار آکاردئونی استوری‌های آموزشی و اطلاعیه‌های بالای پیشخوان سالن */}
       <section
         aria-label="استوری‌های راهنما و اطلاعیه‌های سالن‌دار"
-        className="rounded-3xl bg-white border border-[#CBD5E1] px-4 py-3.5 shadow-2xs"
+        className="rounded-3xl bg-white border border-[#CBD5E1] px-4 py-3 shadow-2xs transition-all"
       >
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#0057FF] animate-pulse" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={toggleAccordion}
+            aria-expanded={!isCollapsed}
+            className="flex items-center gap-2 text-right cursor-pointer focus:outline-none"
+          >
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                unreadAdminNotices.length > 0
+                  ? 'bg-rose-500 animate-ping'
+                  : 'bg-[#0057FF]'
+              }`}
+            />
             <h2 className="text-xs sm:text-sm font-extrabold text-[#061138]">
-              راهنمای تصویری و اطلاعیه‌های سالن‌دار (استوری‌ها)
+              راهنمای تصویری و اطلاعیه‌های مدیریت (استوری‌ها)
             </h2>
-          </div>
-          <span className="text-[11px] font-semibold text-[#64748B]">
-            برای مشاهده راهنما و لینک مستقیم روی هر استوری بزنید
-          </span>
+            {unreadAdminNotices.length > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-black">
+                {toPersianDigits(unreadAdminNotices.length)} پیام جدید مدیر
+              </span>
+            ) : null}
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleAccordion}
+            aria-expanded={!isCollapsed}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F3F6FC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-[11px] font-extrabold text-[#0057FF] transition-colors cursor-pointer"
+          >
+            <span>
+              {isCollapsed
+                ? 'نمایش راهنما و استوری‌ها'
+                : 'جمع کردن (مخفی‌سازی)'}
+            </span>
+            {isCollapsed ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
 
-        <div className="flex items-center gap-3.5 sm:gap-5 overflow-x-auto no-scrollbar py-1">
-          {BUSINESS_DASHBOARD_STORIES.map((story, idx) => {
-            const isSeen = seenIds.includes(story.id);
-            return (
-              <button
-                key={story.id}
-                type="button"
-                onClick={() => openStoryAt(idx)}
-                className="group flex flex-col items-center gap-1.5 shrink-0 cursor-pointer focus:outline-none"
-              >
-                {/* حلقه دور استوری به سبک اینستاگرام */}
-                <div
-                  className={`p-[3px] rounded-full transition-transform duration-200 group-hover:scale-105 ${
-                    isSeen
-                      ? 'bg-[#CBD5E1]'
-                      : 'bg-gradient-to-tr from-[#0057FF] via-[#00E5FF] to-[#F59E0B] shadow-[0_6px_18px_-4px_rgba(0,87,255,0.45)]'
-                  }`}
-                >
-                  <div className="p-0.5 rounded-full bg-white">
+        {!isCollapsed ? (
+          <div className="mt-3 pt-3 border-t border-[#E2E8F0] space-y-3">
+            {/* نمایش پیام‌ها و اطلاعیه‌های ارسالی از طرف مدیر کل پلتفرم */}
+            {relevantAdminNotices.length > 0 ? (
+              <div className="space-y-2">
+                {relevantAdminNotices.slice(0, 3).map((notice) => {
+                  const isRead = notice.readByBusinessIds.includes(bizId);
+                  return (
                     <div
-                      className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br ${story.coverGradient} flex flex-col items-center justify-center overflow-hidden`}
+                      key={notice.id}
+                      className={`p-3.5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                        isRead
+                          ? 'bg-[#F8FAFC] border-[#CBD5E1] text-[#334155]'
+                          : 'bg-[#EFF6FF] border-[#0057FF] text-[#061138] shadow-2xs'
+                      }`}
                     >
-                      <div className="absolute -top-3 -left-3 w-10 h-10 rounded-full bg-white/15 blur-xs" />
-                      <StoryIconGraphic
-                        iconName={story.iconName}
-                        className="w-6 h-6 text-white drop-shadow-xs"
-                      />
-                      <span className="mt-0.5 text-[8px] font-extrabold text-[#00E5FF] tracking-tight">
-                        {story.coverTag}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#0057FF] text-white text-[10px] font-black">
+                            <Megaphone className="w-3 h-3" />
+                            <span>
+                              {notice.targetBusinessId === 'ALL'
+                                ? 'اطلاعیه سراسری مدیر پلتفرم'
+                                : 'پیام اختصاصی مدیر پلتفرم برای سالن شما'}
+                            </span>
+                          </span>
+                          <span className="font-extrabold text-[#061138]">
+                            {notice.title}
+                          </span>
+                          <span className="text-[10px] text-[#64748B]">
+                            ({notice.createdAtJalali})
+                          </span>
+                        </div>
+                        <p className="text-xs leading-relaxed font-medium text-[#1E293B]">
+                          {notice.message}
+                        </p>
+                      </div>
 
-                <span
-                  className={`text-[11px] font-extrabold max-w-[74px] truncate ${
-                    isSeen
-                      ? 'text-[#64748B]'
-                      : 'text-[#061138] group-hover:text-[#0057FF]'
-                  }`}
-                >
-                  {story.shortTitle}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                      {!isRead ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            markPlatformBusinessNoticeRead(notice.id, bizId)
+                          }
+                          className="px-3.5 py-2 rounded-xl bg-[#0057FF] hover:bg-[#0044CC] text-white text-[11px] font-extrabold shrink-0 cursor-pointer transition-colors"
+                        >
+                          ✓ متوجه شدم (خواندم)
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-bold text-[#059669] shrink-0">
+                          ✓ خوانده شده
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-3.5 sm:gap-5 overflow-x-auto no-scrollbar py-1">
+              {BUSINESS_DASHBOARD_STORIES.map((story, idx) => {
+                const isSeen = seenIds.includes(story.id);
+                return (
+                  <button
+                    key={story.id}
+                    type="button"
+                    onClick={() => openStoryAt(idx)}
+                    className="group flex flex-col items-center gap-1.5 shrink-0 cursor-pointer focus:outline-none"
+                  >
+                    {/* حلقه دور استوری به سبک اینستاگرام */}
+                    <div
+                      className={`p-[3px] rounded-full transition-transform duration-200 group-hover:scale-105 ${
+                        isSeen
+                          ? 'bg-[#CBD5E1]'
+                          : 'bg-gradient-to-tr from-[#0057FF] via-[#00E5FF] to-[#F59E0B] shadow-[0_6px_18px_-4px_rgba(0,87,255,0.45)]'
+                      }`}
+                    >
+                      <div className="p-0.5 rounded-full bg-white">
+                        <div
+                          className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br ${story.coverGradient} flex flex-col items-center justify-center overflow-hidden`}
+                        >
+                          <div className="absolute -top-3 -left-3 w-10 h-10 rounded-full bg-white/15 blur-xs" />
+                          <StoryIconGraphic
+                            iconName={story.iconName}
+                            className="w-6 h-6 text-white drop-shadow-xs"
+                          />
+                          <span className="mt-0.5 text-[8px] font-extrabold text-[#00E5FF] tracking-tight">
+                            {story.coverTag}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[11px] font-extrabold max-w-[74px] truncate ${
+                        isSeen
+                          ? 'text-[#64748B]'
+                          : 'text-[#061138] group-hover:text-[#0057FF]'
+                      }`}
+                    >
+                      {story.shortTitle}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* نمایشگر تمام‌صفحه استوری اینستاگرامی (پوستر تصویری + لینک مستقیم به بخش مربوطه) */}

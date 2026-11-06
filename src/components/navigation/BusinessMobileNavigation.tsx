@@ -427,7 +427,7 @@ export const BusinessStickyBottomNav: React.FC = () => {
   return (
     <nav
       aria-label="منوی چسبان پایین پنل کسب‌وکار"
-      className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-xl border-t border-[#CBD5E1] shadow-[0_-8px_30px_rgba(6,17,56,0.1)] px-2 sm:px-6 py-1.5"
+      className="fixed bottom-0 inset-x-0 z-30 bg-[#061138]/96 backdrop-blur-xl border-t-2 border-[#0057FF]/60 shadow-[0_-10px_32px_rgba(6,17,56,0.28)] px-2 sm:px-6 py-1.5"
     >
       <div className="max-w-[760px] mx-auto grid grid-cols-5 gap-1">
         {BUSINESS_PRIMARY_NAV_GROUPS.map((group) => {
@@ -443,8 +443,8 @@ export const BusinessStickyBottomNav: React.FC = () => {
               aria-current={isCurrentGroup ? 'page' : undefined}
               className={`relative flex flex-col items-center justify-center gap-1 py-1.5 px-1 rounded-2xl transition-all ${
                 isCurrentGroup
-                  ? 'bg-[#0057FF] text-white shadow-[0_6px_18px_-4px_rgba(0,87,255,0.5)]'
-                  : 'text-[#475569] hover:bg-[#F3F6FC] hover:text-[#061138]'
+                  ? 'bg-[#0057FF] text-white shadow-[0_6px_18px_-4px_rgba(0,229,255,0.45)] ring-1 ring-[#00E5FF]/50'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
               }`}
             >
               <div className="relative">
@@ -465,7 +465,7 @@ export const BusinessStickyBottomNav: React.FC = () => {
                     className={`absolute -top-1 -right-2 w-2.5 h-2.5 rounded-full border-2 ${
                       isCurrentGroup
                         ? 'bg-[#F59E0B] border-[#0057FF]'
-                        : 'bg-[#F59E0B] border-white'
+                        : 'bg-[#F59E0B] border-[#061138]'
                     }`}
                   />
                 ) : null}

@@ -362,20 +362,22 @@ export const AdminDashboardPage: React.FC = () => {
     (t) => t.status === 'OPEN'
   ).length;
 
-  // اولویت نمایش با کسب‌وکارهای در انتظار بررسی
-  const sortedBusinesses = [...realBusinesses].sort((a, b) => {
-    if (
-      a.approvalStatus === 'PENDING_REVIEW' &&
-      b.approvalStatus !== 'PENDING_REVIEW'
-    )
-      return -1;
-    if (
-      b.approvalStatus === 'PENDING_REVIEW' &&
-      a.approvalStatus !== 'PENDING_REVIEW'
-    )
-      return 1;
-    return 0;
-  });
+  // اولویت نمایش با کسب‌وکارهای در انتظار بررسی (کسب‌وکارهای رد صلاحیت‌شده به زباله‌دان منتقل می‌شوند)
+  const sortedBusinesses = [...realBusinesses]
+    .filter((b) => b.approvalStatus !== 'REJECTED')
+    .sort((a, b) => {
+      if (
+        a.approvalStatus === 'PENDING_REVIEW' &&
+        b.approvalStatus !== 'PENDING_REVIEW'
+      )
+        return -1;
+      if (
+        b.approvalStatus === 'PENDING_REVIEW' &&
+        a.approvalStatus !== 'PENDING_REVIEW'
+      )
+        return 1;
+      return 0;
+    });
 
   // فقط اعلان‌های خوانده‌نشده در نوار بالا نمایش داده می‌شوند تا به‌محض تایید/رد یا بستن، از صفحه جمع شوند
   const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
@@ -963,12 +965,15 @@ export const AdminDashboardPage: React.FC = () => {
   );
 };
 
-/** ۲. مدیریت کسب‌وکارها (/admin/businesses) */
+/** ۲. مدیریت کسب‌وکارها، زباله‌دان و ارسال پیام/اطلاعیه به سالن‌داران (/admin/businesses) */
 export const AdminBusinessesPage: React.FC = () => {
   const {
     businesses,
     updateBusinessApproval,
+    permanentlyDeleteBusiness,
     updateBusinessProfile,
+    platformBusinessNotices,
+    sendPlatformBusinessNotice,
     showToast,
   } = usePrototypeData();
   const [searchQuery, setSearchQuery] = useState('');
@@ -976,11 +981,28 @@ export const AdminBusinessesPage: React.FC = () => {
     'ALL'
   );
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [permDeleteTargetId, setPermDeleteTargetId] = useState<string | null>(
+    null
+  );
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
+  // مودال ارسال پیام/نکته از طرف مدیر کل پلتفرم به یک کسب‌وکار یا همه کسب‌وکارها
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  const [noticeTargetBizId, setNoticeTargetBizId] = useState<'ALL' | string>(
+    'ALL'
+  );
+  const [noticeTitle, setNoticeTitle] = useState('');
+  const [noticeMessage, setNoticeMessage] = useState('');
+
   // فقط کسب‌وکارهای واقعی (بدون نمونه‌های نمایشی)
   const sourceBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+  const activeBusinesses = sourceBusinesses.filter(
+    (b) => b.approvalStatus !== 'REJECTED'
+  );
+  const trashedBusinesses = sourceBusinesses.filter(
+    (b) => b.approvalStatus === 'REJECTED'
+  );
 
   const filtered = sourceBusinesses.filter((b) => {
     const q = searchQuery.trim();
@@ -991,75 +1013,186 @@ export const AdminBusinessesPage: React.FC = () => {
       (b.ownerName && b.ownerName.includes(q)) ||
       (b.ownerPhone && b.ownerPhone.includes(q)) ||
       b.phoneDisplay.includes(q);
+    // وقتی روی «همه مراکز فعال» هستیم، رد صلاحیت‌شده‌ها (زباله‌دان) نمایش داده نشوند
     const matchStatus =
-      statusFilter === 'ALL' || b.approvalStatus === statusFilter;
+      statusFilter === 'ALL'
+        ? b.approvalStatus !== 'REJECTED'
+        : b.approvalStatus === statusFilter;
     return matchQuery && matchStatus;
   });
 
   const rejectTargetBiz = businesses.find((b) => b.id === rejectTargetId);
+  const permDeleteTargetBiz = businesses.find(
+    (b) => b.id === permDeleteTargetId
+  );
+
+  const openSendNoticeModal = (targetId: 'ALL' | string = 'ALL') => {
+    setNoticeTargetBizId(targetId);
+    const foundBiz = sourceBusinesses.find((b) => b.id === targetId);
+    setNoticeTitle(
+      targetId === 'ALL'
+        ? 'اطلاعیه مهم مدیریت پلتفرم تایم‌تو'
+        : `نکته مدیریتی ویژه «${foundBiz?.name || 'سالن شما'}»`
+    );
+    setNoticeMessage('');
+    setNoticeModalOpen(true);
+  };
+
+  const handleSendNoticeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!noticeMessage.trim()) {
+      showToast('لطفاً متن پیام یا اطلاعیه را وارد کنید.', 'warning');
+      return;
+    }
+    const foundBiz = sourceBusinesses.find((b) => b.id === noticeTargetBizId);
+    sendPlatformBusinessNotice({
+      targetBusinessId: noticeTargetBizId,
+      targetBusinessName: foundBiz?.name,
+      title: noticeTitle,
+      message: noticeMessage,
+    });
+    setNoticeModalOpen(false);
+    setNoticeMessage('');
+  };
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        kicker="نظارت و عملیات · مراکز زیبایی ثبت‌نام‌شده واقعی"
-        title="بررسی، تایید و مدیریت کسب‌وکارهای عضو"
-        subtitle="مشاهده خلاصه اطلاعات در جدول و بررسی کامل تمام بخش‌های پنل ایجادشده توسط صاحب کسب‌وکار (خدمات، متخصصان، ساعات کاری و لوکیشن)"
+        kicker="نظارت، ارتباط با سالن‌داران و زباله‌دان · مراکز زیبایی واقعی"
+        title="بررسی، تایید، ارسال پیام و زباله‌دان کسب‌وکارها"
+        subtitle="کسب‌وکارهای رد صلاحیت‌شده بلافاصله از نمایش عمومی حذف شده و به «زباله‌دان» منتقل می‌شوند تا در صورت نیاز برای همیشه حذف شوند. همچنین می‌توانید به هر سالن‌دار یا همه سالن‌ها اعلان مستقیم بفرستید."
         routePattern="/admin/businesses"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'کسب‌وکارها' },
+          { label: 'کسب‌وکارها و زباله‌دان' },
         ]}
+        actions={
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => openSendNoticeModal('ALL')}
+          >
+            <Megaphone className="w-4 h-4" />
+            <span>ارسال اطلاعیه / پیام به صاحبان کسب‌وکار</span>
+          </Button>
+        }
       />
 
-      <Card className="mb-6 space-y-4">
-        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
-          {[
-            { id: 'ALL', label: 'همه مراکز واقعی', count: sourceBusinesses.length },
-            {
-              id: 'PENDING_REVIEW',
-              label: 'در انتظار بررسی',
-              count: sourceBusinesses.filter(
-                (b) => b.approvalStatus === 'PENDING_REVIEW'
-              ).length,
-            },
-            {
-              id: 'APPROVED',
-              label: 'تاییدشده',
-              count: sourceBusinesses.filter((b) => b.approvalStatus === 'APPROVED')
-                .length,
-            },
-            {
-              id: 'REJECTED',
-              label: 'ردشده',
-              count: sourceBusinesses.filter((b) => b.approvalStatus === 'REJECTED')
-                .length,
-            },
-          ].map((tab) => {
-            const active = statusFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() =>
-                  setStatusFilter(tab.id as ApprovalStatus | 'ALL')
-                }
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
-                  active
-                    ? 'bg-[#8B5CF6] text-white'
-                    : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5]'
-                }`}
+      {/* خلاصه آخرین پیام‌ها و اطلاعیه‌های ارسال‌شده به صاحبان کسب‌وکار */}
+      {platformBusinessNotices.length > 0 ? (
+        <Card className="bg-[#F8FAFC] border border-[#CBD5E1] space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-extrabold text-[#061138] flex items-center gap-1.5">
+              <Megaphone className="w-4 h-4 text-[#0057FF]" />
+              <span>
+                آخرین پیام‌ها و اطلاعیه‌های ارسالی شما به پنل صاحبان کسب‌وکار (
+                {toPersianDigits(platformBusinessNotices.length)} مورد)
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => openSendNoticeModal('ALL')}
+              className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer"
+            >
+              + ارسال پیام جدید
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {platformBusinessNotices.slice(0, 4).map((item) => (
+              <div
+                key={item.id}
+                className="p-3 rounded-2xl bg-white border border-[#E2E8F0] text-xs space-y-1"
               >
-                <span>{tab.label}</span>
-                <span className="tabular-nums">
-                  ({toPersianDigits(tab.count)})
-                </span>
-              </button>
-            );
-          })}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-[#061138]">
+                    {item.title}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-bold">
+                    مخاطب: {item.targetBusinessName || 'همه کسب‌وکارها'}
+                  </span>
+                </div>
+                <p className="text-[#475569] leading-relaxed line-clamp-2">
+                  {item.message}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <Card className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              {
+                id: 'ALL',
+                label: 'مراکز فعال (بدون ردشده‌ها)',
+                count: activeBusinesses.length,
+                isTrash: false,
+              },
+              {
+                id: 'PENDING_REVIEW',
+                label: 'در انتظار بررسی',
+                count: sourceBusinesses.filter(
+                  (b) => b.approvalStatus === 'PENDING_REVIEW'
+                ).length,
+                isTrash: false,
+              },
+              {
+                id: 'APPROVED',
+                label: 'تاییدشده',
+                count: sourceBusinesses.filter(
+                  (b) => b.approvalStatus === 'APPROVED'
+                ).length,
+                isTrash: false,
+              },
+              {
+                id: 'REJECTED',
+                label: '🗑️ زباله‌دان (رد صلاحیت‌شده)',
+                count: trashedBusinesses.length,
+                isTrash: true,
+              },
+            ].map((tab) => {
+              const active = statusFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter(tab.id as ApprovalStatus | 'ALL')
+                  }
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                    active
+                      ? tab.isTrash
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-[#0057FF] text-white shadow-xs'
+                      : tab.isTrash
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      : 'bg-[#F8FAFC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF]'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className="tabular-nums">
+                    ({toPersianDigits(tab.count)})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {statusFilter === 'REJECTED' ? (
+            <span className="text-[11px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
+              کسب‌وکارهای این بخش از صفحات عمومی پلتفرم مخفی شده‌اند و قابل حذف برای همیشه هستند
+            </span>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField id="adm-biz-search" label="جست‌وجوی نام سالن، نام مالک، شماره موبایل یا شهر">
+          <FormField
+            id="adm-biz-search"
+            label="جست‌وجوی نام سالن، نام مالک، شماره موبایل یا شهر"
+          >
             <Input
               id="adm-biz-search"
               value={searchQuery}
@@ -1067,7 +1200,7 @@ export const AdminBusinessesPage: React.FC = () => {
               placeholder="نام سالن، شماره موبایل (0913...) یا شهر..."
             />
           </FormField>
-          <FormField id="adm-biz-status" label="فیلتر وضعیت تایید">
+          <FormField id="adm-biz-status" label="فیلتر بخش / زباله‌دان">
             <Select
               id="adm-biz-status"
               value={statusFilter}
@@ -1075,10 +1208,13 @@ export const AdminBusinessesPage: React.FC = () => {
                 setStatusFilter(e.target.value as ApprovalStatus | 'ALL')
               }
               options={[
-                { value: 'ALL', label: 'همه کسب‌وکارها' },
+                { value: 'ALL', label: 'همه مراکز فعال (بدون زباله‌دان)' },
                 { value: 'APPROVED', label: 'تاییدشده' },
                 { value: 'PENDING_REVIEW', label: 'در انتظار بررسی' },
-                { value: 'REJECTED', label: 'ردشده' },
+                {
+                  value: 'REJECTED',
+                  label: 'زباله‌دان (کسب‌وکارهای رد صلاحیت‌شده)',
+                },
               ]}
             />
           </FormField>
@@ -1088,7 +1224,11 @@ export const AdminBusinessesPage: React.FC = () => {
       <ResponsiveTable
         keyExtractor={(b) => b.id}
         data={filtered}
-        emptyMessage="هیچ کسب‌وکار واقعی با این فیلتر یافت نشد."
+        emptyMessage={
+          statusFilter === 'REJECTED'
+            ? 'زباله‌دان خالی است؛ هیچ کسب‌وکار رد صلاحیت‌شده‌ای وجود ندارد.'
+            : 'هیچ کسب‌وکار واقعی با این فیلتر یافت نشد.'
+        }
         columns={[
           {
             key: 'name',
@@ -1145,7 +1285,7 @@ export const AdminBusinessesPage: React.FC = () => {
                     ? 'تاییدشده'
                     : b.approvalStatus === 'PENDING_REVIEW'
                     ? 'در انتظار بررسی'
-                    : 'ردشده'
+                    : 'در زباله‌دان (رد صلاحیت)'
                 }
                 tone={
                   b.approvalStatus === 'APPROVED'
@@ -1159,7 +1299,7 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'مشاهده کامل پنل و عملیات مدیر',
+            header: 'عملیات مدیر، ارسال پیام و مدیریت زباله‌دان',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
@@ -1168,39 +1308,78 @@ export const AdminBusinessesPage: React.FC = () => {
                   onClick={() => setInspectingBusiness(b)}
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  <span>مشاهده کامل پنل سالن</span>
+                  <span>مشاهده پنل</span>
                 </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => updateBusinessApproval(b.id, 'APPROVED')}
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>تایید</span>
-                </Button>
+
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const nextSms = (b.extraSmsBalance ?? 0) + 200;
-                    updateBusinessProfile(b.id, { extraSmsBalance: nextSms });
-                    showToast(
-                      `۲۰۰ پیامک اضافه برای «${b.name}» شارژ شد (موجودی اضافه: ${toPersianDigits(
-                        nextSms
-                      )}).`
-                    );
-                  }}
+                  onClick={() => openSendNoticeModal(b.id)}
                 >
-                  +۲۰۰ پیامک
+                  <MessageSquare className="w-3.5 h-3.5 text-[#0057FF]" />
+                  <span>ارسال پیام به مالک</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRejectTargetId(b.id)}
-                >
-                  <X className="w-3.5 h-3.5" />
-                  <span>رد</span>
-                </Button>
+
+                {b.approvalStatus === 'REJECTED' ? (
+                  <>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => updateBusinessApproval(b.id, 'APPROVED')}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>بازگردانی و تایید</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPermDeleteTargetId(b.id)}
+                      className="text-rose-600 border-rose-300 bg-rose-50 hover:bg-rose-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف برای همیشه</span>
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {b.approvalStatus !== 'APPROVED' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => updateBusinessApproval(b.id, 'APPROVED')}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>تایید</span>
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const nextSms = (b.extraSmsBalance ?? 0) + 200;
+                        updateBusinessProfile(b.id, {
+                          extraSmsBalance: nextSms,
+                        });
+                        showToast(
+                          `۲۰۰ پیامک اضافه برای «${b.name}» شارژ شد (موجودی اضافه: ${toPersianDigits(
+                            nextSms
+                          )}).`
+                        );
+                      }}
+                    >
+                      +۲۰۰ پیامک
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRejectTargetId(b.id)}
+                      className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>رد صلاحیت (انتقال به زباله‌دان)</span>
+                    </Button>
+                  </>
+                )}
               </div>
             ),
           },
@@ -1214,17 +1393,95 @@ export const AdminBusinessesPage: React.FC = () => {
         onReject={(id) => updateBusinessApproval(id, 'REJECTED')}
       />
 
+      {/* مودال ارسال پیام یا اطلاعیه از طرف مدیر پلتفرم به صاحب کسب‌وکار */}
+      <Modal
+        isOpen={noticeModalOpen}
+        onClose={() => setNoticeModalOpen(false)}
+        title="ارسال پیام و اعلان مستقیم به صاحب کسب‌وکار"
+        description="این پیام بلافاصله به صورت نوتیفیکیشن زنگوله و بنر بالای پیشخوان برای صاحب کسب‌وکار نمایش داده می‌شود و آکاردئون اطلاعیه‌های او را باز می‌کند."
+      >
+        <form onSubmit={handleSendNoticeSubmit} className="space-y-4 text-xs">
+          <FormField id="notice-target-biz" label="مخاطب پیام / اطلاعیه">
+            <Select
+              id="notice-target-biz"
+              value={noticeTargetBizId}
+              onChange={(e) => setNoticeTargetBizId(e.target.value)}
+              options={[
+                {
+                  value: 'ALL',
+                  label: '📢 همه صاحبان کسب‌وکار (اطلاعیه سراسری)',
+                },
+                ...sourceBusinesses.map((b) => ({
+                  value: b.id,
+                  label: `${b.name} (${b.ownerName || b.ownerPhone || b.city})`,
+                })),
+              ]}
+            />
+          </FormField>
+
+          <FormField id="notice-title" label="عنوان پیام یا اطلاعیه">
+            <Input
+              id="notice-title"
+              value={noticeTitle}
+              onChange={(e) => setNoticeTitle(e.target.value)}
+              placeholder="مثلاً: تکمیل آدرس یا اطلاعیه جدید پلتفرم"
+            />
+          </FormField>
+
+          <FormField id="notice-body" label="متن پیام برای صاحب کسب‌وکار">
+            <textarea
+              id="notice-body"
+              rows={4}
+              value={noticeMessage}
+              onChange={(e) => setNoticeMessage(e.target.value)}
+              placeholder="متن نکته، راهنمایی یا تذکر مدیریتی خود را بنویسید..."
+              className="w-full rounded-2xl border border-[#CBD5E1] bg-white p-3 text-xs font-medium text-[#061138] focus:border-[#0057FF] focus:outline-none"
+            />
+          </FormField>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setNoticeModalOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              <Send className="w-3.5 h-3.5" />
+              <span>ارسال فوری به پنل سالن‌دار</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       <ConfirmationDialog
         isOpen={Boolean(rejectTargetId)}
         onClose={() => setRejectTargetId(null)}
         onConfirm={() => {
           if (rejectTargetId) {
             updateBusinessApproval(rejectTargetId, 'REJECTED');
+            setRejectTargetId(null);
           }
         }}
-        title="تایید رد صلاحیت کسب‌وکار"
-        confirmLabel="بله، وضعیت به ردشده تغییر کند"
-        message={`آیا از تغییر وضعیت «${rejectTargetBiz?.name ?? ''}» به حالت ردشده اطمینان دارید؟`}
+        title="انتقال کسب‌وکار به زباله‌دان (رد صلاحیت)"
+        confirmLabel="بله، رد صلاحیت و منتقل به زباله‌دان شود"
+        message={`با رد صلاحیت «${rejectTargetBiz?.name ?? ''}»، این مرکز از تمام صفحات عمومی حذف شده و به بخش «زباله‌دان» منتقل می‌شود. آیا ادامه می‌دهید؟`}
+      />
+
+      <ConfirmationDialog
+        isOpen={Boolean(permDeleteTargetId)}
+        onClose={() => setPermDeleteTargetId(null)}
+        onConfirm={() => {
+          if (permDeleteTargetId) {
+            permanentlyDeleteBusiness(permDeleteTargetId);
+            setPermDeleteTargetId(null);
+          }
+        }}
+        title="حذف برای همیشه از زباله‌دان"
+        confirmLabel="حذف دائمی و همیشگی"
+        message={`آیا از حذف دائمی و همیشگی کسب‌وکار «${permDeleteTargetBiz?.name ?? ''}» از زباله‌دان اطمینان دارید؟ این عملیات غیرقابل بازگشت است.`}
       />
     </div>
   );
@@ -2696,6 +2953,17 @@ export const AdminSubscriptionsPage: React.FC = () => {
                     <span className="block text-[11px] text-[#334155]">
                       برچسب: «{b.sponsoredLabel || 'پیشنهاد ویژه'}»
                     </span>
+                    {(b.sponsoredCategorySlug || b.sponsoredNeighborhood) && (
+                      <span className="block text-[10px] font-bold text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded w-fit">
+                        هدفمند:{' '}
+                        {b.sponsoredCategorySlug
+                          ? `دسته ${b.sponsoredCategorySlug}`
+                          : 'همه دسته‌ها'}
+                        {b.sponsoredNeighborhood
+                          ? ` · محله ${b.sponsoredNeighborhood}`
+                          : ''}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <StatusBadge label="نمایش عادی (بدون تبلیغ)" tone="neutral" />
@@ -2703,17 +2971,21 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'rankAndDuration',
-              header: 'رتبه نمایش و مدت زمان باقی‌مانده',
+              header: 'رتبه، چرخش عادلانه و آمار عملکرد',
               render: (b) =>
                 b.isSponsored ? (
                   <div className="space-y-0.5 tabular-nums">
                     <span className="font-extrabold text-[#061138] block text-xs">
                       اولویت جایگاه: رتبه{' '}
-                      {toPersianDigits(b.sponsoredOrder ?? 1)}
+                      {toPersianDigits(b.sponsoredOrder ?? 1)} (چرخش وزنی فعال)
                     </span>
                     <span className="text-[11px] font-bold text-[#059669] block">
                       {toPersianDigits(b.sponsoredDaysRemaining ?? 30)} روز
                       باقی‌مانده
+                    </span>
+                    <span className="text-[10px] font-bold text-[#64748B] block">
+                      نمایش: {toPersianDigits(b.sponsoredImpressions ?? 120)} · کلیک:{' '}
+                      {toPersianDigits(b.sponsoredClicks ?? 14)}
                     </span>
                   </div>
                 ) : (
@@ -3210,6 +3482,11 @@ export const AdminPaymentsPage: React.FC = () => {
     updatePaymentConfig,
     paymentOrders,
     reviewPaymentOrder,
+    businesses,
+    settlementRequests,
+    markSettlementPaid,
+    runNightlyBatchSettlement,
+    sendAppointmentReminders,
   } = usePrototypeData();
 
   const [cardNumber, setCardNumber] = useState(paymentConfig.cardNumber);
@@ -3221,6 +3498,13 @@ export const AdminPaymentsPage: React.FC = () => {
   const [supportHandle, setSupportHandle] = useState(
     paymentConfig.supportTelegramOrBale
   );
+  const [zarinpalMerchantId, setZarinpalMerchantId] = useState(
+    paymentConfig.zarinpalMerchantId || ''
+  );
+  const [commissionPercent, setCommissionPercent] = useState(
+    String(paymentConfig.platformCommissionPercent ?? 0)
+  );
+  const [sendingReminders, setSendingReminders] = useState(false);
 
   const handleSaveGateway = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3230,23 +3514,32 @@ export const AdminPaymentsPage: React.FC = () => {
       bankName: bankName.trim(),
       balePayLink: balePayLink.trim(),
       supportTelegramOrBale: supportHandle.trim(),
+      zarinpalMerchantId: zarinpalMerchantId.trim(),
+      platformCommissionPercent: Math.max(
+        0,
+        Math.min(50, Number(commissionPercent) || 0)
+      ),
     });
   };
+
+  const salonsWithWalletBalance = businesses.filter(
+    (b) => !b.isSampleShowcase && (Number(b.walletBalanceToman) || 0) > 0
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی و تسویه آسان · درگاه بله‌پی (BalePay) و کارت‌به‌کارت"
-        title="مدیریت پرداخت‌ها، فیش‌های واریزی و درگاه بدون اینماد"
-        subtitle="تنظیم شماره کارت و لینک بله‌پی برای دریافت هزینه اشتراک و تبلیغات سالن‌ها بدون نیاز به ای‌نماد و تایید ۱-کلیکی واریزی‌ها"
+        kicker="مالی، درگاه متمرکز و تسویه خودکار شبا (پایا)"
+        title="مدیریت درگاه پرداخت، کیف پول سالن‌ها و تسویه شبا"
+        subtitle="درگاه متمرکز پلتفرم (بله‌پی، کارت‌به‌کارت و زرین‌پال)، نگهداری بیعانه در کیف پول سالن و واریز شبانه شبا (IR)"
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'تراکنش‌ها و درگاه پرداخت' },
+          { label: 'تراکنش‌ها و تسویه شبا' },
         ]}
       />
 
-      {/* کارت تنظیمات درگاه بله‌پی و کارت‌به‌کارت */}
+      {/* کارت ۱: تنظیمات درگاه متمرکز پلتفرم */}
       <Card className="space-y-4 border-2 border-[#0057FF]/25">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
           <div className="flex items-center gap-2.5">
@@ -3255,25 +3548,24 @@ export const AdminPaymentsPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                تنظیمات درگاه پرداخت آسان (بله‌پی + کارت‌به‌کارت)
+                تنظیمات درگاه پرداخت متمرکز پلتفرم (بدون نیاز به درگاه جداگانه برای هر سالن)
               </h2>
               <p className="text-xs text-[#64748B]">
-                این اطلاعات هنگام خرید اشتراک، جایگاه تبلیغاتی یا بسته پیامک به
-                صاحبان سالن نمایش داده می‌شود
+                مشتریان با یک درگاه واحد پرداخت می‌کنند؛ بیعانه به کیف پول داخلی سالن اضافه شده و شبانه به شبا (IR) سالن‌دار واریز می‌شود
               </p>
             </div>
           </div>
           <StatusBadge
-            label="فعال و بدون نیاز به اینماد"
+            label="درگاه متمرکز + کیف پول داخلی فعال"
             tone="success"
           />
         </div>
 
         <form onSubmit={handleSaveGateway} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <FormField
               id="pay-card-num"
-              label="شماره کارت ۱۶ رقمی (جهت کارت‌به‌کارت)"
+              label="شماره کارت ۱۶ رقمی پلتفرم (کارت‌به‌کارت)"
               required
             >
               <Input
@@ -3285,7 +3577,7 @@ export const AdminPaymentsPage: React.FC = () => {
               />
             </FormField>
 
-            <FormField id="pay-holder" label="نام صاحب حساب / کارت" required>
+            <FormField id="pay-holder" label="نام صاحب حساب / کارت پلتفرم" required>
               <Input
                 id="pay-holder"
                 value={cardHolderName}
@@ -3305,7 +3597,7 @@ export const AdminPaymentsPage: React.FC = () => {
 
             <FormField
               id="pay-bale"
-              label="لینک پرداخت یا آیدی بازرگان بله‌پی (BalePay)"
+              label="لینک پرداخت بله‌پی (BalePay)"
               required
             >
               <Input
@@ -3314,6 +3606,35 @@ export const AdminPaymentsPage: React.FC = () => {
                 value={balePayLink}
                 onChange={(e) => setBalePayLink(e.target.value)}
                 placeholder="https://ble.ir/timeto_pay"
+              />
+            </FormField>
+
+            <FormField
+              id="pay-zarinpal"
+              label="کد مرچنت ۳۶ رقمی زرین‌پال / زیبال (اختیاری - پس از دریافت اینماد)"
+            >
+              <Input
+                id="pay-zarinpal"
+                dir="ltr"
+                value={zarinpalMerchantId}
+                onChange={(e) => setZarinpalMerchantId(e.target.value)}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              />
+            </FormField>
+
+            <FormField
+              id="pay-commission"
+              label="درصد کارمزد پلتفرم از بیعانه نوبت‌ها (۰ تا ۵۰٪)"
+            >
+              <Input
+                id="pay-commission"
+                type="number"
+                min={0}
+                max={50}
+                dir="ltr"
+                value={commissionPercent}
+                onChange={(e) => setCommissionPercent(e.target.value)}
+                placeholder="0"
               />
             </FormField>
           </div>
@@ -3331,10 +3652,197 @@ export const AdminPaymentsPage: React.FC = () => {
 
             <Button type="submit" variant="primary" size="sm">
               <Check className="w-4 h-4" />
-              <span>ذخیره تنظیمات درگاه بله‌پی و کارت‌به‌کارت</span>
+              <span>ذخیره تنظیمات درگاه و کارمزد پلتفرم</span>
             </Button>
           </div>
         </form>
+      </Card>
+
+      {/* کارت ۲: تسویه‌حساب شبانه شبا (پایا) با سالن‌داران */}
+      <Card className="space-y-4 border-2 border-[#059669]/30 bg-gradient-to-br from-[#ECFDF5]/60 to-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A7F3D0] pb-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — پایا شبانه
+            </h2>
+            <p className="text-xs text-[#475569] mt-0.5">
+              بیعانه‌های دریافتی از مشتریان در کیف پول هر سالن ذخیره می‌شود. با کلیک روی دکمه زیر، کل موجودی سالن‌هایی که شبا ثبت کرده‌اند در لیست واریز پایا قرار می‌گیرد.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => runNightlyBatchSettlement()}
+          >
+            <Check className="w-4 h-4" />
+            <span>اجرای تسویه دسته‌ای شبانه شبا ({toPersianDigits(salonsWithWalletBalance.length)} سالن دارای موجودی)</span>
+          </Button>
+        </div>
+
+        {settlementRequests.length === 0 ? (
+          <div className="rounded-2xl border border-[#CBD5E1] bg-white p-4 text-xs text-[#64748B] text-center">
+            هنوز درخواست تسویه شبا ثبت نشده است. سالن‌داران می‌توانند از پنل خود درخواست تسویه بدهند یا شما دکمه «اجرای تسویه دسته‌ای شبانه شبا» را بزنید.
+          </div>
+        ) : (
+          <ResponsiveTable
+            keyExtractor={(s) => s.id}
+            data={settlementRequests}
+            columns={[
+              {
+                key: 'biz',
+                header: 'نام سالن و صاحب حساب',
+                render: (s) => (
+                  <div>
+                    <span className="font-extrabold text-[#061138] block">
+                      {s.businessName}
+                    </span>
+                    <span className="text-[11px] text-[#64748B]">
+                      صاحب حساب: {s.ownerName}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                key: 'sheba',
+                header: 'شماره شبا (IR) جهت واریز پایا',
+                render: (s) => (
+                  <span
+                    dir="ltr"
+                    className="font-mono text-xs font-bold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-lg inline-block"
+                  >
+                    {s.shebaNumber}
+                  </span>
+                ),
+              },
+              {
+                key: 'amount',
+                header: 'مبلغ قابل واریز',
+                render: (s) => (
+                  <div className="tabular-nums">
+                    <span className="font-extrabold text-[#059669] block">
+                      {formatPriceToman(s.netPayoutToman)}
+                    </span>
+                    {s.commissionToman > 0 && (
+                      <span className="text-[10px] text-[#64748B]">
+                        کسر کارمزد پلتفرم: {formatPriceToman(s.commissionToman)}
+                      </span>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: 'date',
+                header: 'زمان درخواست / واریز',
+                render: (s) => (
+                  <div className="text-xs tabular-nums">
+                    <span className="block">{s.createdAtJalali}</span>
+                    {s.paidAtJalali && (
+                      <span className="text-[10px] text-[#059669] font-bold">
+                        واریز: {s.paidAtJalali}
+                      </span>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: 'status',
+                header: 'وضعیت تسویه شبا',
+                render: (s) => (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge
+                      label={
+                        s.status === 'PAID'
+                          ? `واریز شد (${s.paidTrackingCode || 'پایا'})`
+                          : 'در انتظار واریز پایا'
+                      }
+                      tone={s.status === 'PAID' ? 'success' : 'warning'}
+                    />
+                    {s.status === 'PENDING' && (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          markSettlementPaid(
+                            s.id,
+                            `PAYA-${Math.floor(100000 + Math.random() * 900000)}`
+                          )
+                        }
+                      >
+                        تایید واریز شبا
+                      </Button>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Card>
+
+      {/* کارت ۳: مدیریت پترن‌های ملی‌پیامک و ارسال خودکار یادآور نوبت‌ها */}
+      <Card className="space-y-4 border border-[#CBD5E1] bg-[#F8FAFC]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-extrabold text-[#061138]">
+              سیستم پیامک چندپترنه ملی‌پیامک (ثبت نوبت + تایید + یادآور روز قبل)
+            </h2>
+            <p className="text-xs text-[#475569] mt-0.5">
+              ارسال پیامک آنی به سالن‌دار هنگام رزرو، پیامک تایید به مشتری، و ارسال گروهی پیامک یادآوری به تمام نوبت‌های تاییدشده فردا
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={sendingReminders}
+            onClick={async () => {
+              setSendingReminders(true);
+              try {
+                await sendAppointmentReminders();
+              } finally {
+                setSendingReminders(false);
+              }
+            }}
+          >
+            <Megaphone className="w-4 h-4" />
+            <span>
+              {sendingReminders
+                ? 'در حال ارسال پیامک یادآوری...'
+                : 'ارسال پیامک یادآوری به تمام نوبت‌های تاییدشده'}
+            </span>
+          </Button>
+        </div>
+
+        {/* جدول راهنمای دقیق معنی متغیرهای {0} تا {3} در کد بک‌اند برای ثبت در ملی‌پیامک */}
+        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-3.5 space-y-2.5 text-xs">
+          <div className="font-extrabold text-[#061138]">
+            جدول معنی دقیق متغیرهای ارسال‌شده از بک‌اند به ملی‌پیامک (تطابق ۱۰۰٪ با کد سرور):
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
+              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{0}'}</span>
+              <span className="font-bold text-[#061138] mr-1.5">نام مشتری (در پترن ورود: کد تایید)</span>
+              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: سارا محمدی</span>
+            </div>
+            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
+              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{1}'}</span>
+              <span className="font-bold text-[#061138] mr-1.5">نام سالن یا عنوان خدمت</span>
+              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: سالن رویال / کاشت ناخن</span>
+            </div>
+            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
+              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{2}'}</span>
+              <span className="font-bold text-[#061138] mr-1.5">تاریخ شمسی نوبت</span>
+              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: ۱۴۰۵/۰۸/۱۶</span>
+            </div>
+            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
+              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{3}'}</span>
+              <span className="font-bold text-[#061138] mr-1.5">ساعت دقیق نوبت</span>
+              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: ۱۶:۳۰</span>
+            </div>
+          </div>
+        </div>
       </Card>
 
       {/* جدول سفارش‌ها و تراکنش‌های ثبت‌شده */}

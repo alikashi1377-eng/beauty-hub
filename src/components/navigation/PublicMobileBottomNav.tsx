@@ -67,7 +67,7 @@ export const PublicMobileBottomNav: React.FC = () => {
   return (
     <nav
       aria-label="منوی دسترسی سریع پایین موبایل"
-      className="lg:hidden fixed bottom-2.5 inset-x-3 z-40 rounded-3xl bg-[#061138]/92 backdrop-blur-xl border border-[#00E5FF]/25 shadow-[0_14px_34px_-6px_rgba(6,17,56,0.7)] px-2 py-1.5"
+      className="lg:hidden fixed bottom-2.5 inset-x-3 z-40 rounded-3xl bg-[#041033]/98 backdrop-blur-xl border-2 border-[#0057FF]/80 ring-1 ring-[#00E5FF]/40 shadow-[0_18px_42px_-4px_rgba(0,45,160,0.65)] px-2 py-1.5"
     >
       <div className="max-w-md mx-auto grid grid-cols-5 items-center gap-1">
         {navItems.map((item) => {
@@ -95,8 +95,8 @@ export const PublicMobileBottomNav: React.FC = () => {
               className={() =>
                 `relative flex flex-col items-center justify-center gap-1 py-1.5 px-1 rounded-2xl transition-all ${
                   item.isActive
-                    ? 'bg-gradient-to-r from-[#0057FF] to-[#00B4FF] text-white font-extrabold shadow-[0_4px_14px_rgba(0,180,255,0.45)]'
-                    : 'text-slate-300 hover:text-white font-semibold'
+                    ? 'bg-gradient-to-r from-[#0057FF] to-[#00C2FF] text-white font-extrabold shadow-[0_4px_16px_rgba(0,229,255,0.5)] ring-1 ring-[#00E5FF]/60'
+                    : 'text-slate-200 hover:bg-white/10 hover:text-white font-bold'
                 }`
               }
             >

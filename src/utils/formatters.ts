@@ -156,30 +156,69 @@ export function getSubscriptionStatusMeta(status: SubscriptionStatus): {
 
 export type SortOption = 'recommended' | 'rating_desc' | 'price_asc';
 
+// کلید چرخش منصفانه (Fair Rotation Seed) در هر بار نشست مرورگر تا بین ۲۰+ سالن ویژه، ترتیب نمایش سالن‌های هم‌رتبه به صورت چرخشی و عادلانه تغییر کند
+const SESSION_ROTATION_SEED =
+  typeof window !== 'undefined'
+    ? (() => {
+        try {
+          const existing = window.sessionStorage.getItem(
+            'timeto_fair_rotation_seed_v1'
+          );
+          if (existing) return Number(existing) || 17;
+          const fresh = Math.floor(1 + Math.random() * 997);
+          window.sessionStorage.setItem(
+            'timeto_fair_rotation_seed_v1',
+            String(fresh)
+          );
+          return fresh;
+        } catch {
+          return 37;
+        }
+      })()
+    : 37;
+
+export function computeFairRotationScore(
+  businessId: string,
+  extraSalt = 0
+): number {
+  let hash = SESSION_ROTATION_SEED + extraSalt;
+  for (let i = 0; i < businessId.length; i++) {
+    hash = (hash * 31 + businessId.charCodeAt(i)) % 10007;
+  }
+  return hash;
+}
+
 export function filterBusinesses(
   businesses: BusinessItem[],
   options: {
     query?: string;
     type?: BusinessType | 'ALL';
     city?: string | 'ALL';
+    neighborhood?: string | 'ALL';
     categorySlug?: string | 'ALL';
     maxPriceToman?: number;
     minRating?: number;
     sortBy?: SortOption;
+    rotationTick?: number;
   }
 ): BusinessItem[] {
   const normalizedQuery = (options.query ?? '').trim().toLowerCase();
   const selectedType = options.type ?? 'ALL';
   const selectedCity = options.city ?? 'ALL';
+  const selectedNeighborhood = options.neighborhood ?? 'ALL';
   const selectedCategory = options.categorySlug ?? 'ALL';
   const maxPrice = options.maxPriceToman ?? Infinity;
   const minRating = options.minRating ?? 0;
   const sortBy = options.sortBy ?? 'recommended';
+  const rotationTick = options.rotationTick ?? 0;
 
   const filtered = businesses.filter((item) => {
     if (item.approvalStatus === 'REJECTED') return false;
     const matchesType = selectedType === 'ALL' || item.type === selectedType;
     const matchesCity = selectedCity === 'ALL' || item.city === selectedCity;
+    const matchesNeighborhood =
+      selectedNeighborhood === 'ALL' ||
+      item.neighborhood.includes(selectedNeighborhood);
     const matchesCategory =
       selectedCategory === 'ALL' || item.categorySlug === selectedCategory;
     const matchesPrice = item.startingPriceToman <= maxPrice;
@@ -195,6 +234,7 @@ export function filterBusinesses(
     return (
       matchesType &&
       matchesCity &&
+      matchesNeighborhood &&
       matchesCategory &&
       matchesPrice &&
       matchesRating &&
@@ -212,11 +252,41 @@ export function filterBusinesses(
       const aSpon = Number(Boolean(a.isSponsored));
       const bSpon = Number(Boolean(b.isSponsored));
       if (bSpon !== aSpon) return bSpon - aSpon;
+
       if (aSpon && bSpon) {
-        const aOrder = a.sponsoredOrder ?? 99;
-        const bOrder = b.sponsoredOrder ?? 99;
+        // ۱. اگر کاربر دسته‌بندی یا محله خاصی را انتخاب کرده، سالن ویژه‌ای که دقیقاً آن دسته/محله را هدف‌گذاری کرده اولویت اول را دارد
+        const aTargetedMatch = Number(
+          (selectedCategory !== 'ALL' &&
+            (a.sponsoredCategorySlug === selectedCategory ||
+              a.categorySlug === selectedCategory)) ||
+            (selectedNeighborhood !== 'ALL' &&
+              (a.sponsoredNeighborhood === selectedNeighborhood ||
+                a.neighborhood.includes(selectedNeighborhood)))
+        );
+        const bTargetedMatch = Number(
+          (selectedCategory !== 'ALL' &&
+            (b.sponsoredCategorySlug === selectedCategory ||
+              b.categorySlug === selectedCategory)) ||
+            (selectedNeighborhood !== 'ALL' &&
+              (b.sponsoredNeighborhood === selectedNeighborhood ||
+                b.neighborhood.includes(selectedNeighborhood)))
+        );
+        if (bTargetedMatch !== aTargetedMatch) {
+          return bTargetedMatch - aTargetedMatch;
+        }
+
+        // ۲. سطح جایگاه (HERO_SPOTLIGHT = 1, HOME_BANNER / SEARCH_TOP = 2)
+        const aOrder = a.sponsoredOrder ?? 2;
+        const bOrder = b.sponsoredOrder ?? 2;
         if (aOrder !== bOrder) return aOrder - bOrder;
+
+        // ۳. چرخش منصفانه (Weighted Fair Rotation) بین سالن‌های هم‌رده تا هر ۲۰+ سالن ویژه شانس برابر در ردیف اول داشته باشند
+        return (
+          computeFairRotationScore(a.id, rotationTick) -
+          computeFairRotationScore(b.id, rotationTick)
+        );
       }
+
       const aReal = Number(!a.isSampleShowcase && !/^biz-[1-8]$/.test(a.id));
       const bReal = Number(!b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id));
       if (bReal !== aReal) return bReal - aReal;

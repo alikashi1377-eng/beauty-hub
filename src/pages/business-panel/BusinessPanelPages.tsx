@@ -31,7 +31,10 @@ import {
   ServiceItem,
   SpecialistItem,
 } from '../../types';
-import { SAMPLE_CATEGORIES } from '../../mocks/sampleData';
+import {
+  ISFAHAN_NEIGHBORHOODS,
+  SAMPLE_CATEGORIES,
+} from '../../mocks/sampleData';
 import {
   formatDurationMinutes,
   formatNumericInputWithCommas,
@@ -2869,6 +2872,8 @@ export const BusinessProfileEditPage: React.FC = () => {
     businesses,
     updateBusinessProfile,
     updateOnboardingDraft,
+    settlementRequests,
+    requestWalletSettlement,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
@@ -3215,21 +3220,67 @@ export const BusinessProfileEditPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                <div className="p-3 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-[#00E5FF] shrink-0" />
-                    <div>
-                      <p className="text-[11px] font-bold text-[#BAE6FD]">
-                        موجودی کیف پول بیعانه‌های دریافتی سالن
-                      </p>
-                      <p className="text-xs font-black text-white tabular-nums mt-0.5">
-                        {formatPriceToman(currentBiz.walletBalanceToman ?? 0)}
-                      </p>
+                <div className="p-3.5 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                      <div>
+                        <p className="text-[11px] font-bold text-[#BAE6FD]">
+                          موجودی کیف پول بیعانه‌های دریافتی سالن
+                        </p>
+                        <p className="text-sm font-black text-white tabular-nums mt-0.5">
+                          {formatPriceToman(currentBiz.walletBalanceToman ?? 0)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => requestWalletSettlement(currentBiz.id)}
+                        className="px-3 py-1.5 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] text-[11px] font-black transition-colors cursor-pointer"
+                      >
+                        درخواست تسویه به شبا ←
+                      </button>
+                      <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-[#00E5FF]">
+                        تسویه شبانه پایا (شبا): فعال ✓
+                      </span>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-[#00E5FF]">
-                    تسویه خودکار به شبا / کارت ثبت‌شده
-                  </span>
+                  {settlementRequests.filter((s) => s.businessId === currentBiz.id)
+                    .length > 0 ? (
+                    <div className="pt-2.5 border-t border-white/15 space-y-1.5 text-[11px]">
+                      <p className="font-extrabold text-[#00E5FF]">
+                        آخرین واریزی‌ها و درخواست‌های تسویه شبا:
+                      </p>
+                      {settlementRequests
+                        .filter((s) => s.businessId === currentBiz.id)
+                        .slice(0, 3)
+                        .map((stl) => (
+                          <div
+                            key={stl.id}
+                            className="flex flex-wrap items-center justify-between gap-2 bg-white/10 rounded-lg px-2.5 py-1.5"
+                          >
+                            <span className="font-bold">
+                              خالص واریزی: {formatPriceToman(stl.netPayoutToman)}{' '}
+                              <span dir="ltr" className="font-mono text-[10px] text-slate-300">
+                                ({stl.shebaNumber.slice(0, 8)}...{stl.shebaNumber.slice(-4)})
+                              </span>
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                stl.status === 'PAID'
+                                  ? 'bg-emerald-400/20 text-emerald-300'
+                                  : 'bg-amber-400/20 text-amber-300'
+                              }`}
+                            >
+                              {stl.status === 'PAID'
+                                ? `واریز شد (${stl.paidTrackingCode || 'پایا'})`
+                                : 'در صف پایا امشب'}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -3500,6 +3551,7 @@ export const BusinessMarketingPage: React.FC = () => {
     currentBusiness,
     businesses,
     customers,
+    categories,
     plans,
     activePlanId,
     campaigns,
@@ -3509,6 +3561,7 @@ export const BusinessMarketingPage: React.FC = () => {
     paymentOrders,
     smsLogs,
     sendBusinessCustomerSms,
+    sendAppointmentReminders,
     showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -3519,6 +3572,11 @@ export const BusinessMarketingPage: React.FC = () => {
   const [sponsoredLabelInput, setSponsoredLabelInput] = useState(
     currentBiz?.sponsoredLabel || 'پیشنهاد ویژه · ۲۰٪ تخفیف'
   );
+  const [sponsoredTargetCategory, setSponsoredTargetCategory] = useState(
+    currentBiz?.sponsoredCategorySlug || currentBiz?.categorySlug || 'ALL'
+  );
+  const [sponsoredTargetNeighborhood, setSponsoredTargetNeighborhood] =
+    useState(currentBiz?.sponsoredNeighborhood || currentBiz?.neighborhood || 'ALL');
   const [checkoutItem, setCheckoutItem] = useState<CheckoutItemPayload | null>(
     null
   );
@@ -3683,8 +3741,18 @@ export const BusinessMarketingPage: React.FC = () => {
     updateBusinessProfile(currentBiz.id, {
       sponsoredLabel:
         sponsoredLabelInput.trim() || 'پیشنهاد ویژه رزرو آنلاین',
+      sponsoredCategorySlug:
+        sponsoredTargetCategory === 'ALL'
+          ? undefined
+          : sponsoredTargetCategory,
+      sponsoredNeighborhood:
+        sponsoredTargetNeighborhood === 'ALL'
+          ? undefined
+          : sponsoredTargetNeighborhood,
     });
-    showToast('متن برچسب تبلیغاتی سالن شما بروزرسانی شد.');
+    showToast(
+      'برچسب تبلیغاتی و هدف‌گذاری جایگاه ویژه سالن شما بروزرسانی شد.'
+    );
   };
 
   const handleCreateCampaign = (e: React.FormEvent) => {
@@ -3720,18 +3788,24 @@ export const BusinessMarketingPage: React.FC = () => {
         ]}
       />
 
-      {/* نوار وضعیت جایگاه تبلیغاتی فعلی سالن */}
+      {/* نوار وضعیت جایگاه تبلیغاتی فعلی سالن + آمار بازدهی و چرخش منصفانه */}
       {isSponsoredActive && currentBiz ? (
         <Card className="border-2 border-[#10B981] bg-[#ECFDF5]/60 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge label="★ جایگاه تبلیغاتی فعال" tone="success" />
                 <span className="text-xs font-extrabold text-[#065F46] tabular-nums">
                   رتبه نمایش: جایگاه شماره{' '}
                   {toPersianDigits(currentBiz.sponsoredOrder ?? 1)} ·{' '}
                   {toPersianDigits(currentBiz.sponsoredDaysRemaining ?? 30)} روز
                   باقی‌مانده
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-white border border-[#10B981]/40 text-[11px] font-extrabold text-[#047857] tabular-nums">
+                  نمایش در صدر:{' '}
+                  {toPersianDigits(currentBiz.sponsoredImpressions ?? 165)} بار ·
+                  کلیک پروفایل:{' '}
+                  {toPersianDigits(currentBiz.sponsoredClicks ?? 24)} کلیک
                 </span>
               </div>
               <p className="text-xs text-[#064E3B]">
@@ -3741,7 +3815,8 @@ export const BusinessMarketingPage: React.FC = () => {
                     currentBiz.sponsoredPlacement || 'SEARCH_TOP'
                   ] || 'صدر نتایج جست‌وجو'}
                 </strong>{' '}
-                · برچسب فعلی: «{currentBiz.sponsoredLabel || 'پیشنهاد ویژه'}»
+                · برچسب فعلی: «{currentBiz.sponsoredLabel || 'پیشنهاد ویژه'}» ·
+                الگوریتم چرخش منصفانه (Fair Rotation) فعال است تا بین تمامی سالن‌های ویژه، نمایش ردیف اول به صورت عادلانه توزیع شود.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -3788,23 +3863,34 @@ export const BusinessMarketingPage: React.FC = () => {
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() =>
-              setCheckoutItem({
-                itemType: 'SMS_PACK',
-                itemId: smsAddonPkg.id,
-                itemTitle: smsAddonPkg.title,
-                baseAmountToman: smsAddonPkg.priceToman,
-                smsCount: smsAddonPkg.smsCount ?? 200,
-              })
-            }
-          >
-            <Plus className="w-4 h-4" />
-            <span>شارژ و خرید بسته پیامک اضافه ({toPersianDigits(smsAddonPkg.smsCount ?? 200)} تایی)</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void sendAppointmentReminders(currentBiz?.id)}
+            >
+              <Send className="w-3.5 h-3.5 text-[#0057FF]" />
+              <span>ارسال پیامک یادآور نوبت‌های فردا/امروز</span>
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() =>
+                setCheckoutItem({
+                  itemType: 'SMS_PACK',
+                  itemId: smsAddonPkg.id,
+                  itemTitle: smsAddonPkg.title,
+                  baseAmountToman: smsAddonPkg.priceToman,
+                  smsCount: smsAddonPkg.smsCount ?? 200,
+                })
+              }
+            >
+              <Plus className="w-4 h-4" />
+              <span>شارژ و خرید بسته پیامک اضافه ({toPersianDigits(smsAddonPkg.smsCount ?? 200)} تایی)</span>
+            </Button>
+          </div>
         </div>
 
         {/* کارت‌های شمارنده وضعیت پیامک سالن */}
@@ -4087,30 +4173,81 @@ export const BusinessMarketingPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-1">
-                <label
-                  htmlFor="boost-badge-label"
-                  className="block text-[11px] font-bold text-[#334155] mb-1"
-                >
-                  متن برچسب ویژه روی کارت سالن شما:
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    id="boost-badge-label"
-                    value={sponsoredLabelInput}
-                    onChange={(e) => setSponsoredLabelInput(e.target.value)}
-                    placeholder="مثلاً پیشنهاد ویژه · ۲۰٪ تخفیف"
-                  />
-                  {isSponsoredActive ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleUpdateActiveLabel}
+              <div className="pt-1 space-y-2">
+                <div>
+                  <label
+                    htmlFor="boost-badge-label"
+                    className="block text-[11px] font-bold text-[#334155] mb-1"
+                  >
+                    متن برچسب ویژه روی کارت سالن شما:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="boost-badge-label"
+                      value={sponsoredLabelInput}
+                      onChange={(e) => setSponsoredLabelInput(e.target.value)}
+                      placeholder="مثلاً پیشنهاد ویژه · ۲۰٪ تخفیف"
+                    />
+                    {isSponsoredActive ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleUpdateActiveLabel}
+                      >
+                        ثبت
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label
+                      htmlFor="boost-target-cat"
+                      className="block text-[10px] font-bold text-[#475569] mb-0.5"
                     >
-                      ثبت
-                    </Button>
-                  ) : null}
+                      اولویت دسته‌بندی:
+                    </label>
+                    <select
+                      id="boost-target-cat"
+                      value={sponsoredTargetCategory}
+                      onChange={(e) =>
+                        setSponsoredTargetCategory(e.target.value)
+                      }
+                      className="w-full rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-1.5 text-[11px] font-bold text-[#061138]"
+                    >
+                      <option value="ALL">همه دسته‌بندی‌ها</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.slug}>
+                          {cat.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="boost-target-nb"
+                      className="block text-[10px] font-bold text-[#475569] mb-0.5"
+                    >
+                      اولویت محله:
+                    </label>
+                    <select
+                      id="boost-target-nb"
+                      value={sponsoredTargetNeighborhood}
+                      onChange={(e) =>
+                        setSponsoredTargetNeighborhood(e.target.value)
+                      }
+                      className="w-full rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-1.5 text-[11px] font-bold text-[#061138]"
+                    >
+                      <option value="ALL">کل شهر</option>
+                      {ISFAHAN_NEIGHBORHOODS.map((nb) => (
+                        <option key={nb} value={nb}>
+                          {nb}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

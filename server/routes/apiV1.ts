@@ -53,6 +53,7 @@ import {
 import {
   resolveEffectiveSmsConfig,
   sendOtpSmsViaGateway,
+  sendPatternSmsViaGateway,
 } from '../services/smsGateway';
 import { AppointmentStatus, ApprovalStatus } from '../../src/types';
 
@@ -1035,12 +1036,19 @@ export function createApiV1Router(
                 : rawOwnerPhone;
 
             if (/^09\d{9}$/.test(cleanOwnerPhone)) {
-              void sendOtpSmsViaGateway(
-                cleanOwnerPhone,
-                `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
-                effectiveSms,
-                config.nodeEnv
-              ).catch(() => {});
+              void sendPatternSmsViaGateway({
+                phone: cleanOwnerPhone,
+                args: [
+                  item.customerName || 'مشتری',
+                  item.serviceTitle || 'خدمات زیبایی',
+                  item.dateJalali,
+                  item.timeSlot,
+                ],
+                fallbackSingleArg: `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
+                customTemplateId: process.env.SMS_BOOKING_OWNER_TEMPLATE,
+                config: effectiveSms,
+                nodeEnv: config.nodeEnv,
+              }).catch(() => {});
             }
           }
         } catch {
@@ -1079,7 +1087,7 @@ export function createApiV1Router(
           cancelledReason
         );
 
-        // ارسال پیامک اطلاع‌رسانی تایید یا لغو نوبت به مشتری
+        // ارسال پیامک اطلاع‌رسانی تایید یا لغو نوبت به مشتری (با پشتیبانی از پترن چندپارامتری SMS_BOOKING_CUSTOMER_TEMPLATE)
         if (status === 'CONFIRMED' || status === 'CANCELLED') {
           try {
             const config = customEnv ?? loadServerEnv();
@@ -1089,9 +1097,10 @@ export function createApiV1Router(
             if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
               const aptRes = await pool.query(
                 `
-                SELECT customer_phone, date_jalali, time_slot_label
-                FROM appointments
-                WHERE id::text = $1 OR legacy_demo_id = $1 OR reference_code = $1
+                SELECT a.customer_name, a.customer_phone, a.date_jalali, a.time_slot_label, b.name AS business_name
+                FROM appointments a
+                LEFT JOIN businesses b ON b.id = a.business_id
+                WHERE a.id::text = $1 OR a.legacy_demo_id = $1 OR a.reference_code = $1
                 LIMIT 1
                 `,
                 [req.params.id]
@@ -1104,12 +1113,19 @@ export function createApiV1Router(
               if (/^09\d{9}$/.test(custPhone)) {
                 const statusWord =
                   status === 'CONFIRMED' ? 'تایید شد' : 'لغو شد';
-                void sendOtpSmsViaGateway(
-                  custPhone,
-                  `نوبت ${aptRow.date_jalali} ساعت ${aptRow.time_slot_label} ${statusWord}`,
-                  effectiveSms,
-                  config.nodeEnv
-                ).catch(() => {});
+                void sendPatternSmsViaGateway({
+                  phone: custPhone,
+                  args: [
+                    String(aptRow?.customer_name || 'مراجع عزیز'),
+                    String(aptRow?.business_name || 'سالن زیبایی'),
+                    String(aptRow?.date_jalali || ''),
+                    String(aptRow?.time_slot_label || ''),
+                  ],
+                  fallbackSingleArg: `نوبت ${aptRow.date_jalali} ساعت ${aptRow.time_slot_label} ${statusWord}`,
+                  customTemplateId: process.env.SMS_BOOKING_CUSTOMER_TEMPLATE,
+                  config: effectiveSms,
+                  nodeEnv: config.nodeEnv,
+                }).catch(() => {});
               }
             }
           } catch {
@@ -1121,6 +1137,62 @@ export function createApiV1Router(
           ok: true,
           mode: 'real',
           status,
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  /**
+   * ۱۰-الف. ارسال پیامک یادآور خودکار قبل از نوبت (۲۴ ساعت و ۳ ساعت مانده به مراجعه) با پترن SMS_REMINDER_TEMPLATE
+   */
+  router.post(
+    '/appointments/send-reminders',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const config = customEnv ?? loadServerEnv();
+        const effectiveSms = customEnv
+          ? config.sms
+          : resolveEffectiveSmsConfig(config.sms);
+        const items: Array<{
+          phone: string;
+          customerName: string;
+          businessName: string;
+          dateJalali: string;
+          timeSlot: string;
+        }> = Array.isArray(req.body?.items) ? req.body.items : [];
+
+        let sentCount = 0;
+        for (const item of items) {
+          const cleanPhone = String(item.phone || '')
+            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/\D/g, '');
+          if (!/^09\d{9}$/.test(cleanPhone)) continue;
+          if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+            const delivery = await sendPatternSmsViaGateway({
+              phone: cleanPhone,
+              args: [
+                item.customerName || 'مراجع عزیز',
+                item.businessName || 'سالن زیبایی',
+                item.dateJalali || 'فردا',
+                item.timeSlot || '۱۰:۰۰',
+              ],
+              fallbackSingleArg: `یادآوری نوبت ${item.dateJalali} ساعت ${item.timeSlot}`,
+              customTemplateId: process.env.SMS_REMINDER_TEMPLATE,
+              config: effectiveSms,
+              nodeEnv: config.nodeEnv,
+            });
+            if (delivery.sent) sentCount += 1;
+          } else {
+            sentCount += 1;
+          }
+        }
+
+        res.status(200).json({
+          ok: true,
+          sentCount,
         });
       } catch (err) {
         handleRealModeRouteError(res, err);

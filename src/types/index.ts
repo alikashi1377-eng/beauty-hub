@@ -136,6 +136,10 @@ export interface BusinessItem {
   sponsoredOrder?: number;
   sponsoredDaysRemaining?: number;
   sponsoredExpiresJalali?: string;
+  sponsoredCategorySlug?: string;
+  sponsoredNeighborhood?: string;
+  sponsoredImpressions?: number;
+  sponsoredClicks?: number;
   trialDaysRemaining?: number;
   extraSmsBalance?: number;
   smsSentCount?: number;
@@ -151,6 +155,7 @@ export interface BusinessItem {
   depositEnabled?: boolean;
   depositPercent?: number;
   walletBalanceToman?: number;
+  autoNightlySettlement?: boolean;
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;
@@ -243,6 +248,8 @@ export interface PaymentGatewayConfig {
   bankName: string;
   supportTelegramOrBale: string;
   instructions: string;
+  zarinpalMerchantId?: string;
+  platformCommissionPercent?: number;
 }
 
 export interface PaymentOrderItem {
@@ -260,7 +267,26 @@ export interface PaymentOrderItem {
   requestedPlacement?: SponsoredPlacementSlot;
   requestedDurationDays?: number;
   requestedLabel?: string;
+  requestedCategorySlug?: string;
+  requestedNeighborhood?: string;
   requestedSmsCount?: number;
+}
+
+export interface SettlementRequestItem {
+  id: string;
+  businessId: string;
+  businessName: string;
+  ownerName: string;
+  ownerPhone: string;
+  shebaNumber: string;
+  cardNumber?: string;
+  amountToman: number;
+  commissionToman: number;
+  netPayoutToman: number;
+  createdAtJalali: string;
+  status: 'PENDING' | 'PAID';
+  paidTrackingCode?: string;
+  paidAtJalali?: string;
 }
 
 export interface AppointmentItem {
@@ -397,4 +423,15 @@ export interface AdminUserRecord {
   joinedJalali: string;
   isActive: boolean;
 }
+
+export interface PlatformBusinessNoticeItem {
+  id: string;
+  targetBusinessId: 'ALL' | string;
+  targetBusinessName?: string;
+  title: string;
+  message: string;
+  createdAtJalali: string;
+  readByBusinessIds: string[];
+}
+
 

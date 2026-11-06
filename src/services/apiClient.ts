@@ -30,6 +30,7 @@ export interface AuthenticatedSessionUser {
   userId: string;
   phone: string;
   fullName: string;
+  gender?: 'FEMALE' | 'MALE';
   defaultCity: string | null;
   roles: Array<'CUSTOMER' | 'BUSINESS_OWNER' | 'PLATFORM_ADMIN'>;
   isPlatformAdmin: boolean;

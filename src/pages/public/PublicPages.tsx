@@ -27,6 +27,7 @@ import {
 import { IRAN_CITIES, ISFAHAN_NEIGHBORHOODS } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
 import {
+  computeFairRotationScore,
   filterBusinesses,
   formatPriceToman,
   SortOption,
@@ -96,7 +97,16 @@ const OriginalCustomerHomePage: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [proSpecialtyFilter, setProSpecialtyFilter] = useState<string>('ALL');
+  const [genderAudienceFilter, setGenderAudienceFilter] = useState<
+    'ALL' | 'FEMALE' | 'MALE'
+  >(() => authUser?.gender ?? 'ALL');
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
+
+  useEffect(() => {
+    if (authUser?.gender) {
+      setGenderAudienceFilter(authUser.gender);
+    }
+  }, [authUser?.gender]);
 
   const smartSearchSuggestions = [
     'درچه',
@@ -202,7 +212,10 @@ const OriginalCustomerHomePage: React.FC = () => {
     const bSpon = Number(Boolean(b.isSponsored));
     if (bSpon !== aSpon) return bSpon - aSpon;
     if (aSpon && bSpon) {
-      return (a.sponsoredOrder ?? 99) - (b.sponsoredOrder ?? 99);
+      const aOrd = a.sponsoredOrder ?? 2;
+      const bOrd = b.sponsoredOrder ?? 2;
+      if (aOrd !== bOrd) return aOrd - bOrd;
+      return computeFairRotationScore(a.id) - computeFairRotationScore(b.id);
     }
     const aReal = Number(!a.isSampleShowcase && !/^biz-[1-8]$/.test(a.id));
     const bReal = Number(!b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id));
@@ -210,7 +223,23 @@ const OriginalCustomerHomePage: React.FC = () => {
     return b.rating - a.rating;
   });
 
-  const featuredBusinesses = sortedHomeSalons.slice(0, 12);
+  const genderFilteredHomeSalons = sortedHomeSalons.filter((b) => {
+    if (genderAudienceFilter === 'MALE') {
+      return b.type === BusinessType.MenBarbershop;
+    }
+    if (genderAudienceFilter === 'FEMALE') {
+      return b.type !== BusinessType.MenBarbershop;
+    }
+    return true;
+  });
+
+  // اگر در فیلتر جنسیت انتخاب‌شده هنوز سالنی ثبت نشده بود، همه سالن‌ها نمایش داده شوند تا صفحه خالی نماند
+  const effectiveHomeSalons =
+    genderFilteredHomeSalons.length > 0
+      ? genderFilteredHomeSalons
+      : sortedHomeSalons;
+
+  const featuredBusinesses = effectiveHomeSalons.slice(0, 12);
   const homeBannerPrimary =
     sortedHomeSalons.find(
       (b) =>
@@ -224,6 +253,12 @@ const OriginalCustomerHomePage: React.FC = () => {
     ) ??
     sortedHomeSalons.find((b) => b.id !== homeBannerPrimary?.id) ??
     sortedHomeSalons[0];
+  const extraSponsoredSalons = sortedHomeSalons.filter(
+    (b) =>
+      b.isSponsored &&
+      b.id !== homeBannerPrimary?.id &&
+      b.id !== homeBannerSecondary?.id
+  );
 
   const filteredProfessionals = specialists.filter((sp) => {
     if (proSpecialtyFilter === 'ALL') return true;
@@ -716,6 +751,50 @@ const OriginalCustomerHomePage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* کروسل افقی چرخشی برای زمانی که بیش از ۲ سالن بسته جایگاه ویژه خریداری کرده‌اند (تا ۲۰+ سالن بدون شلوغ شدن صفحه اول دیده شوند) */}
+        {extraSponsoredSalons.length > 0 ? (
+          <div className="pt-2 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-extrabold text-[#061138]">
+                سایر سالن‌های دارای پیشنهاد ویژه (ورق بزنید)
+              </span>
+              <span className="text-[11px] font-semibold text-[#64748B]">
+                نمایش چرخشی عادلانه ←
+              </span>
+            </div>
+            <div className="flex overflow-x-auto snap-x snap-mandatory gap-3.5 pb-2 no-scrollbar">
+              {extraSponsoredSalons.map((sponBiz) => (
+                <Link
+                  key={sponBiz.id}
+                  to={`/salon/${sponBiz.slug}`}
+                  className="w-[270px] sm:w-[310px] shrink-0 snap-start rounded-2xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] p-3.5 flex items-center gap-3 shadow-2xs transition-all"
+                >
+                  <img
+                    src={
+                      sponBiz.avatarUrl ||
+                      getBeautyPhotoUrl(sponBiz.name, sponBiz.typeLabel)
+                    }
+                    alt={sponBiz.name}
+                    className="w-14 h-14 rounded-xl object-cover border border-[#E2E8F0] shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <span className="inline-block px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
+                      {sponBiz.sponsoredLabel || 'پیشنهاد ویژه'}
+                    </span>
+                    <p className="text-xs font-extrabold text-[#061138] truncate">
+                      {sponBiz.name}
+                    </p>
+                    <p className="text-[11px] text-[#64748B] truncate">
+                      {sponBiz.neighborhood} · ★{' '}
+                      {toPersianDigits(sponBiz.rating)}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* ۳. بخش متخصصان برجسته (Pro Care) */}
@@ -889,6 +968,46 @@ const OriginalCustomerHomePage: React.FC = () => {
               <ArrowLeft className="w-3.5 h-3.5" />
             </Link>
           </div>
+        </div>
+
+        {/* نوار هوشمند تفکیک جنسیت سالن‌ها (نمایش پیش‌فرض بر اساس جنسیت کاربر + قابلیت تغییر ۱ کلیکی بین خانم، آقا و همه) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-white border border-[#CBD5E1] shadow-2xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {[
+              { id: 'ALL', label: 'همه سالن‌ها (خانم و آقا)' },
+              {
+                id: 'FEMALE',
+                label: 'خانم (سالن‌های بانوان)',
+              },
+              {
+                id: 'MALE',
+                label: 'آقا (پیرایش آقایان)',
+              },
+            ].map((gTab) => (
+              <button
+                key={gTab.id}
+                type="button"
+                onClick={() =>
+                  setGenderAudienceFilter(
+                    gTab.id as 'ALL' | 'FEMALE' | 'MALE'
+                  )
+                }
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                  genderAudienceFilter === gTab.id
+                    ? 'bg-[#0057FF] text-white shadow-2xs'
+                    : 'bg-[#F3F6FC] text-[#334155] hover:bg-[#E0ECFF]'
+                }`}
+              >
+                {gTab.label}
+              </button>
+            ))}
+          </div>
+          {genderFilteredHomeSalons.length === 0 &&
+          genderAudienceFilter !== 'ALL' ? (
+            <span className="text-[11px] font-bold text-[#D97706] px-2">
+              در حال حاضر همه مراکز فعال نمایش داده می‌شوند
+            </span>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1127,6 +1246,7 @@ export const HomePage: React.FC = () => {
 export const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
+    authUser,
     businesses,
     services,
     specialists,
@@ -1141,7 +1261,20 @@ export const SearchPage: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>(
     searchParams.get('category') ?? 'ALL'
   );
-  const [typeFilter, setTypeFilter] = useState<BusinessType | 'ALL'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<BusinessType | 'ALL'>(() => {
+    if (authUser?.gender === 'MALE') {
+      const hasMenSalon = businesses.some(
+        (b) =>
+          b.approvalStatus !== 'REJECTED' &&
+          b.type === BusinessType.MenBarbershop
+      );
+      return hasMenSalon ? BusinessType.MenBarbershop : 'ALL';
+    }
+    if (authUser?.gender === 'FEMALE') {
+      return BusinessType.WomenSalon;
+    }
+    return 'ALL';
+  });
   const [maxPrice, setMaxPrice] = useState<number>(10000000);
   const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<SortOption>('recommended');
@@ -1179,10 +1312,13 @@ export const SearchPage: React.FC = () => {
     return ids;
   }, [normalizedQ, services, specialists]);
 
+  const [neighborhoodFilter, setNeighborhoodFilter] = useState<string>('ALL');
+
   const baseFiltered = filterBusinesses(businesses, {
     query: '',
     type: typeFilter,
     city: 'ALL',
+    neighborhood: neighborhoodFilter,
     categorySlug: categoryFilter,
     maxPriceToman: maxPrice,
     minRating,
@@ -1209,8 +1345,6 @@ export const SearchPage: React.FC = () => {
       )
     : [];
 
-  const [neighborhoodFilter, setNeighborhoodFilter] = useState<string>('ALL');
-
   const handleResetFilters = () => {
     setQuery('');
     setTypeFilter('ALL');
@@ -1222,12 +1356,7 @@ export const SearchPage: React.FC = () => {
     setSearchParams({});
   };
 
-  const finalFiltered =
-    neighborhoodFilter === 'ALL'
-      ? filtered
-      : filtered.filter((b) =>
-          b.neighborhood.includes(neighborhoodFilter)
-        );
+  const finalFiltered = filtered;
 
   return (
     <div className="space-y-4">
@@ -1297,6 +1426,37 @@ export const SearchPage: React.FC = () => {
                 )}
               </span>
               <span>{cat.title}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* سوییچ سریع جنسیت در بالای صفحه جست‌وجو (مشاهده سالن‌های خانم / آقا / همه) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-[#F1F5F9] no-scrollbar">
+          <span className="text-[11px] font-bold text-[#64748B] shrink-0 ml-1">
+            مخاطب:
+          </span>
+          {[
+            { id: 'ALL', label: 'همه مراکز (خانم و آقا)' },
+            {
+              id: BusinessType.WomenSalon,
+              label: 'خانم (سالن بانوان)',
+            },
+            {
+              id: BusinessType.MenBarbershop,
+              label: 'آقا (پیرایش آقایان)',
+            },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTypeFilter(item.id as BusinessType | 'ALL')}
+              className={`px-3 py-1 rounded-xl text-[11px] font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                typeFilter === item.id
+                  ? 'bg-[#061138] text-white'
+                  : 'bg-[#F8FAFC] text-[#334155] border border-[#CBD5E1] hover:border-[#0057FF]'
+              }`}
+            >
+              {item.label}
             </button>
           ))}
         </div>
@@ -1563,36 +1723,39 @@ export const CategoriesPage: React.FC = () => {
               to={`/search?category=${category.slug}`}
               className="group rounded-2xl sm:rounded-3xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] shadow-2xs hover:shadow-md overflow-hidden flex flex-col justify-between transition-all"
             >
-              <div className="relative h-24 sm:h-36 overflow-hidden bg-[#E0ECFF]">
+              {/* تصویر تمیز بدون شلوغی نوشته روی عکس */}
+              <div className="relative h-24 sm:h-32 overflow-hidden bg-[#E0ECFF]">
                 <img
                   src={catImg}
                   alt={category.title}
                   loading="lazy"
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/80 via-[#061138]/25 to-transparent" />
-                <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-xs text-[10px] sm:text-xs font-extrabold text-[#0057FF] tabular-nums shadow-2xs">
+                <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur-xs text-[10px] font-extrabold text-[#0057FF] tabular-nums shadow-2xs">
                   {toPersianDigits(category.serviceCount)} خدمت
                 </span>
-                <div className="absolute bottom-2 right-2.5 left-2.5 flex items-center gap-1.5 text-white">
-                  <span className="w-6 h-6 rounded-full bg-white/95 text-[#0057FF] flex items-center justify-center shrink-0 shadow-2xs">
-                    {CATEGORY_ICON_MAP[category.iconName] ?? (
-                      <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
-                    )}
-                  </span>
-                  <h2 className="text-xs sm:text-sm font-black truncate">
-                    {category.title}
-                  </h2>
-                </div>
               </div>
 
-              <div className="p-2.5 sm:p-4 flex-1 flex flex-col justify-between gap-2">
-                <p className="hidden sm:block text-xs text-[#475569] line-clamp-2 leading-relaxed">
-                  {category.subtitle}
-                </p>
+              {/* عنوان و آیکون خوانا روی پس‌زمینه سفید پایین کارت */}
+              <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between gap-2 bg-white">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-6 h-6 rounded-full bg-[#EFF6FF] border border-[#CBD5E1] text-[#0057FF] flex items-center justify-center shrink-0">
+                      {CATEGORY_ICON_MAP[category.iconName] ?? (
+                        <Sparkles className="w-3.5 h-3.5 text-[#0057FF]" />
+                      )}
+                    </span>
+                    <h2 className="text-xs sm:text-sm font-black text-[#061138] group-hover:text-[#0057FF] transition-colors leading-snug">
+                      {category.title}
+                    </h2>
+                  </div>
+                  <p className="hidden sm:block text-xs text-[#475569] line-clamp-2 leading-relaxed">
+                    {category.subtitle}
+                  </p>
+                </div>
 
-                <div className="sm:pt-2 sm:border-t sm:border-[#F1F5F9] flex items-center justify-between text-[11px] sm:text-xs font-extrabold text-[#0057FF]">
-                  <span>مشاهده مراکز</span>
+                <div className="pt-1.5 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] font-extrabold text-[#0057FF]">
+                  <span>مشاهده سالن‌ها</span>
                   <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
                 </div>
               </div>

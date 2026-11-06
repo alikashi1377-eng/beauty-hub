@@ -196,11 +196,19 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     };
   }, [screen]);
 
-  const suggestedPassword = generateSuggestedPassword(phone);
+  const [suggestedPassword, setSuggestedPassword] = useState<string>(() =>
+    generateSuggestedPassword()
+  );
+  const [userGender, setUserGender] = useState<'FEMALE' | 'MALE'>('FEMALE');
 
   const handleApplySuggestedPassword = () => {
-    setRegPassword(suggestedPassword);
-    setRegConfirmPassword(suggestedPassword);
+    const freshPass =
+      regPassword === suggestedPassword
+        ? generateSuggestedPassword()
+        : suggestedPassword;
+    setSuggestedPassword(freshPass);
+    setRegPassword(freshPass);
+    setRegConfirmPassword(freshPass);
     setShowRegPassword(true);
     setPasswordSavedInMemoryBadge(true);
     setError('');
@@ -210,7 +218,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         'timeto_last_credential_memory_v2',
         JSON.stringify({
           phone: normalized || phone,
-          password: suggestedPassword,
+          password: freshPass,
           role: roleChoice,
         })
       );
@@ -218,7 +226,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       // ignore
     }
     showToast(
-      'رمز پیشنهادی انتخاب و در حافظه سیستم ذخیره شد تا در مراجعات بعدی نیازی به تایپ مجدد نداشته باشید.',
+      'رمز تصادفی امن انتخاب و در حافظه مرورگر ذخیره شد تا در مراجعات بعدی نیازی به تایپ مجدد نداشته باشید.',
       'info'
     );
   };
@@ -465,7 +473,14 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     // اگر نقش «سالن‌دار» است، برود به گام ۴ (اطلاعات پایه سالن)
     if (roleChoice === 'BUSINESS_OWNER') {
       if (!salonName.trim()) {
-        setSalonName(`سالن زیبایی ${check.fullName}`);
+        setSalonName(
+          userGender === 'MALE'
+            ? `پیرایش مردانه ${check.fullName}`
+            : `سالن زیبایی ${check.fullName}`
+        );
+      }
+      if (userGender === 'MALE') {
+        setSalonType(BusinessType.MenBarbershop);
       }
       setScreen('REGISTER_STEP_4_SALON');
       return;
@@ -481,6 +496,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         fullName: check.fullName,
+        gender: userGender,
         role: 'CUSTOMER',
         avatarUrl: avatarUrl || undefined,
       });
@@ -511,6 +527,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         fullName: profileCheck.fullName || 'مدیر سالن',
+        gender: userGender,
         role: 'BUSINESS_OWNER',
         avatarUrl: avatarUrl || undefined,
         salonInfo: {
@@ -539,8 +556,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       setError('کد تأیید ۶ رقمی را وارد کنید.');
       return;
     }
-    if (regPassword.trim().length < 8) {
-      setError('رمز عبور جدید باید حداقل ۸ کاراکتر باشد.');
+    if (regPassword.trim().length < 6) {
+      setError('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.');
       return;
     }
     setError('');
@@ -930,7 +947,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-extrabold text-[#061138]">
                     رمز عبور
                   </label>
@@ -940,7 +957,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     className="inline-flex items-center gap-1 rounded-full bg-[#EFF6FF] border border-[#0057FF]/30 px-2.5 py-0.5 text-[10px] font-black text-[#0057FF] transition hover:bg-[#0057FF] hover:text-white cursor-pointer"
                   >
                     <KeyRound className="h-3 w-3" />
-                    <span>پیشنهاد رمز سیستم: {suggestedPassword}</span>
+                    <span dir="ltr">پیشنهاد رمز ۶ رقمی: {suggestedPassword}</span>
+                    <RefreshCw className="h-2.5 w-2.5 mr-0.5 opacity-80" />
                   </button>
                 </div>
 
@@ -954,7 +972,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setRegPassword(e.target.value);
                       setError('');
                     }}
-                    placeholder="حداقل ۸ کاراکتر"
+                    placeholder="حداقل ۶ کاراکتر"
                     className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-10 text-center font-mono text-sm font-bold text-[#061138] placeholder:font-sans placeholder:text-xs placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   <Lock className="pointer-events-none absolute top-1/2 right-3.5 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1231,6 +1249,39 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <label className="block text-right text-xs font-extrabold text-[#061138]">
+                  جنسیت شما (جهت نمایش پیش‌فرض سالن‌ها)
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setUserGender('FEMALE')}
+                    className={`py-2.5 px-3 rounded-2xl border-2 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      userGender === 'FEMALE'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF] shadow-2xs'
+                        : 'border-slate-200 bg-[#F8FAFC] text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <span>خانم</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUserGender('MALE')}
+                    className={`py-2.5 px-3 rounded-2xl border-2 text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      userGender === 'MALE'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF] shadow-2xs'
+                        : 'border-slate-200 bg-[#F8FAFC] text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <span>آقا</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                  نمایش پیش‌فرض سالن‌ها بر اساس جنسیت شما تنظیم می‌شود و هر زمان بخواهید برای شخص دیگری نوبت بگیرید، با یک کلیک می‌توانید سالن‌های خانم یا آقا را مشاهده کنید.
+                </p>
+              </div>
+
               {error ? (
                 <p className="rounded-xl bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-600 border border-rose-200">
                   {error}
@@ -1415,7 +1466,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
               <div className="space-y-1.5">
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
-                  رمز عبور جدید (حداقل ۸ کاراکتر)
+                  رمز عبور جدید (حداقل ۶ کاراکتر)
                 </label>
                 <input
                   type="text"

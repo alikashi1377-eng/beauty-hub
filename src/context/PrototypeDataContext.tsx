@@ -37,8 +37,10 @@ import {
   OnboardingDraft,
   PaymentGatewayConfig,
   PaymentOrderItem,
+  PlatformBusinessNoticeItem,
   ReviewItem,
   ServiceItem,
+  SettlementRequestItem,
   SmsMessageLogItem,
   SpecialistItem,
   SubscriptionPlanItem,
@@ -89,6 +91,7 @@ interface PrototypeDataContextValue {
     firstName?: string;
     lastName?: string;
     fullName: string;
+    gender?: 'FEMALE' | 'MALE';
     role: AccountRoleChoice;
     avatarUrl?: string;
     salonInfo?: {
@@ -147,6 +150,15 @@ interface PrototypeDataContextValue {
     hours: WorkingHourItem[]
   ) => void;
   updateBusinessApproval: (businessId: string, status: ApprovalStatus) => void;
+  permanentlyDeleteBusiness: (businessId: string) => void;
+  platformBusinessNotices: PlatformBusinessNoticeItem[];
+  sendPlatformBusinessNotice: (input: {
+    targetBusinessId: 'ALL' | string;
+    targetBusinessName?: string;
+    title: string;
+    message: string;
+  }) => PlatformBusinessNoticeItem;
+  markPlatformBusinessNoticeRead: (noticeId: string, businessId?: string) => void;
   services: ServiceItem[];
   addService: (item: Omit<ServiceItem, 'id'>) => void;
   updateService: (id: string, patch: Partial<ServiceItem>) => void;
@@ -218,6 +230,12 @@ interface PrototypeDataContextValue {
     orderId: string,
     decision: 'APPROVED' | 'REJECTED'
   ) => void;
+  settlementRequests: SettlementRequestItem[];
+  requestWalletSettlement: (businessId?: string) => SettlementRequestItem | null;
+  markSettlementPaid: (settlementId: string, trackingCode?: string) => void;
+  runNightlyBatchSettlement: () => number;
+  recordSponsoredClick: (businessId: string) => void;
+  sendAppointmentReminders: (businessId?: string) => Promise<number>;
   smsLogs: SmsMessageLogItem[];
   sendBusinessCustomerSms: (input: {
     businessId?: string;
@@ -438,6 +456,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         'biz-7',
         'biz-8',
       ]);
+      const permDeletedRaw = window.localStorage.getItem(
+        'timeto_permanently_deleted_biz_ids_v1'
+      );
+      const permDeletedIds = new Set<string>(
+        permDeletedRaw ? JSON.parse(permDeletedRaw) : []
+      );
       const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
       const localOnbRaw = window.localStorage.getItem(
@@ -449,7 +473,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const byIdOrSlug = new Map<string, BusinessItem>();
       for (const b of list) {
-        if (excludedSampleIds.has(b.id)) continue;
+        if (excludedSampleIds.has(b.id) || permDeletedIds.has(b.id)) continue;
         const isSample =
           Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
         const rawMerged = overrides[b.id]
@@ -465,7 +489,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
       for (const lb of localOnbList) {
-        if (excludedSampleIds.has(lb.id)) continue;
+        if (excludedSampleIds.has(lb.id) || permDeletedIds.has(lb.id)) continue;
         const lbCleanPhone = (lb.ownerPhone || lb.phoneDisplay || '').replace(/\D/g, '');
         const alreadyExists = Array.from(byIdOrSlug.values()).some((x) => {
           const xCleanPhone = (x.ownerPhone || x.phoneDisplay || '').replace(/\D/g, '');
@@ -757,6 +781,38 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return [];
     }
   );
+  const [platformBusinessNotices, setPlatformBusinessNotices] = useState<
+    PlatformBusinessNoticeItem[]
+  >(() => {
+    try {
+      const saved = window.localStorage.getItem(
+        'timeto_platform_business_notices_v1'
+      );
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [settlementRequests, setSettlementRequests] = useState<
+    SettlementRequestItem[]
+  >(() => {
+    try {
+      const saved = window.localStorage.getItem(
+        'timeto_settlement_requests_v1'
+      );
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const [activePlanId, setActivePlanId] = useState<string>('plan-free');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
@@ -1264,6 +1320,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       sessionId: `sess-${Date.now()}`,
       phone,
       fullName,
+      gender: memoryAcc?.gender,
       defaultCity: memoryAcc?.city || 'اصفهان',
       roles,
       isPlatformAdmin: isSuperAdmin,
@@ -1457,6 +1514,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     firstName?: string;
     lastName?: string;
     fullName: string;
+    gender?: 'FEMALE' | 'MALE';
     role: AccountRoleChoice;
     avatarUrl?: string;
     salonInfo?: {
@@ -1620,6 +1678,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         payload.fullName.split(' ').slice(1).join(' ') ||
         '',
       fullName: payload.fullName,
+      gender: payload.gender,
       role: payload.role,
       avatarUrl: payload.avatarUrl,
       businessId: createdBusinessId,
@@ -1637,6 +1696,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       payload.fullName,
       payload.role
     );
+    if (payload.gender) {
+      sessionUser = { ...sessionUser, gender: payload.gender };
+    }
     setAuthUser(sessionUser);
     setBookingDraft((prev) => ({
       ...prev,
@@ -2021,16 +2083,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ? [currentBusiness, ...prev]
           : prev;
       const next = baseList.map((b) =>
-        b.id === businessId ? { ...b, ...patch, approvalStatus: 'APPROVED' as ApprovalStatus } : b
+        b.id === businessId
+          ? {
+              ...b,
+              ...patch,
+              approvalStatus:
+                patch.approvalStatus ??
+                (b.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED'),
+            }
+          : b
       );
       try {
         const overridesRaw =
           window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
         const overrides = JSON.parse(overridesRaw);
+        const existingStatus = overrides[businessId]?.approvalStatus;
         overrides[businessId] = {
           ...(overrides[businessId] || {}),
           ...patch,
-          approvalStatus: 'APPROVED',
+          approvalStatus:
+            patch.approvalStatus ??
+            (existingStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED'),
         };
         window.localStorage.setItem(
           'timeto_biz_overrides_v2',
@@ -2047,7 +2120,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             JSON.stringify(
               localOnbList.map((lb) =>
                 lb.id === businessId
-                  ? { ...lb, ...patch, approvalStatus: 'APPROVED' as ApprovalStatus }
+                  ? {
+                      ...lb,
+                      ...patch,
+                      approvalStatus:
+                        patch.approvalStatus ??
+                        (lb.approvalStatus === 'REJECTED'
+                          ? 'REJECTED'
+                          : 'APPROVED'),
+                    }
                   : lb
               )
             )
@@ -2135,6 +2216,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     } else if (order.itemType === 'AD_PACKAGE') {
       const duration = order.requestedDurationDays || 30;
       const placement = order.requestedPlacement || 'SEARCH_TOP';
+      const targetBiz = businesses.find((b) => b.id === order.businessId);
       updateBusinessProfile(order.businessId, {
         isSponsored: true,
         featured: true,
@@ -2142,6 +2224,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         sponsoredDaysRemaining: duration,
         sponsoredExpiresJalali: `تا ${duration} روز آینده`,
         sponsoredOrder: placement === 'HERO_SPOTLIGHT' ? 1 : 2,
+        sponsoredCategorySlug:
+          order.requestedCategorySlug || targetBiz?.categorySlug,
+        sponsoredNeighborhood:
+          order.requestedNeighborhood || targetBiz?.neighborhood,
+        sponsoredImpressions: (targetBiz?.sponsoredImpressions ?? 120) + 45,
+        sponsoredClicks: targetBiz?.sponsoredClicks ?? 18,
         sponsoredLabel:
           order.requestedLabel ||
           (placement === 'HOME_BANNER'
@@ -2416,9 +2504,132 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast(
       status === 'APPROVED'
         ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت.'
-        : 'وضعیت کسب‌وکار به «ردشده / نیازمند اصلاح» تغییر یافت.',
+        : 'کسب‌وکار رد صلاحیت شد، از نمایش عمومی حذف گردید و به زباله‌دان منتقل شد.',
       status === 'APPROVED' ? 'success' : 'warning'
     );
+  };
+
+  const permanentlyDeleteBusiness = (businessId: string) => {
+    const targetBiz = businesses.find((b) => b.id === businessId);
+    setBusinesses((prev) => prev.filter((b) => b.id !== businessId));
+    setServices((prev) => prev.filter((s) => s.businessId !== businessId));
+    setSpecialists((prev) => prev.filter((sp) => sp.businessId !== businessId));
+
+    try {
+      const permRaw =
+        window.localStorage.getItem('timeto_permanently_deleted_biz_ids_v1') ||
+        '[]';
+      const permList: string[] = JSON.parse(permRaw);
+      if (!permList.includes(businessId)) {
+        permList.push(businessId);
+        window.localStorage.setItem(
+          'timeto_permanently_deleted_biz_ids_v1',
+          JSON.stringify(permList)
+        );
+      }
+
+      const ovRaw =
+        window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
+      const ov = JSON.parse(ovRaw);
+      if (ov[businessId]) {
+        delete ov[businessId];
+        window.localStorage.setItem(
+          'timeto_biz_overrides_v2',
+          JSON.stringify(ov)
+        );
+      }
+
+      const localOnbRaw =
+        window.localStorage.getItem('timeto_local_onboarded_businesses_v1') ||
+        '[]';
+      const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
+      if (localOnbList.some((lb) => lb.id === businessId)) {
+        window.localStorage.setItem(
+          'timeto_local_onboarded_businesses_v1',
+          JSON.stringify(localOnbList.filter((lb) => lb.id !== businessId))
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    showToast(
+      `کسب‌وکار «${targetBiz?.name || businessId}» برای همیشه از زباله‌دان و سامانه حذف شد.`,
+      'danger'
+    );
+  };
+
+  const sendPlatformBusinessNotice = (input: {
+    targetBusinessId: 'ALL' | string;
+    targetBusinessName?: string;
+    title: string;
+    message: string;
+  }): PlatformBusinessNoticeItem => {
+    const item: PlatformBusinessNoticeItem = {
+      id: `pbn-${Date.now()}`,
+      targetBusinessId: input.targetBusinessId,
+      targetBusinessName:
+        input.targetBusinessId === 'ALL'
+          ? 'همه کسب‌وکارها'
+          : input.targetBusinessName,
+      title: input.title.trim() || 'اطلاعیه مدیریت پلتفرم تایم‌تو',
+      message: input.message.trim(),
+      createdAtJalali: 'امروز',
+      readByBusinessIds: [],
+    };
+
+    setPlatformBusinessNotices((prev) => {
+      const next = [item, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_platform_business_notices_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    // باز کردن خودکار آکاردئون استوری‌ها و اطلاعیه‌ها برای صاحب کسب‌وکار هنگام دریافت پیام جدید
+    try {
+      window.localStorage.setItem('timeto_stories_accordion_collapsed_v1', '0');
+    } catch {
+      // ignore
+    }
+
+    showToast(
+      input.targetBusinessId === 'ALL'
+        ? 'اطلاعیه سراسری برای تمام صاحبان کسب‌وکار ارسال شد و در پنل آن‌ها نمایش داده می‌شود.'
+        : `پیام و اعلان مستقیم برای «${input.targetBusinessName || 'کسب‌وکار'}» ارسال شد.`
+    );
+    return item;
+  };
+
+  const markPlatformBusinessNoticeRead = (
+    noticeId: string,
+    businessId?: string
+  ) => {
+    const resolvedBizId = businessId || currentBusiness?.id || 'biz-owner-zero';
+    setPlatformBusinessNotices((prev) => {
+      const next = prev.map((n) => {
+        if (n.id !== noticeId) return n;
+        if (n.readByBusinessIds.includes(resolvedBizId)) return n;
+        return {
+          ...n,
+          readByBusinessIds: [...n.readByBusinessIds, resolvedBizId],
+        };
+      });
+      try {
+        window.localStorage.setItem(
+          'timeto_platform_business_notices_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   const addService = (item: Omit<ServiceItem, 'id'>) => {
@@ -2549,11 +2760,35 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
+    const targetApt = appointments.find((a) => a.id === id);
+
     setAppointments((prev) => {
       const next = prev.map((a) => (a.id === id ? { ...a, status } : a));
       persistSavedAppointments(next);
       return next;
     });
+
+    // در صورت تایید نوبت آنلاین، اگر بیعانه آنلاین روی سالن فعال باشد، مبلغ بیعانه به صورت خودکار به کیف پول سالن اضافه می‌شود
+    if (
+      status === AppointmentStatus.Confirmed &&
+      targetApt &&
+      targetApt.status !== AppointmentStatus.Confirmed
+    ) {
+      const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
+      if (targetBiz) {
+        const depositPct =
+          targetBiz.depositPercent && targetBiz.depositPercent > 0
+            ? targetBiz.depositPercent
+            : 30;
+        const depositAmount = targetBiz.depositEnabled
+          ? Math.round((targetApt.priceToman || 300000) * (depositPct / 100))
+          : Math.round((targetApt.priceToman || 300000) * 0.3);
+        updateBusinessProfile(targetBiz.id, {
+          walletBalanceToman:
+            (targetBiz.walletBalanceToman ?? 0) + depositAmount,
+        });
+      }
+    }
 
     if (dataMode === 'real') {
       void realApiClient
@@ -2561,14 +2796,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .then(() => {
           showToast(
             status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد و پیامک اطلاع‌رسانی برای مشتری ارسال گردید.'
+              ? 'نوبت با موفقیت تایید شد، بیعانه در کیف پول سالن منظور گردید و پیامک تایید برای مشتری ارسال شد.'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         })
         .catch(() => {
           showToast(
             status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد.'
+              ? 'نوبت با موفقیت تایید شد و بیعانه در کیف پول سالن ثبت گردید.'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         });
@@ -2577,9 +2812,259 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     showToast(
       status === AppointmentStatus.Confirmed
-        ? 'نوبت با موفقیت تایید شد.'
+        ? 'نوبت با موفقیت تایید شد و مبلغ بیعانه به کیف پول سالن شما اضافه گردید.'
         : 'وضعیت نوبت بروزرسانی شد.'
     );
+  };
+
+  const recordSponsoredClick = (businessId: string) => {
+    const target = businesses.find((b) => b.id === businessId);
+    if (!target) return;
+    updateBusinessProfile(businessId, {
+      sponsoredClicks: (target.sponsoredClicks ?? 14) + 1,
+      sponsoredImpressions: (target.sponsoredImpressions ?? 110) + 4,
+    });
+  };
+
+  const sendAppointmentReminders = async (
+    businessId?: string
+  ): Promise<number> => {
+    const targetBizId = businessId || currentBusiness?.id;
+    const upcoming = appointments.filter(
+      (a) =>
+        (!targetBizId || a.businessId === targetBizId) &&
+        (a.status === AppointmentStatus.Confirmed ||
+          a.status === AppointmentStatus.Pending)
+    );
+
+    if (upcoming.length === 0) {
+      showToast(
+        'در حال حاضر نوبت فعالی برای ارسال پیامک یادآور وجود ندارد.',
+        'info'
+      );
+      return 0;
+    }
+
+    const itemsPayload = upcoming.map((a) => ({
+      phone: a.customerPhoneMasked,
+      customerName: a.customerName,
+      businessName: a.businessName,
+      dateJalali: a.dateJalali,
+      timeSlot: a.timeSlot,
+    }));
+
+    if (dataMode === 'real') {
+      try {
+        await fetch('/api/v1/appointments/send-reminders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ items: itemsPayload }),
+        });
+      } catch {
+        // ادامه ثبت در گزارش
+      }
+    }
+
+    const newLog: SmsMessageLogItem = {
+      id: `sms-rem-${Date.now()}`,
+      businessId: targetBizId || 'biz-1',
+      businessName:
+        currentBusiness?.name || upcoming[0]?.businessName || 'سالن زیبایی',
+      recipientsCount: upcoming.length,
+      recipientPhones: upcoming.map((a) => a.customerPhoneMasked),
+      messageText: `یادآوری خودکار نوبت فردا/امروز (پترن خدماتی ملی‌پیامک) برای ${upcoming.length} مراجع`,
+      templateTitle: 'یادآور خودکار پیش از نوبت (۳ و ۲۴ ساعت قبل)',
+      createdAtJalali: 'امروز',
+      status: 'SENT',
+    };
+
+    setSmsLogs((prev) => {
+      const next = [newLog, ...prev];
+      try {
+        window.localStorage.setItem('timeto_sms_logs_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    showToast(
+      `پیامک یادآور پیش از نوبت با موفقیت برای ${upcoming.length} مراجع از طریق خط خدماتی ارسال شد.`
+    );
+    return upcoming.length;
+  };
+
+  const requestWalletSettlement = (
+    businessId?: string
+  ): SettlementRequestItem | null => {
+    const targetBiz =
+      businesses.find((b) => b.id === (businessId || currentBusiness?.id)) ??
+      currentBusiness;
+    if (!targetBiz) {
+      showToast('کسب‌وکاری برای تسویه یافت نشد.', 'warning');
+      return null;
+    }
+    const balance = targetBiz.walletBalanceToman ?? 0;
+    if (balance <= 0) {
+      showToast('موجودی کیف پول بیعانه سالن شما در حال حاضر ۰ تومان است.', 'info');
+      return null;
+    }
+    const rawSheba = (targetBiz.bankShebaNumber || '').trim();
+    if (rawSheba.replace(/\D/g, '').length < 24) {
+      showToast(
+        'لطفاً ابتدا شماره شبا ۲۴ رقمی (IR...) خود را در بخش پروفایل یا کادر تسویه وارد و ذخیره کنید.',
+        'warning'
+      );
+      return null;
+    }
+
+    const commissionPct = paymentConfig.platformCommissionPercent ?? 5;
+    const commissionToman = Math.round(balance * (commissionPct / 100));
+    const netPayoutToman = Math.max(0, balance - commissionToman);
+
+    const newItem: SettlementRequestItem = {
+      id: `STL-${Math.floor(1000 + Math.random() * 9000)}`,
+      businessId: targetBiz.id,
+      businessName: targetBiz.name,
+      ownerName:
+        targetBiz.bankAccountHolder || targetBiz.ownerName || 'مدیر سالن',
+      ownerPhone: targetBiz.ownerPhone || targetBiz.phoneDisplay || '',
+      shebaNumber: rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`,
+      cardNumber: targetBiz.bankCardNumber,
+      amountToman: balance,
+      commissionToman,
+      netPayoutToman,
+      createdAtJalali: 'امروز',
+      status: 'PENDING',
+    };
+
+    setSettlementRequests((prev) => {
+      const next = [newItem, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_settlement_requests_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    updateBusinessProfile(targetBiz.id, {
+      walletBalanceToman: 0,
+    });
+
+    showToast(
+      `درخواست تسویه شبا به مبلغ خالص ${netPayoutToman.toLocaleString('fa-IR')} تومان ثبت شد و در صف پایا شبانه قرار گرفت.`
+    );
+    return newItem;
+  };
+
+  const markSettlementPaid = (settlementId: string, trackingCode?: string) => {
+    const code =
+      trackingCode?.trim() || `PAYA-${Math.floor(100000 + Math.random() * 899999)}`;
+    setSettlementRequests((prev) => {
+      const next = prev.map((item) =>
+        item.id === settlementId
+          ? {
+              ...item,
+              status: 'PAID' as const,
+              paidTrackingCode: code,
+              paidAtJalali: 'امروز',
+            }
+          : item
+      );
+      try {
+        window.localStorage.setItem(
+          'timeto_settlement_requests_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast(`واریز شبا با کد رهگیری پایا ${code} ثبت و تسویه شد.`);
+  };
+
+  const runNightlyBatchSettlement = (): number => {
+    const commissionPct = paymentConfig.platformCommissionPercent ?? 5;
+    const eligibleBusinesses = businesses.filter(
+      (b) =>
+        (b.walletBalanceToman ?? 0) > 0 &&
+        (b.bankShebaNumber || '').replace(/\D/g, '').length >= 24
+    );
+    const pendingItems = settlementRequests.filter(
+      (s) => s.status === 'PENDING'
+    );
+
+    if (eligibleBusinesses.length === 0 && pendingItems.length === 0) {
+      showToast(
+        'در حال حاضر درخواست تسویه باز یا کیف پول دارای موجودی با شبای ثبت‌شده وجود ندارد.',
+        'info'
+      );
+      return 0;
+    }
+
+    const batchTimeCode = `PAYA-BATCH-${Math.floor(10000 + Math.random() * 89999)}`;
+    const newlyCreated: SettlementRequestItem[] = eligibleBusinesses.map(
+      (b, idx) => {
+        const bal = b.walletBalanceToman ?? 0;
+        const comm = Math.round(bal * (commissionPct / 100));
+        const rawSheba = (b.bankShebaNumber || '').trim();
+        return {
+          id: `STL-${Date.now()}-${idx}`,
+          businessId: b.id,
+          businessName: b.name,
+          ownerName: b.bankAccountHolder || b.ownerName || 'مدیر سالن',
+          ownerPhone: b.ownerPhone || b.phoneDisplay || '',
+          shebaNumber: rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`,
+          cardNumber: b.bankCardNumber,
+          amountToman: bal,
+          commissionToman: comm,
+          netPayoutToman: Math.max(0, bal - comm),
+          createdAtJalali: 'امروز (تسویه شبانه)',
+          status: 'PAID',
+          paidTrackingCode: `${batchTimeCode}-${idx + 1}`,
+          paidAtJalali: 'امروز',
+        };
+      }
+    );
+
+    eligibleBusinesses.forEach((b) => {
+      updateBusinessProfile(b.id, { walletBalanceToman: 0 });
+    });
+
+    setSettlementRequests((prev) => {
+      const updatedPrev = prev.map((s) =>
+        s.status === 'PENDING'
+          ? {
+              ...s,
+              status: 'PAID' as const,
+              paidTrackingCode: s.paidTrackingCode || batchTimeCode,
+              paidAtJalali: 'امروز',
+            }
+          : s
+      );
+      const next = [...newlyCreated, ...updatedPrev];
+      try {
+        window.localStorage.setItem(
+          'timeto_settlement_requests_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    const totalCount = eligibleBusinesses.length + pendingItems.length;
+    showToast(
+      `تسویه شبانه پایا (شبا) برای ${totalCount} سالن با موفقیت انجام و ثبت شد.`
+    );
+    return totalCount;
   };
 
   const persistCategories = (next: CategoryItem[]) => {
@@ -4310,6 +4795,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           updateBusinessProfile,
           updateBusinessWorkingHours,
           updateBusinessApproval,
+          permanentlyDeleteBusiness,
+          platformBusinessNotices,
+          sendPlatformBusinessNotice,
+          markPlatformBusinessNoticeRead,
           services,
           addService,
           updateService,
@@ -4349,6 +4838,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           paymentOrders,
           submitPaymentOrder,
           reviewPaymentOrder,
+          settlementRequests,
+          requestWalletSettlement,
+          markSettlementPaid,
+          runNightlyBatchSettlement,
+          recordSponsoredClick,
+          sendAppointmentReminders,
           smsLogs,
           sendBusinessCustomerSms,
           adminNotifications,

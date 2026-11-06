@@ -88,6 +88,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     currentBusiness,
     appointments,
     updateAppointmentStatus,
+    platformBusinessNotices,
+    markPlatformBusinessNoticeRead,
     toast,
     dismissToast,
     databaseError,
@@ -212,7 +214,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const pendingBusinessAppointments = businessAppointments.filter(
     (a) => a.status === AppointmentStatus.Pending
   );
-  const pendingCount = pendingBusinessAppointments.length;
+  const currentBizId = currentBusiness?.id || 'biz-owner-zero';
+  const relevantAdminNotices = platformBusinessNotices.filter(
+    (n) => n.targetBusinessId === 'ALL' || n.targetBusinessId === currentBizId
+  );
+  const unreadAdminNotices = relevantAdminNotices.filter(
+    (n) => !n.readByBusinessIds.includes(currentBizId)
+  );
+  const pendingCount =
+    pendingBusinessAppointments.length + unreadAdminNotices.length;
+
+  const shouldShowPublicFooter =
+    pathname === '/' ||
+    pathname === '/about' ||
+    pathname === '/contact' ||
+    pathname === '/support';
 
   return (
     <div
@@ -275,7 +291,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   <Bell className="w-4 h-4" />
                   {pendingCount > 0 ? (
                     <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-black tabular-nums animate-pulse">
-                      {toPersianDigits(pendingCount)} نوبت جدید
+                      {toPersianDigits(pendingCount)} اعلان جدید
                     </span>
                   ) : null}
                 </button>
@@ -406,9 +422,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             {children}
           </main>
 
-          <div className="pb-24 lg:pb-0">
-            <PublicFooter />
-          </div>
+          {shouldShowPublicFooter ? (
+            <div className="pb-24 lg:pb-0">
+              <PublicFooter />
+            </div>
+          ) : (
+            <div className="pb-24 lg:pb-6" aria-hidden="true" />
+          )}
           <PublicMobileBottomNav />
         </>
       )}
@@ -427,7 +447,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       <Modal
         isOpen={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
-        title="اعلان‌ها و درخواست‌های نوبت"
+        title="اعلان‌های مدیریت پلتفرم و درخواست‌های نوبت"
         footer={
           <Button
             variant="secondary"
@@ -439,7 +459,61 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         }
       >
         <div className="space-y-3 text-xs">
-          {businessAppointments.length === 0 ? (
+          {relevantAdminNotices.length > 0 ? (
+            <div className="space-y-2 pb-2 border-b border-[#E2E8F0]">
+              <p className="font-extrabold text-[#0057FF]">
+                پیام‌ها و اطلاعیه‌های مدیر پلتفرم تایم‌تو:
+              </p>
+              {relevantAdminNotices.map((notice) => {
+                const isRead = notice.readByBusinessIds.includes(currentBizId);
+                return (
+                  <div
+                    key={notice.id}
+                    className={`p-3.5 rounded-2xl border space-y-2 ${
+                      isRead
+                        ? 'bg-[#F8FAFC] border-[#CBD5E1]'
+                        : 'bg-[#EFF6FF] border-[#0057FF]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-[#061138]">
+                        📢 {notice.title}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">
+                        {notice.createdAtJalali}
+                      </span>
+                    </div>
+                    <p className="text-[#334155] leading-relaxed">
+                      {notice.message}
+                    </p>
+                    <div className="flex justify-end">
+                      {!isRead ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            markPlatformBusinessNoticeRead(
+                              notice.id,
+                              currentBizId
+                            )
+                          }
+                          className="px-3 py-1 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white font-extrabold text-[11px] cursor-pointer"
+                        >
+                          ✓ متوجه شدم (خواندم)
+                        </button>
+                      ) : (
+                        <span className="text-[10px] font-bold text-[#059669]">
+                          ✓ خوانده شده
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {businessAppointments.length === 0 &&
+          relevantAdminNotices.length === 0 ? (
             <p className="text-[#334155] py-3 text-center">
               اعلان یا نوبت جدیدی برای کسب‌وکار شما ثبت نشده است.
             </p>

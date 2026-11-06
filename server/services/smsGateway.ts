@@ -803,3 +803,98 @@ export async function sendOtpSmsViaGateway(
     clearTimeout(timeout);
   }
 }
+
+/**
+ * ارسال پیامک خدماتی چندپارامتری (پترن ثبت نوبت، تایید نوبت و یادآور قبل از نوبت در ملی‌پیامک)
+ * اگر متغیر محیطی پترن اختصاصی (مثلاً SMS_BOOKING_OWNER_TEMPLATE یا SMS_REMINDER_TEMPLATE) تنظیم شده باشد،
+ * آرایه کامل args به آن bodyId ارسال می‌شود؛ و اگر هنوز تنظیم نشده باشد، به صورت هوشمند به پترن تک‌پارامتری SMS_OTP_TEMPLATE سوییچ می‌کند تا ارسال پیامک با خطای عدم تطابق پارامتر مواجه نشود.
+ */
+export async function sendPatternSmsViaGateway(params: {
+  phone: string;
+  args: string[];
+  fallbackSingleArg: string;
+  customTemplateId?: string | null;
+  config: SmsConfig;
+  nodeEnv: 'development' | 'production' | 'test';
+}): Promise<SmsDeliveryResult> {
+  const { phone, args, fallbackSingleArg, customTemplateId, config, nodeEnv } =
+    params;
+
+  const trimmedCustomTemplate = stripSurroundingQuotes(
+    customTemplateId ?? undefined
+  );
+  const hasDedicatedPattern =
+    Boolean(trimmedCustomTemplate) &&
+    /^\d+$/.test(normalizeDigitsToEnglish(trimmedCustomTemplate));
+
+  // اگر پترن چندپارامتری اختصاصی تعریف نشده، با پترن اصلی تک‌پارامتری ارسال شود
+  if (!hasDedicatedPattern || config.provider !== 'melipayamak') {
+    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+  }
+
+  const bodyId = Number.parseInt(
+    normalizeDigitsToEnglish(trimmedCustomTemplate),
+    10
+  );
+  const { extractedKey, extractedEndpoint } = normalizeMelipayamakApiKey(
+    config.apiKey || ''
+  );
+  if (!extractedKey) {
+    return {
+      sent: false,
+      provider: 'melipayamak',
+      errorCode: 'SMS_GATEWAY_NOT_CONFIGURED',
+    };
+  }
+
+  const endpoint =
+    config.apiUrl ||
+    extractedEndpoint ||
+    `https://console.melipayamak.com/api/send/shared/${encodeURIComponent(
+      extractedKey
+    )}`;
+  const cleanRecipient = normalizeDigitsToEnglish(phone).replace(/\D/g, '');
+  const cleanArgs = args.map((a) => String(a ?? '').trim());
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8500);
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        bodyId,
+        to: cleanRecipient,
+        args: cleanArgs,
+      }),
+      signal: controller.signal,
+    });
+    const rawText = await res.text();
+    let parsed: { recId?: number | string; status?: string } | null = null;
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsed = null;
+    }
+    const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
+    const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
+    if (res.ok && recIdStr && (Number.isNaN(numericRecId) || numericRecId > 100)) {
+      return {
+        sent: true,
+        provider: 'melipayamak',
+        providerMessageId: recIdStr,
+        httpStatus: res.status,
+      };
+    }
+    // در صورت خطا در پترن اختصاصی، فالبک به پترن اصلی
+    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+  } catch {
+    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+

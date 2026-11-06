@@ -25,6 +25,7 @@ export interface SavedMemoryAccount {
   firstName: string;
   lastName: string;
   fullName: string;
+  gender?: 'FEMALE' | 'MALE';
   role: AccountRoleChoice;
   avatarUrl?: string;
   businessId?: string;
@@ -40,11 +41,40 @@ export const SAVED_ACCOUNTS_STORAGE_KEY = 'timeto_registered_accounts_v2';
 export const LAST_SAVED_CREDENTIAL_KEY = 'timeto_last_credential_memory_v2';
 export const PERSISTED_SESSION_USER_KEY = 'timeto_persisted_auth_user_v2';
 
-/** تولید رمز عبور پیشنهادی امن و به‌یادماندنی توسط سیستم (حداقل ۸ کاراکتر) */
-export function generateSuggestedPassword(phone?: string): string {
-  const clean = toEnglishDigitsClient(phone || '').replace(/\D/g, '');
-  const suffix = clean.length >= 4 ? clean.slice(-4) : '4829';
-  return `Timeto@${suffix}`;
+/** تولید رمز عبور پیشنهادی ۶ رقمی کاملاً تصادفی و بدون الگوی ثابت (شامل حروف بزرگ، کوچک، عدد و کاراکتر ویژه در جایگاه‌های تصادفی) */
+export function generateSuggestedPassword(_phone?: string): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '@#$%&*!?';
+
+  const getRandomInt = (max: number): number => {
+    if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return arr[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  };
+
+  const chars: string[] = [
+    upper[getRandomInt(upper.length)],
+    lower[getRandomInt(lower.length)],
+    lower[getRandomInt(lower.length)],
+    digits[getRandomInt(digits.length)],
+    digits[getRandomInt(digits.length)],
+    symbols[getRandomInt(symbols.length)],
+  ];
+
+  // بُر زدن (Shuffle) تمام کاراکترها به روش Fisher-Yates تا هیچ الگوی ثابتی وجود نداشته باشد
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = getRandomInt(i + 1);
+    const temp = chars[i];
+    chars[i] = chars[j];
+    chars[j] = temp;
+  }
+
+  return chars.join('');
 }
 
 /** خواندن حساب‌های ثبت‌شده در حافظه مرورگر با یکتاسازی بر اساس شماره ۱۱ رقمی نرمال‌شده */
@@ -90,7 +120,7 @@ export function isPhoneAlreadyRegistered(
   );
 }
 
-/** اعتبارسنجی گام ۱ ثبت‌نام (شماره موبایل یکتا + رمز عبور حداقل ۸ کاراکتر + تکرار رمز) */
+/** اعتبارسنجی گام ۱ ثبت‌نام (شماره موبایل یکتا + رمز عبور حداقل ۶ کاراکتر + تکرار رمز) */
 export function validateRegistrationStep1(params: {
   phone: string;
   password: string;
@@ -120,11 +150,11 @@ export function validateRegistrationStep1(params: {
     };
   }
   const pass = params.password.trim();
-  if (pass.length < 8) {
+  if (pass.length < 6) {
     return {
       valid: false,
       normalizedPhone,
-      error: 'رمز عبور باید حداقل ۸ کاراکتر باشد.',
+      error: 'رمز عبور باید حداقل ۶ کاراکتر باشد.',
     };
   }
   if (pass !== params.confirmPassword.trim()) {
