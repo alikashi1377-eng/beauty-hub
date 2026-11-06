@@ -2128,6 +2128,28 @@ export const AboutPage: React.FC = () => {
           </p>
         </Card>
       </div>
+
+      {/* نماد اعتماد الکترونیکی (اینماد) — فقط در صفحه درباره ما */}
+      <Card className="rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-6 border border-[#E2E8F0] bg-white">
+        <div className="space-y-1.5 text-center sm:text-right">
+          <p className="text-xs font-extrabold text-[#0057FF]">
+            مجوز رسمی و نماد اعتماد الکترونیکی
+          </p>
+          <h3 className="text-base font-extrabold text-[#061138]">
+            دارای نماد اعتماد الکترونیکی (اینماد) از مرکز توسعه تجارت الکترونیکی
+          </h3>
+          <p className="text-xs text-[#64748B] leading-relaxed max-w-xl">
+            جهت استعلام اصالت و مشاهده شناسنامه نماد اعتماد الکترونیکی پلتفرم تایم تو (timeto24.ir)، روی لوگوی اینماد کلیک فرمایید.
+          </p>
+        </div>
+
+        <div
+          className="shrink-0 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3 flex items-center justify-center min-w-[110px] min-h-[110px]"
+          dangerouslySetInnerHTML={{
+            __html: `<a referrerpolicy='origin' target='_blank' href='https://trustseal.enamad.ir/?id=8562558&Code=FIEVb8zLbqQlmNhZBm2EBXcZrZw4NCcp'><img referrerpolicy='origin' src='https://trustseal.enamad.ir/logo.aspx?id=8562558&Code=FIEVb8zLbqQlmNhZBm2EBXcZrZw4NCcp' alt='' style='cursor:pointer' code='FIEVb8zLbqQlmNhZBm2EBXcZrZw4NCcp'></a>`,
+          }}
+        />
+      </Card>
     </div>
   );
 };
