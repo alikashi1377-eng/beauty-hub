@@ -2689,9 +2689,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                 render: (o) => (
                   <div className="text-xs">
                     <span className="font-extrabold text-[#061138]">
-                      {o.paymentMethod === 'BALEPAY'
-                        ? 'بله‌پی (BalePay)'
-                        : 'کارت‌به‌کارت'}
+                      درگاه آنلاین زیبال (Zibal)
                     </span>
                     <span className="block font-mono text-[11px] text-[#059669]">
                       کد رهگیری: {o.trackingCode}
@@ -3475,7 +3473,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
   );
 };
 
-/** ۶. تراکنش‌های حق اشتراک و مدیریت درگاه بله‌پی و کارت‌به‌کارت (/admin/payments) */
+/** ۶. تراکنش‌های حق اشتراک، مدیریت درگاه آنلاین زیبال و تسویه شبا (/admin/payments) */
 export const AdminPaymentsPage: React.FC = () => {
   const {
     paymentConfig,
@@ -3489,32 +3487,24 @@ export const AdminPaymentsPage: React.FC = () => {
     sendAppointmentReminders,
   } = usePrototypeData();
 
-  const [cardNumber, setCardNumber] = useState(paymentConfig.cardNumber);
-  const [cardHolderName, setCardHolderName] = useState(
-    paymentConfig.cardHolderName
-  );
-  const [bankName, setBankName] = useState(paymentConfig.bankName);
-  const [balePayLink, setBalePayLink] = useState(paymentConfig.balePayLink);
-  const [supportHandle, setSupportHandle] = useState(
-    paymentConfig.supportTelegramOrBale
-  );
-  const [zarinpalMerchantId, setZarinpalMerchantId] = useState(
-    paymentConfig.zarinpalMerchantId || ''
+  const [zibalMerchantId, setZibalMerchantId] = useState(
+    paymentConfig.zibalMerchantId || paymentConfig.zarinpalMerchantId || ''
   );
   const [commissionPercent, setCommissionPercent] = useState(
     String(paymentConfig.platformCommissionPercent ?? 0)
+  );
+  const [shebaNumber, setShebaNumber] = useState(
+    paymentConfig.shebaNumber || ''
   );
   const [sendingReminders, setSendingReminders] = useState(false);
 
   const handleSaveGateway = (e: React.FormEvent) => {
     e.preventDefault();
     updatePaymentConfig({
-      cardNumber: cardNumber.trim(),
-      cardHolderName: cardHolderName.trim(),
-      bankName: bankName.trim(),
-      balePayLink: balePayLink.trim(),
-      supportTelegramOrBale: supportHandle.trim(),
-      zarinpalMerchantId: zarinpalMerchantId.trim(),
+      activeMethod: 'ZIBAL',
+      zibalMerchantId: zibalMerchantId.trim(),
+      zarinpalMerchantId: zibalMerchantId.trim(),
+      shebaNumber: shebaNumber.trim(),
       platformCommissionPercent: Math.max(
         0,
         Math.min(50, Number(commissionPercent) || 0)
@@ -3529,17 +3519,17 @@ export const AdminPaymentsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی، درگاه متمرکز و تسویه خودکار شبا (پایا)"
-        title="مدیریت درگاه پرداخت، کیف پول سالن‌ها و تسویه شبا"
-        subtitle="درگاه متمرکز پلتفرم (بله‌پی، کارت‌به‌کارت و زرین‌پال)، نگهداری بیعانه در کیف پول سالن و واریز شبانه شبا (IR)"
+        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal) و تسویه شبا (پایا)"
+        title="مدیریت درگاه آنلاین زیبال، کیف پول سالن‌ها و تسویه شبا"
+        subtitle="درگاه رسمی شاپرک (زیبال)، تفکیک درآمد پلن‌ها از بیعانه سالن‌ها و واریز شبانه شبا (IR)"
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'تراکنش‌ها و تسویه شبا' },
+          { label: 'درگاه زیبال و تسویه شبا' },
         ]}
       />
 
-      {/* کارت ۱: تنظیمات درگاه متمرکز پلتفرم */}
+      {/* کارت ۱: تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) */}
       <Card className="space-y-4 border-2 border-[#0057FF]/25">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
           <div className="flex items-center gap-2.5">
@@ -3548,77 +3538,32 @@ export const AdminPaymentsPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                تنظیمات درگاه پرداخت متمرکز پلتفرم (بدون نیاز به درگاه جداگانه برای هر سالن)
+                تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) — شاپرک بانک مرکزی
               </h2>
               <p className="text-xs text-[#64748B]">
-                مشتریان با یک درگاه واحد پرداخت می‌کنند؛ بیعانه به کیف پول داخلی سالن اضافه شده و شبانه به شبا (IR) سالن‌دار واریز می‌شود
+                کد مرچنت دریافتی از پنل زیبال (یا متغیر محیطی ZIBAL_MERCHANT_ID در لیارا) را وارد کنید
               </p>
             </div>
           </div>
           <StatusBadge
-            label="درگاه متمرکز + کیف پول داخلی فعال"
+            label="درگاه زیبال (Zibal) فعال"
             tone="success"
           />
         </div>
 
         <form onSubmit={handleSaveGateway} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <FormField
-              id="pay-card-num"
-              label="شماره کارت ۱۶ رقمی پلتفرم (کارت‌به‌کارت)"
+              id="pay-zibal-merchant"
+              label="کد مرچنت درگاه زیبال (Zibal Merchant Code)"
               required
             >
               <Input
-                id="pay-card-num"
+                id="pay-zibal-merchant"
                 dir="ltr"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                placeholder="6037-9975-0000-0000"
-              />
-            </FormField>
-
-            <FormField id="pay-holder" label="نام صاحب حساب / کارت پلتفرم" required>
-              <Input
-                id="pay-holder"
-                value={cardHolderName}
-                onChange={(e) => setCardHolderName(e.target.value)}
-                placeholder="مدیریت پلتفرم تایم تو"
-              />
-            </FormField>
-
-            <FormField id="pay-bank" label="نام بانک" required>
-              <Input
-                id="pay-bank"
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                placeholder="بانک ملی ایران"
-              />
-            </FormField>
-
-            <FormField
-              id="pay-bale"
-              label="لینک پرداخت بله‌پی (BalePay)"
-              required
-            >
-              <Input
-                id="pay-bale"
-                dir="ltr"
-                value={balePayLink}
-                onChange={(e) => setBalePayLink(e.target.value)}
-                placeholder="https://ble.ir/timeto_pay"
-              />
-            </FormField>
-
-            <FormField
-              id="pay-zarinpal"
-              label="کد مرچنت ۳۶ رقمی زرین‌پال / زیبال (اختیاری - پس از دریافت اینماد)"
-            >
-              <Input
-                id="pay-zarinpal"
-                dir="ltr"
-                value={zarinpalMerchantId}
-                onChange={(e) => setZarinpalMerchantId(e.target.value)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                value={zibalMerchantId}
+                onChange={(e) => setZibalMerchantId(e.target.value)}
+                placeholder="مثلاً 65a4b8c9d0e1f2a3b4c5d6e7"
               />
             </FormField>
 
@@ -3637,22 +3582,29 @@ export const AdminPaymentsPage: React.FC = () => {
                 placeholder="0"
               />
             </FormField>
+
+            <FormField
+              id="pay-sheba"
+              label="شماره شبای حساب متصل به درگاه زیبال (شما)"
+            >
+              <Input
+                id="pay-sheba"
+                dir="ltr"
+                value={shebaNumber}
+                onChange={(e) => setShebaNumber(e.target.value)}
+                placeholder="IR820170000000123456789001"
+              />
+            </FormField>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
-            <div className="flex items-center gap-2 text-xs text-[#64748B]">
-              <span>آیدی پشتیبانی بله / تلگرام جهت ارسال فیش:</span>
-              <input
-                dir="ltr"
-                value={supportHandle}
-                onChange={(e) => setSupportHandle(e.target.value)}
-                className="rounded-xl border border-[#CBD5E1] px-2.5 py-1 text-xs font-mono text-[#061138]"
-              />
-            </div>
+            <span className="text-xs text-[#475569]">
+              در لیارا نیز می‌توانید متغیر <code dir="ltr" className="font-mono font-bold text-[#0057FF]">ZIBAL_MERCHANT_ID</code> را در بخش Environment Variables قرار دهید.
+            </span>
 
             <Button type="submit" variant="primary" size="sm">
               <Check className="w-4 h-4" />
-              <span>ذخیره تنظیمات درگاه و کارمزد پلتفرم</span>
+              <span>ذخیره کد مرچنت زیبال و کارمزد پلتفرم</span>
             </Button>
           </div>
         </form>
@@ -3898,9 +3850,7 @@ export const AdminPaymentsPage: React.FC = () => {
               render: (i) => (
                 <div className="text-xs">
                   <span className="font-bold text-[#061138]">
-                    {i.paymentMethod === 'BALEPAY'
-                      ? 'بله‌پی (BalePay)'
-                      : 'کارت‌به‌کارت'}
+                    درگاه آنلاین زیبال (Zibal)
                   </span>
                   <span className="block font-mono text-[11px] text-[#059669]">
                     Ref: {i.trackingCode}

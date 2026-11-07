@@ -239,7 +239,7 @@ export interface AdPackageItem {
 }
 
 export interface PaymentGatewayConfig {
-  activeMethod: 'BALEPAY_AND_CARD' | 'BALEPAY_ONLY' | 'CARD_ONLY';
+  activeMethod: 'ZIBAL' | 'BALEPAY_AND_CARD' | 'BALEPAY_ONLY' | 'CARD_ONLY';
   balePayId: string;
   balePayLink: string;
   cardNumber: string;
@@ -248,6 +248,7 @@ export interface PaymentGatewayConfig {
   bankName: string;
   supportTelegramOrBale: string;
   instructions: string;
+  zibalMerchantId?: string;
   zarinpalMerchantId?: string;
   platformCommissionPercent?: number;
 }
@@ -260,7 +261,7 @@ export interface PaymentOrderItem {
   itemId: string;
   itemTitle: string;
   amountToman: number;
-  paymentMethod: 'BALEPAY' | 'CARD_TO_CARD';
+  paymentMethod: 'ZIBAL' | 'BALEPAY' | 'CARD_TO_CARD';
   trackingCode: string;
   createdAtJalali: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';

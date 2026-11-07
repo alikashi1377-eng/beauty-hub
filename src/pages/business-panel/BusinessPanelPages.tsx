@@ -4433,9 +4433,7 @@ export const BusinessMarketingPage: React.FC = () => {
                 render: (o) => (
                   <div className="text-xs">
                     <span className="font-bold text-[#061138]">
-                      {o.paymentMethod === 'BALEPAY'
-                        ? 'بله‌پی (BalePay)'
-                        : 'کارت‌به‌کارت'}
+                      درگاه آنلاین زیبال (Zibal)
                     </span>
                     <span className="block text-[11px] text-[#64748B] font-mono">
                       Ref: {o.trackingCode}
@@ -5169,8 +5167,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 header: 'روش پرداخت / کد رهگیری',
                 render: (o) => (
                   <span className="text-xs">
-                    {o.paymentMethod === 'BALEPAY' ? 'بله‌پی' : 'کارت‌به‌کارت'}{' '}
-                    ({o.trackingCode})
+                    درگاه آنلاین زیبال ({o.trackingCode})
                   </span>
                 ),
               },

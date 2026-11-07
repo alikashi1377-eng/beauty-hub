@@ -859,36 +859,51 @@ export async function sendPatternSmsViaGateway(params: {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8500);
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        bodyId,
-        to: cleanRecipient,
-        args: cleanArgs,
-      }),
-      signal: controller.signal,
-    });
-    const rawText = await res.text();
-    let parsed: { recId?: number | string; status?: string } | null = null;
-    try {
-      parsed = rawText ? JSON.parse(rawText) : null;
-    } catch {
-      parsed = null;
+    // لیست کاندیدهای آرایه args:
+    // ۱) آرایه کامل ۴ تایی ([نام مشتری، خدمت/سالن، تاریخ، ساعت]) برای تطابق اندیس‌های {0} و {2} و {3}
+    // ۲) آرایه ۳ تایی ([نام مشتری، تاریخ، ساعت]) در صورتی که وب‌سرویس ملی‌پیامک تعداد کروشه‌ها (۳ متغیر) را شمارش کند
+    const candidateArgsList: string[][] = [cleanArgs];
+    if (cleanArgs.length === 4) {
+      candidateArgsList.push([cleanArgs[0], cleanArgs[2], cleanArgs[3]]);
     }
-    const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
-    const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
-    if (res.ok && recIdStr && (Number.isNaN(numericRecId) || numericRecId > 100)) {
-      return {
-        sent: true,
-        provider: 'melipayamak',
-        providerMessageId: recIdStr,
-        httpStatus: res.status,
-      };
+
+    for (const candidateArgs of candidateArgsList) {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          bodyId,
+          to: cleanRecipient,
+          args: candidateArgs,
+        }),
+        signal: controller.signal,
+      });
+      const rawText = await res.text();
+      let parsed: { recId?: number | string; status?: string } | null = null;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        parsed = null;
+      }
+      const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
+      const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
+      if (
+        res.ok &&
+        recIdStr &&
+        (Number.isNaN(numericRecId) || numericRecId > 100)
+      ) {
+        return {
+          sent: true,
+          provider: 'melipayamak',
+          providerMessageId: recIdStr,
+          httpStatus: res.status,
+        };
+      }
     }
+
     // در صورت خطا در پترن اختصاصی، فالبک به پترن اصلی
     return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
   } catch {

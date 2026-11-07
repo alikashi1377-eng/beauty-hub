@@ -3,7 +3,7 @@ import { resolveSmsConfig, SmsConfig } from '../services/smsGateway';
 
 export type DataMode = 'mock' | 'real';
 export type SslMode = 'disable' | 'no-verify' | 'require';
-export type PaymentGatewayProvider = 'disabled' | 'zarinpal';
+export type PaymentGatewayProvider = 'disabled' | 'zibal' | 'zarinpal';
 
 export interface ServerEnvConfig {
   nodeEnv: 'development' | 'production' | 'test';
@@ -216,16 +216,23 @@ export function loadServerEnv(
 
   const sms = resolveSmsConfig(envSource);
   const rawPaymentProvider = (
-    envSource.PAYMENT_GATEWAY_PROVIDER ?? 'disabled'
+    envSource.PAYMENT_GATEWAY_PROVIDER ?? 'zibal'
   )
     .trim()
     .toLowerCase();
-  const paymentMerchantId = envSource.PAYMENT_MERCHANT_ID?.trim() || '';
-  const paymentMerchantIdConfigured = paymentMerchantId.length >= 16;
+  const paymentMerchantId =
+    envSource.ZIBAL_MERCHANT_ID?.trim() ||
+    envSource.PAYMENT_MERCHANT_ID?.trim() ||
+    '';
+  const paymentMerchantIdConfigured = paymentMerchantId.length >= 5;
   const paymentGatewayProvider: PaymentGatewayProvider =
-    rawPaymentProvider === 'zarinpal' && paymentMerchantIdConfigured
-      ? 'zarinpal'
-      : 'disabled';
+    rawPaymentProvider === 'zibal' && paymentMerchantIdConfigured
+      ? 'zibal'
+      : rawPaymentProvider === 'zarinpal' && paymentMerchantIdConfigured
+        ? 'zarinpal'
+        : paymentMerchantIdConfigured
+          ? 'zibal'
+          : 'disabled';
 
   const rawBootstrapToken = normalizeSecret(
     envSource.INITIAL_ADMIN_BOOTSTRAP_TOKEN

@@ -560,16 +560,18 @@ export const SAMPLE_AD_PACKAGES: AdPackageItem[] = [
 ];
 
 export const DEFAULT_PAYMENT_GATEWAY_CONFIG: PaymentGatewayConfig = {
-  activeMethod: 'BALEPAY_AND_CARD',
-  balePayId: '@timeto_pay_bot',
-  balePayLink: 'https://ble.ir/timeto_pay_bot',
-  cardNumber: '۶۰۳۷-۹۹۷۵-۹۹۰۰-۱۲۳۴',
-  cardHolderName: 'علی (مدیریت پلتفرم تایم تو)',
+  activeMethod: 'ZIBAL',
+  balePayId: '',
+  balePayLink: '',
+  cardNumber: '',
+  cardHolderName: 'مدیریت پلتفرم تایم تو (timeto24.ir)',
   shebaNumber: 'IR820170000000123456789001',
-  bankName: 'بانک ملی ایران',
+  bankName: 'درگاه پرداخت اینترنتی زیبال (Zibal)',
   supportTelegramOrBale: '09138201042',
+  zibalMerchantId: '',
+  platformCommissionPercent: 0,
   instructions:
-    'پس از پرداخت از طریق «بله‌پی (BalePay)» یا «کارت‌به‌کارت»، ۴ رقم آخر کارت یا کد پیگیری رسید را وارد کنید تا پلن یا جایگاه تبلیغاتی شما فعال شود.',
+    'پرداخت آنلاین از طریق درگاه امن شتاب (زیبال - Zibal) انجام شده و اشتراک یا بسته تبلیغاتی بلافاصله به صورت خودکار فعال می‌گردد.',
 };
 
 export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
@@ -581,8 +583,8 @@ export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
     itemId: 'ad-search-top',
     itemTitle: 'صدرنشینی در نتایج جست‌وجوی شهر (۱۴ روزه)',
     amountToman: 290000,
-    paymentMethod: 'BALEPAY',
-    trackingCode: 'بله‌پی-۸۸۴۱۲۰',
+    paymentMethod: 'ZIBAL',
+    trackingCode: 'ZBL-88412095',
     createdAtJalali: '۱۴۰۵/۰۸/۰۴',
     status: 'APPROVED',
     requestedPlacement: 'SEARCH_TOP',
@@ -597,8 +599,8 @@ export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
     itemId: 'plan-professional',
     itemTitle: 'حرفه‌ای (پرفروش) — اشتراک ماهانه',
     amountToman: 980000,
-    paymentMethod: 'CARD_TO_CARD',
-    trackingCode: 'کارت-۴۵۸۱-۹۹۲۰',
+    paymentMethod: 'ZIBAL',
+    trackingCode: 'ZBL-45819920',
     createdAtJalali: '۱۴۰۵/۰۸/۰۱',
     status: 'APPROVED',
   },
