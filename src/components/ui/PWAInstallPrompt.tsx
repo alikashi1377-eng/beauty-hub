@@ -139,14 +139,24 @@ export const PWAProfileInstallRow: React.FC<{
 export const PWAMobileInstallBanner: React.FC = () => {
   const {
     isInstalled,
+    justInstalled,
     isBannerDismissed,
     install,
     dismissBanner,
     confirmInstalled,
+    dismissJustInstalled,
   } = usePWAInstall();
   const [guideOpen, setGuideOpen] = useState(false);
   const [hasTriggeredByScrollOrDelay, setHasTriggeredByScrollOrDelay] =
     useState(false);
+
+  useEffect(() => {
+    if (!justInstalled) return;
+    const timer = window.setTimeout(() => {
+      dismissJustInstalled();
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [justInstalled, dismissJustInstalled]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || isInstalled || isBannerDismissed) {
@@ -169,6 +179,38 @@ export const PWAMobileInstallBanner: React.FC = () => {
       window.removeEventListener('scroll', handleScroll);
     };
   }, [isInstalled, isBannerDismissed]);
+
+  if (justInstalled) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-20 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:left-5 sm:w-96 z-50 rounded-2xl bg-[#065F46] text-white px-4 py-3.5 shadow-2xl border-2 border-[#34D399] flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-[#10B981] text-white flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-extrabold text-white">
+              اپلیکیشن تایم تو روی گوشی شما نصب شد!
+            </p>
+            <p className="text-[11px] text-[#A7F3D0] mt-0.5">
+              از این پس از آیکون تایم تو در صفحه اصلی گوشی وارد شوید.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={dismissJustInstalled}
+          aria-label="بستن"
+          className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer shrink-0"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
 
   if (isInstalled || isBannerDismissed || !hasTriggeredByScrollOrDelay) {
     return null;

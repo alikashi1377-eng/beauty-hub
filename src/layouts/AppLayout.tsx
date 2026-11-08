@@ -346,7 +346,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {/* نوار تب‌های زیرمجموعه در صورت وجود زیربخش (نوبت‌ها، سالن من، مشتریان، مالی و پلن) */}
           <BusinessCategorySubTabs />
 
-          {/* محتوای اصلی صفحه با فاصله پایین برای نوار چسبان پایین + سوایپ چپ و راست بین تب‌ها */}
+          {/* محتوای اصلی صفحه با فاصله پایین کافی برای نوار چسبان پایین + سوایپ چپ و راست بین تب‌ها */}
           <main
             onTouchStart={handleMainTouchStart}
             onTouchEnd={(e) =>
@@ -356,9 +356,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 activeBusinessSwipeId
               )
             }
-            className="flex-1 max-w-[1140px] w-full mx-auto p-4 sm:p-6 lg:p-8 pb-28 min-w-0"
+            className="flex-1 max-w-[1140px] w-full mx-auto px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-36 min-w-0"
           >
             {children}
+            <div className="h-20 shrink-0" aria-hidden="true" />
           </main>
 
           {/* نوار چسبان پایین صفحه شامل ۵ دسته اصلی */}
@@ -433,7 +434,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         </>
       )}
 
-      <PWAMobileInstallBanner />
+      {!isBusinessPanel && !isAdminPanel ? <PWAMobileInstallBanner /> : null}
       <TimetoAuthModal />
 
       {toast ? (

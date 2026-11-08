@@ -57,7 +57,7 @@ export function ResponsiveTable<T>({
           <tbody className="divide-y divide-[#E6E0F5]">
             {data.map((row, rowIndex) => (
               <tr
-                key={keyExtractor(row)}
+                key={`${keyExtractor(row)}-${rowIndex}`}
                 className="hover:bg-[#F3EEFF]/60 transition-colors"
               >
                 {columns.map((col) => (
@@ -83,7 +83,7 @@ export function ResponsiveTable<T>({
       <div className="md:hidden space-y-3">
         {data.map((row, rowIndex) => (
           <div
-            key={keyExtractor(row)}
+            key={`${keyExtractor(row)}-${rowIndex}`}
             className="rounded-3xl border border-[#E6E0F5] bg-white p-4 space-y-2.5 shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]"
           >
             {columns.map((col) => (

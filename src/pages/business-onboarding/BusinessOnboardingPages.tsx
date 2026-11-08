@@ -718,7 +718,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
       services: [
         ...onboardingDraft.services,
         {
-          id: `onb-srv-${Date.now()}`,
+          id: `onb-srv-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           title: srvTitle.trim(),
           category: srvCategory,
           durationMinutes: numericDur,
@@ -752,7 +752,7 @@ export const BusinessOnboardingStepPage: React.FC = () => {
       staff: [
         ...onboardingDraft.staff,
         {
-          id: `onb-stf-${Date.now()}`,
+          id: `onb-stf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           fullName: staffName.trim(),
           roleTitle: staffRole.trim(),
         },

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BreadcrumbItem, Breadcrumbs } from './Breadcrumbs';
+import { BreadcrumbItem } from './Breadcrumbs';
 
 export interface PageHeaderProps {
   title: string;
@@ -12,32 +12,16 @@ export interface PageHeaderProps {
 
 export const PageHeader: React.FC<PageHeaderProps> = ({
   title,
-  subtitle,
-  kicker,
-  breadcrumbs,
   actions,
 }) => {
   return (
-    <div className="pb-4 mb-5 border-b border-[#CBD5E1]">
-      {breadcrumbs && breadcrumbs.length > 0 ? (
-        <Breadcrumbs items={breadcrumbs} />
-      ) : null}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div className="space-y-1">
-          {kicker ? (
-            <p className="text-xs font-extrabold text-[#0057FF]">{kicker}</p>
-          ) : null}
-          <h1 className="text-xl sm:text-2xl font-extrabold text-[#061138] tracking-tight">
-            {title}
-          </h1>
-          {subtitle ? (
-            <p className="text-xs sm:text-sm font-medium text-[#334155] max-w-3xl leading-relaxed">
-              {subtitle}
-            </p>
-          ) : null}
-        </div>
+    <div className="pb-3 mb-4 border-b border-[#E2E8F0]">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+        <h1 className="text-lg sm:text-xl font-extrabold text-[#061138] tracking-tight">
+          {title}
+        </h1>
         {actions ? (
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {actions}
           </div>
         ) : null}

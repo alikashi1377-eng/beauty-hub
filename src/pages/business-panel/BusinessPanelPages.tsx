@@ -33,6 +33,8 @@ import {
 } from '../../types';
 import {
   ISFAHAN_NEIGHBORHOODS,
+  LASER_DEVICE_PRESETS,
+  LASER_SERVICE_PRESETS,
   SAMPLE_CATEGORIES,
 } from '../../mocks/sampleData';
 import {
@@ -1232,6 +1234,8 @@ export const BusinessServicesPage: React.FC = () => {
     addService,
     updateService,
     deleteService,
+    updateBusinessProfile,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
@@ -1241,6 +1245,15 @@ export const BusinessServicesPage: React.FC = () => {
     null
   );
   const [deleteTarget, setDeleteTarget] = useState<ServiceItem | null>(null);
+  const [laserPanelOpen, setLaserPanelOpen] = useState<boolean>(
+    currentBiz?.categorySlug === 'laser-hair-removal'
+  );
+  const [selectedLaserDevice, setSelectedLaserDevice] = useState<string>(
+    currentBiz?.laserDeviceModel || LASER_DEVICE_PRESETS[0]
+  );
+  const [laserFilterTab, setLaserFilterTab] = useState<
+    'WOMEN_PACKAGES' | 'WOMEN_SINGLE' | 'MEN_PACKAGES' | 'MEN_SINGLE'
+  >('WOMEN_PACKAGES');
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('مو و رنگ');
@@ -1258,6 +1271,68 @@ export const BusinessServicesPage: React.FC = () => {
       ? bizServices
       : bizServices.filter((s) => s.category === selectedCat);
   const suggestedTitles = getSuggestedServiceTitlesForCategory(category);
+
+  const handleBulkAddLaserPresets = (
+    group: 'WOMEN_PACKAGES' | 'WOMEN_SINGLE' | 'MEN_PACKAGES' | 'MEN_SINGLE'
+  ) => {
+    if (!currentBiz) return;
+    const presets = LASER_SERVICE_PRESETS.filter((p) => p.group === group);
+    const existingTitles = new Set(bizServices.map((s) => s.title.trim()));
+    let addedCount = 0;
+
+    presets.forEach((preset) => {
+      if (!existingTitles.has(preset.title.trim())) {
+        addService({
+          businessId: currentBiz.id,
+          categorySlug: 'laser-hair-removal',
+          title: preset.title,
+          category: preset.categoryLabel,
+          durationMinutes: preset.durationMinutes,
+          priceToman: preset.priceToman,
+          description: `${preset.description} — دستگاه: ${selectedLaserDevice}`,
+          isActive: true,
+        });
+        addedCount += 1;
+      }
+    });
+
+    updateBusinessProfile(currentBiz.id, {
+      targetGender: 'BOTH',
+      laserDeviceModel: selectedLaserDevice,
+    });
+
+    if (addedCount > 0) {
+      showToast(
+        `${toPersianDigits(addedCount)} خدمت لیزر با تعرفه استاندارد و دستگاه «${selectedLaserDevice}» یکجا اضافه شد ✓`
+      );
+    } else {
+      showToast('تمام موارد این بسته قبلاً به لیست خدمات شما اضافه شده‌اند.');
+    }
+  };
+
+  const handleAddSingleLaserPreset = (
+    preset: (typeof LASER_SERVICE_PRESETS)[number]
+  ) => {
+    if (!currentBiz) return;
+    const exists = bizServices.some(
+      (s) => s.title.trim() === preset.title.trim()
+    );
+    if (exists) {
+      showToast('این ناحیه یا پکیج قبلاً در فهرست خدمات شما ثبت شده است.');
+      return;
+    }
+    addService({
+      businessId: currentBiz.id,
+      categorySlug: 'laser-hair-removal',
+      title: preset.title,
+      category: preset.categoryLabel,
+      durationMinutes: preset.durationMinutes,
+      priceToman: preset.priceToman,
+      description: `${preset.description} — دستگاه: ${selectedLaserDevice}`,
+      isActive: true,
+    });
+    showToast(`«${preset.title}» به خدمات شما اضافه شد ✓`);
+  };
 
   const openAddModal = () => {
     setEditingService(null);
@@ -1320,24 +1395,210 @@ export const BusinessServicesPage: React.FC = () => {
     setModalOpen(false);
   };
 
+  const activeLaserPresets = LASER_SERVICE_PRESETS.filter(
+    (p) => p.group === laserFilterTab
+  );
+
   return (
     <div className="space-y-5">
       <PageHeader
-        kicker="کسب‌وکار · فهرست خدمات"
         title="مدیریت خدمات و تعرفه‌ها"
-        subtitle="سازمان‌دهی منوی خدمات سالن، مدت زمان ارائه، تعرفه‌ها و وضعیت نمایش در صفحه رزرو آنلاین"
-        routePattern="/app/services"
-        breadcrumbs={[
-          { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'خدمات و تعرفه‌ها' },
-        ]}
         actions={
-          <Button variant="primary" size="sm" onClick={openAddModal}>
-            <Plus className="w-4 h-4" />
-            <span>افزودن خدمت جدید</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={laserPanelOpen ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setLaserPanelOpen((prev) => !prev)}
+            >
+              <span>⚡ کیت ۱-کلیکی مراکز لیزر (بانوان و آقایان)</span>
+            </Button>
+            <Button variant="primary" size="sm" onClick={openAddModal}>
+              <Plus className="w-4 h-4" />
+              <span>افزودن خدمت جدید</span>
+            </Button>
+          </div>
         }
       />
+
+      {/* پنل اختصاصی ۱-کلیکی مراکز لیزر موهای زائد (خانم‌ها و آقایان + پکیج‌ها + نواحی تکی + دستگاه) */}
+      {laserPanelOpen ? (
+        <Card className="border-2 border-[#8B5CF6]/30 bg-gradient-to-br from-[#F5F3FF] via-white to-[#EEF2FF] space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#8B5CF6] text-white text-[11px] font-black">
+                ⚡ ویژه کلینیک‌ها و مراکز لیزر موهای زائد (بانوان و آقایان)
+              </span>
+              <h2 className="text-sm sm:text-base font-black text-[#1E1B2E] mt-1.5">
+                افزودن یکجای پکیج‌ها و نواحی لیزر بدون نیاز به تایپ تک‌به‌تک
+              </h2>
+              <p className="text-xs text-[#6B6480] mt-0.5">
+                ابتدا مدل دستگاه لیزر مرکز خود را انتخاب کنید، سپس با ۱ کلیک تمام پکیج‌ها یا نواحی تکی خانم‌ها/آقایان را اضافه کرده و قیمت‌ها را مستقیم در جدول ویرایش کنید.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLaserPanelOpen(false)}
+              className="text-xs font-bold text-[#6B6480] hover:text-[#1E1B2E] px-2.5 py-1 rounded-lg border border-[#E6E0F5] bg-white cursor-pointer"
+            >
+              بستن پنل لیزر
+            </button>
+          </div>
+
+          {/* گام ۱: انتخاب مدل دستگاه لیزر */}
+          <div className="space-y-2">
+            <label className="text-xs font-extrabold text-[#1E1B2E] block">
+              ۱. دستگاه لیزر مرکز شما چیست؟ (در توضیحات خدمات به مشتری نمایش داده می‌شود)
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {LASER_DEVICE_PRESETS.map((devTitle) => {
+                const active = selectedLaserDevice === devTitle;
+                return (
+                  <button
+                    key={devTitle}
+                    type="button"
+                    onClick={() => setSelectedLaserDevice(devTitle)}
+                    className={`text-right p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      active
+                        ? 'bg-[#1E1B2E] text-white border-[#1E1B2E] shadow-sm'
+                        : 'bg-white text-[#1E1B2E] border-[#E6E0F5] hover:border-[#8B5CF6]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-black">{devTitle}</span>
+                      {active ? (
+                        <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* گام ۲: دکمه‌های افزودن یکجا (۱-کلیکی) */}
+          <div className="space-y-2">
+            <label className="text-xs font-extrabold text-[#1E1B2E] block">
+              ۲. افزودن یکجای لیست کامل با ۱ کلیک (بعد از افزودن، هر قیمتی را مستقیماً در جدول پایین تغییر دهید):
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleBulkAddLaserPresets('WOMEN_PACKAGES')}
+                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <span>+ افزودن یکجای ۱۲ پکیج بانوان</span>
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                  توتال، فول، اقتصادی
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkAddLaserPresets('WOMEN_SINGLE')}
+                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#EC4899] hover:bg-[#DB2777] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <span>+ افزودن یکجای ۱۲ ناحیه تکی بانوان</span>
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                  صورت، بیکینی، پا...
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkAddLaserPresets('MEN_PACKAGES')}
+                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <span>+ افزودن یکجای ۱۱ پکیج آقایان</span>
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                  توتال، بالاتنه، تلفیقی
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkAddLaserPresets('MEN_SINGLE')}
+                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+              >
+                <span>+ افزودن یکجای ۱۰ ناحیه تکی آقایان</span>
+                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                  خط ریش، کمر، دست...
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* گام ۳: مشاهده و انتخاب تکی از بین ۴۵ پکیج و ناحیه استاندارد */}
+          <div className="pt-2 border-t border-[#E6E0F5] space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[#6B6480]">
+                یا اگر فقط چند مورد خاص را می‌خواهید، از تب‌های زیر تکی انتخاب کنید:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: 'WOMEN_PACKAGES', label: 'پکیج‌های بانوان (۱۲)' },
+                  { id: 'WOMEN_SINGLE', label: 'نواحی تکی بانوان (۱۲)' },
+                  { id: 'MEN_PACKAGES', label: 'پکیج‌های آقایان (۱۱)' },
+                  { id: 'MEN_SINGLE', label: 'نواحی تکی آقایان (۱۰)' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() =>
+                      setLaserFilterTab(
+                        tab.id as
+                          | 'WOMEN_PACKAGES'
+                          | 'WOMEN_SINGLE'
+                          | 'MEN_PACKAGES'
+                          | 'MEN_SINGLE'
+                      )
+                    }
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-all ${
+                      laserFilterTab === tab.id
+                        ? 'bg-[#1E1B2E] text-white'
+                        : 'bg-white border border-[#E6E0F5] text-[#6B6480]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1">
+              {activeLaserPresets.map((preset) => {
+                const alreadyAdded = bizServices.some(
+                  (s) => s.title.trim() === preset.title.trim()
+                );
+                return (
+                  <div
+                    key={preset.title}
+                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E6E0F5] text-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-[#1E1B2E] truncate">
+                        {preset.title}
+                      </p>
+                      <p className="text-[11px] text-[#8B5CF6] font-bold tabular-nums mt-0.5">
+                        {formatPriceToman(preset.priceToman)} ·{' '}
+                        {toPersianDigits(preset.durationMinutes)} دقیقه
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={alreadyAdded}
+                      onClick={() => handleAddSingleLaserPreset(preset)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold shrink-0 cursor-pointer transition-colors ${
+                        alreadyAdded
+                          ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] cursor-default'
+                          : 'bg-[#F5F3FF] hover:bg-[#8B5CF6] text-[#8B5CF6] hover:text-white border border-[#DDD6FE]'
+                      }`}
+                    >
+                      {alreadyAdded ? 'ثبت‌شده ✓' : '+ افزودن'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* فیلتر دسته‌بندی خدمات */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1399,12 +1660,28 @@ export const BusinessServicesPage: React.FC = () => {
           },
           {
             key: 'price',
-            header: 'تعرفه (تومان)',
+            header: 'تعرفه (ویرایش آنی تومان)',
             align: 'left',
             render: (s) => (
-              <span className="font-extrabold text-[#8B5CF6] tabular-nums">
-                {formatPriceToman(s.priceToman)}
-              </span>
+              <div className="inline-flex items-center gap-1.5">
+                <input
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  aria-label={`قیمت ${s.title}`}
+                  value={formatNumericInputWithCommas(String(s.priceToman))}
+                  onChange={(e) => {
+                    const nextPrice = parseNumericInput(e.target.value);
+                    if (nextPrice >= 0) {
+                      updateService(s.id, { priceToman: nextPrice });
+                    }
+                  }}
+                  className="w-28 px-2.5 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-xs font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
+                />
+                <span className="text-[11px] font-bold text-[#6B6480]">
+                  تومان
+                </span>
+              </div>
             ),
           },
           {
@@ -2874,11 +3151,22 @@ export const BusinessProfileEditPage: React.FC = () => {
     updateOnboardingDraft,
     settlementRequests,
     requestWalletSettlement,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
+  const [activeStep, setActiveStep] = useState<'INFO' | 'LOCATION' | 'WALLET'>(
+    () =>
+      typeof window !== 'undefined' &&
+      window.location.hash === '#financial-section'
+        ? 'WALLET'
+        : 'INFO'
+  );
   const [name, setName] = useState(currentBiz?.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(currentBiz?.avatarUrl ?? '');
+  const [targetGender, setTargetGender] = useState<'FEMALE' | 'MALE' | 'BOTH'>(
+    currentBiz?.targetGender ?? 'FEMALE'
+  );
   const [instagramHandle, setInstagramHandle] = useState(
     currentBiz?.instagramHandle ?? ''
   );
@@ -2912,6 +3200,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     if (!currentBiz) return;
     setName(currentBiz.name ?? '');
     setAvatarUrl(currentBiz.avatarUrl ?? '');
+    setTargetGender(currentBiz.targetGender ?? 'FEMALE');
     setInstagramHandle(currentBiz.instagramHandle ?? '');
     setAddress(currentBiz.address ?? '');
     setMapLat(currentBiz.mapLat ?? 32.6288);
@@ -2952,6 +3241,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     updateBusinessProfile(currentBiz.id, {
       name,
       avatarUrl: avatarUrl || undefined,
+      targetGender,
       instagramHandle: cleanedInsta,
       address,
       mapLat,
@@ -2977,324 +3267,427 @@ export const BusinessProfileEditPage: React.FC = () => {
     setTimeout(() => setSavedNotice(false), 3000);
   };
 
+  const isStep1Done = Boolean(name.trim() && (avatarUrl || currentBiz.avatarUrl));
+  const isStep2Done = Boolean(address.trim() && mapLat && mapLng);
+  const isStep3Done =
+    bankCardNumber.replace(/\D/g, '').length >= 16 ||
+    bankShebaNumber.replace(/\D/g, '').length >= 24;
+
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
-        kicker="کسب‌وکار · پروفایل عمومی و مالی"
-        title="ویرایش پروفایل و اطلاعات بانکی سالن"
-        subtitle="تغییرات نشانی، موقعیت نقشه، اینستاگرام و شماره کارت/شبا بلافاصله ذخیره شده و درصد تکمیل پروفایل شما را به ۱۰۰٪ می‌رساند."
-        routePattern="/app/profile"
-        breadcrumbs={[
-          { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'پروفایل عمومی سالن' },
-        ]}
+        title="تکمیل پروفایل و حساب بانکی"
         actions={
           <Link to={`/salon/${currentBiz.slug}`}>
             <Button variant="outline" size="sm">
-              <span>مشاهده پروفایل سالن</span>
+              <span>مشاهده صفحه عمومی</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </Button>
           </Link>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+      {/* نوار ۳ گام مجزا برای جلوگیری از اسکرول طولانی و سردرگمی سالن‌دار */}
+      <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-white border border-[#E6E0F5] shadow-xs">
+        {[
+          {
+            id: 'INFO' as const,
+            stepNum: '۱',
+            title: 'تصویر و مشخصات',
+            done: isStep1Done,
+          },
+          {
+            id: 'LOCATION' as const,
+            stepNum: '۲',
+            title: 'نقشه و نشانی',
+            done: isStep2Done,
+          },
+          {
+            id: 'WALLET' as const,
+            stepNum: '۳',
+            title: 'شبا و بیعانه',
+            done: isStep3Done,
+          },
+        ].map((st) => {
+          const isCurrent = activeStep === st.id;
+          return (
+            <button
+              key={st.id}
+              type="button"
+              onClick={() => setActiveStep(st.id)}
+              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                isCurrent
+                  ? 'bg-[#8B5CF6] text-white shadow-sm'
+                  : 'bg-[#FAF9FE] text-[#6B6480] hover:text-[#1E1B2E]'
+              }`}
+            >
+              <span
+                className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[11px] font-black shrink-0 ${
+                  isCurrent
+                    ? 'bg-white text-[#8B5CF6]'
+                    : st.done
+                    ? 'bg-[#10B981] text-white'
+                    : 'bg-[#E6E0F5] text-[#6B6480]'
+                }`}
+              >
+                {st.done && !isCurrent ? '✓' : st.stepNum}
+              </span>
+              <span className="truncate">{st.title}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <Card padding="lg" className="lg:col-span-7">
           <form onSubmit={handleSave} className="space-y-4">
-            <ProfilePhotoUploader
-              value={avatarUrl}
-              onChange={(url) => setAvatarUrl(url)}
-              label="تصویر پروفایل یا لوگوی سالن (برش خودکار مربع ۴۰۰×۴۰۰)"
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField id="prof-name" label="نام سالن یا مرکز زیبایی" required>
-                <Input
-                  id="prof-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </FormField>
-              <FormField
-                id="prof-instagram"
-                label="آدرس صفحه اینستاگرام (اختیاری)"
-                hint="نمایش در پروفایل عمومی سالن"
-              >
-                <Input
-                  id="prof-instagram"
-                  dir="ltr"
-                  value={instagramHandle}
-                  onChange={(e) => setInstagramHandle(e.target.value)}
-                  placeholder="@royal_golzar_beauty"
-                />
-              </FormField>
-            </div>
-
-            <LocationMapPicker
-              city={currentBiz.city}
-              neighborhood={currentBiz.neighborhood}
-              address={address}
-              lat={mapLat}
-              lng={mapLng}
-              onSelectLocation={(coords) => {
-                setMapLat(coords.lat);
-                setMapLng(coords.lng);
-                const nextAddress = coords.suggestedAddress || address;
-                if (coords.suggestedAddress) {
-                  setAddress(coords.suggestedAddress);
-                }
-                updateBusinessProfile(currentBiz.id, {
-                  mapLat: coords.lat,
-                  mapLng: coords.lng,
-                  address: nextAddress,
-                  neighborhood: coords.neighborhood || currentBiz.neighborhood,
-                });
-                updateOnboardingDraft({
-                  mapLat: coords.lat,
-                  mapLng: coords.lng,
-                  address: nextAddress,
-                  neighborhood: coords.neighborhood || currentBiz.neighborhood,
-                });
-              }}
-            />
-
-            <FormField
-              id="prof-address"
-              label="نشانی ثبت‌شده از روی نقشه (در صورت نیاز قابل ویرایش است)"
-              required
-            >
-              <Input
-                id="prof-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="با لمس موقعیت سالن روی نقشه بالا، آدرس و لینک گوگل‌مپ خودکار ثبت می‌شود"
-              />
-            </FormField>
-
-            <FormField
-              id="prof-short"
-              label="خلاصه یک‌خطی (نمایش در کارت جست‌وجو)"
-            >
-              <Input
-                id="prof-short"
-                value={shortDesc}
-                onChange={(e) => setShortDesc(e.target.value)}
-              />
-            </FormField>
-            <FormField id="prof-about" label="توضیحات کامل معرفی سالن">
-              <Textarea
-                id="prof-about"
-                rows={3}
-                value={aboutText}
-                onChange={(e) => setAboutText(e.target.value)}
-              />
-            </FormField>
-
-            {/* بخش اطلاعات مالی و تسویه‌حساب سالن‌دار (شماره کارت ۱۶ رقمی و شبا) — تاثیر مستقیم روی نوار تکمیل پروفایل */}
-            <div
-              id="financial-section"
-              className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3.5 scroll-mt-24"
-            >
-              <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
-                    اطلاعات بانکی و تسویه‌حساب سالن (+۱۵٪ تکمیل پروفایل)
-                  </h3>
-                  <p className="text-[11px] text-[#64748B] mt-0.5">
-                    شماره کارت ۱۶ رقمی یا شماره شبا جهت واریز بیعانه‌ها و تسویه نوبت‌های آنلاین
-                  </p>
-                </div>
-                {bankCardNumber.replace(/\D/g, '').length >= 16 ||
-                bankShebaNumber.replace(/\D/g, '').length >= 24 ? (
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
-                    تکمیل‌شده ✓
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
-                    نیاز به تکمیل
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <FormField
-                  id="prof-bank-card"
-                  label="شماره کارت بانکی (۱۶ رقم)"
-                >
-                  <Input
-                    id="prof-bank-card"
-                    dir="ltr"
-                    inputMode="numeric"
-                    maxLength={19}
-                    value={bankCardNumber}
-                    onChange={(e) =>
-                      setBankCardNumber(
-                        e.target.value.replace(/[^\d-]/g, '').slice(0, 19)
-                      )
+            {/* گام ۱: تصویر پروفایل (با ذخیره آنی بدون پریدن) و مشخصات پایه */}
+            {activeStep === 'INFO' ? (
+              <div className="space-y-4">
+                <ProfilePhotoUploader
+                  value={avatarUrl}
+                  onChange={(url) => {
+                    setAvatarUrl(url);
+                    updateBusinessProfile(currentBiz.id, {
+                      avatarUrl: url || undefined,
+                    });
+                    updateOnboardingDraft({
+                      avatarUrl: url,
+                    });
+                    if (url) {
+                      showToast('تصویر پروفایل سالن بلافاصله ذخیره و ثبت شد ✓');
                     }
-                    placeholder="6037997512345678"
-                  />
-                </FormField>
-
-                <FormField
-                  id="prof-bank-holder"
-                  label="نام صاحب حساب"
-                >
-                  <Input
-                    id="prof-bank-holder"
-                    value={bankAccountHolder}
-                    onChange={(e) => setBankAccountHolder(e.target.value)}
-                    placeholder="نام و نام خانوادگی صاحب کارت"
-                  />
-                </FormField>
-              </div>
-
-              <FormField
-                id="prof-bank-sheba"
-                label="شماره شبا (۲۴ رقم بدون یا با IR)"
-              >
-                <Input
-                  id="prof-bank-sheba"
-                  dir="ltr"
-                  maxLength={26}
-                  value={bankShebaNumber}
-                  onChange={(e) => setBankShebaNumber(e.target.value)}
-                  placeholder="IR120170000000123456789012"
+                  }}
+                  label="تصویر پروفایل یا لوگوی سالن (به محض انتخاب، خودکار ذخیره می‌شود)"
                 />
-              </FormField>
 
-              {/* تنظیمات دریافت بیعانه آنلاین رزرو و کیف پول سالن */}
-              <div className="pt-3 border-t border-[#E2E8F0] space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-xs font-extrabold text-[#061138]">
-                      تنظیمات دریافت بیعانه آنلاین هنگام رزرو نوبت
-                    </h4>
-                    <p className="text-[11px] text-[#64748B] mt-0.5">
-                      با فعال‌سازی بیعانه، بخشی از مبلغ خدمت هنگام رزرو توسط مشتری پرداخت شده و الباقی در سالن تسویه می‌شود.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={depositEnabled}
-                    onClick={() => setDepositEnabled((prev) => !prev)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold border transition-colors cursor-pointer ${
-                      depositEnabled
-                        ? 'bg-[#0057FF] text-white border-[#0057FF]'
-                        : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
-                    }`}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    id="prof-name"
+                    label="نام سالن، کلینیک یا مرکز لیزر"
+                    required
                   >
-                    {depositEnabled
-                      ? 'دریافت بیعانه آنلاین: فعال ✓'
-                      : 'دریافت بیعانه آنلاین: غیرفعال'}
-                  </button>
+                    <Input
+                      id="prof-name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </FormField>
+                  <FormField
+                    id="prof-instagram"
+                    label="آدرس اینستاگرام (اختیاری)"
+                  >
+                    <Input
+                      id="prof-instagram"
+                      dir="ltr"
+                      value={instagramHandle}
+                      onChange={(e) => setInstagramHandle(e.target.value)}
+                      placeholder="@goldenn_laserr"
+                    />
+                  </FormField>
                 </div>
 
-                {depositEnabled ? (
-                  <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-[#061138]">
-                        درصد بیعانه دریافتی از مشتری هنگام ثبت نوبت:
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {[20, 30, 50].map((pct) => (
-                          <button
-                            key={pct}
-                            type="button"
-                            onClick={() => setDepositPercent(pct)}
-                            className={`px-3 py-1 rounded-xl text-xs font-extrabold border cursor-pointer transition-colors ${
-                              depositPercent === pct
-                                ? 'bg-[#061138] text-white border-[#061138]'
-                                : 'bg-[#F8FAFC] text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
-                            }`}
-                          >
-                            {toPersianDigits(pct)}٪ مبلغ خدمت
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#047857] bg-[#ECFDF5] border border-[#A7F3D0] rounded-lg px-2.5 py-1.5 font-semibold">
-                      نحوه تسویه با سالن: مبالغ بیعانه پرداختی مشتریان بلافاصله در «کیف پول سالن» شما ثبت می‌شود و به شماره شبا / کارت بانکی بالا واریز و تسویه می‌گردد.
-                    </p>
+                {/* انتخاب مخاطب هدف (ویژه بانوان / آقایان / هر دو برای مراکز لیزر) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-[#1E1B2E] block">
+                    مخاطب خدمات مرکز شما کیست؟
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'FEMALE' as const, label: 'ویژه بانوان' },
+                      { value: 'MALE' as const, label: 'ویژه آقایان' },
+                      {
+                        value: 'BOTH' as const,
+                        label: 'بانوان و آقایان (مراکز لیزر)',
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setTargetGender(opt.value)}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                          targetGender === opt.value
+                            ? 'bg-[#1E1B2E] text-white border-[#1E1B2E]'
+                            : 'bg-[#FAF9FE] text-[#6B6480] border-[#E6E0F5] hover:border-[#8B5CF6]'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                ) : null}
+                </div>
 
-                <div className="p-3.5 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-[#00E5FF] shrink-0" />
-                      <div>
-                        <p className="text-[11px] font-bold text-[#BAE6FD]">
-                          موجودی کیف پول بیعانه‌های دریافتی سالن
-                        </p>
-                        <p className="text-sm font-black text-white tabular-nums mt-0.5">
-                          {formatPriceToman(currentBiz.walletBalanceToman ?? 0)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                <FormField
+                  id="prof-short"
+                  label="معرفی کوتاه یک‌خطی (نمایش در کارت سالن)"
+                >
+                  <Input
+                    id="prof-short"
+                    value={shortDesc}
+                    onChange={(e) => setShortDesc(e.target.value)}
+                  />
+                </FormField>
+
+                <FormField id="prof-about" label="توضیحات تکمیلی درباره سالن (اختیاری)">
+                  <Textarea
+                    id="prof-about"
+                    rows={2}
+                    value={aboutText}
+                    onChange={(e) => setAboutText(e.target.value)}
+                  />
+                </FormField>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
+                  <Button type="submit" variant="primary" size="sm">
+                    ذخیره مشخصات
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveStep('LOCATION')}
+                  >
+                    <span>گام بعدی: نقشه و نشانی</span>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* گام ۲: نقشه ساده ۱-کلیکی و آدرس متنی */}
+            {activeStep === 'LOCATION' ? (
+              <div className="space-y-4">
+                <LocationMapPicker
+                  city={currentBiz.city}
+                  neighborhood={currentBiz.neighborhood}
+                  address={address}
+                  lat={mapLat}
+                  lng={mapLng}
+                  onSelectLocation={(coords) => {
+                    setMapLat(coords.lat);
+                    setMapLng(coords.lng);
+                    const nextAddress = coords.suggestedAddress || address;
+                    if (coords.suggestedAddress) {
+                      setAddress(coords.suggestedAddress);
+                    }
+                    updateBusinessProfile(currentBiz.id, {
+                      mapLat: coords.lat,
+                      mapLng: coords.lng,
+                      address: nextAddress,
+                      neighborhood:
+                        coords.neighborhood || currentBiz.neighborhood,
+                    });
+                    updateOnboardingDraft({
+                      mapLat: coords.lat,
+                      mapLng: coords.lng,
+                      address: nextAddress,
+                      neighborhood:
+                        coords.neighborhood || currentBiz.neighborhood,
+                    });
+                  }}
+                />
+
+                <FormField
+                  id="prof-address"
+                  label="نشانی دقیق متنی (اگر از روی نقشه پیدا نشد، مستقیم اینجا بنویسید)"
+                  required
+                >
+                  <Input
+                    id="prof-address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="مثال: اصفهان، خیابان چهارباغ بالا، مجتمع پارسیان، طبقه ۲"
+                  />
+                </FormField>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setActiveStep('INFO')}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                    <span>گام قبلی</span>
+                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" variant="primary" size="sm">
+                      ذخیره نشانی
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActiveStep('WALLET')}
+                    >
+                      <span>گام بعدی: شبا و بیعانه</span>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* گام ۳: شماره شبا، کارت بانکی و کیف پول بیعانه */}
+            {activeStep === 'WALLET' ? (
+              <div
+                id="financial-section"
+                className="space-y-4"
+              >
+                <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+                    <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                      حساب بانکی و شبا جهت واریز بیعانه‌ها
+                    </h3>
+                    {isStep3Done ? (
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
+                        تکمیل‌شده ✓
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
+                        نیاز به تکمیل
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <FormField
+                      id="prof-bank-card"
+                      label="شماره کارت بانکی (۱۶ رقم)"
+                    >
+                      <Input
+                        id="prof-bank-card"
+                        dir="ltr"
+                        inputMode="numeric"
+                        maxLength={19}
+                        value={bankCardNumber}
+                        onChange={(e) =>
+                          setBankCardNumber(
+                            e.target.value.replace(/[^\d-]/g, '').slice(0, 19)
+                          )
+                        }
+                        placeholder="6037997512345678"
+                      />
+                    </FormField>
+
+                    <FormField id="prof-bank-holder" label="نام صاحب حساب">
+                      <Input
+                        id="prof-bank-holder"
+                        value={bankAccountHolder}
+                        onChange={(e) => setBankAccountHolder(e.target.value)}
+                        placeholder="نام و نام خانوادگی صاحب حساب"
+                      />
+                    </FormField>
+                  </div>
+
+                  <FormField
+                    id="prof-bank-sheba"
+                    label="شماره شبا (۲۴ رقم بدون یا با IR)"
+                  >
+                    <Input
+                      id="prof-bank-sheba"
+                      dir="ltr"
+                      maxLength={26}
+                      value={bankShebaNumber}
+                      onChange={(e) => setBankShebaNumber(e.target.value)}
+                      placeholder="IR120170000000123456789012"
+                    />
+                  </FormField>
+
+                  {/* تنظیمات دریافت بیعانه آنلاین */}
+                  <div className="pt-3 border-t border-[#E2E8F0] space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h4 className="text-xs font-extrabold text-[#061138]">
+                        دریافت بیعانه آنلاین هنگام رزرو نوبت
+                      </h4>
                       <button
                         type="button"
-                        onClick={() => requestWalletSettlement(currentBiz.id)}
-                        className="px-3 py-1.5 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] text-[11px] font-black transition-colors cursor-pointer"
+                        role="switch"
+                        aria-checked={depositEnabled}
+                        onClick={() => setDepositEnabled((prev) => !prev)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold border transition-colors cursor-pointer ${
+                          depositEnabled
+                            ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                            : 'bg-white text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
+                        }`}
                       >
-                        درخواست تسویه به شبا ←
+                        {depositEnabled ? 'فعال ✓' : 'غیرفعال'}
                       </button>
-                      <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-[#00E5FF]">
-                        تسویه شبانه پایا (شبا): فعال ✓
-                      </span>
                     </div>
-                  </div>
-                  {settlementRequests.filter((s) => s.businessId === currentBiz.id)
-                    .length > 0 ? (
-                    <div className="pt-2.5 border-t border-white/15 space-y-1.5 text-[11px]">
-                      <p className="font-extrabold text-[#00E5FF]">
-                        آخرین واریزی‌ها و درخواست‌های تسویه شبا:
-                      </p>
-                      {settlementRequests
-                        .filter((s) => s.businessId === currentBiz.id)
-                        .slice(0, 3)
-                        .map((stl) => (
-                          <div
-                            key={stl.id}
-                            className="flex flex-wrap items-center justify-between gap-2 bg-white/10 rounded-lg px-2.5 py-1.5"
-                          >
-                            <span className="font-bold">
-                              خالص واریزی: {formatPriceToman(stl.netPayoutToman)}{' '}
-                              <span dir="ltr" className="font-mono text-[10px] text-slate-300">
-                                ({stl.shebaNumber.slice(0, 8)}...{stl.shebaNumber.slice(-4)})
-                              </span>
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                stl.status === 'PAID'
-                                  ? 'bg-emerald-400/20 text-emerald-300'
-                                  : 'bg-amber-400/20 text-amber-300'
+
+                    {depositEnabled ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+                        <span className="text-xs font-bold text-[#061138]">
+                          درصد بیعانه دریافتی:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {[20, 30, 50].map((pct) => (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => setDepositPercent(pct)}
+                              className={`px-3 py-1 rounded-xl text-xs font-extrabold border cursor-pointer transition-colors ${
+                                depositPercent === pct
+                                  ? 'bg-[#061138] text-white border-[#061138]'
+                                  : 'bg-[#F8FAFC] text-[#475569] border-[#CBD5E1]'
                               }`}
                             >
-                              {stl.status === 'PAID'
-                                ? `واریز شد (${stl.paidTrackingCode || 'پایا'})`
-                                : 'در صف پایا امشب'}
-                            </span>
+                              {toPersianDigits(pct)}٪
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="p-3.5 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                          <div>
+                            <p className="text-[11px] font-bold text-[#BAE6FD]">
+                              موجودی کیف پول بیعانه‌های سالن
+                            </p>
+                            <p className="text-sm font-black text-white tabular-nums mt-0.5">
+                              {formatPriceToman(
+                                currentBiz.walletBalanceToman ?? 0
+                              )}
+                            </p>
                           </div>
-                        ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => requestWalletSettlement(currentBiz.id)}
+                          className="px-3 py-1.5 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] text-[11px] font-black transition-colors cursor-pointer"
+                        >
+                          درخواست تسویه به شبا ←
+                        </button>
+                      </div>
                     </div>
-                  ) : null}
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setActiveStep('LOCATION')}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                    <span>گام قبلی: نقشه و نشانی</span>
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    ذخیره نهایی اطلاعات بانکی و پروفایل
+                  </Button>
                 </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="pt-2 flex items-center gap-3">
-              <Button type="submit" variant="primary">
-                ذخیره تغییرات پروفایل و اطلاعات مالی
-              </Button>
-              {savedNotice ? (
-                <span className="text-xs font-bold text-[#10B981]">
-                  تغییرات با موفقیت ذخیره شد و درصد پیشرفت پروفایل بروزرسانی گردید.
-                </span>
-              ) : null}
-            </div>
+            {savedNotice ? (
+              <div className="p-2.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs font-extrabold text-[#059669] text-center">
+                تغییرات با موفقیت ذخیره شد ✓
+              </div>
+            ) : null}
           </form>
         </Card>
 

@@ -71,6 +71,7 @@ export function usePWAInstall() {
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setIsBannerDismissed(true);
+      setJustInstalled(true);
       setDeferredPrompt(null);
       (
         window as unknown as { __deferredPwaPrompt?: BeforeInstallPromptEvent | null }
@@ -81,10 +82,16 @@ export function usePWAInstall() {
       } catch {
         // ignore
       }
+      window.dispatchEvent(new Event('timeto-pwa-installed-success'));
+    };
+
+    const handleCustomSuccess = () => {
+      setJustInstalled(true);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('timeto-pwa-installed-success', handleCustomSuccess);
 
     return () => {
       window.removeEventListener(
@@ -92,8 +99,11 @@ export function usePWAInstall() {
         handleBeforeInstallPrompt
       );
       window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('timeto-pwa-installed-success', handleCustomSuccess);
     };
   }, []);
+
+  const [justInstalled, setJustInstalled] = useState(false);
 
   const dismissBanner = () => {
     setIsBannerDismissed(true);
@@ -108,12 +118,20 @@ export function usePWAInstall() {
   const confirmInstalled = () => {
     setIsInstalled(true);
     setIsBannerDismissed(true);
+    setJustInstalled(true);
     try {
       window.localStorage.setItem(INSTALLED_STORAGE_KEY, '1');
       window.localStorage.setItem(BANNER_DISMISS_STORAGE_KEY, '1');
     } catch {
       // ignore
     }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('timeto-pwa-installed-success'));
+    }
+  };
+
+  const dismissJustInstalled = () => {
+    setJustInstalled(false);
   };
 
   const install = async (): Promise<'accepted' | 'dismissed' | 'manual_guide'> => {
@@ -133,11 +151,13 @@ export function usePWAInstall() {
   return {
     isInstallable: Boolean(deferredPrompt),
     isInstalled,
+    justInstalled,
     isIOS,
     isMobileDevice,
     isBannerDismissed,
     install,
     dismissBanner,
     confirmInstalled,
+    dismissJustInstalled,
   };
 }

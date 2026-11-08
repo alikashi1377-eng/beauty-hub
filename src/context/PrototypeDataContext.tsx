@@ -62,6 +62,13 @@ import {
 } from '../components/auth/timetoAuthFlow';
 import { saveVisitorRole } from '../components/home/timetoHomeData';
 
+let uniqueIdCounter = 0;
+function makeUniqueId(prefix: string): string {
+  uniqueIdCounter += 1;
+  const rand = Math.random().toString(36).slice(2, 7);
+  return `${prefix}-${Date.now()}-${uniqueIdCounter}-${rand}`;
+}
+
 export interface AuthModalOpenOptions {
   initialScreen?: AuthFlowScreen;
   defaultRole?: AccountRoleChoice;
@@ -2651,9 +2658,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const newItem: ServiceItem = {
       ...item,
-      id: `srv-${Date.now()}`,
+      id: makeUniqueId('srv'),
     };
-    setServices((prev) => [newItem, ...prev]);
+    setServices((prev) => {
+      const seenIds = new Set<string>();
+      const deduplicated = [newItem, ...prev].map((s) => {
+        if (!seenIds.has(s.id)) {
+          seenIds.add(s.id);
+          return s;
+        }
+        const fixedId = makeUniqueId('srv');
+        seenIds.add(fixedId);
+        return { ...s, id: fixedId };
+      });
+      return deduplicated;
+    });
     showToast(`خدمت «${item.title}» به فهرست اضافه شد.`);
   };
 
@@ -2726,7 +2745,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const newItem: SpecialistItem = {
       ...item,
-      id: `spc-${Date.now()}`,
+      id: makeUniqueId('spc'),
     };
     setSpecialists((prev) => [newItem, ...prev]);
     showToast(`متخصص «${item.fullName}» به تیم اضافه شد.`);
@@ -3079,7 +3098,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const addCategory = (item: Omit<CategoryItem, 'id'>) => {
-    const localNew: CategoryItem = { ...item, id: `cat-${Date.now()}` };
+    const localNew: CategoryItem = { ...item, id: makeUniqueId('cat') };
     setCategories((prev) => {
       const next = [localNew, ...prev];
       persistCategories(next);
@@ -3177,7 +3196,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    setGallery((prev) => [{ ...item, id: `gal-${Date.now()}` }, ...prev]);
+    setGallery((prev) => [{ ...item, id: makeUniqueId('gal') }, ...prev]);
     showToast('آیتم جدید به گالری سالن اضافه شد.');
   };
 
@@ -3223,7 +3242,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    setCampaigns((prev) => [{ ...item, id: `cmp-${Date.now()}` }, ...prev]);
+    setCampaigns((prev) => [{ ...item, id: makeUniqueId('cmp') }, ...prev]);
     showToast('کمپین تبلیغاتی ایجاد شد.');
   };
 

@@ -159,6 +159,8 @@ export interface BusinessItem {
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;
+  targetGender?: 'FEMALE' | 'MALE' | 'BOTH';
+  laserDeviceModel?: string;
 }
 
 export interface SmsMessageLogItem {
