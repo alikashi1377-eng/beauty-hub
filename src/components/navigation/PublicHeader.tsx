@@ -78,8 +78,8 @@ export const PublicHeader: React.FC = () => {
       : 'مشتری تایم تو';
 
   return (
-    <header className="bg-[#061138] text-white border-b border-[#1E293B] sticky top-0 z-30 shadow-[0_4px_20px_-6px_rgba(6,17,56,0.45)]">
-      <div className="max-w-[1240px] mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 sm:py-3">
+    <header className="bg-[#061138] text-white border-b border-[#1E293B] relative md:sticky md:top-0 z-30 shadow-[0_4px_20px_-6px_rgba(6,17,56,0.45)]">
+      <div className="max-w-[1520px] mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 py-2.5 sm:py-3">
         {/* برند و هویت بصری Timeto */}
         <div className="flex items-center gap-5">
           <Link to="/" className="inline-flex items-center shrink-0">

@@ -280,8 +280,7 @@ const BusinessFullInspectModal: React.FC<{
         {/* دکمه‌های اقدام مستقیم مدیر کل */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#E2E8F0]">
           <Link
-            to={`/salons/${business.id}`}
-            target="_blank"
+            to={`/salon/${business.slug || business.id}`}
             className="text-xs font-extrabold text-[#0057FF] hover:underline"
           >
             مشاهده صفحه عمومی سالن در سایت ↗
@@ -799,7 +798,7 @@ export const AdminDashboardPage: React.FC = () => {
                 textAnchor="middle"
                 className="fill-white text-[10px] font-extrabold"
               >
-                وضعیت شبکه واقعی (اصفهان و درچه)
+                وضعیت شبکه واقعی (اصفهان)
               </text>
               <text
                 x="88"
@@ -1302,6 +1301,15 @@ export const AdminBusinessesPage: React.FC = () => {
             header: 'عملیات مدیر، ارسال پیام و مدیریت زباله‌دان',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
+                {b.approvalStatus !== 'REJECTED' ? (
+                  <Link
+                    to={`/salon/${b.slug || b.id}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] text-xs font-extrabold transition-colors"
+                  >
+                    <span>پروفایل عمومی ↗</span>
+                  </Link>
+                ) : null}
+
                 <Button
                   variant="secondary"
                   size="sm"
@@ -3960,7 +3968,7 @@ export const AdminReportsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="گزارش‌های کلان · آمار واقعی پلتفرم در اصفهان و درچه"
+        kicker="گزارش‌های کلان · آمار واقعی پلتفرم در اصفهان"
         title="گزارش‌های تحلیلی کلان پلتفرم (داده‌های واقعی)"
         subtitle="آمار واقعی توزیع کسب‌وکارهای ثبت‌نام‌شده، تعداد رزروهای ثبت‌شده و مجموع تراکنش‌های تاییدشده (بدون احتساب سالن‌های نمونه)"
         routePattern="/admin/reports"
@@ -3977,7 +3985,7 @@ export const AdminReportsPage: React.FC = () => {
           </h2>
           {cityBreakdown.length === 0 ? (
             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#64748B] leading-relaxed">
-              هنوز کسب‌وکار واقعی خارج از نمونه‌های نمایشی ثبت نشده است. به‌محض ثبت اولین سالن، نمودار تفکیک محله‌های اصفهان و درچه به‌صورت خودکار محاسبه می‌شود.
+              هنوز کسب‌وکار واقعی خارج از نمونه‌های نمایشی ثبت نشده است. به‌محض ثبت اولین سالن، نمودار تفکیک محله‌های اصفهان به‌صورت خودکار محاسبه می‌شود.
             </div>
           ) : (
             <div className="space-y-3.5">

@@ -355,7 +355,7 @@ export const BusinessCategorySubTabs: React.FC = () => {
   return (
     <div
       aria-label={`زیرمجموعه‌های بخش ${activeGroup.label}`}
-      className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-2.5 sticky top-[61px] z-10"
+      className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-2.5 relative md:sticky md:top-[61px] z-10 lg:hidden"
     >
       <div className="max-w-[1140px] mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
         <span className="text-[11px] font-black text-[#64748B] shrink-0 pl-2 border-l border-[#E2E8F0]">
@@ -427,7 +427,7 @@ export const BusinessStickyBottomNav: React.FC = () => {
   return (
     <nav
       aria-label="منوی چسبان پایین پنل کسب‌وکار"
-      className="fixed bottom-0 inset-x-0 z-30 bg-[#061138]/96 backdrop-blur-xl border-t-2 border-[#0057FF]/60 shadow-[0_-10px_32px_rgba(6,17,56,0.28)] px-2 sm:px-6 py-1.5"
+      className="fixed bottom-0 inset-x-0 z-30 lg:hidden bg-[#061138]/96 backdrop-blur-xl border-t-2 border-[#0057FF]/60 shadow-[0_-10px_32px_rgba(6,17,56,0.28)] px-2 sm:px-6 py-1.5"
     >
       <div className="max-w-[760px] mx-auto grid grid-cols-5 gap-1">
         {BUSINESS_PRIMARY_NAV_GROUPS.map((group) => {

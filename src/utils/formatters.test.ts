@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildBusinessShortLink,
   computeAdPackagePriceAndTitle,
   formatNumericInputWithCommas,
   getSuggestedServiceTitlesForCategory,
@@ -17,6 +18,19 @@ describe('formatters & business/customer helpers', () => {
     assert.equal(formatNumericInputWithCommas(0), '');
     assert.equal(parseNumericInput('650,000'), 650000);
     assert.equal(parseNumericInput('۱,۴۵۰,۰۰۰'), 1450000);
+  });
+
+  it('builds a short branded profile link that resolves to the salon profile route', () => {
+    const linkInfo = buildBusinessShortLink(
+      'royal-golzar',
+      'سالن زیبایی رویال گلزار',
+      'https://timeto.ir'
+    );
+    assert.equal(linkInfo.shortPath, '/royal-golzar');
+    assert.equal(linkInfo.actualUrl, 'https://timeto.ir/royal-golzar');
+    assert.equal(linkInfo.displayShortUrl, 'Timeto.ir/royal-golzar');
+    assert.ok(linkInfo.brandedTitle.includes('تایم‌تو'));
+    assert.ok(linkInfo.brandedTitle.includes('سالن زیبایی رویال گلزار'));
   });
 
   it('returns smart service title suggestions for categories including عروس and داماد', () => {

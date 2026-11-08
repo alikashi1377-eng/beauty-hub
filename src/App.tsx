@@ -295,6 +295,16 @@ export default function App() {
               }
             />
 
+            {/* مسیرهای کوتاه اختصاصی پروفایل کسب‌وکار برای لینک بایو و اشتراک‌گذاری */}
+            <Route
+              path="/t/:slug"
+              element={<BusinessPublicProfileView mode="salon" />}
+            />
+            <Route
+              path="/:slug"
+              element={<BusinessPublicProfileView mode="salon" />}
+            />
+
             {/* صفحه ۴۰۴ یافت نشد */}
             <Route path="*" element={<NotFoundRouteWrapper />} />
           </Routes>

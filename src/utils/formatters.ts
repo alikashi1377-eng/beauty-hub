@@ -213,23 +213,26 @@ export function filterBusinesses(
   const rotationTick = options.rotationTick ?? 0;
 
   const filtered = businesses.filter((item) => {
-    if (item.approvalStatus === 'REJECTED') return false;
+    if (!item || item.approvalStatus === 'REJECTED') return false;
     const matchesType = selectedType === 'ALL' || item.type === selectedType;
-    const matchesCity = selectedCity === 'ALL' || item.city === selectedCity;
+    const matchesCity =
+      selectedCity === 'ALL' || (item.city || 'اصفهان') === selectedCity;
     const matchesNeighborhood =
       selectedNeighborhood === 'ALL' ||
-      item.neighborhood.includes(selectedNeighborhood);
+      (item.neighborhood || '').includes(selectedNeighborhood);
     const matchesCategory =
       selectedCategory === 'ALL' || item.categorySlug === selectedCategory;
-    const matchesPrice = item.startingPriceToman <= maxPrice;
-    const matchesRating = item.rating >= minRating;
+    const itemPrice = Number(item.startingPriceToman) || 0;
+    const matchesPrice = maxPrice >= 10000000 || itemPrice <= maxPrice;
+    const itemRating = Number(item.rating) || 5.0;
+    const matchesRating = minRating <= 0 || itemRating >= minRating;
     const matchesQuery =
       normalizedQuery.length === 0 ||
-      item.name.toLowerCase().includes(normalizedQuery) ||
-      item.neighborhood.toLowerCase().includes(normalizedQuery) ||
-      item.city.toLowerCase().includes(normalizedQuery) ||
-      item.shortDescription.toLowerCase().includes(normalizedQuery) ||
-      item.typeLabel.toLowerCase().includes(normalizedQuery);
+      (item.name || '').toLowerCase().includes(normalizedQuery) ||
+      (item.neighborhood || '').toLowerCase().includes(normalizedQuery) ||
+      (item.city || '').toLowerCase().includes(normalizedQuery) ||
+      (item.shortDescription || '').toLowerCase().includes(normalizedQuery) ||
+      (item.typeLabel || '').toLowerCase().includes(normalizedQuery);
 
     return (
       matchesType &&
@@ -733,5 +736,47 @@ export function resolveAdjacentTabBySwipe<T>(
   }
   return items[nextIndex] ?? null;
 }
+
+/**
+ * ساخت لینک کوتاه و برندشده پروفایل کسب‌وکار برای نمایش در بایو اینستاگرام و اشتراک‌گذاری
+ * ظاهر نوشتاری کوتاه با نام برند تایم‌تو و اسلاگ سالن است اما با کلیک مستقیماً صفحه سالن را باز می‌کند.
+ */
+export function buildBusinessShortLink(
+  slug: string,
+  businessName?: string,
+  origin?: string
+): {
+  shortPath: string;
+  actualUrl: string;
+  displayShortUrl: string;
+  brandedTitle: string;
+  bioCopyText: string;
+} {
+  const cleanSlug = (slug || 'salon').trim().replace(/^\/+|\/+$/g, '');
+  const resolvedOrigin =
+    origin ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://timeto.ir');
+  const shortPath = `/${cleanSlug}`;
+  const actualUrl = `${resolvedOrigin}${shortPath}`;
+  const displayShortUrl = `Timeto.ir/${cleanSlug}`;
+  const cleanName = (businessName || '').trim();
+  const brandedTitle = cleanName
+    ? `تایم‌تو | ${cleanName} (${displayShortUrl})`
+    : `تایم‌تو (${displayShortUrl})`;
+  const bioCopyText = cleanName
+    ? `رزرو آنلاین نوبت ${cleanName} در تایم‌تو:\n${actualUrl}`
+    : actualUrl;
+
+  return {
+    shortPath,
+    actualUrl,
+    displayShortUrl,
+    brandedTitle,
+    bioCopyText,
+  };
+}
+
 
 

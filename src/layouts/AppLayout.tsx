@@ -10,6 +10,7 @@ import {
   BusinessCategorySubTabs,
   BusinessStickyBottomNav,
 } from '../components/navigation/BusinessMobileNavigation';
+import { BusinessSidebar } from '../components/navigation/BusinessSidebar';
 import { AdminSidebar } from '../components/navigation/AdminSidebar';
 import { ARCHITECTURE_ROUTES } from '../config/designTokens';
 import { Modal } from '../components/ui/Modal';
@@ -108,9 +109,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     pathname === '/me' || pathname.startsWith('/me/');
 
   const isIntroGatewayActive =
-    pathname === '/intro' ||
-    (pathname === '/' &&
-      (visitorRole === null || location.search.includes('intro=1')));
+    pathname === '/intro' || location.search.includes('intro=1');
 
   const currentRouteMeta = ARCHITECTURE_ROUTES.find(
     (r) => r.path === pathname || r.samplePath === pathname
@@ -259,9 +258,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
       {isBusinessPanel ? (
         <div className="flex-1 flex flex-col w-full min-h-screen">
-          {/* هدر یکپارچه و خلوت پیشخوان کسب‌وکار بدون دکمه‌های خروج تکراری (خروج و پروفایل داخل آواتار) */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3 sticky top-0 z-20">
-            <div className="max-w-[1140px] mx-auto flex items-center justify-between gap-3">
+          {/* هدر یکپارچه و خلوت پیشخوان کسب‌وکار (در موبایل در بالای صفحه ثابت و غیرچسبان؛ در دسکتاپ چسبان) */}
+          <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3 relative md:sticky md:top-0 z-20">
+            <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-3">
               <Link
                 to="/app"
                 className="flex items-center gap-2.5 min-w-0 group"
@@ -305,7 +304,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {/* نوار هشدار فوری نوبت جدید برای صاحب کسب‌وکار — تا هیچ نوبتی فراموش نشود */}
           {pendingBusinessAppointments.length > 0 ? (
             <div className="bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white px-4 sm:px-6 py-2.5 border-b border-[#00E5FF]/35 shadow-sm">
-              <div className="max-w-[1140px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] animate-ping shrink-0" />
                   <p className="font-extrabold truncate">
@@ -343,30 +342,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
           ) : null}
 
-          {/* نوار تب‌های زیرمجموعه در صورت وجود زیربخش (نوبت‌ها، سالن من، مشتریان، مالی و پلن) */}
+          {/* نوار تب‌های زیرمجموعه در موبایل و تبلت */}
           <BusinessCategorySubTabs />
 
-          {/* محتوای اصلی صفحه با فاصله پایین کافی برای نوار چسبان پایین + سوایپ چپ و راست بین تب‌ها */}
-          <main
-            onTouchStart={handleMainTouchStart}
-            onTouchEnd={(e) =>
-              handleMainTouchEnd(
-                e,
-                businessSwipeRouteIds,
-                activeBusinessSwipeId
-              )
-            }
-            className="flex-1 max-w-[1140px] w-full mx-auto px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-36 min-w-0"
-          >
-            {children}
-            <div className="h-20 shrink-0" aria-hidden="true" />
-          </main>
+          {/* چیدمان دسکتاپ با منوی کامل سمت راست + محتوای عریض، و در موبایل با نوار چسبان پایین */}
+          <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto">
+            <BusinessSidebar />
 
-          {/* نوار چسبان پایین صفحه شامل ۵ دسته اصلی */}
+            <main
+              onTouchStart={handleMainTouchStart}
+              onTouchEnd={(e) =>
+                handleMainTouchEnd(
+                  e,
+                  businessSwipeRouteIds,
+                  activeBusinessSwipeId
+                )
+              }
+              className="flex-1 w-full px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-12 min-w-0"
+            >
+              {children}
+              <div className="h-20 shrink-0 lg:hidden" aria-hidden="true" />
+            </main>
+          </div>
+
+          {/* نوار چسبان پایین صفحه فقط در موبایل و تبلت */}
           <BusinessStickyBottomNav />
         </div>
       ) : isAdminPanel && isAuthorizedPlatformAdmin ? (
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1440px] w-full mx-auto">
+        <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto">
           <AdminSidebar />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
         </div>
@@ -378,7 +381,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
           {isCustomerAccountArea ? (
             <div className="bg-white border-b border-[#CBD5E1] shadow-2xs">
-              <div className="max-w-[1240px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
+              <div className="max-w-[1520px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
                 <nav
                   aria-label="ناوبری حساب مشتری"
                   className="flex items-center gap-1.5"
@@ -418,7 +421,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     )
                 : undefined
             }
-            className="flex-1 max-w-[1240px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0"
+            className="flex-1 max-w-[1520px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0"
           >
             {children}
           </main>

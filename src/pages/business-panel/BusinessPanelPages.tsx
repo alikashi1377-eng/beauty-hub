@@ -489,6 +489,130 @@ export const BusinessDashboardPage: React.FC = () => {
         </Card>
       </div>
 
+      {/* نمودار روند درآمد و سهم خدمات در داشبورد (همیشه قابل مشاهده حتی با مقدار صفر) */}
+      {(() => {
+        const dashboardMonthlyRevenue = bizAppointments
+          .filter(
+            (a) =>
+              a.status === AppointmentStatus.Confirmed ||
+              a.status === AppointmentStatus.Completed
+          )
+          .reduce((sum, a) => sum + a.priceToman, 0);
+        const breakdownRows =
+          bizServicesList.length > 0
+            ? bizServicesList.slice(0, 4).map((srv: ServiceItem) => {
+                const srvApts = bizAppointments.filter(
+                  (a) =>
+                    a.serviceTitle === srv.title &&
+                    (a.status === AppointmentStatus.Confirmed ||
+                      a.status === AppointmentStatus.Completed)
+                );
+                const srvRev = srvApts.reduce(
+                  (sum, a) => sum + a.priceToman,
+                  0
+                );
+                const pct =
+                  dashboardMonthlyRevenue > 0
+                    ? Math.round((srvRev / dashboardMonthlyRevenue) * 100)
+                    : 0;
+                return {
+                  title: srv.title,
+                  rev: srvRev,
+                  pct,
+                };
+              })
+            : [
+                { title: 'خدمت شماره ۱ (نمونه)', rev: 0, pct: 0 },
+                { title: 'خدمت شماره ۲ (نمونه)', rev: 0, pct: 0 },
+                { title: 'خدمت شماره ۳ (نمونه)', rev: 0, pct: 0 },
+              ];
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <Card className="lg:col-span-7 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    روند ۶ ماهه درآمد و نوبت‌های مرکز
+                  </h2>
+                  <p className="text-[11px] text-[#64748B] mt-0.5">
+                    با ثبت هر نوبت جدید، ستون‌های نمودار به‌صورت زنده تکمیل می‌شوند
+                  </p>
+                </div>
+                <Link
+                  to="/app/analytics"
+                  className="text-[11px] font-extrabold text-[#0057FF] hover:underline"
+                >
+                  گزارش کامل ←
+                </Link>
+              </div>
+              <div className="h-36 pt-4 flex items-end justify-between gap-2 border-b border-[#E2E8F0] pb-2">
+                {['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور'].map(
+                  (mName, idx) => {
+                    const isCurrentMonth = idx === 5;
+                    const valM = isCurrentMonth
+                      ? Number((dashboardMonthlyRevenue / 1_000_000).toFixed(1))
+                      : 0;
+                    const barHeightPct =
+                      valM > 0 ? Math.max(14, Math.min(100, valM * 8)) : 6;
+                    return (
+                      <div
+                        key={mName}
+                        className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end"
+                      >
+                        <span className="text-[10px] font-bold text-[#64748B] tabular-nums">
+                          {valM > 0 ? `${toPersianDigits(valM)}M` : '۰'}
+                        </span>
+                        <div
+                          className={`w-full max-w-[32px] rounded-t-lg transition-all ${
+                            valM > 0 ? 'bg-[#0057FF]' : 'bg-[#E2E8F0]'
+                          }`}
+                          style={{ height: `${barHeightPct}%` }}
+                        />
+                        <span className="text-[11px] font-semibold text-[#475569]">
+                          {mName}
+                        </span>
+                      </div>
+                    );
+                  }
+                )}
+              </div>
+            </Card>
+
+            <Card className="lg:col-span-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                  سهم خدمات از نوبت‌های ماه
+                </h2>
+                <span className="text-[11px] font-bold text-[#64748B] tabular-nums">
+                  مجموع: {formatPriceToman(dashboardMonthlyRevenue)}
+                </span>
+              </div>
+              <div className="space-y-3 pt-1">
+                {breakdownRows.map((row) => (
+                  <div key={row.title} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-[#061138] truncate max-w-[180px]">
+                        {row.title}
+                      </span>
+                      <span className="tabular-nums text-[11px] text-[#64748B] font-semibold">
+                        {toPersianDigits(row.pct)}٪ ({formatPriceToman(row.rev)})
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-[#F1F5F9] overflow-hidden">
+                      <div
+                        className="h-full bg-[#0057FF] rounded-full transition-all"
+                        style={{ width: `${Math.max(row.pct, 0)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        );
+      })()}
+
       {/* ۵. اولویت دوم: میانبرهای کاربردی روزانه سالن‌دار */}
       <section aria-label="میانبرهای سریع مدیریت سالن" className="space-y-2.5">
         <div className="flex items-center justify-between">
@@ -1239,14 +1363,23 @@ export const BusinessServicesPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
+  const isLaserBusiness = Boolean(
+    currentBiz?.categorySlug === 'laser-hair-removal' ||
+      currentBiz?.typeLabel?.includes('لیزر') ||
+      currentBiz?.name?.includes('لیزر') ||
+      currentBiz?.shortDescription?.includes('لیزر') ||
+      currentBiz?.targetGender === 'BOTH'
+  );
+
   const [selectedCat, setSelectedCat] = useState<string>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<ServiceItem | null>(
     null
   );
   const [deleteTarget, setDeleteTarget] = useState<ServiceItem | null>(null);
+  const [confirmClearAllOpen, setConfirmClearAllOpen] = useState(false);
   const [laserPanelOpen, setLaserPanelOpen] = useState<boolean>(
-    currentBiz?.categorySlug === 'laser-hair-removal'
+    isLaserBusiness
   );
   const [selectedLaserDevice, setSelectedLaserDevice] = useState<string>(
     currentBiz?.laserDeviceModel || LASER_DEVICE_PRESETS[0]
@@ -1256,7 +1389,9 @@ export const BusinessServicesPage: React.FC = () => {
   >('WOMEN_PACKAGES');
 
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('مو و رنگ');
+  const [category, setCategory] = useState(
+    isLaserBusiness ? 'لیزر موهای زائد' : 'مو و رنگ'
+  );
   const [durationMinutes, setDurationMinutes] = useState('60');
   const [priceToman, setPriceToman] = useState('650000');
   const [description, setDescription] = useState('');
@@ -1272,10 +1407,22 @@ export const BusinessServicesPage: React.FC = () => {
       : bizServices.filter((s) => s.category === selectedCat);
   const suggestedTitles = getSuggestedServiceTitlesForCategory(category);
 
+  const handleClearAllServices = () => {
+    if (bizServices.length === 0) return;
+    bizServices.forEach((srv) => {
+      deleteService(srv.id);
+    });
+    setSelectedCat('ALL');
+    setConfirmClearAllOpen(false);
+    showToast('تمام خدمات سالن با موفقیت پاک شدند.');
+  };
+
   const handleBulkAddLaserPresets = (
     group: 'WOMEN_PACKAGES' | 'WOMEN_SINGLE' | 'MEN_PACKAGES' | 'MEN_SINGLE'
   ) => {
     if (!currentBiz) return;
+    const deviceLabel =
+      selectedLaserDevice.trim() || LASER_DEVICE_PRESETS[0];
     const presets = LASER_SERVICE_PRESETS.filter((p) => p.group === group);
     const existingTitles = new Set(bizServices.map((s) => s.title.trim()));
     let addedCount = 0;
@@ -1286,10 +1433,10 @@ export const BusinessServicesPage: React.FC = () => {
           businessId: currentBiz.id,
           categorySlug: 'laser-hair-removal',
           title: preset.title,
-          category: preset.categoryLabel,
+          category: 'لیزر موهای زائد',
           durationMinutes: preset.durationMinutes,
           priceToman: preset.priceToman,
-          description: `${preset.description} — دستگاه: ${selectedLaserDevice}`,
+          description: `${preset.categoryLabel} · ${preset.description} — دستگاه: ${deviceLabel}`,
           isActive: true,
         });
         addedCount += 1;
@@ -1297,13 +1444,14 @@ export const BusinessServicesPage: React.FC = () => {
     });
 
     updateBusinessProfile(currentBiz.id, {
+      categorySlug: 'laser-hair-removal',
       targetGender: 'BOTH',
-      laserDeviceModel: selectedLaserDevice,
+      laserDeviceModel: deviceLabel,
     });
 
     if (addedCount > 0) {
       showToast(
-        `${toPersianDigits(addedCount)} خدمت لیزر با تعرفه استاندارد و دستگاه «${selectedLaserDevice}» یکجا اضافه شد ✓`
+        `${toPersianDigits(addedCount)} خدمت در دسته‌بندی «لیزر موهای زائد» با دستگاه «${deviceLabel}» یکجا اضافه شد ✓`
       );
     } else {
       showToast('تمام موارد این بسته قبلاً به لیست خدمات شما اضافه شده‌اند.');
@@ -1314,6 +1462,8 @@ export const BusinessServicesPage: React.FC = () => {
     preset: (typeof LASER_SERVICE_PRESETS)[number]
   ) => {
     if (!currentBiz) return;
+    const deviceLabel =
+      selectedLaserDevice.trim() || LASER_DEVICE_PRESETS[0];
     const exists = bizServices.some(
       (s) => s.title.trim() === preset.title.trim()
     );
@@ -1325,19 +1475,19 @@ export const BusinessServicesPage: React.FC = () => {
       businessId: currentBiz.id,
       categorySlug: 'laser-hair-removal',
       title: preset.title,
-      category: preset.categoryLabel,
+      category: 'لیزر موهای زائد',
       durationMinutes: preset.durationMinutes,
       priceToman: preset.priceToman,
-      description: `${preset.description} — دستگاه: ${selectedLaserDevice}`,
+      description: `${preset.categoryLabel} · ${preset.description} — دستگاه: ${deviceLabel}`,
       isActive: true,
     });
-    showToast(`«${preset.title}» به خدمات شما اضافه شد ✓`);
+    showToast(`«${preset.title}» در دسته لیزر موهای زائد اضافه شد ✓`);
   };
 
   const openAddModal = () => {
     setEditingService(null);
     setTitle('');
-    setCategory('مو و رنگ');
+    setCategory(isLaserBusiness ? 'لیزر موهای زائد' : 'مو و رنگ');
     setDurationMinutes('60');
     setPriceToman(formatNumericInputWithCommas('650000'));
     setDescription('');
@@ -1348,7 +1498,11 @@ export const BusinessServicesPage: React.FC = () => {
   const openEditModal = (srv: ServiceItem) => {
     setEditingService(srv);
     setTitle(srv.title);
-    setCategory(srv.category);
+    setCategory(
+      srv.categorySlug === 'laser-hair-removal' || srv.category.includes('لیزر')
+        ? 'لیزر موهای زائد'
+        : srv.category
+    );
     setDurationMinutes(String(srv.durationMinutes));
     setPriceToman(formatNumericInputWithCommas(String(srv.priceToman)));
     setDescription(srv.description);
@@ -1371,8 +1525,17 @@ export const BusinessServicesPage: React.FC = () => {
       return;
     }
 
+    const matchedCat = (
+      categories.length > 0 ? categories : SAMPLE_CATEGORIES
+    ).find((c) => c.title === category);
+    const resolvedCategorySlug =
+      category.includes('لیزر')
+        ? 'laser-hair-removal'
+        : matchedCat?.slug ?? editingService?.categorySlug ?? 'hair-color';
+
     if (editingService) {
       updateService(editingService.id, {
+        categorySlug: resolvedCategorySlug,
         title: title.trim(),
         category,
         durationMinutes: numericDuration,
@@ -1380,10 +1543,9 @@ export const BusinessServicesPage: React.FC = () => {
         description: description.trim() || 'خدمت تخصصی زیبایی',
       });
     } else {
-      const matchedCat = categories.find((c) => c.title === category);
       addService({
         businessId: currentBiz?.id ?? 'biz-owner-zero',
-        categorySlug: matchedCat?.slug ?? 'hair-color',
+        categorySlug: resolvedCategorySlug,
         title: title.trim(),
         category,
         durationMinutes: numericDuration,
@@ -1405,13 +1567,26 @@ export const BusinessServicesPage: React.FC = () => {
         title="مدیریت خدمات و تعرفه‌ها"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={laserPanelOpen ? 'secondary' : 'outline'}
-              size="sm"
-              onClick={() => setLaserPanelOpen((prev) => !prev)}
-            >
-              <span>⚡ کیت ۱-کلیکی مراکز لیزر (بانوان و آقایان)</span>
-            </Button>
+            {isLaserBusiness ? (
+              <Button
+                variant={laserPanelOpen ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setLaserPanelOpen((prev) => !prev)}
+              >
+                <span>⚡ کیت ۱-کلیکی مراکز لیزر (بانوان و آقایان)</span>
+              </Button>
+            ) : null}
+            {bizServices.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmClearAllOpen(true)}
+                className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>پاک کردن همه خدمات ({toPersianDigits(bizServices.length)})</span>
+              </Button>
+            ) : null}
             <Button variant="primary" size="sm" onClick={openAddModal}>
               <Plus className="w-4 h-4" />
               <span>افزودن خدمت جدید</span>
@@ -1420,8 +1595,38 @@ export const BusinessServicesPage: React.FC = () => {
         }
       />
 
-      {/* پنل اختصاصی ۱-کلیکی مراکز لیزر موهای زائد (خانم‌ها و آقایان + پکیج‌ها + نواحی تکی + دستگاه) */}
-      {laserPanelOpen ? (
+      {/* تایید حذف یکجای همه خدمات */}
+      {confirmClearAllOpen ? (
+        <div className="p-4 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <p className="text-xs sm:text-sm font-extrabold text-[#991B1B]">
+              آیا از پاک کردن تمام {toPersianDigits(bizServices.length)} خدمت ثبت‌شده مطمئن هستید؟
+            </p>
+            <p className="text-[11px] text-[#B91C1C]">
+              با تایید این گزینه، کل لیست خدمات فعلی پاک می‌شود تا بتوانید از نو خدمات را ثبت کنید.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmClearAllOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleClearAllServices}
+            >
+              بله، همه خدمات پاک شود
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* پنل اختصاصی ۱-کلیکی مراکز لیزر موهای زائد (فقط برای مراکز لیزر) */}
+      {isLaserBusiness && laserPanelOpen ? (
         <Card className="border-2 border-[#8B5CF6]/30 bg-gradient-to-br from-[#F5F3FF] via-white to-[#EEF2FF] space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
             <div>
@@ -1429,11 +1634,8 @@ export const BusinessServicesPage: React.FC = () => {
                 ⚡ ویژه کلینیک‌ها و مراکز لیزر موهای زائد (بانوان و آقایان)
               </span>
               <h2 className="text-sm sm:text-base font-black text-[#1E1B2E] mt-1.5">
-                افزودن یکجای پکیج‌ها و نواحی لیزر بدون نیاز به تایپ تک‌به‌تک
+                افزودن یکجای پکیج‌ها و نواحی لیزر در دسته‌بندی «لیزر موهای زائد»
               </h2>
-              <p className="text-xs text-[#6B6480] mt-0.5">
-                ابتدا مدل دستگاه لیزر مرکز خود را انتخاب کنید، سپس با ۱ کلیک تمام پکیج‌ها یا نواحی تکی خانم‌ها/آقایان را اضافه کرده و قیمت‌ها را مستقیم در جدول ویرایش کنید.
-              </p>
             </div>
             <button
               type="button"
@@ -1444,10 +1646,10 @@ export const BusinessServicesPage: React.FC = () => {
             </button>
           </div>
 
-          {/* گام ۱: انتخاب مدل دستگاه لیزر */}
-          <div className="space-y-2">
+          {/* گام ۱: انتخاب یا تایپ مدل دستگاه لیزر */}
+          <div className="space-y-2.5">
             <label className="text-xs font-extrabold text-[#1E1B2E] block">
-              ۱. دستگاه لیزر مرکز شما چیست؟ (در توضیحات خدمات به مشتری نمایش داده می‌شود)
+              ۱. مدل دستگاه لیزر مرکز خود را از لیست انتخاب کنید یا نام دلخواه آن را بنویسید:
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {LASER_DEVICE_PRESETS.map((devTitle) => {
@@ -1472,6 +1674,19 @@ export const BusinessServicesPage: React.FC = () => {
                   </button>
                 );
               })}
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
+              <span className="text-xs font-bold text-[#475569] shrink-0">
+                نام دستگاه شما در لیست بالا نیست؟ اینجا بنویسید:
+              </span>
+              <input
+                type="text"
+                value={selectedLaserDevice}
+                onChange={(e) => setSelectedLaserDevice(e.target.value)}
+                placeholder="مثلاً: کندلا جنتل مکس پرو ۲۰۲۴ / تیتانیوم پلاس..."
+                className="flex-1 rounded-xl border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-extrabold text-[#061138] focus:border-[#8B5CF6] focus:outline-none"
+              />
             </div>
           </div>
 
@@ -1748,12 +1963,17 @@ export const BusinessServicesPage: React.FC = () => {
               id="srv-form-cat"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              options={(categories.length > 0
-                ? categories
-                : SAMPLE_CATEGORIES
-              ).map((c) => ({
-                value: c.title,
-                label: c.title,
+              options={Array.from(
+                new Set([
+                  ...(categories.length > 0 ? categories : SAMPLE_CATEGORIES).map(
+                    (c) => c.title
+                  ),
+                  'لیزر موهای زائد',
+                  ...(category ? [category] : []),
+                ])
+              ).map((titleItem) => ({
+                value: titleItem,
+                label: titleItem,
               }))}
             />
           </FormField>
@@ -3616,25 +3836,41 @@ export const BusinessProfileEditPage: React.FC = () => {
                     </div>
 
                     {depositEnabled ? (
-                      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
-                        <span className="text-xs font-bold text-[#061138]">
-                          درصد بیعانه دریافتی:
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {[20, 30, 50].map((pct) => (
-                            <button
-                              key={pct}
-                              type="button"
-                              onClick={() => setDepositPercent(pct)}
-                              className={`px-3 py-1 rounded-xl text-xs font-extrabold border cursor-pointer transition-colors ${
-                                depositPercent === pct
-                                  ? 'bg-[#061138] text-white border-[#061138]'
-                                  : 'bg-[#F8FAFC] text-[#475569] border-[#CBD5E1]'
-                              }`}
-                            >
-                              {toPersianDigits(pct)}٪
-                            </button>
-                          ))}
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-white border border-[#CBD5E1]">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-extrabold text-[#061138] block">
+                            درصد بیعانه دریافتی (تعیین دستی بین ۱ تا ۱۰۰ درصد):
+                          </span>
+                          <span className="text-[11px] text-[#64748B] block">
+                            عددی که وارد می‌کنید مستقیماً روی مبلغ خدمت در زمان رزرو محاسبه می‌شود
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            dir="ltr"
+                            value={depositPercent}
+                            onChange={(e) => {
+                              const raw = parseInt(
+                                toEnglishDigitsClient(e.target.value),
+                                10
+                              );
+                              if (Number.isNaN(raw)) {
+                                setDepositPercent(0);
+                              } else {
+                                setDepositPercent(
+                                  Math.max(1, Math.min(100, raw))
+                                );
+                              }
+                            }}
+                            aria-label="درصد بیعانه دریافتی"
+                            className="w-24 rounded-xl border-2 border-[#0057FF]/40 bg-[#F8FAFC] px-3 py-1.5 text-center text-sm font-black text-[#061138] tabular-nums focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                          />
+                          <span className="text-xs font-extrabold text-[#061138]">
+                            درصد (٪)
+                          </span>
                         </div>
                       </div>
                     ) : null}
@@ -4523,8 +4759,7 @@ export const BusinessMarketingPage: React.FC = () => {
               </span>
             </span>
             <h2 className="text-base sm:text-xl font-extrabold text-white">
-              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان و درچه
-              نشان دهید
+              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان نشان دهید
             </h2>
           </div>
           <Link to="/search">
@@ -5267,38 +5502,33 @@ export const BusinessAnalyticsPage: React.FC = () => {
               <StatusBadge label="🔒 ویژه پلن حرفه‌ای" tone="warning" />
             ) : null}
           </div>
-          {popularBreakdown.length === 0 ? (
-            <div className="p-6 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1">
-              <p className="text-xs font-extrabold text-[#061138]">
-                هنوز تراکنش یا نوبت انجام‌شده‌ای ثبت نشده است
-              </p>
-              <p className="text-[11px] text-[#64748B]">
-                به محض ثبت اولین نوبت‌های سالن شما، نمودار سهم درآمد هر خدمت به صورت خودکار محاسبه می‌شود.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {popularBreakdown.map((item) => (
-                <div key={item.name} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-extrabold text-[#1E1B2E]">
-                      {item.name}
-                    </span>
-                    <span className="tabular-nums text-[#6B6480] font-semibold">
-                      {toPersianDigits(item.pct)}٪ ({formatPriceToman(item.amount)}
-                      )
-                    </span>
-                  </div>
-                  <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
-                    <div
-                      className="h-full bg-[#8B5CF6] rounded-full"
-                      style={{ width: `${item.pct}%` }}
-                    />
-                  </div>
+          <div className="space-y-4">
+            {(popularBreakdown.length > 0
+              ? popularBreakdown
+              : [
+                  { name: 'خدمات اصلی مرکز (در انتظار اولین رزرو)', pct: 0, amount: 0 },
+                  { name: 'پکیج‌ها و خدمات مکمل', pct: 0, amount: 0 },
+                  { name: 'مراجعات حضوری و نوبت‌های آنلاین', pct: 0, amount: 0 },
+                ]
+            ).map((item) => (
+              <div key={item.name} className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-[#1E1B2E]">
+                    {item.name}
+                  </span>
+                  <span className="tabular-nums text-[#6B6480] font-semibold">
+                    {toPersianDigits(item.pct)}٪ ({formatPriceToman(item.amount)})
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
+                <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
+                  <div
+                    className="h-full bg-[#8B5CF6] rounded-full transition-all"
+                    style={{ width: `${Math.max(item.pct, 0)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
 
         <Card className="lg:col-span-5 space-y-4 flex flex-col justify-between">
@@ -5419,7 +5649,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
         </div>
         <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
           <p className="text-xs font-extrabold text-[#0057FF]">
-            ۲. اولویت نمایش در جست‌وجوی اصفهان و درچه
+            ۲. اولویت نمایش در جست‌وجوی اصفهان
           </p>
           <p className="text-xs text-[#334155] leading-relaxed">
             درج نشان «سالن برگزیده» و جایگاه بالاتر در لیست جست‌وجوی محله و

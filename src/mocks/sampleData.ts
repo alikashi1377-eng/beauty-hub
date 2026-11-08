@@ -20,7 +20,6 @@ import {
 export const IRAN_CITIES = ['اصفهان'];
 
 export const ISFAHAN_NEIGHBORHOODS = [
-  'درچه',
   'چهارباغ بالا',
   'مرداویج',
   'نظر شرقی',
@@ -974,7 +973,7 @@ export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
   {
     id: 'ORD-1405-101',
     businessId: 'biz-7',
-    businessName: 'سالن زیبایی و عروس مهتاب درچه',
+    businessName: 'سالن زیبایی و عروس مهتاب',
     itemType: 'AD_PACKAGE',
     itemId: 'ad-search-top',
     itemTitle: 'صدرنشینی در نتایج جست‌وجوی شهر (۱۴ روزه)',
@@ -985,7 +984,7 @@ export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
     status: 'APPROVED',
     requestedPlacement: 'SEARCH_TOP',
     requestedDurationDays: 14,
-    requestedLabel: 'منتخب محله درچه',
+    requestedLabel: 'منتخب چهارباغ',
   },
   {
     id: 'ORD-1405-102',

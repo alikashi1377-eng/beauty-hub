@@ -76,6 +76,9 @@ export const BusinessPublicProfileView: React.FC<{
   const [activeTab, setActiveTab] = useState<string>('services');
   const [selectedServiceCategory, setSelectedServiceCategory] =
     useState<string>('ALL');
+  const [publicServiceQuery, setPublicServiceQuery] = useState<string>('');
+  const [showAllPublicServices, setShowAllPublicServices] =
+    useState<boolean>(false);
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewServiceTitle, setReviewServiceTitle] = useState<string>('');
   const [reviewComment, setReviewComment] = useState<string>('');
@@ -83,10 +86,19 @@ export const BusinessPublicProfileView: React.FC<{
   const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
   const [replyDraftText, setReplyDraftText] = useState<string>('');
 
-  const matchedSpecialist = specialists.find((sp) => sp.slug === slug);
+  const decodedSlug = decodeURIComponent(slug || '').trim();
+  const matchedSpecialist = specialists.find(
+    (sp) => sp.slug === decodedSlug || sp.id === decodedSlug
+  );
   const fallbackSlug = mode === 'pro' ? 'mahsa-kiani' : 'royal-golzar';
   const business =
-    businesses.find((b) => b.slug === slug || b.id === slug) ??
+    businesses.find(
+      (b) =>
+        b.slug === decodedSlug ||
+        b.id === decodedSlug ||
+        b.slug.toLowerCase() === decodedSlug.toLowerCase() ||
+        b.id.toLowerCase() === decodedSlug.toLowerCase()
+    ) ??
     (matchedSpecialist
       ? businesses.find((b) => b.id === matchedSpecialist.businessId)
       : undefined) ??
@@ -112,10 +124,18 @@ export const BusinessPublicProfileView: React.FC<{
   const serviceCategories = Array.from(
     new Set(bizServices.map((s) => s.category))
   );
-  const filteredServices =
-    selectedServiceCategory === 'ALL'
-      ? bizServices
-      : bizServices.filter((s) => s.category === selectedServiceCategory);
+  const normalizedPubSrvQ = publicServiceQuery.trim().toLowerCase();
+  const filteredServices = bizServices.filter((s) => {
+    const matchCat =
+      selectedServiceCategory === 'ALL' ||
+      s.category === selectedServiceCategory;
+    const matchQ =
+      !normalizedPubSrvQ ||
+      s.title.toLowerCase().includes(normalizedPubSrvQ) ||
+      s.category.toLowerCase().includes(normalizedPubSrvQ) ||
+      s.description.toLowerCase().includes(normalizedPubSrvQ);
+    return matchCat && matchQ;
+  });
 
   const bizSpecialists = specialists.filter(
     (sp) => sp.businessId === business.id && sp.isActive !== false
@@ -216,7 +236,7 @@ export const BusinessPublicProfileView: React.FC<{
       },
     },
     {
-      label: 'کیوآرکد و لینک',
+      label: 'اشتراک‌گذاری',
       icon: <Share2 className="w-5 h-5 text-[#8B5CF6]" />,
       onClick: () => setActiveActionModal('QR_SHARE'),
     },
@@ -296,25 +316,18 @@ export const BusinessPublicProfileView: React.FC<{
           />
           <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/80 via-[#1E1B2E]/25 to-black/25" />
 
-          {/* دکمه‌های دایره‌ای شناور بالای تصویر کاور — مطابق Capture4.PNG و Capture.PNG */}
+          {/* دکمه‌های دایره‌ای آیکونی بالای تصویر کاور (فقط آیکون بدون نوشته) */}
           <div className="absolute top-4 sm:top-6 inset-x-4 sm:inset-x-6 flex items-center justify-between z-10">
             <Link
               to="/search"
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/92 hover:bg-white backdrop-blur-md text-xs font-extrabold text-[#1E1B2E] shadow-sm transition-transform active:scale-95"
+              aria-label="بازگشت به سالن‌ها"
+              title="بازگشت به سالن‌ها"
+              className="w-10 h-10 rounded-full bg-white/92 hover:bg-white backdrop-blur-md flex items-center justify-center text-[#1E1B2E] shadow-sm transition-transform active:scale-95"
             >
-              <ArrowRight className="w-4 h-4 text-[#8B5CF6]" />
-              <span>بازگشت به سالن‌ها</span>
+              <ArrowRight className="w-5 h-5 text-[#8B5CF6]" />
             </Link>
 
             <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                onClick={() => setActiveActionModal('QR_SHARE')}
-                aria-label="کیوآرکد و اشتراک‌گذاری"
-                className="w-10 h-10 rounded-full bg-white/92 hover:bg-white backdrop-blur-md flex items-center justify-center text-[#1E1B2E] shadow-sm cursor-pointer transition-transform active:scale-95"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
               <button
                 type="button"
                 onClick={handleToggleProfileFavorite}
@@ -322,18 +335,18 @@ export const BusinessPublicProfileView: React.FC<{
                 aria-label={
                   isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'افزودن به علاقه‌مندی‌ها'
                 }
-                className="h-10 px-3.5 rounded-full bg-white/92 hover:bg-white backdrop-blur-md flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition-transform active:scale-95"
+                title={
+                  isFavorite ? 'حذف از علاقه‌مندی‌ها' : 'افزودن به علاقه‌مندی‌ها'
+                }
+                className="w-10 h-10 rounded-full bg-white/92 hover:bg-white backdrop-blur-md flex items-center justify-center shadow-sm cursor-pointer transition-transform active:scale-95"
               >
                 <Heart
-                  className={`w-4 h-4 ${
+                  className={`w-5 h-5 ${
                     isFavorite
                       ? 'text-[#8B5CF6] fill-[#8B5CF6]'
                       : 'text-[#1E1B2E]'
                   }`}
                 />
-                <span className="text-xs font-extrabold text-[#1E1B2E]">
-                  {isFavorite ? 'ذخیره شد' : 'افزودن به علاقه‌مندی‌ها'}
-                </span>
               </button>
             </div>
           </div>
@@ -531,48 +544,86 @@ export const BusinessPublicProfileView: React.FC<{
 
           {activeTab === 'services' ? (
             <Card className="rounded-3xl space-y-4">
-              {serviceCategories.length > 1 ? (
-                <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedServiceCategory('ALL')}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                      selectedServiceCategory === 'ALL'
-                        ? 'bg-[#8B5CF6] text-white'
-                        : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
-                    }`}
-                  >
-                    همه لاین‌ها ({toPersianDigits(bizServices.length)})
-                  </button>
-                  {serviceCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setSelectedServiceCategory(cat)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                        selectedServiceCategory === cat
-                          ? 'bg-[#8B5CF6] text-white'
-                          : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+              {bizServices.length > 5 || serviceCategories.length > 1 ? (
+                <div className="space-y-3 pb-3 border-b border-[#E6E0F5]">
+                  {bizServices.length > 5 ? (
+                    <div className="relative">
+                      <Input
+                        value={publicServiceQuery}
+                        onChange={(e) => setPublicServiceQuery(e.target.value)}
+                        placeholder="جست‌وجوی سریع خدمت یا ناحیه (مثلاً فول بادی، توتال، بیکینی، فیشیال...)"
+                      />
+                    </div>
+                  ) : null}
+
+                  {serviceCategories.length > 1 ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedServiceCategory('ALL');
+                          setShowAllPublicServices(false);
+                        }}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                          selectedServiceCategory === 'ALL'
+                            ? 'bg-[#8B5CF6] text-white'
+                            : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
+                        }`}
+                      >
+                        همه لاین‌ها ({toPersianDigits(bizServices.length)})
+                      </button>
+                      {serviceCategories.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            setSelectedServiceCategory(cat);
+                            setShowAllPublicServices(false);
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                            selectedServiceCategory === cat
+                              ? 'bg-[#8B5CF6] text-white'
+                              : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
               {filteredServices.length === 0 ? (
                 <EmptyState title="خدمتی در این دسته‌بندی ثبت نشده است" />
               ) : (
-                <div>
-                  {filteredServices.map((srv) => (
-                    <ServiceCard
-                      key={srv.id}
-                      service={srv}
-                      actionLabel="رزرو نوبت"
-                      bookingHref={`/booking/${business.slug}?service=${srv.id}`}
-                    />
-                  ))}
+                <div className="space-y-3">
+                  <div>
+                    {(showAllPublicServices
+                      ? filteredServices
+                      : filteredServices.slice(0, 8)
+                    ).map((srv) => (
+                      <ServiceCard
+                        key={srv.id}
+                        service={srv}
+                        actionLabel="رزرو نوبت"
+                        bookingHref={`/booking/${business.slug}?service=${srv.id}`}
+                      />
+                    ))}
+                  </div>
+                  {filteredServices.length > 8 ? (
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPublicServices((p) => !p)}
+                        className="px-4 py-2 rounded-full bg-[#F5F3FF] hover:bg-[#EDE9FE] text-[#8B5CF6] text-xs font-extrabold border border-[#DDD6FE] cursor-pointer transition-colors"
+                      >
+                        {showAllPublicServices
+                          ? 'نمایش خلاصه خدمات'
+                          : `مشاهده همه ${toPersianDigits(filteredServices.length)} خدمت و تعرفه ↓`}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </Card>
@@ -1355,7 +1406,7 @@ export const BusinessPublicProfileView: React.FC<{
       <Modal
         isOpen={activeActionModal === 'QR_SHARE'}
         onClose={() => setActiveActionModal(null)}
-        title={`کیوآرکد اختصاصی و لینک رزرو ${business.name}`}
+        title={`اشتراک‌گذاری پروفایل ${business.name}`}
       >
         <BusinessQrCodeCard
           businessName={business.name}

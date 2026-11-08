@@ -31,12 +31,6 @@ const ISFAHAN_AREAS: Array<{
   defaultStreet: string;
 }> = [
   {
-    name: 'درچه',
-    lat: 32.6152,
-    lng: 51.5521,
-    defaultStreet: 'میدان امام، بلوار اصلی درچه',
-  },
-  {
     name: 'چهارباغ بالا',
     lat: 32.6288,
     lng: 51.6621,

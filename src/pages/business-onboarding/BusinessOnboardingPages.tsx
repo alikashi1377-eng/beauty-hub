@@ -297,32 +297,52 @@ export const BusinessRegisterPage: React.FC = () => {
                   ۱. نوع فعالیت شما چیست؟{' '}
                   <span className="text-[#0057FF]">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {[
                     {
+                      id: 'WOMEN',
                       type: BusinessType.WomenSalon,
+                      categorySlug: 'hair-color',
                       label: 'سالن زیبایی زنانه',
                       desc: 'لاین‌های مو، ناخن، میکاپ و پوست',
                     },
                     {
+                      id: 'MEN',
                       type: BusinessType.MenBarbershop,
+                      categorySlug: 'men-barber',
                       label: 'آرایشگاه و پیرایش مردانه',
                       desc: 'اصلاح مو و ریش، استایلینگ و داماد',
                     },
                     {
+                      id: 'LASER',
+                      type: BusinessType.WomenSalon,
+                      categorySlug: 'laser-hair-removal',
+                      label: 'مرکز لیزر موهای زائد (بانوان و آقایان)',
+                      desc: 'کیت ۱-کلیکی پکیج‌ها و نواحی لیزر خانم‌ها و آقایان',
+                    },
+                    {
+                      id: 'SPEC',
                       type: BusinessType.IndependentSpecialist,
+                      categorySlug: 'skin-facial',
                       label: 'متخصص مستقل زیبایی',
                       desc: 'فیشیالیست، ناخن‌کار یا میکاپ‌آرتیست',
                     },
                   ].map((opt) => {
                     const isSelected =
-                      onboardingDraft.businessType === opt.type;
+                      opt.id === 'LASER'
+                        ? onboardingDraft.categorySlug === 'laser-hair-removal'
+                        : onboardingDraft.categorySlug !==
+                            'laser-hair-removal' &&
+                          onboardingDraft.businessType === opt.type;
                     return (
                       <button
-                        key={opt.type}
+                        key={opt.id}
                         type="button"
                         onClick={() =>
-                          updateOnboardingDraft({ businessType: opt.type })
+                          updateOnboardingDraft({
+                            businessType: opt.type,
+                            categorySlug: opt.categorySlug,
+                          })
                         }
                         className={`p-3.5 rounded-2xl border text-right transition-all cursor-pointer ${
                           isSelected
@@ -1589,7 +1609,7 @@ export const BusinessReadyStepPage: React.FC = () => {
                 <span>۲.۴ برابر جذب مشتری جدید</span>
               </div>
               <p className="text-xs text-slate-200 leading-relaxed">
-                دریافت نشان «مرکز تاییدشده» و اولویت نمایش در نتایج جست‌وجوی محله‌های اصفهان و درچه.
+                دریافت نشان «مرکز تاییدشده» و اولویت نمایش در نتایج جست‌وجوی محله‌های اصفهان.
               </p>
             </div>
             <div className="p-3.5 rounded-2xl bg-white/10 border border-white/15 space-y-1">

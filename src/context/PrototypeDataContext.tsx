@@ -104,6 +104,8 @@ interface PrototypeDataContextValue {
     salonInfo?: {
       businessName: string;
       businessType: BusinessType;
+      categorySlug?: string;
+      typeLabel?: string;
       city: string;
       neighborhood: string;
     };
@@ -452,7 +454,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       setFavoriteSpecialistIds([]);
     }
   }, [authUser?.phone]);
-  const mergeBusinessOverrides = (list: BusinessItem[]): BusinessItem[] => {
+  const mergeBusinessOverrides = (
+    list: BusinessItem[],
+    extraRegisteredUsers?: AdminUserRecord[]
+  ): BusinessItem[] => {
     try {
       const excludedSampleIds = new Set([
         'biz-2',
@@ -478,16 +483,58 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? JSON.parse(localOnbRaw)
         : [];
 
+      let resolvedRegisteredUsers: AdminUserRecord[] = [];
+      if (Array.isArray(extraRegisteredUsers) && extraRegisteredUsers.length > 0) {
+        resolvedRegisteredUsers = extraRegisteredUsers;
+        try {
+          window.localStorage.setItem(
+            'timeto_cached_registered_users_v1',
+            JSON.stringify(extraRegisteredUsers)
+          );
+        } catch {
+          // ignore
+        }
+      } else {
+        try {
+          const cachedUsersRaw = window.localStorage.getItem(
+            'timeto_cached_registered_users_v1'
+          );
+          if (cachedUsersRaw) {
+            resolvedRegisteredUsers = JSON.parse(cachedUsersRaw);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const usedSlugs = new Set<string>();
+      const ensureUniqueSlug = (rawSlug: string, fallbackId: string): string => {
+        const base = (rawSlug || fallbackId || 'salon')
+          .trim()
+          .replace(/\s+/g, '-');
+        if (!usedSlugs.has(base)) {
+          usedSlugs.add(base);
+          return base;
+        }
+        const unique = `${base}-${fallbackId.slice(-4)}`;
+        usedSlugs.add(unique);
+        return unique;
+      };
+
       const byIdOrSlug = new Map<string, BusinessItem>();
       for (const b of list) {
         if (excludedSampleIds.has(b.id) || permDeletedIds.has(b.id)) continue;
         const isSample =
           Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
-        const rawMerged = overrides[b.id]
-          ? { ...b, ...overrides[b.id], isSampleShowcase: isSample }
-          : { ...b, isSampleShowcase: isSample };
+        const overrideData = overrides[b.id] || overrides[b.slug] || {};
+        const rawMerged = {
+          ...b,
+          ...overrideData,
+          isSampleShowcase: isSample,
+        };
         const merged: BusinessItem = {
           ...rawMerged,
+          slug: ensureUniqueSlug(rawMerged.slug, b.id),
           approvalStatus:
             rawMerged.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
         };
@@ -496,26 +543,154 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
       for (const lb of localOnbList) {
-        if (excludedSampleIds.has(lb.id) || permDeletedIds.has(lb.id)) continue;
-        const lbCleanPhone = (lb.ownerPhone || lb.phoneDisplay || '').replace(/\D/g, '');
-        const alreadyExists = Array.from(byIdOrSlug.values()).some((x) => {
-          const xCleanPhone = (x.ownerPhone || x.phoneDisplay || '').replace(/\D/g, '');
-          return (
+        if (!lb || excludedSampleIds.has(lb.id) || permDeletedIds.has(lb.id)) {
+          continue;
+        }
+        const alreadyExists = Array.from(byIdOrSlug.values()).some(
+          (x) =>
             x.id === lb.id ||
             x.slug === lb.slug ||
-            (lbCleanPhone.length >= 10 && xCleanPhone === lbCleanPhone && !x.isSampleShowcase)
-          );
-        });
+            (x.name.trim() === lb.name.trim() && !x.isSampleShowcase)
+        );
         if (!alreadyExists) {
           const rawMergedLb = overrides[lb.id]
             ? { ...lb, ...overrides[lb.id] }
             : lb;
           const mergedLb: BusinessItem = {
             ...rawMergedLb,
+            city: rawMergedLb.city || 'اصفهان',
+            neighborhood: rawMergedLb.neighborhood || 'چهارباغ بالا',
+            rating: Number(rawMergedLb.rating) || 5.0,
+            startingPriceToman: Number(rawMergedLb.startingPriceToman) || 0,
             approvalStatus:
               rawMergedLb.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
           };
           byIdOrSlug.set(lb.id, mergedLb);
+        }
+      }
+
+      // اطمینان از اینکه تمام حساب‌های سالن‌دار ذخیره‌شده در حافظه نیز دارای کارت سالن فعال در لیست هستند
+      const memoryAccs = Object.values(getSavedMemoryAccounts());
+      for (const acc of memoryAccs) {
+        if (acc.role !== 'BUSINESS_OWNER' && !acc.businessName) continue;
+        const accBizName = (
+          acc.businessName || `سالن زیبایی ${acc.fullName || 'تایم تو'}`
+        ).trim();
+        const existsForAcc = Array.from(byIdOrSlug.values()).some(
+          (x) =>
+            (acc.businessId && x.id === acc.businessId) ||
+            (!x.isSampleShowcase && x.name.trim() === accBizName)
+        );
+        if (!existsForAcc) {
+          const synthId = acc.businessId || `biz-mem-${acc.phone}`;
+          if (permDeletedIds.has(synthId)) continue;
+          const isLaser = accBizName.includes('لیزر');
+          const synthBiz: BusinessItem = {
+            id: synthId,
+            slug: `salon-${acc.phone.slice(-4)}`,
+            name: accBizName,
+            type: acc.businessType ?? BusinessType.WomenSalon,
+            typeLabel: isLaser
+              ? 'مرکز لیزر موهای زائد'
+              : acc.businessType === BusinessType.MenBarbershop
+                ? 'آرایشگاه مردانه'
+                : acc.businessType === BusinessType.IndependentSpecialist
+                  ? 'متخصص مستقل زیبایی'
+                  : 'سالن زیبایی زنانه',
+            categorySlug: isLaser ? 'laser-hair-removal' : 'hair-color',
+            city: acc.city || 'اصفهان',
+            neighborhood: acc.neighborhood || 'چهارباغ بالا',
+            address: `${acc.city || 'اصفهان'}، ${acc.neighborhood || 'چهارباغ بالا'}`,
+            phoneDisplay: acc.phone,
+            ownerName: acc.fullName,
+            ownerPhone: acc.phone,
+            createdAtJalali: 'امروز',
+            rating: 5.0,
+            reviewCount: 0,
+            startingPriceToman: 0,
+            shortDescription: `مرکز تخصصی زیبایی ${accBizName} در اصفهان`,
+            aboutText: '',
+            verifiedBadge: true,
+            approvalStatus: 'APPROVED',
+            subscriptionPlan: 'شروع رایگان',
+            subscriptionStatus: SubscriptionStatus.Trial,
+            trialDaysRemaining: 30,
+            workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+            visualTheme: 'violet',
+            featured: false,
+            isSampleShowcase: false,
+            avatarUrl: acc.avatarUrl,
+            ...(overrides[synthId] || {}),
+          };
+          byIdOrSlug.set(synthId, synthBiz);
+        }
+      }
+
+      // اطمینان از اینکه تمام کاربران ثبت‌شده با نقش «صاحب سالن» در دیتابیس نیز کارت فعال در لیست کسب‌وکارها دارند
+      if (Array.isArray(resolvedRegisteredUsers)) {
+        for (const u of resolvedRegisteredUsers) {
+          const roleLbl = String(u.roleLabel || '');
+          if (!roleLbl.includes('صاحب سالن') && !roleLbl.includes('صاحب کسب')) {
+            continue;
+          }
+          const cleanPhone = String(u.phone || '')
+            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+            .replace(/\D/g, '');
+          const parenMatch = roleLbl.match(/\(([^)]+)\)/);
+          const extractedSalonName =
+            parenMatch && parenMatch[1] && !parenMatch[1].includes('سالن‌دار')
+              ? parenMatch[1].trim()
+              : `سالن زیبایی ${u.fullName}`;
+          const existsInList = Array.from(byIdOrSlug.values()).some((x) => {
+            if (x.isSampleShowcase) return false;
+            const xCleanPhone = String(x.ownerPhone || x.phoneDisplay || '')
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/\D/g, '');
+            return (
+              x.name.trim() === extractedSalonName ||
+              (cleanPhone.length >= 10 && xCleanPhone === cleanPhone)
+            );
+          });
+          if (!existsInList) {
+            const synthId = `biz-usr-${cleanPhone || u.id}`;
+            if (permDeletedIds.has(synthId)) continue;
+            const isLaser = extractedSalonName.includes('لیزر');
+            const synthSlug = ensureUniqueSlug(
+              `salon-${(cleanPhone || u.id).slice(-4)}`,
+              synthId
+            );
+            const synthBiz: BusinessItem = {
+              id: synthId,
+              slug: synthSlug,
+              name: extractedSalonName,
+              type: BusinessType.WomenSalon,
+              typeLabel: isLaser ? 'مرکز لیزر موهای زائد' : 'سالن زیبایی زنانه',
+              categorySlug: isLaser ? 'laser-hair-removal' : 'hair-color',
+              city: u.city || 'اصفهان',
+              neighborhood: 'چهارباغ بالا',
+              address: `${u.city || 'اصفهان'}، چهارباغ بالا`,
+              phoneDisplay: u.phone,
+              ownerName: u.fullName,
+              ownerPhone: u.phone,
+              createdAtJalali: u.joinedJalali || 'امروز',
+              rating: 5.0,
+              reviewCount: 0,
+              startingPriceToman: 0,
+              shortDescription: `مرکز تخصصی زیبایی ${extractedSalonName} در اصفهان`,
+              aboutText: '',
+              verifiedBadge: true,
+              approvalStatus: 'APPROVED',
+              subscriptionPlan: 'شروع رایگان',
+              subscriptionStatus: SubscriptionStatus.Trial,
+              trialDaysRemaining: 30,
+              workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+              visualTheme: 'violet',
+              featured: false,
+              isSampleShowcase: false,
+              ...(overrides[synthId] || {}),
+            };
+            byIdOrSlug.set(synthId, synthBiz);
+          }
         }
       }
 
@@ -973,7 +1148,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     if (currentUser.roles.includes('PLATFORM_ADMIN')) {
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
-        setBusinesses(mergeBusinessOverrides(adminRes.data.businesses));
+        setBusinesses(
+          mergeBusinessOverrides(
+            adminRes.data.businesses,
+            adminRes.data.users
+          )
+        );
         setCategories(mergeCategoriesWithDefaults(adminRes.data.categories));
         if (
           adminRes.data.plans.length > 0 &&
@@ -1046,7 +1226,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setDataMode('real');
         setDatabaseError(null);
         setCategories(mergeCategoriesWithDefaults(response.data.categories));
-        setBusinesses(mergeBusinessOverrides(response.data.businesses));
+        setBusinesses(
+          mergeBusinessOverrides(
+            response.data.businesses,
+            response.data.registeredUsers
+          )
+        );
         setServices(() => {
           const map = new Map<string, ServiceItem>();
           for (const s of SAMPLE_SERVICES) map.set(s.id, s);
@@ -1207,7 +1392,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                   Array.isArray(syncRes.businesses) &&
                   syncRes.businesses.length > 0
                 ) {
-                  setBusinesses(mergeBusinessOverrides(syncRes.businesses));
+                  setBusinesses(
+                    mergeBusinessOverrides(
+                      syncRes.businesses,
+                      syncRes.registeredUsers
+                    )
+                  );
                 }
               })
               .catch(() => {});
@@ -1527,6 +1717,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     salonInfo?: {
       businessName: string;
       businessType: BusinessType;
+      categorySlug?: string;
+      typeLabel?: string;
       city: string;
       neighborhood: string;
     };
@@ -1549,6 +1741,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const salonCity = payload.salonInfo?.city?.trim() || 'اصفهان';
         const salonNeighborhood =
           payload.salonInfo?.neighborhood?.trim() || 'چهارباغ بالا';
+        const isLaserCenter =
+          payload.salonInfo?.categorySlug === 'laser-hair-removal' ||
+          salonName.includes('لیزر');
 
         const newBiz: BusinessItem = {
           id: newBizId,
@@ -1556,12 +1751,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           name: salonName,
           type: salonType,
           typeLabel:
-            salonType === BusinessType.MenBarbershop
-              ? 'آرایشگاه مردانه'
-              : salonType === BusinessType.IndependentSpecialist
-                ? 'متخصص مستقل زیبایی'
-                : 'سالن زیبایی زنانه',
-          categorySlug: 'hair-color',
+            payload.salonInfo?.typeLabel ||
+            (isLaserCenter
+              ? 'مرکز لیزر موهای زائد'
+              : salonType === BusinessType.MenBarbershop
+                ? 'آرایشگاه مردانه'
+                : salonType === BusinessType.IndependentSpecialist
+                  ? 'متخصص مستقل زیبایی'
+                  : 'سالن زیبایی زنانه'),
+          categorySlug:
+            payload.salonInfo?.categorySlug ||
+            (isLaserCenter ? 'laser-hair-removal' : 'hair-color'),
+          targetGender: isLaserCenter ? 'BOTH' : undefined,
           city: salonCity,
           neighborhood: salonNeighborhood,
           address: `${salonCity}، ${salonNeighborhood}`,
@@ -2438,16 +2639,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     businessId: string,
     status: ApprovalStatus
   ) => {
-    const targetBiz = businesses.find((b) => b.id === businessId);
+    const targetBiz = businesses.find(
+      (b) => b.id === businessId || b.slug === businessId
+    );
+    const updatedTargetBiz: BusinessItem | undefined = targetBiz
+      ? {
+          ...targetBiz,
+          approvalStatus: status,
+          verifiedBadge: status === 'APPROVED',
+          isSampleShowcase: false,
+        }
+      : undefined;
 
-    // بروزرسانی فوری در وضعیت محلی و Overrides
+    // بروزرسانی فوری در وضعیت محلی، لیست سالن‌های ثبت‌شده و Overrides
     setBusinesses((prev) => {
       const next = prev.map((b) =>
-        b.id === businessId
+        b.id === businessId || b.slug === businessId
           ? {
               ...b,
               approvalStatus: status,
               verifiedBadge: status === 'APPROVED',
+              isSampleShowcase: false,
             }
           : b
       );
@@ -2460,10 +2672,52 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           approvalStatus: status,
           verifiedBadge: status === 'APPROVED',
         };
+        if (updatedTargetBiz?.slug) {
+          overrides[updatedTargetBiz.slug] = {
+            ...(overrides[updatedTargetBiz.slug] || {}),
+            approvalStatus: status,
+            verifiedBadge: status === 'APPROVED',
+          };
+        }
         window.localStorage.setItem(
           'timeto_biz_overrides_v2',
           JSON.stringify(overrides)
         );
+
+        if (status === 'APPROVED') {
+          // حذف از لیست زباله‌دان دائمی در صورت وجود
+          const permRaw =
+            window.localStorage.getItem(
+              'timeto_permanently_deleted_biz_ids_v1'
+            ) || '[]';
+          const permList: string[] = JSON.parse(permRaw);
+          if (permList.includes(businessId)) {
+            window.localStorage.setItem(
+              'timeto_permanently_deleted_biz_ids_v1',
+              JSON.stringify(permList.filter((id) => id !== businessId))
+            );
+          }
+
+          // ذخیره در لیست کسب‌وکارهای تاییدشده محلی تا پروفایل بلافاصله در کل اپلیکیشن در دسترس باشد
+          if (updatedTargetBiz) {
+            const localOnbRaw =
+              window.localStorage.getItem(
+                'timeto_local_onboarded_businesses_v1'
+              ) || '[]';
+            const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
+            const filteredLocal = localOnbList.filter(
+              (item) =>
+                item &&
+                item.id !== updatedTargetBiz.id &&
+                item.slug !== updatedTargetBiz.slug
+            );
+            filteredLocal.unshift(updatedTargetBiz);
+            window.localStorage.setItem(
+              'timeto_local_onboarded_businesses_v1',
+              JSON.stringify(filteredLocal)
+            );
+          }
+        }
       } catch {
         // ignore
       }
@@ -2488,19 +2742,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (dataMode === 'real') {
       void realApiClient
-        .updateBusinessApproval(businessId, status, targetBiz)
+        .updateBusinessApproval(businessId, status, updatedTargetBiz ?? targetBiz)
         .then(() => {
+          setBusinesses((prev) => mergeBusinessOverrides(prev, adminUsers));
           showToast(
             status === 'APPROVED'
-              ? 'کسب‌وکار با موفقیت تایید و در ویترین عمومی منتشر شد.'
+              ? 'کسب‌وکار با موفقیت تایید شد و پروفایل آن بلافاصله در اپلیکیشن منتشر گردید.'
               : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
             status === 'APPROVED' ? 'success' : 'warning'
           );
         })
         .catch(() => {
+          setBusinesses((prev) => mergeBusinessOverrides(prev, adminUsers));
           showToast(
             status === 'APPROVED'
-              ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت.'
+              ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت و پروفایل آن فعال شد.'
               : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
             status === 'APPROVED' ? 'success' : 'warning'
           );
@@ -2510,7 +2766,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     showToast(
       status === 'APPROVED'
-        ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت.'
+        ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت و پروفایل آن بلافاصله در اپلیکیشن فعال شد.'
         : 'کسب‌وکار رد صلاحیت شد، از نمایش عمومی حذف گردید و به زباله‌دان منتقل شد.',
       status === 'APPROVED' ? 'success' : 'warning'
     );

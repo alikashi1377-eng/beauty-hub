@@ -110,6 +110,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [salonType, setSalonType] = useState<BusinessType>(
     BusinessType.WomenSalon
   );
+  const [isLaserCenterSelected, setIsLaserCenterSelected] =
+    useState<boolean>(false);
   const [salonCity, setSalonCity] = useState<string>('اصفهان');
   const [salonNeighborhood, setSalonNeighborhood] =
     useState<string>('چهارباغ بالا');
@@ -533,6 +535,12 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         salonInfo: {
           businessName: salonName.trim(),
           businessType: salonType,
+          categorySlug: isLaserCenterSelected
+            ? 'laser-hair-removal'
+            : undefined,
+          typeLabel: isLaserCenterSelected
+            ? 'مرکز لیزر موهای زائد'
+            : undefined,
           city: salonCity,
           neighborhood: salonNeighborhood.trim() || 'چهارباغ بالا',
         },
@@ -1332,34 +1340,54 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
                   نوع مرکز
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     {
+                      id: 'WOMEN',
                       val: BusinessType.WomenSalon,
+                      isLaser: false,
                       label: 'سالن بانوان',
                     },
                     {
+                      id: 'MEN',
                       val: BusinessType.MenBarbershop,
+                      isLaser: false,
                       label: 'پیرایش مردانه',
                     },
                     {
+                      id: 'LASER',
+                      val: BusinessType.WomenSalon,
+                      isLaser: true,
+                      label: 'مرکز لیزر موهای زائد',
+                    },
+                    {
+                      id: 'SPEC',
                       val: BusinessType.IndependentSpecialist,
+                      isLaser: false,
                       label: 'متخصص مستقل',
                     },
-                  ].map((item) => (
-                    <button
-                      key={item.val}
-                      type="button"
-                      onClick={() => setSalonType(item.val)}
-                      className={`rounded-xl border py-2.5 px-2 text-xs font-extrabold transition cursor-pointer ${
-                        salonType === item.val
-                          ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
-                          : 'border-slate-200 bg-slate-50 text-slate-600'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                  ].map((item) => {
+                    const isSelected = item.isLaser
+                      ? isLaserCenterSelected
+                      : !isLaserCenterSelected && salonType === item.val;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setSalonType(item.val);
+                          setIsLaserCenterSelected(item.isLaser);
+                        }}
+                        className={`rounded-xl border py-2.5 px-2 text-xs font-extrabold transition cursor-pointer ${
+                          isSelected
+                            ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
+                            : 'border-slate-200 bg-slate-50 text-slate-600'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1375,7 +1403,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     className="w-full rounded-xl border border-slate-300 bg-[#F8FAFC] px-3 py-2.5 text-xs font-bold text-[#061138] focus:border-[#0057FF] focus:outline-none"
                   >
                     <option value="اصفهان">اصفهان</option>
-                    <option value="درچه">درچه</option>
                   </select>
                 </div>
 

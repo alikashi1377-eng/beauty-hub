@@ -238,6 +238,7 @@ export const BookingStepPage: React.FC = () => {
   };
 
   const [serviceCatFilter, setServiceCatFilter] = useState<string>('ALL');
+  const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
   const [activeStepIndicator, setActiveStepIndicator] = useState<1 | 2 | 3>(1);
 
   const business =
@@ -258,10 +259,17 @@ export const BookingStepPage: React.FC = () => {
   const serviceCategories = Array.from(
     new Set(bizServices.map((s) => s.category))
   );
-  const visibleServices =
-    serviceCatFilter === 'ALL'
-      ? bizServices
-      : bizServices.filter((s) => s.category === serviceCatFilter);
+  const normalizedServiceQ = serviceSearchQuery.trim().toLowerCase();
+  const visibleServices = bizServices.filter((s) => {
+    const matchesCat =
+      serviceCatFilter === 'ALL' || s.category === serviceCatFilter;
+    const matchesQ =
+      !normalizedServiceQ ||
+      s.title.toLowerCase().includes(normalizedServiceQ) ||
+      s.description.toLowerCase().includes(normalizedServiceQ) ||
+      s.category.toLowerCase().includes(normalizedServiceQ);
+    return matchesCat && matchesQ;
+  });
 
   const [realSlots, setRealSlots] = useState<TimeSlotAvailabilityItem[] | null>(
     null
@@ -318,12 +326,6 @@ export const BookingStepPage: React.FC = () => {
     if (stepParam === '1' || stepParam === '2' || stepParam === '3') {
       const targetStep = Number(stepParam) as 1 | 2 | 3;
       setActiveStepIndicator(targetStep);
-      setTimeout(() => {
-        const el = document.getElementById(`booking-step-${targetStep}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 80);
     }
   }, [business?.slug, bizServices.length, bizSpecialists.length]);
 
@@ -341,11 +343,9 @@ export const BookingStepPage: React.FC = () => {
     bizSpecialists[0];
 
   const handleToggleService = (serviceId: string) => {
-    setActiveStepIndicator(1);
     const exists = selectedServiceIds.includes(serviceId);
     let nextIds: string[];
     if (exists) {
-      // اگر بیش از ۱ خدمت انتخاب شده، با کلیک مجدد حذف شود؛ اگر تنها خدمت است، باقی بماند
       nextIds =
         selectedServiceIds.length > 1
           ? selectedServiceIds.filter((id) => id !== serviceId)
@@ -361,14 +361,10 @@ export const BookingStepPage: React.FC = () => {
 
   const handleNavigateStep = (step: 1 | 2 | 3 | 4) => {
     if (step === 4) {
-      navigate('/booking/confirm');
+      handleProceedToConfirm();
       return;
     }
     setActiveStepIndicator(step);
-    const section = document.getElementById(`booking-step-${step}`);
-    if (section) {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
   };
 
   useEffect(() => {
@@ -450,34 +446,33 @@ export const BookingStepPage: React.FC = () => {
     upcomingDays.findIndex((d) => d.date === bookingDraft.dateJalali)
   );
   const selectedDayObj = upcomingDays[selectedDayIdx] ?? upcomingDays[0];
-  const leadingEmptyCells = Array.from(
-    { length: upcomingDays[0]?.jalaliWeekdayIndex ?? 0 },
-    (_, i) => i
-  );
   const salonAvatar =
     business.avatarUrl && business.avatarUrl.trim()
       ? business.avatarUrl
       : getBeautyPhotoUrl(business.name, business.typeLabel);
 
   return (
-    <div className="pb-28 lg:pb-8">
-      {/* هدر فشرده اطلاعات سالن با تصویر پروفایل یکپارچه */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="max-w-4xl mx-auto pb-20 lg:pb-8">
+      {/* هدر فشرده اطلاعات سالن */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <img
             src={salonAvatar}
             alt={business.name}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border border-[#CBD5E1] shadow-2xs shrink-0"
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl object-cover border border-[#CBD5E1] shadow-2xs shrink-0"
           />
           <div>
-            <div className="flex items-center gap-1.5 text-xs text-[#475569] mb-0.5">
-              <Link to={`/salon/${business.slug}`} className="hover:text-[#0057FF] font-bold">
+            <div className="flex items-center gap-1.5 text-[11px] text-[#475569]">
+              <Link
+                to={`/salon/${business.slug}`}
+                className="hover:text-[#0057FF] font-bold"
+              >
                 {business.name}
               </Link>
               <span>/</span>
               <span>رزرو نوبت آنلاین</span>
             </div>
-            <h1 className="text-base sm:text-2xl font-extrabold text-[#061138]">
+            <h1 className="text-sm sm:text-xl font-extrabold text-[#061138]">
               رزرو نوبت در {business.name}
             </h1>
           </div>
@@ -489,573 +484,443 @@ export const BookingStepPage: React.FC = () => {
       </div>
 
       {business.isSampleShowcase ? (
-        <div className="mb-5 p-4 rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] text-[#92400E] flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs sm:text-sm space-y-0.5">
-            <p className="font-extrabold">
-              این سالن یک «نمونه نمایشی پلتفرم» است (غیرقابل رزرو واقعی)
-            </p>
-            <p className="text-xs text-[#B45309]">
-              مراحل زیر صرفاً جهت آشنایی با فرآیند رزرو آنلاین تایم تو نمایش داده می‌شود و امکان ثبت نهایی نوبت روی سالن‌های نمونه غیرفعال است.
-            </p>
-          </div>
+        <div className="mb-4 p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#F59E0B] text-[#92400E] flex flex-wrap items-center justify-between gap-2 text-xs">
+          <p className="font-extrabold">
+            این سالن یک «نمونه نمایشی پلتفرم» است (مراحل زیر صرفاً جهت آشنایی نمایش داده می‌شود).
+          </p>
           <Link to={`/salon/${business.slug}`}>
             <Button variant="outline" size="sm">
-              بازگشت به پروفایل نمونه
+              بازگشت به پروفایل
             </Button>
           </Link>
         </div>
       ) : null}
 
-      {/* نوار مرحله‌به‌مرحله مینیمال و قابل کلیک */}
+      {/* نوار مرحله‌به‌مرحله بدون اسکرول عمودی */}
       <BookingFlowStepIndicator
         currentStep={activeStepIndicator}
         onSelectStep={handleNavigateStep}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 space-y-6">
-          {/* گام ۱: انتخاب خدمت (امکان انتخاب یک یا چند خدمت بدون به‌هم‌ریختگی در موبایل) */}
-          <Card
-            id="booking-step-1"
-            className="rounded-3xl space-y-4 scroll-mt-32"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
-                  ۱
-                </span>
-                <div>
-                  <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                    انتخاب خدمات مورد نظر
-                  </h2>
-                  <p className="text-[11px] text-[#475569]">
-                    می‌توانید یک یا چند خدمت را همزمان انتخاب کنید
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
-                {toPersianDigits(selectedServiceIds.length)} خدمت انتخاب‌شده
+      {/* گام ۱: انتخاب خدمت (بدون اسکرول خوردن کل صفحه — مجهز به فیلتر دسته و جست‌وجوی سریع برای سالن‌ها و مراکز لیزر با ۲۰+ خدمت) */}
+      {activeStepIndicator === 1 ? (
+        <Card id="booking-step-1" className="rounded-3xl space-y-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
+                ۱
               </span>
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  انتخاب خدمت یا پکیج مورد نظر
+                </h2>
+                <p className="text-[11px] text-[#475569]">
+                  یک یا چند مورد را انتخاب کنید و دکمه «مرحله بعد» را بزنید
+                </p>
+              </div>
             </div>
+            <span className="px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
+              {toPersianDigits(selectedServiceIds.length)} مورد انتخاب‌شده
+            </span>
+          </div>
 
-            {serviceCategories.length > 1 ? (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-                <button
-                  type="button"
-                  onClick={() => setServiceCatFilter('ALL')}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                    serviceCatFilter === 'ALL'
-                      ? 'bg-[#0057FF] text-white'
-                      : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
-                  }`}
-                >
-                  همه خدمات ({toPersianDigits(bizServices.length)})
-                </button>
-                {serviceCategories.map((cat) => (
+          {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای جلوگیری از شلوغی در مراکز پرخدمت (مثل مراکز لیزر) */}
+          {bizServices.length > 5 || serviceCategories.length > 1 ? (
+            <div className="space-y-2">
+              {bizServices.length > 5 ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={serviceSearchQuery}
+                    onChange={(e) => setServiceSearchQuery(e.target.value)}
+                    placeholder="جست‌وجوی سریع نام خدمت یا ناحیه (مثلاً فول بادی، توتال، بیکینی، فیشیال...)"
+                    className="w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] py-2 pr-3.5 pl-8 text-xs font-bold text-[#061138] placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                  />
+                  {serviceSearchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setServiceSearchQuery('')}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[#64748B] hover:text-[#061138] cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {serviceCategories.length > 1 ? (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => setServiceCatFilter(cat)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                      serviceCatFilter === cat
+                    onClick={() => setServiceCatFilter('ALL')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                      serviceCatFilter === 'ALL'
                         ? 'bg-[#0057FF] text-white'
                         : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
                     }`}
                   >
-                    {cat}
+                    همه ({toPersianDigits(bizServices.length)})
                   </button>
-                ))}
-              </div>
-            ) : null}
+                  {serviceCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setServiceCatFilter(cat)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                        serviceCatFilter === cat
+                          ? 'bg-[#0057FF] text-white'
+                          : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
-            <div className="space-y-2.5">
-              {visibleServices.map((srv) => {
-                const isSelected = selectedServiceIds.includes(srv.id);
-                const srvThumb = getBeautyPhotoUrl(srv.title, srv.category);
-                return (
-                  <div
-                    key={srv.id}
-                    role="checkbox"
-                    aria-checked={isSelected}
-                    tabIndex={0}
-                    onClick={() => handleToggleService(srv.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleToggleService(srv.id);
-                      }
-                    }}
-                    className={`p-3 sm:p-4 rounded-2xl border cursor-pointer transition-all select-none ${
-                      isSelected
-                        ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
-                        : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* چک‌باکس واضح چندانتخابی */}
-                      <span
-                        className={`mt-1 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected
-                            ? 'bg-[#0057FF] border-[#0057FF] text-white'
-                            : 'bg-white border-[#94A3B8] text-transparent'
-                        }`}
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-[#E0E7FF] border border-[#CBD5E1] shrink-0">
-                        <img
-                          src={srvThumb}
-                          alt={srv.title}
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
-                          <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug break-words">
-                            {srv.title}
-                          </p>
-                          <span className="text-xs sm:text-sm font-extrabold text-[#0057FF] tabular-nums shrink-0">
-                            {formatPriceToman(srv.priceToman)}
-                          </span>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] tabular-nums">
-                          <span className="px-2 py-0.5 rounded-md bg-white border border-[#CBD5E1] text-[#061138] font-bold">
-                            {srv.category}
-                          </span>
-                          <span className="inline-flex items-center gap-1 font-medium">
-                            <Clock className="w-3 h-3 text-[#0057FF]" />
-                            {formatDurationMinutes(srv.durationMinutes)}
-                          </span>
-                        </div>
+          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود تا کل صفحه اسکرول نخورد */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+            {visibleServices.map((srv) => {
+              const isSelected = selectedServiceIds.includes(srv.id);
+              return (
+                <div
+                  key={srv.id}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabIndex={0}
+                  onClick={() => handleToggleService(srv.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleToggleService(srv.id);
+                    }
+                  }}
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-center justify-between gap-2.5 ${
+                    isSelected
+                      ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
+                      : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <span
+                      className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected
+                          ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                          : 'bg-white border-[#94A3B8] text-transparent'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug truncate">
+                        {srv.title}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] mt-1 tabular-nums">
+                        <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
+                          {srv.category}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5">
+                          <Clock className="w-3 h-3 text-[#0057FF]" />
+                          {formatDurationMinutes(srv.durationMinutes)}
+                        </span>
                       </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </Card>
+                  <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums shrink-0">
+                    {formatPriceToman(srv.priceToman)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
 
-          {/* گام ۲: انتخاب متخصص */}
-          <Card
-            id="booking-step-2"
-            className="rounded-3xl space-y-4 scroll-mt-32"
-          >
-            <div className="flex items-center justify-between border-b border-[#CBD5E1] pb-3">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
-                  ۲
+          {/* نوار پایین گام ۱: جمع انتخاب‌شده‌ها و دکمه رفتن به مرحله ۲ (متخصص) */}
+          <div className="pt-3 border-t border-[#CBD5E1] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="text-xs flex items-center justify-between sm:justify-start gap-1">
+              <span className="text-[#64748B] font-semibold">مجموع انتخاب شما: </span>
+              <strong className="font-black text-[#061138] tabular-nums">
+                {toPersianDigits(selectedServiceIds.length)} خدمت ·{' '}
+                <span className="text-[#0057FF]">
+                  {formatPriceToman(selectedServicesSummary.totalPriceToman)}
                 </span>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                  انتخاب متخصص
-                </h2>
-              </div>
-              <span className="text-xs text-[#475569] font-semibold">
-                {selectedSpecialist?.fullName}
+              </strong>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full sm:w-auto justify-center"
+              onClick={() => setActiveStepIndicator(2)}
+            >
+              <span>مرحله بعد: انتخاب متخصص</span>
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* گام ۲: انتخاب متخصص */}
+      {activeStepIndicator === 2 ? (
+        <Card id="booking-step-2" className="rounded-3xl space-y-4 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
+                ۲
               </span>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-extrabold text-[#061138] truncate">
+                  انتخاب متخصص یا اپراتور
+                </h2>
+                <p className="text-[11px] text-[#475569] truncate">
+                  روی متخصص مورد نظر بزنید یا دکمه مرحله بعد را انتخاب کنید
+                </p>
+              </div>
+            </div>
+            <span className="text-xs text-[#0057FF] font-extrabold truncate max-w-[140px] sm:max-w-none">
+              {selectedSpecialist?.fullName}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[340px] overflow-y-auto pr-1">
+            {bizSpecialists.map((sp) => {
+              const isSelected = selectedSpecialist?.id === sp.id;
+              const spAvatar =
+                sp.avatarUrl && sp.avatarUrl.trim()
+                  ? sp.avatarUrl
+                  : getSpecialistAvatarUrl(sp.fullName, sp.roleTitle);
+              return (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => {
+                    updateBookingDraft({ specialistId: sp.id });
+                    setActiveStepIndicator(3);
+                  }}
+                  className={`p-3.5 rounded-2xl border text-center cursor-pointer transition-all flex flex-col items-center gap-2 ${
+                    isSelected
+                      ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
+                      : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
+                  }`}
+                >
+                  <div className="relative">
+                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-sm">
+                      <img
+                        src={spAvatar}
+                        alt={sp.fullName}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    {isSelected ? (
+                      <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#0057FF] text-white flex items-center justify-center shadow-2xs">
+                        <Check className="w-3 h-3" />
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-0.5 min-w-0 w-full">
+                    <p className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
+                      {sp.fullName}
+                    </p>
+                    <p className="text-[11px] font-bold text-[#0057FF] truncate">
+                      {sp.roleTitle}
+                    </p>
+                    <p className="text-[11px] text-[#475569] tabular-nums pt-0.5 inline-flex items-center justify-center gap-1">
+                      <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                      <span>
+                        {toPersianDigits(sp.rating)} ·{' '}
+                        {toPersianDigits(sp.experienceYears)} سال
+                      </span>
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="pt-3 border-t border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto justify-center"
+              onClick={() => setActiveStepIndicator(1)}
+            >
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <span>مرحله قبل</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="w-full sm:w-auto justify-center"
+              onClick={() => setActiveStepIndicator(3)}
+            >
+              <span>مرحله بعد: زمان</span>
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* گام ۳: انتخاب روز و ساعت مراجعه (فشرده و بدون نیاز به اسکرول طولانی) */}
+      {activeStepIndicator === 3 ? (
+        <Card id="booking-step-3" className="rounded-3xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
+                ۳
+              </span>
+              <div>
+                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  انتخاب روز و ساعت مراجعه
+                </h2>
+                <p className="text-[11px] text-[#475569]">
+                  روز و ساعت دلخواه را انتخاب کنید تا وارد تب تایید نهایی شوید
+                </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {bizSpecialists.map((sp) => {
-                const isSelected = selectedSpecialist?.id === sp.id;
-                const spAvatar =
-                  sp.avatarUrl && sp.avatarUrl.trim()
-                    ? sp.avatarUrl
-                    : getSpecialistAvatarUrl(sp.fullName, sp.roleTitle);
+            <span className="px-3 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
+              {selectedDayObj ? selectedDayObj.fullLabel : bookingDraft.dateJalali} · ساعت{' '}
+              {bookingDraft.timeSlot}
+            </span>
+          </div>
+
+          {/* نوار افقی روزهای ۲ هفته آینده بدون اشغال ارتفاع صفحه */}
+          <div className="space-y-1.5">
+            <span className="text-xs font-extrabold text-[#061138] block">
+              ۱. انتخاب روز ({selectedDayObj?.monthNamePersian} {selectedDayObj?.yearPersian}):
+            </span>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+              {upcomingDays.map((dayItem, idx) => {
+                const isSelected = bookingDraft.dateJalali === dayItem.date;
+                const isFriday = dayItem.dayName === 'جمعه';
                 return (
                   <button
-                    key={sp.id}
+                    key={dayItem.date}
                     type="button"
-                    onClick={() => {
-                      setActiveStepIndicator(2);
-                      updateBookingDraft({ specialistId: sp.id });
-                    }}
-                    className={`p-3.5 rounded-2xl border text-center cursor-pointer transition-all flex flex-col items-center gap-2 ${
+                    onClick={() =>
+                      updateBookingDraft({ dateJalali: dayItem.date })
+                    }
+                    className={`w-16 sm:w-20 shrink-0 py-2 px-1.5 rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer tabular-nums ${
                       isSelected
-                        ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
-                        : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
+                        ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-sm'
+                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
                     }`}
                   >
-                    <div className="relative">
-                      <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-white shadow-sm">
-                        <img
-                          src={spAvatar}
-                          alt={sp.fullName}
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      {isSelected ? (
-                        <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#0057FF] text-white flex items-center justify-center shadow-2xs">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-0.5 min-w-0 w-full">
-                      <p className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
-                        {sp.fullName}
-                      </p>
-                      <p className="text-[11px] font-bold text-[#0057FF] truncate">
-                        {sp.roleTitle}
-                      </p>
-                      <p className="text-[11px] text-[#475569] tabular-nums pt-0.5 inline-flex items-center justify-center gap-1">
-                        <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                        <span>
-                          {toPersianDigits(sp.rating)} ·{' '}
-                          {toPersianDigits(sp.experienceYears)} سال
-                        </span>
-                      </p>
-                    </div>
+                    <span
+                      className={`text-[10px] font-bold ${
+                        isSelected
+                          ? 'text-[#00E5FF]'
+                          : isFriday
+                            ? 'text-rose-500'
+                            : 'text-[#64748B]'
+                      }`}
+                    >
+                      {idx === 0
+                        ? 'امروز'
+                        : idx === 1
+                          ? 'فردا'
+                          : dayItem.dayName}
+                    </span>
+                    <span className="text-sm sm:text-base font-black">
+                      {dayItem.dayNumberPersian}
+                    </span>
+                    <span
+                      className={`text-[9px] font-semibold ${
+                        isSelected ? 'text-white/85' : 'text-[#64748B]'
+                      }`}
+                    >
+                      {dayItem.monthNamePersian}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </Card>
+          </div>
 
-          {/* گام ۳: انتخاب روز و ساعت مراجعه (تقویم یکپارچه و دقیق شمسی بدون تکرار) */}
-          <Card
-            id="booking-step-3"
-            className="rounded-3xl space-y-5 scroll-mt-32"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#CBD5E1] pb-3.5">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
-                  ۳
-                </span>
-                <div>
-                  <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                    انتخاب تاریخ و ساعت مراجعه
-                  </h2>
-                  <p className="text-xs text-[#475569]">
-                    روز مورد نظر خود را از تقویم شمسی انتخاب کنید
-                  </p>
-                </div>
+          {/* ساعت‌های قابل انتخاب */}
+          <div className="space-y-2">
+            <span className="text-xs font-extrabold text-[#061138] block">
+              ۲. انتخاب ساعت مراجعه:
+            </span>
+
+            {isLoadingSlots ? (
+              <div className="py-5 flex items-center justify-center gap-2 text-xs text-[#475569]">
+                <Loader2 className="w-4 h-4 animate-spin text-[#0057FF]" />
+                <span>در حال دریافت زمان‌های آزاد...</span>
               </div>
-
-              <div className="flex items-center gap-2 bg-[#EFF6FF] px-3 py-1.5 rounded-full border border-[#0057FF]/25">
-                <button
-                  type="button"
-                  disabled={selectedDayIdx <= 0}
-                  onClick={() => {
-                    setActiveStepIndicator(3);
-                    const prev = upcomingDays[Math.max(0, selectedDayIdx - 1)];
-                    if (prev) updateBookingDraft({ dateJalali: prev.date });
-                  }}
-                  aria-label="روز قبل"
-                  className="w-6 h-6 rounded-full hover:bg-white flex items-center justify-center text-[#0057FF] disabled:opacity-40 cursor-pointer"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-                <span className="text-xs font-extrabold text-[#061138] tabular-nums px-1.5">
-                  {selectedDayObj
-                    ? `${selectedDayObj.fullLabel} (${selectedDayObj.yearPersian})`
-                    : bookingDraft.dateJalali}
-                </span>
-                <button
-                  type="button"
-                  disabled={selectedDayIdx >= upcomingDays.length - 1}
-                  onClick={() => {
-                    setActiveStepIndicator(3);
-                    const next =
-                      upcomingDays[
-                        Math.min(upcomingDays.length - 1, selectedDayIdx + 1)
-                      ];
-                    if (next) updateBookingDraft({ dateJalali: next.date });
-                  }}
-                  aria-label="روز بعد"
-                  className="w-6 h-6 rounded-full hover:bg-white flex items-center justify-center text-[#0057FF] disabled:opacity-40 cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
+            ) : timeSlotOptions.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-center text-xs text-[#475569]">
+                در این تاریخ ظرفیت خالی وجود ندارد. لطفاً روز دیگری را انتخاب کنید.
               </div>
-            </div>
-
-            {/* تقویم یکپارچه و دقیق شمسی با تطبیق ۱۰۰٪ روز هفته */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3">
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#061138] px-1">
-                <span>
-                  تقویم نوبت‌دهی {selectedDayObj?.monthNamePersian}{' '}
-                  {selectedDayObj?.yearPersian}
-                </span>
-                <span className="text-[11px] font-bold text-[#0057FF]">
-                  {selectedDayObj?.tag === 'امروز' || selectedDayObj?.tag === 'فردا'
-                    ? `${selectedDayObj.tag} · ${selectedDayObj.fullLabel}`
-                    : selectedDayObj?.fullLabel}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-extrabold text-[#475569] pb-2 border-b border-[#E2E8F0]">
-                {[
-                  { short: 'ش', full: 'شنبه' },
-                  { short: 'ی', full: 'یکشنبه' },
-                  { short: 'د', full: 'دوشنبه' },
-                  { short: 'س', full: 'سه‌شنبه' },
-                  { short: 'چ', full: 'چهارشنبه' },
-                  { short: 'پ', full: 'پنجشنبه' },
-                  { short: 'ج', full: 'جمعه' },
-                ].map((wd) => (
-                  <span key={wd.full} className="py-0.5">
-                    <span className="sm:hidden">{wd.short}</span>
-                    <span className="hidden sm:inline">{wd.full}</span>
-                  </span>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-                {leadingEmptyCells.map((emptyIdx) => (
-                  <div
-                    key={`empty-${emptyIdx}`}
-                    aria-hidden="true"
-                    className="h-14 sm:h-16 rounded-xl bg-slate-100/50 border border-dashed border-slate-200/70"
-                  />
-                ))}
-
-                {upcomingDays.map((dayItem, idx) => {
-                  const isSelected = bookingDraft.dateJalali === dayItem.date;
-                  const isToday = idx === 0;
-                  const isFriday = dayItem.dayName === 'جمعه';
-
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {timeSlotOptions.map((slot) => {
+                  const isSelected =
+                    slot.available && bookingDraft.timeSlot === slot.time;
                   return (
                     <button
-                      key={dayItem.date}
+                      key={slot.time}
                       type="button"
+                      disabled={!slot.available}
                       onClick={() => {
-                        setActiveStepIndicator(3);
-                        updateBookingDraft({ dateJalali: dayItem.date });
+                        if (slot.available) {
+                          updateBookingDraft({ timeSlot: slot.time });
+                        }
                       }}
-                      className={`h-14 sm:h-16 rounded-xl border p-1 flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer tabular-nums ${
-                        isSelected
-                          ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)] scale-[1.02]'
-                          : isToday
-                            ? 'bg-[#EFF6FF] text-[#061138] border-[#0057FF]/40 hover:border-[#0057FF]'
-                            : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] hover:bg-[#F8FAFC]'
+                      className={`px-3 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
+                        !slot.available
+                          ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
+                          : isSelected
+                          ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
+                          : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
                       }`}
                     >
-                      <span
-                        className={`text-[10px] font-bold leading-none ${
-                          isSelected
-                            ? 'text-[#00E5FF]'
-                            : isToday
-                              ? 'text-[#0057FF]'
-                              : isFriday
-                                ? 'text-rose-500'
-                                : 'text-[#64748B]'
-                        }`}
-                      >
-                        {idx === 0
-                          ? 'امروز'
-                          : idx === 1
-                            ? 'فردا'
-                            : dayItem.dayName}
-                      </span>
-                      <span className="text-sm sm:text-base font-black leading-tight">
-                        {dayItem.dayNumberPersian}
-                      </span>
-                      <span
-                        className={`text-[9px] font-semibold leading-none ${
-                          isSelected ? 'text-white/85' : 'text-[#64748B]'
-                        }`}
-                      >
-                        {dayItem.monthNamePersian}
-                      </span>
+                      <span>ساعت {slot.time}</span>
+                      {!slot.available ? (
+                        <span className="text-[10px] no-underline font-normal">
+                          {slot.reason || 'پر'}
+                        </span>
+                      ) : isSelected ? (
+                        <Check className="w-3.5 h-3.5" />
+                      ) : null}
                     </button>
                   );
                 })}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* ساعت‌های قابل انتخاب */}
-            <div className="space-y-3 pt-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
-                  ساعت‌های قابل رزرو در {bookingDraft.dateJalali}
-                </h3>
-                <div className="flex items-center gap-3 text-[11px] text-[#475569]">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#0057FF]" />
-                    انتخاب شما
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded-full border border-[#94A3B8] bg-white" />
-                    آزاد
-                  </span>
-                </div>
-              </div>
-
-              {isLoadingSlots ? (
-                <div className="py-6 flex items-center justify-center gap-2 text-xs text-[#475569]">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#0057FF]" />
-                  <span>در حال دریافت زمان‌های آزاد...</span>
-                </div>
-              ) : timeSlotOptions.length === 0 ? (
-                <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-center text-xs text-[#475569]">
-                  در این تاریخ ظرفیت خالی وجود ندارد. لطفاً روز دیگری را انتخاب
-                  کنید.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {timeSlotOptions.map((slot) => {
-                    const isSelected =
-                      slot.available && bookingDraft.timeSlot === slot.time;
-                    return (
-                      <button
-                        key={slot.time}
-                        type="button"
-                        disabled={!slot.available}
-                        onClick={() => {
-                          if (slot.available) {
-                            setActiveStepIndicator(3);
-                            updateBookingDraft({ timeSlot: slot.time });
-                          }
-                        }}
-                        className={`px-3.5 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
-                          !slot.available
-                            ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
-                            : isSelected
-                            ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
-                            : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
-                        }`}
-                      >
-                        <span>ساعت {slot.time}</span>
-                        {!slot.available ? (
-                          <span className="text-[10px] no-underline font-normal">
-                            {slot.reason || 'پر'}
-                          </span>
-                        ) : isSelected ? (
-                          <Check className="w-3.5 h-3.5" />
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* خلاصه انتخاب در دسکتاپ */}
-        <div className="lg:col-span-4">
-          <Card variant="dark" className="rounded-3xl space-y-5 sticky top-32">
-            <div className="flex items-center justify-between border-b border-white/15 pb-3.5">
-              <h2 className="text-sm font-extrabold text-white">
-                خلاصه نوبت انتخابی
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-[#0057FF] text-[11px] text-white font-bold">
-                {toPersianDigits(selectedServicesSummary.services.length)} خدمت
-              </span>
-            </div>
-
-            {selectedSpecialist ? (
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/10 border border-white/10">
-                <Avatar name={selectedSpecialist.fullName} size="md" />
-                <div>
-                  <p className="text-xs font-extrabold text-white">
-                    {selectedSpecialist.fullName}
-                  </p>
-                  <p className="text-[11px] text-white/75">
-                    {selectedSpecialist.roleTitle}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="space-y-3 text-xs text-white/90">
-              <div className="flex justify-between gap-2">
-                <span className="text-white/70">سالن زیبایی:</span>
-                <span className="font-bold text-white text-left">
-                  {business.name}
-                </span>
-              </div>
-              <div className="space-y-1.5">
-                <span className="text-white/70 block">خدمات انتخاب‌شده:</span>
-                <div className="space-y-1">
-                  {selectedServicesSummary.services.map((srv) => (
-                    <div
-                      key={srv.id}
-                      className="flex items-center justify-between gap-2 bg-white/8 px-2.5 py-1.5 rounded-xl"
-                    >
-                      <span className="font-bold text-white truncate">
-                        {srv.title}
-                      </span>
-                      <span className="text-[11px] text-[#00E5FF] font-bold tabular-nums shrink-0">
-                        {formatPriceToman(srv.priceToman)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-white/70">مدت زمان کل:</span>
-                <span className="font-bold text-white tabular-nums">
-                  {formatDurationMinutes(
-                    selectedServicesSummary.totalDurationMinutes
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-white/70">تاریخ و ساعت:</span>
-                <span className="font-bold text-[#00E5FF] tabular-nums">
-                  {bookingDraft.dateJalali} · ساعت {bookingDraft.timeSlot}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center pt-3 border-t border-white/15 text-sm">
-                <span className="font-bold text-white">جمع مبلغ:</span>
-                <span className="text-base font-extrabold text-white tabular-nums">
-                  {formatPriceToman(selectedServicesSummary.totalPriceToman)}
-                </span>
-              </div>
-            </div>
+          <div className="pt-3 border-t border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto justify-center"
+              onClick={() => setActiveStepIndicator(2)}
+            >
+              <ChevronRight className="w-4 h-4 shrink-0" />
+              <span>مرحله قبل</span>
+            </Button>
 
             {business.isSampleShowcase ? (
-              <div className="p-3 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-200 text-xs font-extrabold text-center">
-                سالن نمونه نمایشی (امکان ثبت نوبت واقعی وجود ندارد)
-              </div>
+              <span className="px-3 py-1.5 rounded-xl bg-amber-100 border border-amber-300 text-amber-800 text-xs font-extrabold text-center">
+                نمونه نمایشی
+              </span>
             ) : (
               <Button
-                variant="accent"
-                size="lg"
-                fullWidth
+                variant="primary"
+                size="sm"
+                className="w-full sm:w-auto justify-center"
                 onClick={handleProceedToConfirm}
               >
-                <span>ادامه و تایید نهایی</span>
-                <ArrowLeft className="w-4 h-4" />
+                <span>ادامه به تایید نهایی</span>
+                <ArrowLeft className="w-4 h-4 shrink-0" />
               </Button>
             )}
-          </Card>
-        </div>
-      </div>
-
-      {/* نوار چسبان موبایل برای ادامه سریع رزرو (بالای منوی پایین موبایل) */}
-      <div className="lg:hidden fixed bottom-[76px] inset-x-3 z-30 rounded-2xl bg-[#061138]/95 backdrop-blur-xl text-white border border-white/15 px-4 py-3 flex items-center justify-between gap-3 shadow-2xl">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-extrabold truncate">
-            {selectedServicesSummary.combinedTitle || 'انتخاب خدمت'}
-          </p>
-          <p className="text-[11px] text-[#00E5FF] font-bold tabular-nums mt-0.5">
-            {formatPriceToman(selectedServicesSummary.totalPriceToman)} · ساعت{' '}
-            {bookingDraft.timeSlot}
-          </p>
-        </div>
-        {business.isSampleShowcase ? (
-          <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-200 text-[11px] font-extrabold shrink-0">
-            نمونه نمایشی
-          </span>
-        ) : (
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleProceedToConfirm}
-          >
-            <span>ادامه رزرو</span>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        )}
-      </div>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 };
@@ -1196,82 +1061,112 @@ export const BookingConfirmPage: React.FC = () => {
           </div>
         ) : null}
 
-        <Card className="rounded-3xl space-y-4">
-          <div className="flex items-center justify-between border-b border-[#CBD5E1] pb-3">
-            <h2 className="text-base font-extrabold text-[#061138]">
-              ۱. خلاصه خدمات و زمان انتخاب‌شده
-            </h2>
+        {/* کارت آبی‌رنگ خلاصه نوبت انتخابی در تب آخر (تایید نهایی) */}
+        <Card
+          variant="dark"
+          className="rounded-3xl space-y-4 bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] border border-[#00E5FF]/30 shadow-[0_20px_48px_-16px_rgba(6,17,56,0.55)]"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-3.5">
+            <div className="flex items-center gap-3">
+              <img
+                src={
+                  business.avatarUrl && business.avatarUrl.trim()
+                    ? business.avatarUrl
+                    : getBeautyPhotoUrl(business.name, business.typeLabel)
+                }
+                alt={business.name}
+                className="w-11 h-11 rounded-2xl object-cover border border-white/25 shrink-0"
+              />
+              <div>
+                <span className="text-[11px] font-extrabold text-[#00E5FF] block">
+                  خلاصه نوبت انتخابی
+                </span>
+                <h2 className="text-sm sm:text-base font-black text-white">
+                  {business.name} ({business.neighborhood})
+                </h2>
+              </div>
+            </div>
             <Link
               to={`/booking/${business.slug}?step=1`}
-              className="text-xs font-bold text-[#0057FF] hover:underline"
+              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold transition-colors"
             >
-              ویرایش خدمات یا زمان
+              ویرایش انتخاب‌ها
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-1">
-              <span className="text-xs text-[#475569]">سالن زیبایی:</span>
-              <p className="font-extrabold text-[#061138]">{business.name}</p>
-              <p className="text-xs text-[#475569]">
-                {business.city}، {business.neighborhood}
-              </p>
-            </div>
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-1">
-              <span className="text-xs text-[#475569]">
-                خدمات ({toPersianDigits(selectedServicesSummary.services.length)}{' '}
-                مورد) و متخصص:
+          <div className="space-y-3 text-xs sm:text-sm">
+            <div className="space-y-1.5">
+              <span className="text-slate-300 text-xs block">
+                خدمات انتخاب‌شده ({toPersianDigits(selectedServicesSummary.services.length)} مورد):
               </span>
-              <p className="font-extrabold text-[#061138]">
-                {selectedServicesSummary.combinedTitle}
-              </p>
-              <p className="text-xs text-[#475569]">
-                متخصص: {specialist.fullName} (
-                {formatDurationMinutes(
-                  selectedServicesSummary.totalDurationMinutes
-                )}
-                )
-              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedServicesSummary.services.map((s) => (
+                  <span
+                    key={s.id}
+                    className="px-2.5 py-1 rounded-xl bg-white/12 border border-white/20 text-xs font-extrabold text-white"
+                  >
+                    {s.title} ({formatPriceToman(s.priceToman)})
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-            <div>
-              <span className="text-[#475569]">زمان مراجعه: </span>
-              <strong className="font-extrabold text-[#0057FF] tabular-nums">
-                {bookingDraft.dateJalali} — ساعت {bookingDraft.timeSlot}
-              </strong>
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/15">
+              <div>
+                <span className="text-slate-300 text-xs block">متخصص انتخابی:</span>
+                <span className="font-extrabold text-white mt-0.5 block">
+                  {specialist.fullName}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-300 text-xs block">مجموع زمان:</span>
+                <span className="font-extrabold text-white tabular-nums mt-0.5 block">
+                  {formatDurationMinutes(
+                    selectedServicesSummary.totalDurationMinutes
+                  )}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-[#475569]">جمع تعرفه خدمات: </span>
-              <strong className="font-extrabold text-[#0057FF] tabular-nums">
+
+            <div className="p-3.5 rounded-2xl bg-white/12 border border-[#00E5FF]/35 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-[#00E5FF]">
+                تاریخ و ساعت مراجعه:
+              </span>
+              <span className="text-xs sm:text-sm font-black text-white tabular-nums">
+                {bookingDraft.dateJalali} — ساعت {bookingDraft.timeSlot}
+              </span>
+            </div>
+
+            <div className="pt-2 border-t border-white/15 flex items-center justify-between">
+              <span className="text-slate-200 font-bold">مبلغ کل خدمات:</span>
+              <span className="text-base sm:text-lg font-black text-[#00E5FF] tabular-nums">
                 {formatPriceToman(selectedServicesSummary.totalPriceToman)}
-              </strong>
+              </span>
             </div>
           </div>
 
           {isDepositActive ? (
-            <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-3 text-xs">
+            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/20 space-y-2.5 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-extrabold text-[#065F46]">
+                <span className="font-extrabold text-[#00E5FF]">
                   پرداخت بیعانه آنلاین سالن ({toPersianDigits(depositPercent)}٪ مبلغ خدمت)
                 </span>
-                <span className="font-black text-[#059669] text-sm tabular-nums">
+                <span className="font-black text-white text-sm tabular-nums">
                   {formatPriceToman(depositAmountToman)}
                 </span>
               </div>
-              <p className="text-[11px] text-[#047857] leading-relaxed">
+              <p className="text-[11px] text-slate-200 leading-relaxed">
                 مبلغ بیعانه مستقیماً در کیف پول اختصاصی سالن «{business.name}» ثبت شده و از صورت‌حساب حضوری شما کسر می‌گردد. باقی‌مانده قابل پرداخت در سالن:{' '}
-                <strong className="tabular-nums">
+                <strong className="tabular-nums text-white">
                   {formatPriceToman(remainingInSalonToman)}
                 </strong>
               </p>
-              <label className="inline-flex items-center gap-2 font-bold text-[#065F46] cursor-pointer">
+              <label className="inline-flex items-center gap-2 font-bold text-white cursor-pointer">
                 <input
                   type="checkbox"
                   checked={payDepositOnline}
                   onChange={(e) => setPayDepositOnline(e.target.checked)}
-                  className="accent-[#059669] w-4 h-4"
+                  className="accent-[#00E5FF] w-4 h-4"
                 />
                 <span>پرداخت همزمان بیعانه و قطعی‌سازی آنی نوبت</span>
               </label>

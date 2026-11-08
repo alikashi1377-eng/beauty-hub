@@ -582,7 +582,7 @@ export const TimetoFlagshipHome: React.FC<TimetoIntroGatewayProps> = ({
                     سالن زیبایی رویال رز
                   </p>
                   <p className="text-[11px] text-slate-300 mt-0.5 tabular-nums">
-                    ★ ۴.۹ · اصفهان و درچه
+                    ★ ۴.۹ · اصفهان
                   </p>
                 </div>
               </div>

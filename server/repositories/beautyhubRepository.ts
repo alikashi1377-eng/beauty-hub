@@ -1335,10 +1335,10 @@ export async function getBootstrapPayload(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          c.slug AS primary_category_slug,
+          COALESCE(c.slug, 'hair-color') AS primary_category_slug,
           bme.extra_json
         FROM businesses b
-        JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN categories c ON c.id = b.primary_category_id
         LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         WHERE b.approval_status != 'REJECTED'
         ORDER BY b.is_featured DESC, b.created_at DESC
@@ -1755,16 +1755,56 @@ async function resolveCategoryBySlug(
   categorySlug?: string,
   categoryLabel?: string
 ): Promise<{ id: string; slug: string; title: string }> {
-  if (categorySlug) {
+  const isLaser =
+    categorySlug === 'laser-hair-removal' ||
+    Boolean(categoryLabel && categoryLabel.includes('لیزر'));
+  const effectiveSlug = isLaser ? 'laser-hair-removal' : categorySlug;
+  const effectiveLabel = isLaser
+    ? categoryLabel || 'لیزر موهای زائد'
+    : categoryLabel;
+
+  if (effectiveSlug) {
     const res = await client.query(
       `SELECT id, slug, title FROM categories WHERE slug = $1 OR id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
-      [categorySlug]
+      [effectiveSlug]
     );
     if (res.rowCount && res.rows[0]) {
       return {
         id: String(res.rows[0].id),
         slug: String(res.rows[0].slug),
-        title: categoryLabel || String(res.rows[0].title),
+        title: effectiveLabel || String(res.rows[0].title),
+      };
+    }
+
+    if (isLaser) {
+      const insertedLaser = await client.query(
+        `
+        INSERT INTO categories (slug, title, subtitle, target_audience, icon_name)
+        VALUES ('laser-hair-removal', 'لیزر موهای زائد', 'پکیج‌های توتال، فول‌بادی و نواحی تکی خانم‌ها و آقایان', 'مراکز لیزر موهای زائد', 'Sparkles')
+        ON CONFLICT (slug) DO UPDATE SET title = EXCLUDED.title
+        RETURNING id, slug, title
+        `
+      );
+      if (insertedLaser.rowCount && insertedLaser.rows[0]) {
+        return {
+          id: String(insertedLaser.rows[0].id),
+          slug: String(insertedLaser.rows[0].slug),
+          title: effectiveLabel || String(insertedLaser.rows[0].title),
+        };
+      }
+    }
+  }
+
+  if (effectiveLabel) {
+    const byTitle = await client.query(
+      `SELECT id, slug, title FROM categories WHERE title = $1 LIMIT 1`,
+      [effectiveLabel]
+    );
+    if (byTitle.rowCount && byTitle.rows[0]) {
+      return {
+        id: String(byTitle.rows[0].id),
+        slug: String(byTitle.rows[0].slug),
+        title: String(byTitle.rows[0].title),
       };
     }
   }
@@ -1775,8 +1815,8 @@ async function resolveCategoryBySlug(
   if (fallback.rowCount && fallback.rows[0]) {
     return {
       id: String(fallback.rows[0].id),
-      slug: categorySlug || String(fallback.rows[0].slug),
-      title: categoryLabel || String(fallback.rows[0].title),
+      slug: effectiveSlug || String(fallback.rows[0].slug),
+      title: effectiveLabel || String(fallback.rows[0].title),
     };
   }
 
@@ -1790,7 +1830,7 @@ async function resolveCategoryBySlug(
   return {
     id: String(inserted.rows[0].id),
     slug: String(inserted.rows[0].slug),
-    title: categoryLabel || String(inserted.rows[0].title),
+    title: effectiveLabel || String(inserted.rows[0].title),
   };
 }
 
@@ -3941,10 +3981,10 @@ export async function getBusinessWorkspacePayloadInDb(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          c.slug AS primary_category_slug,
+          COALESCE(c.slug, 'hair-color') AS primary_category_slug,
           bme.extra_json
         FROM businesses b
-        JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN categories c ON c.id = b.primary_category_id
         LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         WHERE b.id = $1
         LIMIT 1
@@ -4294,12 +4334,12 @@ export async function getAdminOverviewPayloadInDb(
           b.subscription_status,
           b.is_featured,
           to_char(b.created_at, 'YYYY/MM/DD') AS created_date,
-          c.slug AS primary_category_slug,
+          COALESCE(c.slug, 'hair-color') AS primary_category_slug,
           u.full_name AS owner_full_name,
           u.phone AS owner_phone,
           bme.extra_json
         FROM businesses b
-        JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN categories c ON c.id = b.primary_category_id
         LEFT JOIN users u ON u.id = b.owner_user_id
         LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         ORDER BY b.created_at DESC
