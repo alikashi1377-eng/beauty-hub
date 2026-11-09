@@ -17,15 +17,7 @@ import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ToastBanner } from '../components/ui/MarketplaceComponents';
 import { PWAMobileInstallBanner } from '../components/ui/PWAInstallPrompt';
-import {
-  TIMETO_BRAND_LOGO_URL,
-  TimetoStartupSplash,
-} from '../components/ui/TimetoLogo';
-import {
-  getSavedVisitorRole,
-  VISITOR_ROLE_EVENT,
-  VisitorEntryRole,
-} from '../components/home/timetoHomeData';
+import { TIMETO_BRAND_LOGO_URL } from '../components/ui/TimetoLogo';
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { TimetoAuthModal } from '../components/auth/TimetoAuthModal';
@@ -48,38 +40,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     x: number;
     y: number;
   } | null>(null);
-  const [visitorRole, setVisitorRole] = useState<VisitorEntryRole>(() =>
-    getSavedVisitorRole()
-  );
-  const [bootSplashActive, setBootSplashActive] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return !window.location.search.includes('autostart=1');
-  });
-
-  React.useEffect(() => {
-    const syncRole = () => {
-      setVisitorRole(getSavedVisitorRole());
-    };
-    window.addEventListener(VISITOR_ROLE_EVENT, syncRole);
-    window.addEventListener('storage', syncRole);
-    return () => {
-      window.removeEventListener(VISITOR_ROLE_EVENT, syncRole);
-      window.removeEventListener('storage', syncRole);
-    };
-  }, []);
-
-  React.useEffect(() => {
-    setVisitorRole(getSavedVisitorRole());
-  }, [location.search, pathname]);
-
-  React.useEffect(() => {
-    if (!bootSplashActive) return;
-    const timer = window.setTimeout(() => {
-      setBootSplashActive(false);
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [bootSplashActive]);
-
   // فراخوانی هوک مدیریت اسکرول برای بازگشت فوری به بالای صفحه در تمام مسیرها
   useScrollToTop();
 
@@ -107,9 +67,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     );
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
-
-  const isIntroGatewayActive =
-    pathname === '/intro' || location.search.includes('intro=1');
 
   const currentRouteMeta = ARCHITECTURE_ROUTES.find(
     (r) => r.path === pathname || r.samplePath === pathname
@@ -230,16 +187,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     pathname === '/support';
 
   return (
-    <div
-      className={`min-h-screen w-full max-w-full overflow-x-clip flex flex-col ${
-        isIntroGatewayActive
-          ? 'bg-[#02081D] text-white'
-          : 'bg-[#F3F6FC] text-[#061138]'
-      }`}
-    >
-      <TimetoStartupSplash
-        visible={isLoadingInitialData || bootSplashActive}
-      />
+    <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-[#F3F6FC] text-[#061138]">
       {databaseError ? (
         <div
           role="alert"
@@ -373,8 +321,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           <AdminSidebar />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
         </div>
-      ) : isIntroGatewayActive ? (
-        <main className="flex-1 w-full min-w-0">{children}</main>
       ) : (
         <>
           <PublicHeader />

@@ -277,7 +277,7 @@ export const PWAInstallGuideModal: React.FC<{
   onClose: () => void;
   onConfirmInstalled: () => void;
 }> = ({ isOpen, onClose, onConfirmInstalled }) => {
-  const { isIOS, isInstallable, install } = usePWAInstall();
+  const { isIOS, isInAppBrowser, isInstallable, install } = usePWAInstall();
 
   if (!isOpen) return null;
 
@@ -306,49 +306,81 @@ export const PWAInstallGuideModal: React.FC<{
           <div className="text-white space-y-1">
             <span className="text-[11px] font-bold text-[#00E5FF] inline-flex items-center gap-1">
               <Smartphone className="w-3.5 h-3.5" />
-              <span>وب‌اپلیکیشن آیفون و اندروید</span>
+              <span>
+                {isIOS
+                  ? 'نصب نسخه وب‌اپلیکیشن آیفون (iOS)'
+                  : 'نصب وب‌اپلیکیشن روی گوشی'}
+              </span>
             </span>
             <h3 className="text-base font-extrabold">
-              نصب Timeto روی صفحه اصلی گوشی
+              افزودن آیکون Timeto به صفحه اصلی گوشی
             </h3>
           </div>
         </div>
 
-        <div className="p-5 space-y-4 text-right">
+        <div className="p-5 space-y-3.5 text-right">
           {isInstallable ? (
             <button
               type="button"
               onClick={() => {
-                void install().then(() => onConfirmInstalled());
+                void install().then((res) => {
+                  if (res === 'accepted') {
+                    onConfirmInstalled();
+                    onClose();
+                  }
+                });
               }}
               className="w-full py-3 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 cursor-pointer shadow-md"
             >
               <Download className="w-4 h-4" />
-              <span>نصب مستقیم اپلیکیشن Timeto</span>
+              <span>نصب خودکار اپلیکیشن Timeto</span>
             </button>
           ) : null}
 
+          {isInAppBrowser ? (
+            <div className="p-3 rounded-2xl bg-[#FFFBEB] border border-[#FCD34D] text-[#92400E] text-xs space-y-1">
+              <p className="font-extrabold">
+                ⚠️ شما داخل مرورگر اینستاگرام یا تلگرام هستید
+              </p>
+              <p className="text-[11px] leading-relaxed font-semibold">
+                ابتدا روی منوی سه نقطه <strong>(•••)</strong> بالای صفحه بزنید و
+                گزینه <strong>Open in Safari / باز کردن در مرورگر اصلی</strong>{' '}
+                را انتخاب کنید.
+              </p>
+            </div>
+          ) : null}
+
+          {isIOS ? (
+            <p className="text-[11px] text-[#475569] font-semibold leading-relaxed">
+              در گوشی‌های آیفون (به‌دلیل محدودیت امنیتی سیستم‌عامل iOS اپل)، نصب
+              برنامه در ۲ ثانیه از طریق منوی پایین مرورگر <strong>Safari</strong>{' '}
+              انجام می‌شود:
+            </p>
+          ) : null}
+
           <div className="space-y-2.5 text-xs">
-            <div className="p-3 rounded-2xl bg-[#F4F7FB] border border-[#CBD5E1] flex items-start gap-3">
+            <div className="p-3 rounded-2xl bg-[#F4F7FB] border border-[#CBD5E1] flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-[#061138] text-[#00E5FF] flex items-center justify-center shrink-0">
                 <Share className="w-4 h-4" />
               </div>
               <div>
                 <p className="font-extrabold text-[#0B132B]">
                   {isIOS
-                    ? '۱. در Safari دکمه Share پایین صفحه را بزنید'
-                    : '۱. در مرورگر منوی (⋮) یا دکمه Share را بزنید'}
+                    ? '۱. در نوار پایین Safari دکمه Share (اشتراک‌گذاری) را بزنید'
+                    : '۱. در بالای مرورگر کروم منوی سه نقطه (⋮) را بزنید'}
                 </p>
               </div>
             </div>
 
-            <div className="p-3 rounded-2xl bg-[#F4F7FB] border border-[#CBD5E1] flex items-start gap-3">
+            <div className="p-3 rounded-2xl bg-[#F4F7FB] border border-[#CBD5E1] flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl bg-[#0057FF] text-white flex items-center justify-center shrink-0">
                 <PlusSquare className="w-4 h-4" />
               </div>
               <div>
                 <p className="font-extrabold text-[#0B132B]">
-                  ۲. گزینه «Add to Home Screen» را انتخاب کنید
+                  {isIOS
+                    ? '۲. منو را بالا بکشید و گزینه «Add to Home Screen» را بزنید'
+                    : '۲. گزینه «Install App» یا «Add to Home Screen» را بزنید'}
                 </p>
               </div>
             </div>
@@ -356,25 +388,18 @@ export const PWAInstallGuideModal: React.FC<{
             <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center gap-2.5 text-[#065F46]">
               <CheckCircle2 className="w-4 h-4 text-[#10B981] shrink-0" />
               <span className="font-bold">
-                اجرای تمام‌صفحه و سریع روی گوشی شما
+                ۳. دکمه Add را بزنید تا آیکون Timeto به صفحه اصلی اضافه شود
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onConfirmInstalled}
-              className="w-full py-2.5 px-3 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold cursor-pointer transition-colors"
-            >
-              نصب کردم
-            </button>
+          <div className="pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="w-full py-2.5 px-3 rounded-full bg-slate-100 hover:bg-slate-200 text-[#061138] text-xs font-bold cursor-pointer transition-colors"
+              className="w-full py-2.5 px-4 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold cursor-pointer transition-colors"
             >
-              بستن
+              متوجه شدم
             </button>
           </div>
         </div>
@@ -382,3 +407,4 @@ export const PWAInstallGuideModal: React.FC<{
     </div>
   );
 };
+

@@ -149,19 +149,21 @@ export const PublicHeader: React.FC = () => {
               <LayoutDashboard className="w-3.5 h-3.5" />
               <span>پیشخوان سالن</span>
             </Link>
-          ) : !isLoggedInCustomerOnly ? (
+          ) : !isPlatformAdmin ? (
             <button
               type="button"
               onClick={() =>
                 openAuthModal({
-                  initialScreen: 'REGISTER_STEP_1_PHONE',
+                  initialScreen: authUser
+                    ? 'REGISTER_STEP_4_SALON'
+                    : 'ROLE_PICKER',
                   defaultRole: 'BUSINESS_OWNER',
                   redirectTo: '/app',
                 })
               }
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-[0_4px_12px_-3px_rgba(0,87,255,0.5)]"
             >
-              <Store className="w-3.5 h-3.5" />
+              <Store className="w-3.5 h-3.5 shrink-0" />
               <span>ثبت سالن</span>
             </button>
           ) : null}

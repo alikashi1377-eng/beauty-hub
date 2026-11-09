@@ -28,28 +28,6 @@ import {
 } from './pages/public/PublicPages';
 import { BusinessPublicProfileView } from './pages/public/BusinessPublicPages';
 import {
-  BusinessOnboardingStepPage,
-  BusinessPreviewStepPage,
-  BusinessReadyStepPage,
-  BusinessRegisterPage,
-  BusinessVerificationStepPage,
-} from './pages/business-onboarding/BusinessOnboardingPages';
-import {
-  BusinessAnalyticsPage,
-  BusinessAppointmentsPage,
-  BusinessCalendarPage,
-  BusinessCustomersPage,
-  BusinessDashboardPage,
-  BusinessGalleryPage,
-  BusinessMarketingPage,
-  BusinessProfileEditPage,
-  BusinessServicesPage,
-  BusinessSettingsPage,
-  BusinessStaffPage,
-  BusinessSubscriptionPage,
-  BusinessWorkingHoursPage,
-} from './pages/business-panel/BusinessPanelPages';
-import {
   BookingConfirmPage,
   BookingResultPage,
   BookingStepPage,
@@ -59,18 +37,145 @@ import {
   CustomerOverviewPage,
   CustomerProfilePage,
 } from './pages/customer/CustomerPages';
-import {
-  AdminBusinessesPage,
-  AdminCategoriesPage,
-  AdminDashboardPage,
-  AdminPaymentsPage,
-  AdminReportsPage,
-  AdminSettingsPage,
-  AdminSubscriptionsPage,
-  AdminSupportPage,
-  AdminUsersPage,
-} from './pages/admin/AdminPages';
 import { NotFoundState } from './components/ui/StateViews';
+
+const BusinessRegisterPage = React.lazy(() =>
+  import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({
+    default: m.BusinessRegisterPage,
+  }))
+);
+const BusinessOnboardingStepPage = React.lazy(() =>
+  import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({
+    default: m.BusinessOnboardingStepPage,
+  }))
+);
+const BusinessPreviewStepPage = React.lazy(() =>
+  import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({
+    default: m.BusinessPreviewStepPage,
+  }))
+);
+const BusinessVerificationStepPage = React.lazy(() =>
+  import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({
+    default: m.BusinessVerificationStepPage,
+  }))
+);
+const BusinessReadyStepPage = React.lazy(() =>
+  import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({
+    default: m.BusinessReadyStepPage,
+  }))
+);
+
+const BusinessDashboardPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessDashboardPage,
+  }))
+);
+const BusinessCalendarPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessCalendarPage,
+  }))
+);
+const BusinessAppointmentsPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessAppointmentsPage,
+  }))
+);
+const BusinessServicesPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessServicesPage,
+  }))
+);
+const BusinessStaffPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessStaffPage,
+  }))
+);
+const BusinessCustomersPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessCustomersPage,
+  }))
+);
+const BusinessGalleryPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessGalleryPage,
+  }))
+);
+const BusinessProfileEditPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessProfileEditPage,
+  }))
+);
+const BusinessWorkingHoursPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessWorkingHoursPage,
+  }))
+);
+const BusinessMarketingPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessMarketingPage,
+  }))
+);
+const BusinessAnalyticsPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessAnalyticsPage,
+  }))
+);
+const BusinessSubscriptionPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessSubscriptionPage,
+  }))
+);
+const BusinessSettingsPage = React.lazy(() =>
+  import('./pages/business-panel/BusinessPanelPages').then((m) => ({
+    default: m.BusinessSettingsPage,
+  }))
+);
+
+const AdminDashboardPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminDashboardPage,
+  }))
+);
+const AdminBusinessesPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminBusinessesPage,
+  }))
+);
+const AdminUsersPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminUsersPage,
+  }))
+);
+const AdminCategoriesPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminCategoriesPage,
+  }))
+);
+const AdminSubscriptionsPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminSubscriptionsPage,
+  }))
+);
+const AdminPaymentsPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminPaymentsPage,
+  }))
+);
+const AdminReportsPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminReportsPage,
+  }))
+);
+const AdminSupportPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminSupportPage,
+  }))
+);
+const AdminSettingsPage = React.lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({
+    default: m.AdminSettingsPage,
+  }))
+);
 
 const NotFoundRouteWrapper: React.FC = () => {
   const location = useLocation();
@@ -81,7 +186,7 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const location = useLocation();
-  const { authUser, dataMode, isLoadingInitialData } = usePrototypeData();
+  const { authUser, isLoadingInitialData } = usePrototypeData();
 
   if (isLoadingInitialData) {
     return (
@@ -145,15 +250,22 @@ export default function App() {
     <PrototypeDataProvider>
       <BrowserRouter>
         <AppLayout>
-          <Routes>
-            {/* ۱. محیط عمومی */}
-            <Route path="/" element={<HomePage />} />
-            <Route path="/intro" element={<HomePage />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/help" element={<HelpPage />} />
+          <React.Suspense
+            fallback={
+              <div className="py-12 text-center text-xs font-bold text-[#64748B]">
+                در حال بارگذاری...
+              </div>
+            }
+          >
+            <Routes>
+              {/* ۱. محیط عمومی */}
+              <Route path="/" element={<HomePage />} />
+              <Route path="/intro" element={<HomePage />} />
+              <Route path="/search" element={<SearchPage />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/help" element={<HelpPage />} />
 
             {/* ۲. صفحه عمومی کسب‌وکار */}
             <Route
@@ -305,9 +417,10 @@ export default function App() {
               element={<BusinessPublicProfileView mode="salon" />}
             />
 
-            {/* صفحه ۴۰۴ یافت نشد */}
-            <Route path="*" element={<NotFoundRouteWrapper />} />
-          </Routes>
+              {/* صفحه ۴۰۴ یافت نشد */}
+              <Route path="*" element={<NotFoundRouteWrapper />} />
+            </Routes>
+          </React.Suspense>
         </AppLayout>
       </BrowserRouter>
     </PrototypeDataProvider>

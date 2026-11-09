@@ -56,13 +56,6 @@ import {
   BusinessCard,
   ProfessionalCard,
 } from '../../components/ui/MarketplaceComponents';
-import { TimetoFlagshipHome } from '../../components/home/TimetoFlagshipHome';
-import {
-  getSavedVisitorRole,
-  saveVisitorRole,
-  VISITOR_ROLE_EVENT,
-  VisitorEntryRole,
-} from '../../components/home/timetoHomeData';
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   Sparkles: <Sparkles className="w-4 h-4 text-[#0057FF]" />,
@@ -204,7 +197,9 @@ const OriginalCustomerHomePage: React.FC = () => {
   };
 
   const approvedSalons = businesses.filter(
-    (b) => b.approvalStatus !== 'REJECTED'
+    (b) =>
+      b.approvalStatus !== 'REJECTED' &&
+      b.type !== BusinessType.IndependentSpecialist
   );
   const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
     const aSpon = Number(Boolean(a.isSponsored));
@@ -340,6 +335,8 @@ const OriginalCustomerHomePage: React.FC = () => {
           <img
             src={timetoHeroSpaBg}
             alt="رزرو آنلاین خدمات زیبایی و مراقبت فردی در تایم تو"
+            fetchPriority="high"
+            decoding="async"
             className="w-full h-full object-cover object-[24%_center] sm:object-left"
           />
           {/* گرادیان نرم فقط در سمت راست برای خوانایی تیتر، بدون پوشاندن چهره در سمت چپ */}
@@ -970,93 +967,8 @@ const OriginalCustomerHomePage: React.FC = () => {
   );
 };
 
-/** ۱. درگاه هوشمند صفحه اول (/) — اگر کاربر هنوز نقش خود را مشخص نکرده، صفحه ورود سه‌بعدی (TimetoFlagshipHome) نمایش داده می‌شود و پس از انتخاب نقش، سیستم خودکار بخش مربوط به او را بارگذاری می‌کند */
+/** ۱. صفحه اول (/) — نمایش مستقیم صفحه اصلی بدون صفحه اینترو */
 export const HomePage: React.FC = () => {
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { ownedBusinessId, authUser, openAuthModal } = usePrototypeData();
-  const [visitorRole, setVisitorRole] = useState<VisitorEntryRole>(() =>
-    getSavedVisitorRole()
-  );
-
-  useEffect(() => {
-    const syncRole = () => {
-      setVisitorRole(getSavedVisitorRole());
-    };
-    window.addEventListener(VISITOR_ROLE_EVENT, syncRole);
-    window.addEventListener('storage', syncRole);
-    return () => {
-      window.removeEventListener(VISITOR_ROLE_EVENT, syncRole);
-      window.removeEventListener('storage', syncRole);
-    };
-  }, []);
-
-  useEffect(() => {
-    setVisitorRole(getSavedVisitorRole());
-  }, [searchParams]);
-
-  const isBusinessOwnerRegistered =
-    Boolean(ownedBusinessId) ||
-    Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
-
-  const isExplicitIntroRoute =
-    typeof window !== 'undefined' && window.location.pathname === '/intro';
-
-  // اگر کاربر قبلاً نقش «سالن‌دار» را انتخاب کرده و سالن ثبت‌شده دارد، مستقیم وارد پیشخوان سالن شود
-  useEffect(() => {
-    if (
-      visitorRole === 'BUSINESS_OWNER' &&
-      isBusinessOwnerRegistered &&
-      searchParams.get('intro') !== '1' &&
-      !isExplicitIntroRoute
-    ) {
-      navigate('/app', { replace: true });
-    }
-  }, [
-    visitorRole,
-    isBusinessOwnerRegistered,
-    navigate,
-    searchParams,
-    isExplicitIntroRoute,
-  ]);
-
-  const handleSelectCustomer = () => {
-    saveVisitorRole('CUSTOMER');
-    setVisitorRole('CUSTOMER');
-    if (isExplicitIntroRoute) {
-      navigate('/');
-      return;
-    }
-    if (searchParams.get('intro') === '1') {
-      setSearchParams({}, { replace: true });
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleSelectBusinessOwner = () => {
-    saveVisitorRole('BUSINESS_OWNER');
-    setVisitorRole('BUSINESS_OWNER');
-    if (isBusinessOwnerRegistered) {
-      navigate('/app');
-    } else {
-      openAuthModal({
-        initialScreen: 'REGISTER_STEP_1_PHONE',
-        defaultRole: 'BUSINESS_OWNER',
-        redirectTo: '/app',
-        promptReason: 'ثبت سریع سالن زیبایی و ورود به پنل مدیریت',
-      });
-    }
-  };
-
-  if (searchParams.get('intro') === '1' || isExplicitIntroRoute) {
-    return (
-      <TimetoFlagshipHome
-        onSelectCustomerRole={handleSelectCustomer}
-        onSelectBusinessRole={handleSelectBusinessOwner}
-      />
-    );
-  }
-
   return <OriginalCustomerHomePage />;
 };
 

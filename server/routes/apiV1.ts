@@ -1003,7 +1003,7 @@ export function createApiV1Router(
       try {
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
 
-        // ارسال پیامک اطلاع‌رسانی فوری نوبت جدید به شماره موبایل صاحب کسب‌وکار
+        // ارسال پیامک اطلاع‌رسانی فوری نوبت جدید به هر دو طرف (صاحب کسب‌وکار و مشتری)
         try {
           const config = customEnv ?? loadServerEnv();
           const effectiveSms = customEnv
@@ -1012,7 +1012,7 @@ export function createApiV1Router(
           if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
             const bizRes = await pool.query(
               `
-              SELECT b.phone_display, bme.extra_json
+              SELECT b.name, b.phone_display, bme.extra_json
               FROM businesses b
               LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
               WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
@@ -1035,6 +1035,7 @@ export function createApiV1Router(
                 ? `0${rawOwnerPhone}`
                 : rawOwnerPhone;
 
+            // ۱. پیامک به صاحب کسب‌وکار / متخصص
             if (/^09\d{9}$/.test(cleanOwnerPhone)) {
               void sendPatternSmsViaGateway({
                 phone: cleanOwnerPhone,
@@ -1046,6 +1047,36 @@ export function createApiV1Router(
                 ],
                 fallbackSingleArg: `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
                 customTemplateId: process.env.SMS_BOOKING_OWNER_TEMPLATE,
+                config: effectiveSms,
+                nodeEnv: config.nodeEnv,
+              }).catch(() => {});
+            }
+
+            // ۲. پیامک رسید ثبت نوبت به مشتری
+            const rawCustPhone = String(
+              req.body?.customerPhone || req.authUser?.phone || ''
+            )
+              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+              .replace(/\D/g, '');
+            const cleanCustPhone =
+              rawCustPhone.length === 10 && rawCustPhone.startsWith('9')
+                ? `0${rawCustPhone}`
+                : rawCustPhone;
+
+            if (/^09\d{9}$/.test(cleanCustPhone)) {
+              const bizTitle = String(
+                row?.name || item.businessName || 'سالن زیبایی'
+              );
+              void sendPatternSmsViaGateway({
+                phone: cleanCustPhone,
+                args: [
+                  item.customerName || 'مراجع عزیز',
+                  bizTitle,
+                  item.dateJalali,
+                  item.timeSlot,
+                ],
+                fallbackSingleArg: `ثبت نوبت ${bizTitle} ${item.dateJalali} ساعت ${item.timeSlot}`,
+                customTemplateId: process.env.SMS_BOOKING_CUSTOMER_TEMPLATE,
                 config: effectiveSms,
                 nodeEnv: config.nodeEnv,
               }).catch(() => {});

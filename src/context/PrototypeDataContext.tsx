@@ -5036,6 +5036,51 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       showToast('حساب کاربری انتخاب‌شده از فهرست کاربران حذف شد.', 'info');
     };
 
+    const mergedSpecialists: SpecialistItem[] = React.useMemo(() => {
+      const map = new Map<string, SpecialistItem>();
+      for (const sp of specialists) {
+        map.set(sp.id, sp);
+      }
+      for (const biz of businesses) {
+        if (
+          biz.approvalStatus === 'REJECTED' ||
+          biz.type !== BusinessType.IndependentSpecialist
+        ) {
+          continue;
+        }
+        const alreadyHasSpecialist = Array.from(map.values()).some(
+          (sp) => sp.businessId === biz.id || sp.slug === biz.slug
+        );
+        if (!alreadyHasSpecialist) {
+          const synthSpecId = `spec-ind-${biz.id}`;
+          const roleLbl = biz.typeLabel || 'متخصص مستقل زیبایی';
+          map.set(synthSpecId, {
+            id: synthSpecId,
+            businessId: biz.id,
+            slug: biz.slug,
+            fullName: biz.name || biz.ownerName || 'متخصص زیبایی',
+            roleTitle: roleLbl,
+            experienceYears: 5,
+            rating: biz.rating || 5.0,
+            reviewCount: biz.reviewCount || 0,
+            city: biz.city || 'اصفهان',
+            specialties: [
+              roleLbl,
+              biz.neighborhood ? `محدوده ${biz.neighborhood}` : 'اصفهان',
+            ],
+            bio:
+              biz.shortDescription ||
+              biz.aboutText ||
+              `ارائه خدمات تخصصی ${roleLbl} با تعیین وقت آنلاین در ${biz.city || 'اصفهان'}`,
+            isActive: true,
+            isIndependent: true,
+            avatarUrl: biz.avatarUrl,
+          });
+        }
+      }
+      return Array.from(map.values());
+    }, [specialists, businesses]);
+
     return (
       <PrototypeDataContext.Provider
         value={{
@@ -5078,7 +5123,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           addService,
           updateService,
           deleteService,
-          specialists,
+          specialists: mergedSpecialists,
           addSpecialist,
           updateSpecialist,
           appointments,

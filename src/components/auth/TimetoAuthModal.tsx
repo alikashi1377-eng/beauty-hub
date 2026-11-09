@@ -105,7 +105,17 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [lastName, setLastName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // فیلدهای گام ۴ ویژه سالن‌دار (مشخصات پایه سالن)
+  // فیلدهای گام ۴ ویژه سالن‌دار یا متخصص مستقل زیبایی
+  const [providerSubType, setProviderSubType] = useState<'SALON' | 'SPECIALIST'>(
+    'SALON'
+  );
+  const [specialistSpecialty, setSpecialistSpecialty] = useState<{
+    title: string;
+    categorySlug: string;
+  }>({
+    title: 'متخصص کاشت و طراحی ناخن',
+    categorySlug: 'nail-services',
+  });
   const [salonName, setSalonName] = useState<string>('');
   const [salonType, setSalonType] = useState<BusinessType>(
     BusinessType.WomenSalon
@@ -472,17 +482,25 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
     setError('');
 
-    // اگر نقش «سالن‌دار» است، برود به گام ۴ (اطلاعات پایه سالن)
+    // اگر نقش «سالن‌دار» یا «متخصص مستقل زیبایی» است، برود به گام ۴
     if (roleChoice === 'BUSINESS_OWNER') {
-      if (!salonName.trim()) {
-        setSalonName(
-          userGender === 'MALE'
-            ? `پیرایش مردانه ${check.fullName}`
-            : `سالن زیبایی ${check.fullName}`
-        );
-      }
-      if (userGender === 'MALE') {
-        setSalonType(BusinessType.MenBarbershop);
+      if (providerSubType === 'SPECIALIST') {
+        setSalonType(BusinessType.IndependentSpecialist);
+        setIsLaserCenterSelected(false);
+        if (!salonName.trim()) {
+          setSalonName(check.fullName);
+        }
+      } else {
+        if (!salonName.trim()) {
+          setSalonName(
+            userGender === 'MALE'
+              ? `پیرایش مردانه ${check.fullName}`
+              : `سالن زیبایی ${check.fullName}`
+          );
+        }
+        if (userGender === 'MALE') {
+          setSalonType(BusinessType.MenBarbershop);
+        }
       }
       setScreen('REGISTER_STEP_4_SALON');
       return;
@@ -508,11 +526,15 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
   };
 
-  // ۷. ثبت گام ۴ ویژه سالن‌دار (ثبت سریع سالن و ورود مستقیم به پنل مدیریت /app)
+  // ۷. ثبت گام ۴ ویژه سالن‌دار یا متخصص مستقل (ورود مستقیم به پنل مدیریت /app)
   const handleStep4SalonSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (salonName.trim().length < 2) {
-      setError('لطفاً نام سالن زیبایی یا آرایشگاه خود را وارد کنید.');
+      setError(
+        providerSubType === 'SPECIALIST'
+          ? 'لطفاً نام و نام خانوادگی یا نام برند تخصصی خود را وارد کنید.'
+          : 'لطفاً نام سالن زیبایی یا آرایشگاه خود را وارد کنید.'
+      );
       return;
     }
     setError('');
@@ -523,24 +545,37 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         firstName,
         lastName,
       });
+      const isIndependentSpec =
+        providerSubType === 'SPECIALIST' ||
+        salonType === BusinessType.IndependentSpecialist;
+
       await completeUnifiedAuthSession({
         phone: normalizedPhone,
         password: regPassword || loginPassword || suggestedPassword,
-        firstName: firstName.trim(),
+        firstName: firstName.trim() || salonName.trim(),
         lastName: lastName.trim(),
-        fullName: profileCheck.fullName || 'مدیر سالن',
+        fullName:
+          profileCheck.fullName ||
+          salonName.trim() ||
+          (isIndependentSpec ? 'متخصص زیبایی' : 'مدیر سالن'),
         gender: userGender,
         role: 'BUSINESS_OWNER',
         avatarUrl: avatarUrl || undefined,
         salonInfo: {
           businessName: salonName.trim(),
-          businessType: salonType,
-          categorySlug: isLaserCenterSelected
-            ? 'laser-hair-removal'
-            : undefined,
-          typeLabel: isLaserCenterSelected
-            ? 'مرکز لیزر موهای زائد'
-            : undefined,
+          businessType: isIndependentSpec
+            ? BusinessType.IndependentSpecialist
+            : salonType,
+          categorySlug: isIndependentSpec
+            ? specialistSpecialty.categorySlug
+            : isLaserCenterSelected
+              ? 'laser-hair-removal'
+              : undefined,
+          typeLabel: isIndependentSpec
+            ? specialistSpecialty.title
+            : isLaserCenterSelected
+              ? 'مرکز لیزر موهای زائد'
+              : undefined,
           city: salonCity,
           neighborhood: salonNeighborhood.trim() || 'چهارباغ بالا',
         },
@@ -590,7 +625,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             { idx: 1, label: 'شماره', icon: Phone },
             { idx: 2, label: 'تأیید', icon: Check },
             { idx: 3, label: 'پروفایل', icon: User },
-            { idx: 4, label: 'سالن', icon: Store },
+            {
+              idx: 4,
+              label: providerSubType === 'SPECIALIST' ? 'تخصص' : 'سالن',
+              icon: providerSubType === 'SPECIALIST' ? Sparkles : Store,
+            },
           ]
         : [
             { idx: 1, label: 'شماره', icon: Phone },
@@ -822,43 +861,43 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             </form>
           ) : null}
 
-          {/* ۲. انتخاب نوع حساب: مشتری یا سالن‌دار (ROLE_PICKER — مطابق عکس ۲) */}
+          {/* ۲. انتخاب نوع حساب: مشتری، سالن‌دار یا متخصص زیبایی (ROLE_PICKER) */}
           {screen === 'ROLE_PICKER' ? (
-            <div className="space-y-5">
+            <div className="space-y-4">
               <p className="text-center text-sm font-extrabold text-[#061138]">
                 نوع حساب را انتخاب کنید
               </p>
 
-              <div className="grid grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-3 gap-2.5">
                 {/* کارت مشتری */}
                 <button
                   type="button"
                   onClick={() => setRoleChoice('CUSTOMER')}
-                  className={`flex flex-col items-center justify-between rounded-2xl border-2 p-4 text-center transition-all cursor-pointer ${
+                  className={`flex flex-col items-center justify-between rounded-2xl border-2 p-3 text-center transition-all cursor-pointer ${
                     roleChoice === 'CUSTOMER'
                       ? 'border-[#0057FF] bg-[#EFF6FF] shadow-[0_10px_25px_-10px_rgba(0,87,255,0.3)]'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >
                   <div
-                    className={`mb-3 flex h-14 w-14 items-center justify-center rounded-2xl ${
+                    className={`mb-2.5 flex h-12 w-12 items-center justify-center rounded-2xl ${
                       roleChoice === 'CUSTOMER'
                         ? 'bg-[#0057FF]/15 text-[#0057FF]'
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    <Users className="h-7 w-7" />
+                    <Users className="h-6 w-6" />
                   </div>
-                  <span className="text-base font-black text-[#061138]">
+                  <span className="text-xs sm:text-sm font-black text-[#061138]">
                     مشتری
                   </span>
-                  <span className="mt-1 text-xs font-semibold text-slate-500">
+                  <span className="mt-0.5 text-[10px] font-semibold text-slate-500">
                     رزرو نوبت
                   </span>
-                  <div className="mt-3 h-5">
+                  <div className="mt-2 h-4">
                     {roleChoice === 'CUSTOMER' ? (
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#0057FF] text-[#0057FF]">
-                        <Check className="h-3 w-3 stroke-[3]" />
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#0057FF] text-[#0057FF]">
+                        <Check className="h-2.5 w-2.5 stroke-[3]" />
                       </span>
                     ) : null}
                   </div>
@@ -867,32 +906,81 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 {/* کارت سالن‌دار */}
                 <button
                   type="button"
-                  onClick={() => setRoleChoice('BUSINESS_OWNER')}
-                  className={`flex flex-col items-center justify-between rounded-2xl border-2 p-4 text-center transition-all cursor-pointer ${
-                    roleChoice === 'BUSINESS_OWNER'
+                  onClick={() => {
+                    setRoleChoice('BUSINESS_OWNER');
+                    setProviderSubType('SALON');
+                    setSalonType(BusinessType.WomenSalon);
+                  }}
+                  className={`flex flex-col items-center justify-between rounded-2xl border-2 p-3 text-center transition-all cursor-pointer ${
+                    roleChoice === 'BUSINESS_OWNER' &&
+                    providerSubType === 'SALON'
                       ? 'border-[#0057FF] bg-[#EFF6FF] shadow-[0_10px_25px_-10px_rgba(0,87,255,0.3)]'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >
                   <div
-                    className={`mb-3 flex h-14 w-14 items-center justify-center rounded-2xl ${
-                      roleChoice === 'BUSINESS_OWNER'
+                    className={`mb-2.5 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                      roleChoice === 'BUSINESS_OWNER' &&
+                      providerSubType === 'SALON'
                         ? 'bg-[#0057FF]/15 text-[#0057FF]'
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
-                    <Scissors className="h-7 w-7" />
+                    <Store className="h-6 w-6" />
                   </div>
-                  <span className="text-base font-black text-[#061138]">
+                  <span className="text-xs sm:text-sm font-black text-[#061138]">
                     سالن‌دار
                   </span>
-                  <span className="mt-1 text-xs font-semibold text-slate-500">
-                    مدیریت سالن
+                  <span className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    ثبت سالن زیبایی
                   </span>
-                  <div className="mt-3 h-5">
-                    {roleChoice === 'BUSINESS_OWNER' ? (
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#0057FF] text-[#0057FF]">
-                        <Check className="h-3 w-3 stroke-[3]" />
+                  <div className="mt-2 h-4">
+                    {roleChoice === 'BUSINESS_OWNER' &&
+                    providerSubType === 'SALON' ? (
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#0057FF] text-[#0057FF]">
+                        <Check className="h-2.5 w-2.5 stroke-[3]" />
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+
+                {/* کارت متخصص مستقل زیبایی (ناخن‌کار، مژه‌کار، میکاپ و...) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRoleChoice('BUSINESS_OWNER');
+                    setProviderSubType('SPECIALIST');
+                    setSalonType(BusinessType.IndependentSpecialist);
+                    setIsLaserCenterSelected(false);
+                  }}
+                  className={`flex flex-col items-center justify-between rounded-2xl border-2 p-3 text-center transition-all cursor-pointer ${
+                    roleChoice === 'BUSINESS_OWNER' &&
+                    providerSubType === 'SPECIALIST'
+                      ? 'border-[#0057FF] bg-[#EFF6FF] shadow-[0_10px_25px_-10px_rgba(0,87,255,0.3)]'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div
+                    className={`mb-2.5 flex h-12 w-12 items-center justify-center rounded-2xl ${
+                      roleChoice === 'BUSINESS_OWNER' &&
+                      providerSubType === 'SPECIALIST'
+                        ? 'bg-[#0057FF]/15 text-[#0057FF]'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    <Sparkles className="h-6 w-6" />
+                  </div>
+                  <span className="text-xs sm:text-sm font-black text-[#061138]">
+                    متخصص زیبایی
+                  </span>
+                  <span className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    ناخن، مژه، میکاپ
+                  </span>
+                  <div className="mt-2 h-4">
+                    {roleChoice === 'BUSINESS_OWNER' &&
+                    providerSubType === 'SPECIALIST' ? (
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#0057FF] text-[#0057FF]">
+                        <Check className="h-2.5 w-2.5 stroke-[3]" />
                       </span>
                     ) : null}
                   </div>
@@ -1067,7 +1155,12 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   className="text-xs font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
                 >
                   → تغییر نوع حساب (
-                  {roleChoice === 'BUSINESS_OWNER' ? 'سالن‌دار' : 'مشتری'})
+                  {roleChoice === 'BUSINESS_OWNER'
+                    ? providerSubType === 'SPECIALIST'
+                      ? 'متخصص زیبایی'
+                      : 'سالن‌دار'
+                    : 'مشتری'}
+                  )
                 </button>
               </div>
             </form>
@@ -1302,13 +1395,15 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 className="w-full rounded-2xl bg-[#0057FF] py-3.5 px-5 text-sm font-black text-white shadow-[0_12px_26px_-8px_rgba(0,87,255,0.55)] transition hover:bg-[#0046CC] disabled:opacity-60 cursor-pointer"
               >
                 {roleChoice === 'BUSINESS_OWNER'
-                  ? 'ادامه به مشخصات سالن ←'
+                  ? providerSubType === 'SPECIALIST'
+                    ? 'ادامه به مشخصات تخصص ←'
+                    : 'ادامه به مشخصات سالن ←'
                   : 'ورود به حساب'}
               </button>
             </form>
           ) : null}
 
-          {/* ۶. گام ۴ ویژه سالن‌دار: ثبت سریع مشخصات سالن (بقیه جزئیات و شماره کارت/شبا در پنل مدیریت تکمیل می‌شود) */}
+          {/* ۶. گام ۴ ویژه سالن‌دار یا متخصص مستقل زیبایی: ثبت سریع مشخصات و ورود مستقیم به پنل مدیریت (/app) */}
           {screen === 'REGISTER_STEP_4_SALON' ? (
             <form
               onSubmit={handleStep4SalonSubmit}
@@ -1317,9 +1412,51 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             >
               {renderRegistrationStepper(4)}
 
+              {/* تب انتخاب سریع بین «سالن زیبایی» و «متخصص مستقل زیبایی» */}
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-[#F1F5F9] p-1.5 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProviderSubType('SALON');
+                    setSalonType(
+                      userGender === 'MALE'
+                        ? BusinessType.MenBarbershop
+                        : BusinessType.WomenSalon
+                    );
+                  }}
+                  className={`rounded-xl py-2 px-2.5 text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    providerSubType === 'SALON'
+                      ? 'bg-[#0057FF] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-[#061138]'
+                  }`}
+                >
+                  <Store className="h-3.5 w-3.5 shrink-0" />
+                  <span>سالن زیبایی / مرکز</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProviderSubType('SPECIALIST');
+                    setSalonType(BusinessType.IndependentSpecialist);
+                    setIsLaserCenterSelected(false);
+                  }}
+                  className={`rounded-xl py-2 px-2.5 text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                    providerSubType === 'SPECIALIST'
+                      ? 'bg-[#0057FF] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-[#061138]'
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                  <span>متخصص مستقل</span>
+                </button>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
-                  نام سالن زیبایی یا آرایشگاه
+                  {providerSubType === 'SPECIALIST'
+                    ? 'نام و نام خانوادگی یا نام برند شخصی شما'
+                    : 'نام سالن زیبایی یا آرایشگاه'}
                 </label>
                 <div className="relative">
                   <input
@@ -1329,67 +1466,134 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setSalonName(e.target.value);
                       setError('');
                     }}
-                    placeholder="مثلاً سالن زیبایی ارکیده"
+                    placeholder={
+                      providerSubType === 'SPECIALIST'
+                        ? 'مثلاً سارا احمدی (متخصص ناخن)'
+                        : 'مثلاً سالن زیبایی ارکیده'
+                    }
                     className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
-                  <Store className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-[#0057FF]" />
+                  {providerSubType === 'SPECIALIST' ? (
+                    <Sparkles className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-[#0057FF]" />
+                  ) : (
+                    <Store className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-[#0057FF]" />
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-right text-xs font-extrabold text-[#061138]">
-                  نوع مرکز
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      id: 'WOMEN',
-                      val: BusinessType.WomenSalon,
-                      isLaser: false,
-                      label: 'سالن بانوان',
-                    },
-                    {
-                      id: 'MEN',
-                      val: BusinessType.MenBarbershop,
-                      isLaser: false,
-                      label: 'پیرایش مردانه',
-                    },
-                    {
-                      id: 'LASER',
-                      val: BusinessType.WomenSalon,
-                      isLaser: true,
-                      label: 'مرکز لیزر موهای زائد',
-                    },
-                    {
-                      id: 'SPEC',
-                      val: BusinessType.IndependentSpecialist,
-                      isLaser: false,
-                      label: 'متخصص مستقل',
-                    },
-                  ].map((item) => {
-                    const isSelected = item.isLaser
-                      ? isLaserCenterSelected
-                      : !isLaserCenterSelected && salonType === item.val;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setSalonType(item.val);
-                          setIsLaserCenterSelected(item.isLaser);
-                        }}
-                        className={`rounded-xl border py-2.5 px-2 text-xs font-extrabold transition cursor-pointer ${
-                          isSelected
-                            ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
-                            : 'border-slate-200 bg-slate-50 text-slate-600'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
+              {providerSubType === 'SPECIALIST' ? (
+                <div className="space-y-1.5">
+                  <label className="block text-right text-xs font-extrabold text-[#061138]">
+                    رشته و تخصص اصلی شما (نمایش در بخش متخصصان)
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {
+                        title: 'متخصص کاشت و طراحی ناخن',
+                        label: 'ناخن‌کار و طراحی ناخن',
+                        categorySlug: 'nail-services',
+                      },
+                      {
+                        title: 'متخصص اکستنشن مژه و ابرو',
+                        label: 'مژه‌کار و لیفت ابرو',
+                        categorySlug: 'lash-brow',
+                      },
+                      {
+                        title: 'میکاپ آرتیست و گریم تخصصی',
+                        label: 'میکاپ‌کار و گریم عروس',
+                        categorySlug: 'bridal-makeup',
+                      },
+                      {
+                        title: 'متخصص پوست و فیشیال تخصصی',
+                        label: 'پوست، فیشیال و پاکسازی',
+                        categorySlug: 'skin-facial',
+                      },
+                      {
+                        title: 'متخصص رنگ، بالیاژ و احیای مو',
+                        label: 'مو، رنگ و کراتین',
+                        categorySlug: 'hair-color',
+                      },
+                      {
+                        title: 'استایلیست و پیرایشگر مردانه',
+                        label: 'پیرایش و فید مردانه',
+                        categorySlug: 'men-grooming',
+                      },
+                    ].map((specItem) => {
+                      const isSelected =
+                        specialistSpecialty.categorySlug ===
+                        specItem.categorySlug;
+                      return (
+                        <button
+                          key={specItem.categorySlug}
+                          type="button"
+                          onClick={() =>
+                            setSpecialistSpecialty({
+                              title: specItem.title,
+                              categorySlug: specItem.categorySlug,
+                            })
+                          }
+                          className={`rounded-xl border py-2.5 px-2 text-[11px] font-extrabold transition cursor-pointer ${
+                            isSelected
+                              ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
+                              : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}
+                        >
+                          {specItem.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <label className="block text-right text-xs font-extrabold text-[#061138]">
+                    نوع مرکز (نمایش در بخش سالن‌ها)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      {
+                        id: 'WOMEN',
+                        val: BusinessType.WomenSalon,
+                        isLaser: false,
+                        label: 'سالن بانوان',
+                      },
+                      {
+                        id: 'MEN',
+                        val: BusinessType.MenBarbershop,
+                        isLaser: false,
+                        label: 'پیرایش مردانه',
+                      },
+                      {
+                        id: 'LASER',
+                        val: BusinessType.WomenSalon,
+                        isLaser: true,
+                        label: 'مرکز لیزر',
+                      },
+                    ].map((item) => {
+                      const isSelected = item.isLaser
+                        ? isLaserCenterSelected
+                        : !isLaserCenterSelected && salonType === item.val;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setSalonType(item.val);
+                            setIsLaserCenterSelected(item.isLaser);
+                          }}
+                          className={`rounded-xl border py-2.5 px-2 text-[11px] font-extrabold transition cursor-pointer ${
+                            isSelected
+                              ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
+                              : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
@@ -1399,7 +1603,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   <select
                     value={salonCity}
                     onChange={(e) => setSalonCity(e.target.value)}
-                    aria-label="انتخاب شهر سالن"
+                    aria-label="انتخاب شهر"
                     className="w-full rounded-xl border border-slate-300 bg-[#F8FAFC] px-3 py-2.5 text-xs font-bold text-[#061138] focus:border-[#0057FF] focus:outline-none"
                   >
                     <option value="اصفهان">اصفهان</option>
@@ -1408,7 +1612,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
                 <div className="space-y-1">
                   <label className="block text-right text-xs font-extrabold text-[#061138]">
-                    محله یا محدوده
+                    محله یا محدوده فعالیت
                   </label>
                   <div className="relative">
                     <input
@@ -1424,11 +1628,24 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               </div>
 
               <div className="rounded-2xl border border-[#0057FF]/20 bg-[#EFF6FF] p-3 text-[11px] font-bold text-[#061138] leading-relaxed">
-                پس از ورود به پنل سالن، می‌توانید خدمات، ساعات کاری و{' '}
-                <span className="text-[#0057FF] font-black">
-                  شماره کارت و شبا (تسویه مالی)
-                </span>{' '}
-                را از طریق نوار پیشرفت تکمیل پروفایل ثبت کنید.
+                {providerSubType === 'SPECIALIST' ? (
+                  <>
+                    پروفایل شما در بخش{' '}
+                    <span className="text-[#0057FF] font-black">
+                      متخصصان زیبایی
+                    </span>{' '}
+                    قرار می‌گیرد و پنل مدیریت اختصاصی نوبت‌ها، خدمات و تسویه شبا
+                    در اختیار شماست.
+                  </>
+                ) : (
+                  <>
+                    پس از ورود به پنل سالن، می‌توانید خدمات، ساعات کاری و{' '}
+                    <span className="text-[#0057FF] font-black">
+                      شماره کارت و شبا (تسویه مالی)
+                    </span>{' '}
+                    را ثبت کنید.
+                  </>
+                )}
               </div>
 
               {error ? (
@@ -1442,7 +1659,9 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 disabled={isSubmitting}
                 className="w-full rounded-2xl bg-[#0057FF] py-3.5 px-5 text-sm font-black text-white shadow-[0_12px_26px_-8px_rgba(0,87,255,0.55)] transition hover:bg-[#0046CC] disabled:opacity-60 cursor-pointer"
               >
-                ثبت سالن و ورود به پنل مدیریت
+                {providerSubType === 'SPECIALIST'
+                  ? 'ثبت پروفایل متخصص و ورود به پنل مدیریت'
+                  : 'ثبت سالن و ورود به پنل مدیریت'}
               </button>
             </form>
           ) : null}
