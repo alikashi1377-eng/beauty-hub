@@ -1420,13 +1420,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           lastReferenceCode: undefined,
         }));
 
-        try {
-          const sessionRes = await realApiClient.getCurrentUser();
-          const effectiveUser =
-            localPersistedUser && localPersistedUser.phone !== sessionRes.user.phone
-              ? localPersistedUser
-              : localPersistedUser
-                ? {
+        if (localPersistedUser) {
+          try {
+            const sessionRes = await realApiClient.getCurrentUser();
+            const effectiveUser =
+              localPersistedUser.phone !== sessionRes.user.phone
+                ? localPersistedUser
+                : {
                     ...sessionRes.user,
                     fullName:
                       localPersistedUser.fullName &&
@@ -1439,21 +1439,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                     isPlatformAdmin:
                       localPersistedUser.isPlatformAdmin ||
                       sessionRes.user.isPlatformAdmin,
-                  }
-                : sessionRes.user;
-          setAuthUser(effectiveUser);
-          setBookingDraft((prev) => ({
-            ...prev,
-            customerName: effectiveUser.fullName || prev.customerName,
-            customerPhone: effectiveUser.phone || prev.customerPhone,
-          }));
-          await loadAuthenticatedRoleData(effectiveUser);
-        } catch {
-          if (localPersistedUser) {
+                  };
+            setAuthUser(effectiveUser);
+            setBookingDraft((prev) => ({
+              ...prev,
+              customerName: effectiveUser.fullName || prev.customerName,
+              customerPhone: effectiveUser.phone || prev.customerPhone,
+            }));
+            await loadAuthenticatedRoleData(effectiveUser);
+          } catch {
             setAuthUser(localPersistedUser);
-          } else {
-            setAuthUser(null);
           }
+        } else {
+          setAuthUser(null);
         }
       } else if (response.mode === 'mock') {
         setDataMode('mock');

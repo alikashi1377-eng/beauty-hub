@@ -10,8 +10,6 @@ import {
   BusinessCategorySubTabs,
   BusinessStickyBottomNav,
 } from '../components/navigation/BusinessMobileNavigation';
-import { BusinessSidebar } from '../components/navigation/BusinessSidebar';
-import { AdminSidebar } from '../components/navigation/AdminSidebar';
 import { ARCHITECTURE_ROUTES } from '../config/designTokens';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
@@ -20,12 +18,27 @@ import { PWAMobileInstallBanner } from '../components/ui/PWAInstallPrompt';
 import { TIMETO_BRAND_LOGO_URL } from '../components/ui/TimetoLogo';
 import { usePrototypeData } from '../context/PrototypeDataContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
-import { TimetoAuthModal } from '../components/auth/TimetoAuthModal';
 import {
   resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../utils/formatters';
 import { AppointmentStatus } from '../types';
+
+const BusinessSidebar = React.lazy(() =>
+  import('../components/navigation/BusinessSidebar').then((m) => ({
+    default: m.BusinessSidebar,
+  }))
+);
+const AdminSidebar = React.lazy(() =>
+  import('../components/navigation/AdminSidebar').then((m) => ({
+    default: m.AdminSidebar,
+  }))
+);
+const TimetoAuthModal = React.lazy(() =>
+  import('../components/auth/TimetoAuthModal').then((m) => ({
+    default: m.TimetoAuthModal,
+  }))
+);
 
 export interface AppLayoutProps {
   children: React.ReactNode;
@@ -56,6 +69,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     databaseError,
     refreshRealData,
     openAuthModal,
+    isAuthModalOpen,
   } = usePrototypeData();
 
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
@@ -384,7 +398,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       )}
 
       {!isBusinessPanel && !isAdminPanel ? <PWAMobileInstallBanner /> : null}
-      <TimetoAuthModal />
+      {isAuthModalOpen ? (
+        <React.Suspense fallback={null}>
+          <TimetoAuthModal />
+        </React.Suspense>
+      ) : null}
 
       {toast ? (
         <ToastBanner

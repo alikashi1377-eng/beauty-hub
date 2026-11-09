@@ -28,7 +28,7 @@ import {
   Heart,
   X,
 } from 'lucide-react';
-import timetoHeroSpaBg from '../../assets/images/timeto_hero_spa_bg_1794131859710.jpg';
+const TIMETO_HERO_SPA_WEBP_URL = '/assets/beauty/timeto-hero-spa.webp';
 import { IRAN_CITIES, ISFAHAN_NEIGHBORHOODS } from '../../mocks/sampleData';
 import { BusinessType } from '../../types';
 import {
@@ -312,17 +312,18 @@ const OriginalCustomerHomePage: React.FC = () => {
     const el = categoryScrollRef.current;
     if (!el || isCatScrollPaused) return;
     const interval = window.setInterval(() => {
-      if (!el) return;
-      const maxScroll = el.scrollWidth - el.clientWidth;
-      if (maxScroll <= 10) return;
-      // در چیدمان RTL اسکرول افقی به سمت چپ منفی یا معکوس است
-      const current = Math.abs(el.scrollLeft);
-      if (current >= maxScroll - 8) {
-        el.scrollTo({ left: 0, behavior: 'smooth' });
-      } else {
-        el.scrollBy({ left: -120, behavior: 'smooth' });
-      }
-    }, 3200);
+      if (!el || document.hidden) return;
+      window.requestAnimationFrame(() => {
+        const maxScroll = el.scrollWidth - el.clientWidth;
+        if (maxScroll <= 10) return;
+        const current = Math.abs(el.scrollLeft);
+        if (current >= maxScroll - 8) {
+          el.scrollTo({ left: 0, behavior: 'smooth' });
+        } else {
+          el.scrollBy({ left: -120, behavior: 'smooth' });
+        }
+      });
+    }, 4500);
     return () => window.clearInterval(interval);
   }, [isCatScrollPaused, categories.length]);
 
@@ -330,11 +331,13 @@ const OriginalCustomerHomePage: React.FC = () => {
     <div className="space-y-7 sm:space-y-10">
       {/* ۱. بخش Hero صفحه اصلی — ارتفاع 100vh در موبایل، بدون بردر ردیوس در موبایل، و بخش ویژگی‌ها با پس‌زمینه کاملاً شفاف */}
       <section className="relative overflow-hidden -mx-3.5 -mt-4 rounded-none sm:mx-0 sm:mt-0 sm:rounded-[32px] border-b sm:border border-[#0057FF]/25 bg-[#04123B] shadow-[0_20px_50px_-16px_rgba(4,14,46,0.55)] h-[calc(100dvh-56px)] min-h-[calc(100vh-56px)] sm:h-auto sm:min-h-[480px] flex flex-col justify-between">
-        {/* تصویر پس‌زمینه اسپا بدون تداخل رنگ آبی روی تصویر چهره */}
+        {/* تصویر پس‌زمینه اسپا بدون تداخل رنگ آبی روی تصویر چهره (۲۴ کیلوبایت WebP با Preload مستقیم در HTML) */}
         <div className="absolute inset-0 pointer-events-none select-none">
           <img
-            src={timetoHeroSpaBg}
+            src={TIMETO_HERO_SPA_WEBP_URL}
             alt="رزرو آنلاین خدمات زیبایی و مراقبت فردی در تایم تو"
+            width={1080}
+            height={1080}
             fetchPriority="high"
             decoding="async"
             className="w-full h-full object-cover object-[24%_center] sm:object-left"
@@ -592,6 +595,10 @@ const OriginalCustomerHomePage: React.FC = () => {
                   getBeautyPhotoUrl('رویال گلزار', 'مو و رنگ')
                 }
                 alt={homeBannerPrimary?.name || 'پکیج استایل و احیای مو'}
+                loading="lazy"
+                decoding="async"
+                width={176}
+                height={176}
                 className="w-full h-full object-cover"
               />
             </div>
@@ -621,6 +628,10 @@ const OriginalCustomerHomePage: React.FC = () => {
                       getBeautyPhotoUrl(homeBannerSecondary.name, 'پوست و فیشیال')
                     }
                     alt={homeBannerSecondary.name}
+                    loading="lazy"
+                    decoding="async"
+                    width={80}
+                    height={80}
                     className="w-full h-full object-cover"
                   />
                 </div>
@@ -764,6 +775,10 @@ const OriginalCustomerHomePage: React.FC = () => {
                   spotlightSpecialist.roleTitle
                 )}
                 alt={spotlightSpecialist.fullName}
+                loading="lazy"
+                decoding="async"
+                width={320}
+                height={240}
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/85 via-transparent to-transparent" />

@@ -26,18 +26,53 @@ import {
   PricingPage,
   SearchPage,
 } from './pages/public/PublicPages';
-import { BusinessPublicProfileView } from './pages/public/BusinessPublicPages';
-import {
-  BookingConfirmPage,
-  BookingResultPage,
-  BookingStepPage,
-  CustomerAppointmentsPage,
-  CustomerFavoritesPage,
-  CustomerLoginPage,
-  CustomerOverviewPage,
-  CustomerProfilePage,
-} from './pages/customer/CustomerPages';
 import { NotFoundState } from './components/ui/StateViews';
+
+const BusinessPublicProfileView = React.lazy(() =>
+  import('./pages/public/BusinessPublicPages').then((m) => ({
+    default: m.BusinessPublicProfileView,
+  }))
+);
+const BookingConfirmPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.BookingConfirmPage,
+  }))
+);
+const BookingResultPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.BookingResultPage,
+  }))
+);
+const BookingStepPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.BookingStepPage,
+  }))
+);
+const CustomerAppointmentsPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.CustomerAppointmentsPage,
+  }))
+);
+const CustomerFavoritesPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.CustomerFavoritesPage,
+  }))
+);
+const CustomerLoginPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.CustomerLoginPage,
+  }))
+);
+const CustomerOverviewPage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.CustomerOverviewPage,
+  }))
+);
+const CustomerProfilePage = React.lazy(() =>
+  import('./pages/customer/CustomerPages').then((m) => ({
+    default: m.CustomerProfilePage,
+  }))
+);
 
 const BusinessRegisterPage = React.lazy(() =>
   import('./pages/business-onboarding/BusinessOnboardingPages').then((m) => ({

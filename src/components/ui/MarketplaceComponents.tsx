@@ -457,7 +457,10 @@ export const BusinessCard: React.FC<{
             <img
               src={photoUrl}
               alt={business.name}
+              width={600}
+              height={338}
               loading="lazy"
+              decoding="async"
               onError={() => setImgErr(true)}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
@@ -559,7 +562,7 @@ export const BusinessCard: React.FC<{
 
         <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-[#334155] tabular-nums min-w-0">
-            <span className="text-[10px] text-[#64748B] block">شروع تعرفه از</span>
+            <span className="text-[10px] text-[#475569] font-semibold block">شروع تعرفه از</span>
             <span className="font-extrabold text-[#061138] text-sm">
               {formatPriceToman(business.startingPriceToman)}
             </span>
@@ -677,7 +680,10 @@ export const ProfessionalCard: React.FC<{
             <img
               src={portraitUrl}
               alt={specialist.fullName}
+              width={160}
+              height={160}
               loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           </div>

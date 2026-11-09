@@ -36,7 +36,7 @@ export function usePWAInstall() {
     const mobile =
       ios ||
       /android|webos|blackberry|iemobile|opera mini|mobile/.test(ua) ||
-      window.innerWidth < 768;
+      window.matchMedia('(max-width: 767px)').matches;
 
     setIsIOS(ios);
     setIsInAppBrowser(inApp);

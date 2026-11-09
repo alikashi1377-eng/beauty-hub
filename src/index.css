@@ -1,45 +1,12 @@
 @import "tailwindcss";
 
-/* ۱. بارگذاری محلی فونت رسمی Estedad (نسخه Variable + وزن‌های استاندارد بهینه) */
+/* ۱. بارگذاری محلی فونت رسمی Estedad (نسخه Variable یکپارچه بدون دانلود فایل‌های تکراری) */
 @font-face {
   font-family: 'Estedad';
   src:
     url('/fonts/Estedad-Variable.woff2') format('woff2-variations'),
-    url('/fonts/Estedad-Variable.woff2') format('woff2'),
-    url('/fonts/Estedad-Regular.woff2') format('woff2');
+    url('/fonts/Estedad-Variable.woff2') format('woff2');
   font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Estedad-Static';
-  src: url('/fonts/Estedad-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Estedad-Static';
-  src: url('/fonts/Estedad-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Estedad-Static';
-  src: url('/fonts/Estedad-SemiBold.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Estedad-Static';
-  src: url('/fonts/Estedad-Bold.woff2') format('woff2');
-  font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
@@ -58,8 +25,8 @@
 
 /* ۳. تنظیم متغیرهای مرکزی Tailwind CSS v4 برای فونت و مقیاس وزن‌ها */
 @theme {
-  --font-sans: 'Estedad', 'Estedad-Static', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-latin: 'Plus Jakarta Sans', 'Estedad', 'Estedad-Static', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Estedad', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-latin: 'Plus Jakarta Sans', 'Estedad', system-ui, -apple-system, sans-serif;
   --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --font-weight-normal: 400;
@@ -71,8 +38,8 @@
 
 @layer base {
   :root {
-    --font-sans: 'Estedad', 'Estedad-Static', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-latin: 'Plus Jakarta Sans', 'Estedad', 'Estedad-Static', system-ui, -apple-system, sans-serif;
+    --font-sans: 'Estedad', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-latin: 'Plus Jakarta Sans', 'Estedad', system-ui, -apple-system, sans-serif;
     --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
     /* مقیاس منظم وزن‌های تایپوگرافی پروژه */
