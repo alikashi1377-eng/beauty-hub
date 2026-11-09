@@ -198,13 +198,14 @@ export const HomePage: React.FC = () => {
     <div className="space-y-7 sm:space-y-10">
       {/* ۱. بخش Hero صفحه اصلی — ارتفاع 100vh در موبایل، بدون بردر ردیوس در موبایل، و بخش ویژگی‌ها با پس‌زمینه کاملاً شفاف */}
       <section className="relative overflow-hidden -mx-3.5 -mt-4 rounded-none sm:mx-0 sm:mt-0 sm:rounded-[32px] border-b sm:border border-[#0057FF]/25 bg-[#04123B] shadow-[0_20px_50px_-16px_rgba(4,14,46,0.55)] h-[calc(100dvh-56px)] min-h-[calc(100vh-56px)] sm:h-auto sm:min-h-[480px] flex flex-col justify-between">
-        {/* تصویر پس‌زمینه اسپا بدون تداخل رنگ آبی روی تصویر چهره (۲۴ کیلوبایت WebP با Preload مستقیم در HTML) */}
+        {/* تصویر پس‌زمینه اسپا با وضوح بالا (HD WebP) بدون تداخل رنگ آبی روی تصویر چهره */}
         <div className="absolute inset-0 pointer-events-none select-none">
           <img
             src={TIMETO_HERO_SPA_WEBP_URL}
+            srcSet="/assets/beauty/timeto-hero-spa.webp 1x, /assets/beauty/timeto-hero-spa-hd.webp 2x"
             alt="رزرو آنلاین خدمات زیبایی و مراقبت فردی در تایم تو"
-            width={1080}
-            height={1080}
+            width={1024}
+            height={1024}
             fetchPriority="high"
             decoding="sync"
             className="w-full h-full object-cover object-[24%_center] sm:object-left"
@@ -220,10 +221,10 @@ export const HomePage: React.FC = () => {
           <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-[#04123B]/80 via-[#04123B]/25 to-transparent" />
         </div>
 
-        {/* محتوای اصلی راست‌چین شده با جایگاه پایین‌تر برای تیتر و دکمه */}
-        <div className="relative z-20 px-4 pt-20 pb-20 sm:px-10 sm:pt-20 sm:pb-6 flex flex-col justify-between flex-1 gap-4">
-          <div className="max-w-md mr-0 ml-auto text-right mt-8 sm:mt-6 space-y-4 sm:space-y-5">
-            <div className="space-y-2.5">
+        {/* محتوای اصلی راست‌چین شده: در موبایل تیتر و توضیح بالاتر و دکمه مشاهده پایین‌تر */}
+        <div className="relative z-20 px-4 pt-6 pb-16 sm:px-10 sm:pt-16 sm:pb-6 flex flex-col justify-between flex-1 gap-4">
+          <div className="max-w-md mr-0 ml-auto text-right mt-1 sm:mt-4">
+            <div className="space-y-2">
               <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-black text-white leading-[1.3] tracking-tight drop-shadow-xs">
                 <span className="block">وقت زیبایی تو،</span>
                 <span className="relative inline-block mt-0.5 bg-gradient-to-l from-[#38BDF8] via-[#22D3EE] to-[#60A5FA] bg-clip-text text-transparent pb-1.5">
@@ -258,14 +259,14 @@ export const HomePage: React.FC = () => {
                 </span>
               </h1>
 
-              <p className="pt-2 text-xs sm:text-sm lg:text-base text-white/95 font-semibold leading-relaxed max-w-xs sm:max-w-sm drop-shadow-xs">
+              <p className="pt-1 text-xs sm:text-sm lg:text-base text-white/95 font-semibold leading-relaxed max-w-xs sm:max-w-sm drop-shadow-xs">
                 رزرو آنلاین خدمات زیبایی
                 <br />
                 و مراقبت فردی در بهترین سالن‌ها
               </p>
             </div>
 
-            <div className="pt-2 flex flex-wrap items-center gap-2.5">
+            <div className="mt-[220px] sm:mt-6 flex flex-wrap items-center gap-2.5">
               <Link
                 to="/search"
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 sm:px-6 sm:py-3 rounded-full bg-gradient-to-l from-[#0077FF] via-[#0062FF] to-[#0047FF] hover:from-[#0088FF] hover:to-[#0055FF] text-white text-xs sm:text-sm font-extrabold shadow-[0_10px_24px_-6px_rgba(0,102,255,0.65)] border border-[#60A5FA]/35 transition-all active:scale-95"

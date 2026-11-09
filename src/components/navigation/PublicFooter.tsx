@@ -11,7 +11,7 @@ export const PublicFooter: React.FC = () => {
 
   return (
     <footer className="bg-[#061138] text-white border-t border-[#1E293B] mt-14">
-      <div className="max-w-[1520px] mx-auto px-4 sm:px-6 py-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 xl:px-16 py-10">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-8 pb-8 border-b border-white/15">
           <div className="lg:col-span-4 space-y-3">
             <Link to="/" className="inline-flex items-center">

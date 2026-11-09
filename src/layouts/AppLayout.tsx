@@ -221,8 +221,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       {isBusinessPanel ? (
         <div className="flex-1 flex flex-col w-full min-h-screen">
           {/* هدر یکپارچه و خلوت پیشخوان کسب‌وکار (در موبایل در بالای صفحه ثابت و غیرچسبان؛ در دسکتاپ چسبان) */}
-          <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-3 relative md:sticky md:top-0 z-20">
-            <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-3">
+          <header className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 lg:px-10 py-3 relative md:sticky md:top-0 z-20">
+            <div className="max-w-[1360px] mx-auto flex items-center justify-between gap-3">
               <Link
                 to="/app"
                 className="flex items-center gap-2.5 min-w-0 group"
@@ -265,8 +265,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
           {/* نوار هشدار فوری نوبت جدید برای صاحب کسب‌وکار — تا هیچ نوبتی فراموش نشود */}
           {pendingBusinessAppointments.length > 0 ? (
-            <div className="bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white px-4 sm:px-6 py-2.5 border-b border-[#00E5FF]/35 shadow-sm">
-              <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white px-4 sm:px-6 lg:px-10 py-2.5 border-b border-[#00E5FF]/35 shadow-sm">
+              <div className="max-w-[1360px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] animate-ping shrink-0" />
                   <p className="font-extrabold truncate">
@@ -307,8 +307,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {/* نوار تب‌های زیرمجموعه در موبایل و تبلت */}
           <BusinessCategorySubTabs />
 
-          {/* چیدمان دسکتاپ با منوی کامل سمت راست + محتوای عریض، و در موبایل با نوار چسبان پایین */}
-          <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto">
+          {/* چیدمان دسکتاپ با منوی کامل سمت راست + محتوای دارای حاشیه متوازن از چپ و راست، و در موبایل با نوار چسبان پایین */}
+          <div className="flex-1 flex flex-col lg:flex-row max-w-[1360px] w-full mx-auto lg:px-6">
             <BusinessSidebar />
 
             <main
@@ -331,7 +331,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           <BusinessStickyBottomNav />
         </div>
       ) : isAdminPanel && isAuthorizedPlatformAdmin ? (
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto">
+        <div className="flex-1 flex flex-col lg:flex-row max-w-[1360px] w-full mx-auto lg:px-6">
           <AdminSidebar />
           <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">{children}</main>
         </div>
@@ -341,7 +341,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
           {isCustomerAccountArea ? (
             <div className="bg-white border-b border-[#CBD5E1] shadow-2xs">
-              <div className="max-w-[1520px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 xl:px-16 py-2.5 flex items-center justify-between gap-3 overflow-x-auto no-scrollbar">
                 <nav
                   aria-label="ناوبری حساب مشتری"
                   className="flex items-center gap-1.5"
@@ -381,7 +381,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     )
                 : undefined
             }
-            className="flex-1 max-w-[1520px] w-full mx-auto px-3.5 sm:px-6 py-4 sm:py-7 min-w-0"
+            className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-12 xl:px-16 py-4 sm:py-7 min-w-0"
           >
             {children}
           </main>
