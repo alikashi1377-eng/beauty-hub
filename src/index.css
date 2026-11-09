@@ -11,23 +11,11 @@
   font-display: swap;
 }
 
-/* ۲. بارگذاری محلی فونت هماهنگ Plus Jakarta Sans برای حروف لاتین و متون انگلیسی */
-@font-face {
-  font-family: 'Plus Jakarta Sans';
-  src:
-    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2-variations'),
-    url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
-  font-weight: 200 800;
-  font-style: normal;
-  font-display: swap;
-  unicode-range: U+0041-005A, U+0061-007A, U+00C0-00FF;
-}
-
-/* ۳. تنظیم متغیرهای مرکزی Tailwind CSS v4 برای فونت و مقیاس وزن‌ها */
+/* ۲. تنظیم متغیرهای مرکزی Tailwind CSS v4 برای فونت و مقیاس وزن‌ها (بدون دانلود فونت ثانویه در زنجیره بحرانی) */
 @theme {
-  --font-sans: 'Estedad', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-latin: 'Plus Jakarta Sans', 'Estedad', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Plus Jakarta Sans', 'Estedad', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: 'Estedad', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-latin: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Estedad', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --font-weight-normal: 400;
   --font-weight-medium: 500;

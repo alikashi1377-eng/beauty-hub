@@ -18,15 +18,34 @@ import {
   usePrototypeData,
 } from './context/PrototypeDataContext';
 import { AppLayout } from './layouts/AppLayout';
-import {
-  AboutPage,
-  CategoriesPage,
-  HelpPage,
-  HomePage,
-  PricingPage,
-  SearchPage,
-} from './pages/public/PublicPages';
+import { HomePage } from './pages/public/HomePage';
 import { NotFoundState } from './components/ui/StateViews';
+
+const SearchPage = React.lazy(() =>
+  import('./pages/public/PublicPages').then((m) => ({
+    default: m.SearchPage,
+  }))
+);
+const CategoriesPage = React.lazy(() =>
+  import('./pages/public/PublicPages').then((m) => ({
+    default: m.CategoriesPage,
+  }))
+);
+const PricingPage = React.lazy(() =>
+  import('./pages/public/PublicPages').then((m) => ({
+    default: m.PricingPage,
+  }))
+);
+const AboutPage = React.lazy(() =>
+  import('./pages/public/PublicPages').then((m) => ({
+    default: m.AboutPage,
+  }))
+);
+const HelpPage = React.lazy(() =>
+  import('./pages/public/PublicPages').then((m) => ({
+    default: m.HelpPage,
+  }))
+);
 
 const BusinessPublicProfileView = React.lazy(() =>
   import('./pages/public/BusinessPublicPages').then((m) => ({

@@ -680,8 +680,8 @@ export const ProfessionalCard: React.FC<{
             <img
               src={portraitUrl}
               alt={specialist.fullName}
-              width={160}
-              height={160}
+              width={128}
+              height={128}
               loading="lazy"
               decoding="async"
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"

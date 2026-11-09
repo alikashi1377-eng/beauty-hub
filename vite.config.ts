@@ -5,7 +5,20 @@ import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'non-blocking-css',
+        enforce: 'post',
+        transformIndexHtml(html: string) {
+          return html.replace(
+            /<link rel="stylesheet" crossorigin href="(\/assets\/[^"]+\.css)">/g,
+            '<link rel="preload" as="style" crossorigin href="$1" /><link rel="stylesheet" crossorigin href="$1" media="print" onload="this.media=\'all\'" /><noscript><link rel="stylesheet" crossorigin href="$1" /></noscript>'
+          );
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),

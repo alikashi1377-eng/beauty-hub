@@ -22,7 +22,119 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="preload" as="image" href="/assets/beauty/timeto-hero-spa.webp" type="image/webp" fetchpriority="high" />
     <link rel="preload" href="/fonts/Estedad-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      @font-face {
+        font-family: 'Estedad';
+        src: url('/fonts/Estedad-Variable.woff2') format('woff2');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        direction: rtl;
+        font-family: 'Estedad', system-ui, -apple-system, sans-serif;
+        background-color: #F3F6FC;
+        color: #061138;
+        -webkit-font-smoothing: antialiased;
+      }
+      .not-home #initial-hero-shell {
+        display: none !important;
+      }
+      #initial-hero-shell {
+        min-height: 100vh;
+        background-color: #04123B;
+        color: #ffffff;
+        display: flex;
+        flex-direction: column;
+      }
+      .ih-header {
+        height: 56px;
+        background: #ffffff;
+        color: #061138;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        border-bottom: 1px solid #CBD5E1;
+      }
+      .ih-brand {
+        font-weight: 800;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+        color: #061138;
+      }
+      .ih-hero {
+        position: relative;
+        flex: 1;
+        min-height: calc(100vh - 56px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background-color: #04123B;
+      }
+      .ih-bg {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .ih-bg img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: 24% center;
+        display: block;
+      }
+      .ih-grad {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(270deg, rgba(4,16,54,0.72) 0%, rgba(5,22,74,0.34) 38%, rgba(5,22,74,0) 64%);
+      }
+      .ih-content {
+        position: relative;
+        z-index: 2;
+        padding: 112px 16px 80px;
+        max-width: 440px;
+        margin-left: auto;
+        text-align: right;
+      }
+      .ih-title {
+        font-size: 24px;
+        font-weight: 900;
+        line-height: 1.35;
+        margin: 0 0 10px;
+        color: #ffffff;
+      }
+      .ih-accent {
+        color: #38BDF8;
+        display: block;
+      }
+      .ih-sub {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.7;
+        color: rgba(255,255,255,0.95);
+        margin: 0 0 18px;
+      }
+      .ih-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 20px;
+        border-radius: 9999px;
+        background: linear-gradient(270deg, #0077FF, #0047FF);
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+    </style>
     <script>
+      if (window.location.pathname !== '/') {
+        document.documentElement.classList.add('not-home');
+      }
       window.__deferredPwaPrompt = null;
       window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
@@ -31,7 +143,34 @@
     </script>
   </head>
   <body class="bg-[#F4F7FB] text-[#0B132B] antialiased selection:bg-[#0057FF] selection:text-white">
-    <div id="root"></div>
+    <div id="root">
+      <div id="initial-hero-shell">
+        <div class="ih-header">
+          <span class="ih-brand">Timeto</span>
+        </div>
+        <section class="ih-hero">
+          <div class="ih-bg">
+            <img
+              src="/assets/beauty/timeto-hero-spa.webp"
+              alt="رزرو آنلاین خدمات زیبایی و مراقبت فردی در تایم تو"
+              width="1080"
+              height="1080"
+              fetchpriority="high"
+              decoding="sync"
+            />
+            <div class="ih-grad"></div>
+          </div>
+          <div class="ih-content">
+            <h1 class="ih-title">
+              <span>وقت زیبایی تو،</span>
+              <span class="ih-accent">به انتخاب تو</span>
+            </h1>
+            <p class="ih-sub">رزرو آنلاین خدمات زیبایی<br />و مراقبت فردی در بهترین سالن‌ها</p>
+            <a href="/search" class="ih-cta">مشاهده سالن‌های زیبایی</a>
+          </div>
+        </section>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

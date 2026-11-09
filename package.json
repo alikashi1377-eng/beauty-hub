@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "RAYON_NUM_THREADS=2 UV_THREADPOOL_SIZE=2 vite build",
+    "build": "NODE_ENV=production RAYON_NUM_THREADS=2 UV_THREADPOOL_SIZE=2 vite build",
     "start": "NODE_ENV=production tsx server.ts",
     "db:migrate": "tsx server/db/run-migrations.ts",
     "db:bootstrap-admin": "tsx server/db/bootstrap-admin.ts",

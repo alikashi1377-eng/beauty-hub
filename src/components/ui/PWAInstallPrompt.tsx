@@ -171,7 +171,7 @@ export const PWAMobileInstallBanner: React.FC = () => {
 
     const timer = window.setTimeout(() => {
       setHasTriggeredByScrollOrDelay(true);
-    }, 3000);
+    }, 12000);
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {

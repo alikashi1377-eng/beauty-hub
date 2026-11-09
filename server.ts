@@ -12,6 +12,38 @@ const __dirname = path.dirname(__filename);
 const COMPRESSIBLE_CONTENT_TYPE_RE =
   /^(text\/|application\/(javascript|json|manifest\+json|xml|xhtml\+xml)|image\/svg\+xml)/i;
 
+interface CachedCompressedAsset {
+  raw: Buffer;
+  gzip: Buffer;
+  br: Buffer;
+  mtimeMs: number;
+}
+
+const staticCompressionCache = new Map<string, CachedCompressedAsset>();
+
+function getCompressedAsset(fullFilePath: string): CachedCompressedAsset {
+  const stat = fs.statSync(fullFilePath);
+  const existing = staticCompressionCache.get(fullFilePath);
+  if (existing && existing.mtimeMs === stat.mtimeMs) {
+    return existing;
+  }
+  const raw = fs.readFileSync(fullFilePath);
+  const gzip = zlib.gzipSync(raw, { level: zlib.constants.Z_BEST_COMPRESSION });
+  const br = zlib.brotliCompressSync(raw, {
+    params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+    },
+  });
+  const entry: CachedCompressedAsset = {
+    raw,
+    gzip,
+    br,
+    mtimeMs: stat.mtimeMs,
+  };
+  staticCompressionCache.set(fullFilePath, entry);
+  return entry;
+}
+
 function attachHttpCompression(app: express.Express) {
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -19,8 +51,9 @@ function attachHttpCompression(app: express.Express) {
       return;
     }
     const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    const supportsBrotli = /\bbr\b/i.test(acceptEncoding);
     const supportsGzip = /\bgzip\b/i.test(acceptEncoding);
-    if (!supportsGzip) {
+    if (!supportsBrotli && !supportsGzip) {
       next();
       return;
     }
@@ -42,10 +75,21 @@ function attachHttpCompression(app: express.Express) {
         : typeof body === 'string'
           ? Buffer.from(body, 'utf8')
           : null;
-      if (!rawBuffer || rawBuffer.byteLength < 1024) {
+      if (!rawBuffer || rawBuffer.byteLength < 150) {
         return origSend(body);
       }
       try {
+        if (supportsBrotli) {
+          const compressed = zlib.brotliCompressSync(rawBuffer, {
+            params: {
+              [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+            },
+          });
+          res.setHeader('Content-Encoding', 'br');
+          res.setHeader('Vary', 'Accept-Encoding');
+          res.setHeader('Content-Length', String(compressed.byteLength));
+          return origSend(compressed);
+        }
         const compressed = zlib.gzipSync(rawBuffer, {
           level: zlib.constants.Z_BEST_SPEED,
         });
@@ -80,29 +124,8 @@ async function startServer() {
     const indexHtmlPath = path.join(distPath, 'index.html');
 
     if (fs.existsSync(distPath) && fs.existsSync(indexHtmlPath)) {
-      // کش ۱ ساله (365d + immutable) برای فایل‌های استاتیک، فونت‌ها و تصاویر جهت رفع کامل هشدار PageSpeed Cache TTL
-      app.use(
-        '/assets',
-        express.static(path.join(distPath, 'assets'), {
-          maxAge: '365d',
-          immutable: true,
-        })
-      );
-      app.use(
-        '/fonts',
-        express.static(path.join(distPath, 'fonts'), {
-          maxAge: '365d',
-          immutable: true,
-        })
-      );
-
-      // فشرده‌سازی Gzip برای فایل‌های متنی بزرگ استاتیک (JS و CSS) در Production
+      // ۱. فشرده‌سازی فوق‌سریع Brotli / Gzip با کش حافظه برای تمام فایل‌های متنی (قبل از express.static تا /assets/*.css و /assets/*.js حتماً فشرده شوند)
       app.get(/\.(js|css|svg|json|webmanifest|txt)$/i, (req, res, next) => {
-        const acceptEncoding = String(req.headers['accept-encoding'] || '');
-        if (!/\bgzip\b/i.test(acceptEncoding)) {
-          next();
-          return;
-        }
         const safeRelPath = path
           .normalize(decodeURIComponent(req.path))
           .replace(/^(\.\.(\/|\\|$))+/, '');
@@ -140,15 +163,45 @@ async function startServer() {
         } else {
           res.setHeader('Cache-Control', 'public, max-age=86400');
         }
-        res.setHeader('Content-Encoding', 'gzip');
         res.setHeader('Vary', 'Accept-Encoding');
 
-        const rawStream = fs.createReadStream(fullFilePath);
-        const gzipStream = zlib.createGzip({
-          level: zlib.constants.Z_BEST_SPEED,
-        });
-        rawStream.pipe(gzipStream).pipe(res);
+        try {
+          const cached = getCompressedAsset(fullFilePath);
+          const acceptEncoding = String(req.headers['accept-encoding'] || '');
+          if (/\bbr\b/i.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'br');
+            res.setHeader('Content-Length', String(cached.br.byteLength));
+            res.end(cached.br);
+            return;
+          }
+          if (/\bgzip\b/i.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', String(cached.gzip.byteLength));
+            res.end(cached.gzip);
+            return;
+          }
+          res.setHeader('Content-Length', String(cached.raw.byteLength));
+          res.end(cached.raw);
+        } catch {
+          next();
+        }
       });
+
+      // ۲. کش ۱ ساله (365d + immutable) برای فونت‌ها و تصاویر استاتیک
+      app.use(
+        '/assets',
+        express.static(path.join(distPath, 'assets'), {
+          maxAge: '365d',
+          immutable: true,
+        })
+      );
+      app.use(
+        '/fonts',
+        express.static(path.join(distPath, 'fonts'), {
+          maxAge: '365d',
+          immutable: true,
+        })
+      );
 
       app.use(
         express.static(distPath, {
@@ -165,10 +218,31 @@ async function startServer() {
         })
       );
 
-      // پشتیبانی کامل از مسیرهای React Router هنگام Refresh مستقیم صفحه در Production
-      app.get('*', (_req, res) => {
+      // ۳. ارسال index.html با فشرده‌سازی کامل Brotli / Gzip برای رفع خطای Document request latency (No compression applied)
+      app.get('*', (req, res) => {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache');
-        res.sendFile(indexHtmlPath);
+        res.setHeader('Vary', 'Accept-Encoding');
+        try {
+          const cachedHtml = getCompressedAsset(indexHtmlPath);
+          const acceptEncoding = String(req.headers['accept-encoding'] || '');
+          if (/\bbr\b/i.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'br');
+            res.setHeader('Content-Length', String(cachedHtml.br.byteLength));
+            res.end(cachedHtml.br);
+            return;
+          }
+          if (/\bgzip\b/i.test(acceptEncoding)) {
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', String(cachedHtml.gzip.byteLength));
+            res.end(cachedHtml.gzip);
+            return;
+          }
+          res.setHeader('Content-Length', String(cachedHtml.raw.byteLength));
+          res.end(cachedHtml.raw);
+        } catch {
+          res.sendFile(indexHtmlPath);
+        }
       });
     } else {
       console.error(
