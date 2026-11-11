@@ -111,6 +111,8 @@ export interface GalleryItem {
   title: string;
   categoryLabel: string;
   theme: 'rose' | 'slate' | 'emerald' | 'violet';
+  imageUrl?: string;
+  compressedSizeKb?: number;
 }
 
 export interface BusinessItem {
@@ -155,6 +157,7 @@ export interface BusinessItem {
   mapLat?: number;
   mapLng?: number;
   avatarUrl?: string;
+  coverUrl?: string;
   isSampleShowcase?: boolean;
   workingHoursConfigured?: boolean;
   bankCardNumber?: string;

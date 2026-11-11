@@ -285,7 +285,9 @@ export const BusinessCard: React.FC<{
       : `/salon/${business.slug}`;
 
   const photoUrl =
-    business.avatarUrl ||
+    (compact
+      ? business.avatarUrl || business.coverUrl
+      : business.coverUrl || business.avatarUrl) ||
     getBeautyPhotoUrl(
       business.name,
       business.typeLabel,

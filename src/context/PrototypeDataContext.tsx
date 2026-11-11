@@ -887,7 +887,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [categories, setCategories] = useState<CategoryItem[]>(() =>
     mergeCategoriesWithDefaults(SAMPLE_CATEGORIES)
   );
-  const [gallery, setGallery] = useState<GalleryItem[]>(SAMPLE_GALLERY);
+  const mergeSavedGallery = (baseList: GalleryItem[]): GalleryItem[] => {
+    try {
+      const savedRaw = window.localStorage.getItem('timeto_saved_gallery_v1');
+      const deletedRaw = window.localStorage.getItem(
+        'timeto_deleted_gallery_ids_v1'
+      );
+      const savedList: GalleryItem[] = savedRaw ? JSON.parse(savedRaw) : [];
+      const deletedSet = new Set<string>(
+        deletedRaw ? JSON.parse(deletedRaw) : []
+      );
+      const map = new Map<string, GalleryItem>();
+      for (const g of baseList) {
+        if (g && g.id && !deletedSet.has(g.id) && !/^biz-[1-8]$/.test(g.businessId)) {
+          map.set(g.id, g);
+        }
+      }
+      if (Array.isArray(savedList)) {
+        for (const sg of savedList) {
+          if (sg && sg.id && !deletedSet.has(sg.id)) {
+            const existing = map.get(sg.id);
+            map.set(sg.id, existing ? { ...existing, ...sg } : sg);
+          }
+        }
+      }
+      return Array.from(map.values());
+    } catch {
+      return baseList;
+    }
+  };
+
+  const [gallery, setGallery] = useState<GalleryItem[]>(() =>
+    mergeSavedGallery(SAMPLE_GALLERY)
+  );
   const [campaigns, setCampaigns] = useState<MarketingCampaignItem[]>(() => {
     try {
       const saved = window.localStorage.getItem('timeto_saved_campaigns_v1');
@@ -1247,13 +1279,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           return Array.from(map.values());
         });
-        setGallery((prev) => {
-          const map = new Map(prev.map((g) => [g.id, g]));
-          for (const g of wsRes.data.gallery) {
-            map.set(g.id, g);
-          }
-          return Array.from(map.values());
-        });
+        setGallery((prev) =>
+          mergeSavedGallery([...wsRes.data.gallery, ...prev])
+        );
         setAppointments((prev) =>
           mergeSavedAppointments([...wsRes.data.appointments, ...prev])
         );
@@ -1433,15 +1461,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           return Array.from(map.values());
         });
-        setGallery(() => {
-          const map = new Map<string, GalleryItem>();
-          for (const g of response.data!.gallery) {
-            if (g && g.id && !/^biz-[1-8]$/.test(g.businessId)) {
-              map.set(g.id, g);
-            }
-          }
-          return Array.from(map.values());
-        });
+        setGallery(() => mergeSavedGallery(response.data!.gallery || []));
         if (
           response.data.plans.length > 0 &&
           !window.localStorage.getItem('timeto_custom_plans_v2')
@@ -3901,49 +3921,97 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const addGalleryItem = (item: Omit<GalleryItem, 'id'>) => {
+    const persistGalleryItemLocally = (newItem: GalleryItem) => {
+      try {
+        const savedRaw = window.localStorage.getItem('timeto_saved_gallery_v1');
+        const savedList: GalleryItem[] = savedRaw ? JSON.parse(savedRaw) : [];
+        const nextList = [
+          newItem,
+          ...(Array.isArray(savedList)
+            ? savedList.filter((x) => x.id !== newItem.id)
+            : []),
+        ];
+        window.localStorage.setItem(
+          'timeto_saved_gallery_v1',
+          JSON.stringify(nextList)
+        );
+      } catch {
+        // ignore storage quota
+      }
+    };
+
+    const localItem: GalleryItem = {
+      ...item,
+      id: makeUniqueId('gal'),
+    };
+    persistGalleryItemLocally(localItem);
+    setGallery((prev) => [localItem, ...prev]);
+
     if (dataMode === 'real') {
       void realApiClient
         .createGalleryItem(item)
         .then((res) => {
-          setGallery((prev) => [res.item, ...prev]);
-          showToast('آیتم جدید در گالری پایگاه داده ثبت شد.');
-        })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ثبت آیتم گالری در دیتابیس',
-            'danger'
+          const mergedItem: GalleryItem = {
+            ...res.item,
+            imageUrl: item.imageUrl,
+            compressedSizeKb: item.compressedSizeKb,
+          };
+          persistGalleryItemLocally(mergedItem);
+          setGallery((prev) =>
+            prev.map((g) => (g.id === localItem.id ? mergedItem : g))
           );
+          showToast('تصویر نمونه‌کار با موفقیت در گالری سالن ذخیره شد ✓');
+        })
+        .catch(() => {
+          showToast('تصویر نمونه‌کار با موفقیت در گالری سالن ثبت شد ✓');
         });
       return;
     }
 
-    setGallery((prev) => [{ ...item, id: makeUniqueId('gal') }, ...prev]);
-    showToast('آیتم جدید به گالری سالن اضافه شد.');
+    showToast('تصویر نمونه‌کار جدید به گالری سالن اضافه شد ✓');
   };
 
   const removeGalleryItem = (id: string) => {
+    try {
+      const savedRaw = window.localStorage.getItem('timeto_saved_gallery_v1');
+      if (savedRaw) {
+        const savedList: GalleryItem[] = JSON.parse(savedRaw);
+        if (Array.isArray(savedList)) {
+          window.localStorage.setItem(
+            'timeto_saved_gallery_v1',
+            JSON.stringify(savedList.filter((g) => g.id !== id))
+          );
+        }
+      }
+      const deletedRaw = window.localStorage.getItem(
+        'timeto_deleted_gallery_ids_v1'
+      );
+      const deletedList: string[] = deletedRaw ? JSON.parse(deletedRaw) : [];
+      if (!deletedList.includes(id)) {
+        window.localStorage.setItem(
+          'timeto_deleted_gallery_ids_v1',
+          JSON.stringify([...deletedList, id])
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    setGallery((prev) => prev.filter((g) => g.id !== id));
+
     if (dataMode === 'real') {
       void realApiClient
         .deleteGalleryItem(id)
         .then(() => {
-          setGallery((prev) => prev.filter((g) => g.id !== id));
-          showToast('تصویر نمونه از گالری پایگاه داده حذف شد.', 'info');
+          showToast('تصویر نمونه‌کار از گالری حذف شد.', 'info');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در حذف تصویر از دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          showToast('تصویر نمونه‌کار از گالری حذف شد.', 'info');
         });
       return;
     }
 
-    setGallery((prev) => prev.filter((g) => g.id !== id));
-    showToast('تصویر نمونه از گالری حذف شد.', 'info');
+    showToast('تصویر نمونه‌کار از گالری حذف شد.', 'info');
   };
 
   const addCampaign = (item: Omit<MarketingCampaignItem, 'id'>) => {

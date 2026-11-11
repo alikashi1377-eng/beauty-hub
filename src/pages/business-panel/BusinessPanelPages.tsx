@@ -4221,7 +4221,11 @@ export const BusinessGalleryPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [title, setTitle] = useState('');
-  const [categoryLabel, setCategoryLabel] = useState('مو و رنگ');
+  const [categoryLabel, setCategoryLabel] = useState('پوست و فیشیال');
+  const [galleryImageUrl, setGalleryImageUrl] = useState('');
+  const [galleryImageSizeKb, setGalleryImageSizeKb] = useState<
+    number | undefined
+  >(undefined);
 
   // استیت‌های فرم انتشار استوری ویژه (مختص پلن VIP)
   const [storyTitle, setStoryTitle] = useState('');
@@ -4244,17 +4248,34 @@ export const BusinessGalleryPage: React.FC = () => {
   const bizStories = currentBiz
     ? businessStories.filter((st) => st.businessId === currentBiz.id)
     : [];
+  const bizGallery = currentBiz
+    ? gallery.filter((g) => g.businessId === currentBiz.id)
+    : [];
 
-  const handleAddDemoImage = (e: React.FormEvent) => {
+  const handleAddRealPortfolioPhoto = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!galleryImageUrl) {
+      showToast(
+        'لطفاً ابتدا عکس نمونه‌کار خود را از گالری گوشی یا سیستم انتخاب و کراپ کنید.',
+        'warning'
+      );
+      return;
+    }
+    if (!title.trim()) {
+      showToast('لطفاً عنوان نمونه‌کار (مثلاً فیشیال تخصصی یا بالیاژ مو) را وارد کنید.');
+      return;
+    }
     addGalleryItem({
       businessId: currentBiz?.id ?? 'biz-owner-zero',
       title: title.trim(),
       categoryLabel,
       theme: 'violet',
+      imageUrl: galleryImageUrl,
+      compressedSizeKb: galleryImageSizeKb,
     });
     setTitle('');
+    setGalleryImageUrl('');
+    setGalleryImageSizeKb(undefined);
   };
 
   const handlePublishStory = (e: React.FormEvent) => {
@@ -4268,7 +4289,9 @@ export const BusinessGalleryPage: React.FC = () => {
       return;
     }
     if (!storyTitle.trim()) {
-      showToast('لطفاً عنوان کوتاه استوری (مثلاً تخفیف فیشیال یا نوبت خالی امروز) را وارد کنید.');
+      showToast(
+        'لطفاً عنوان کوتاه استوری (مثلاً تخفیف فیشیال یا نوبت خالی امروز) را وارد کنید.'
+      );
       return;
     }
     addBusinessStory({
@@ -4284,24 +4307,25 @@ export const BusinessGalleryPage: React.FC = () => {
     });
     setStoryTitle('');
     setStoryCaption('');
+    setStoryImageUrl('');
   };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="کسب‌وکار · ویترین تصویری و استوری VIP"
-        title="مدیریت استوری‌های روزانه (VIP) و گالری نمونه‌کارها"
-        subtitle="در این بخش می‌توانید هم استوری و هایلایت ویژه بالای پروفایل سالن (مختص پلن VIP) را منتشر کنید و هم عکس‌های گالری نمونه‌کارها را مدیریت نمایید"
+        kicker="کسب‌وکار · گالری نمونه‌کارهای واقعی و استوری VIP"
+        title="آپلود گالری نمونه‌کارها و مدیریت استوری روزانه (VIP)"
+        subtitle="عکس‌های واقعی نمونه‌کارهای خود را با قابلیت کراپ، چپ و راست کردن کادر و فشرده‌سازی خودکار WebP (بدون سنگین شدن سایت) در گالری پروفایل منتشر کنید"
         routePattern="/app/gallery"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'استوری VIP و گالری نمونه‌کارها' },
+          { label: 'گالری نمونه‌کارها و استوری VIP' },
         ]}
         actions={
           currentBiz ? (
             <Link to={`/salon/${currentBiz.slug}`}>
               <Button variant="outline" size="sm">
-                <span>مشاهده استوری و گالری در پروفایل عمومی</span>
+                <span>مشاهده گالری و استوری در پروفایل عمومی</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Button>
             </Link>
@@ -4309,13 +4333,152 @@ export const BusinessGalleryPage: React.FC = () => {
         }
       />
 
-      {/* بخش ۱: مدیریت استوری و هایلایت روزانه بالای پروفایل (اختصاصی پلن VIP) */}
+      {/* بخش ۱ (اصلی در بالای صفحه): آپلود عکس واقعی در گالری نمونه‌کارهای پروفایل سالن */}
+      <Card className="border-2 border-[#0057FF]/30 bg-white space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              📸 ۱. آپلود عکس جدید در گالری نمونه‌کارهای پروفایل سالن
+            </h2>
+            <p className="text-xs text-[#64748B] mt-0.5">
+              پس از انتخاب عکس از گالری گوشی یا سیستم، می‌توانید کادر را چپ و راست کنید، کراپ بزنید و پیش‌نمایش آن را قبل از انتشار ببینید.
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-extrabold">
+            {toPersianDigits(bizGallery.length)} نمونه‌کار واقعی ثبت‌شده
+          </span>
+        </div>
+
+        <form onSubmit={handleAddRealPortfolioPhoto} className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            <div className="lg:col-span-6">
+              <ProfilePhotoUploader
+                value={galleryImageUrl}
+                businessName={currentBiz?.name}
+                aspectRatio="4:3"
+                label="انتخاب و کراپ تصویر نمونه‌کار (با فشرده‌سازی خودکار WebP)"
+                helperText="با انتخاب عکس، پنجره کراپ، جابه‌جایی چپ/راست و پیش‌نمایش زنده باز می‌شود و حجم عکس بدون افت کیفیت به حدود ۴۰ کیلوبایت کاهش می‌یابد."
+                onChange={(url, sizeKb) => {
+                  setGalleryImageUrl(url);
+                  setGalleryImageSizeKb(sizeKb);
+                }}
+              />
+            </div>
+
+            <div className="lg:col-span-6 space-y-3.5">
+              <FormField
+                id="gal-title"
+                label="عنوان نمونه‌کار (زیر عکس در پروفایل نمایش داده می‌شود)"
+                required
+              >
+                <Input
+                  id="gal-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="مثلاً: فیشیال تخصصی VIP / لایت و بالیاژ مو / کاشت ناخن..."
+                />
+              </FormField>
+
+              <FormField id="gal-cat" label="دسته‌بندی تخصصی نمونه‌کار">
+                <Select
+                  id="gal-cat"
+                  value={categoryLabel}
+                  onChange={(e) => setCategoryLabel(e.target.value)}
+                  options={[
+                    { value: 'پوست و فیشیال', label: 'پوست و فیشیال' },
+                    { value: 'مو و رنگ', label: 'مو و رنگ' },
+                    { value: 'کاشت و طراحی ناخن', label: 'کاشت و طراحی ناخن' },
+                    { value: 'میکاپ و عروس', label: 'میکاپ و عروس' },
+                    { value: 'مژه و ابرو', label: 'مژه و ابرو' },
+                    { value: 'لیزر موهای زائد', label: 'لیزر موهای زائد' },
+                    {
+                      value: 'پیرایش و استایل مردانه',
+                      label: 'پیرایش و استایل مردانه',
+                    },
+                  ]}
+                />
+              </FormField>
+
+              <div className="pt-1 flex items-center justify-end">
+                <Button type="submit" variant="primary">
+                  <Plus className="w-4 h-4" />
+                  <span>ثبت و انتشار عکس در گالری پروفایل</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        {/* شبکه عکس‌های واقعی آپلودشده در گالری سالن */}
+        <div className="pt-3 border-t border-[#E2E8F0]">
+          {bizGallery.length === 0 ? (
+            <EmptyState
+              title="گالری نمونه‌کارهای سالن شما هنوز خالی است"
+              description="هیچ عکس نمایشی یا فیکی در گالری شما وجود ندارد. از فرم بالا اولین عکس واقعی نمونه‌کار خود را انتخاب، کراپ و منتشر کنید."
+            />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {bizGallery.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] overflow-hidden flex flex-col justify-between shadow-2xs"
+                >
+                  <div className="relative aspect-[4/3] bg-[#E2E8F0] overflow-hidden">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <VisualMediaIllustration
+                        theme={item.theme}
+                        categoryLabel={item.categoryLabel}
+                        title={item.title}
+                        city={currentBiz?.city || 'اصفهان'}
+                      />
+                    )}
+                    {item.compressedSizeKb ? (
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/70 text-[#10B981] text-[10px] font-extrabold">
+                        WebP · {toPersianDigits(item.compressedSizeKb)} KB
+                      </span>
+                    ) : null}
+                    <span className="absolute top-2 right-2 px-2.5 py-0.5 rounded-full bg-[#061138]/80 text-white text-[10px] font-bold">
+                      {item.categoryLabel}
+                    </span>
+                  </div>
+                  <div className="p-3 flex items-center justify-between gap-2 text-xs bg-white">
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-[#1E1B2E] truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-[11px] text-[#64748B]">
+                        نمایش در تب گالری پروفایل عمومی
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeGalleryItem(item.id)}
+                      className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[11px] cursor-pointer shrink-0"
+                    >
+                      حذف
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* بخش ۲: مدیریت استوری و هایلایت روزانه بالای پروفایل (اختصاصی پلن VIP) */}
       <Card className="border-2 border-[#8B5CF6]/35 bg-gradient-to-br from-[#FAF8FF] via-white to-[#FDF4FF] space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-l from-[#061138] to-[#7C3AED] text-[#00E5FF] text-xs font-black">
-                ✨ استوری و هایلایت ویژه بالای پروفایل سالن (اختصاصی پلن VIP)
+                ✨ ۲. استوری و هایلایت ویژه بالای پروفایل سالن (اختصاصی پلن VIP)
               </span>
               <span
                 className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
@@ -4331,7 +4494,9 @@ export const BusinessGalleryPage: React.FC = () => {
             </div>
             <p className="text-xs text-[#475569] leading-relaxed">
               <strong>جایگاه نمایش به مشتری کجاست؟</strong> استوری‌های شما دقیقاً در{' '}
-              <strong>بالای صفحه پروفایل عمومی سالن شما (`/salon/{currentBiz?.slug || 'your-salon'}`)</strong>{' '}
+              <strong>
+                بالای صفحه پروفایل عمومی سالن شما (`/salon/{currentBiz?.slug || 'your-salon'}`)
+              </strong>{' '}
               به صورت دایره‌های استوری با حلقه طلایی-بنفش (مشابه اینستاگرام) و همچنین حلقه استوری دور عکس پروفایل سالن نمایش داده می‌شود و مشتری با کلیک روی استوری می‌تواند مستقیماً همان خدمت یا تخفیف را رزرو کند.
             </p>
           </div>
@@ -4350,7 +4515,8 @@ export const BusinessGalleryPage: React.FC = () => {
                 <ProfilePhotoUploader
                   value={storyImageUrl}
                   businessName={currentBiz?.name}
-                  label="۱. تصویر استوری (آپلود عکس نمونه‌کار یا بنر تخفیف)"
+                  aspectRatio="4:5"
+                  label="۱. تصویر استوری (با قابلیت کراپ و چپ/راست کردن کادر)"
                   onChange={(url) => setStoryImageUrl(url)}
                 />
               </div>
@@ -4502,84 +4668,6 @@ export const BusinessGalleryPage: React.FC = () => {
           </div>
         ) : null}
       </Card>
-
-      {/* بخش ۲: گالری نمونه‌کارهای دائمی سالن */}
-      <Card className="mb-6 space-y-3">
-        <div className="border-b border-[#E2E8F0] pb-2">
-          <h2 className="text-sm font-extrabold text-[#061138]">
-            افزودن تصویر به گالری نمونه‌کارهای پروفایل
-          </h2>
-        </div>
-        <form
-          onSubmit={handleAddDemoImage}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
-        >
-          <FormField id="gal-title" label="عنوان نمونه کار جدید" required>
-            <Input
-              id="gal-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="مثلاً نمونه لایت و بالیاژ..."
-            />
-          </FormField>
-          <FormField id="gal-cat" label="دسته‌بندی تخصصی">
-            <Input
-              id="gal-cat"
-              value={categoryLabel}
-              onChange={(e) => setCategoryLabel(e.target.value)}
-            />
-          </FormField>
-          <Button type="submit" variant="primary">
-            <Plus className="w-4 h-4" />
-            <span>افزودن به گالری</span>
-          </Button>
-        </form>
-      </Card>
-
-      {(() => {
-        const bizGallery = currentBiz
-          ? gallery.filter((g) => g.businessId === currentBiz.id)
-          : [];
-        if (bizGallery.length === 0) {
-          return (
-            <EmptyState
-              title="گالری نمونه کارهای سالن شما هنوز خالی است"
-              description="از فرم بالا اولین نمونه کار تصویری سالن خود را ثبت کنید تا در پروفایل عمومی سالن به مشتریان نمایش داده شود."
-            />
-          );
-        }
-        return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {bizGallery.map((item) => (
-              <Card key={item.id} padding="sm" className="space-y-3">
-                <VisualMediaIllustration
-                  theme={item.theme}
-                  categoryLabel={item.categoryLabel}
-                  title={item.title}
-                  city={currentBiz?.city || 'اصفهان'}
-                />
-                <div className="flex items-center justify-between text-xs px-1 pt-0.5">
-                  <div>
-                    <p className="font-extrabold text-[#1E1B2E] truncate">
-                      {item.title}
-                    </p>
-                    <p className="text-[11px] text-[#6B6480]">
-                      {item.categoryLabel}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeGalleryItem(item.id)}
-                    className="text-[#EF4444] font-semibold hover:underline cursor-pointer shrink-0"
-                  >
-                    حذف
-                  </button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        );
-      })()}
     </div>
   );
 };
@@ -4606,6 +4694,7 @@ export const BusinessProfileEditPage: React.FC = () => {
   );
   const [name, setName] = useState(currentBiz?.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(currentBiz?.avatarUrl ?? '');
+  const [coverUrl, setCoverUrl] = useState(currentBiz?.coverUrl ?? '');
   const [targetGender, setTargetGender] = useState<'FEMALE' | 'MALE' | 'BOTH'>(
     currentBiz?.targetGender ?? 'FEMALE'
   );
@@ -4642,6 +4731,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     if (!currentBiz) return;
     setName(currentBiz.name ?? '');
     setAvatarUrl(currentBiz.avatarUrl ?? '');
+    setCoverUrl(currentBiz.coverUrl ?? '');
     setTargetGender(currentBiz.targetGender ?? 'FEMALE');
     setInstagramHandle(currentBiz.instagramHandle ?? '');
     setAddress(currentBiz.address ?? '');
@@ -4683,6 +4773,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     updateBusinessProfile(currentBiz.id, {
       name,
       avatarUrl: avatarUrl || undefined,
+      coverUrl: coverUrl || undefined,
       targetGender,
       instagramHandle: cleanedInsta,
       address,
@@ -4788,6 +4879,20 @@ export const BusinessProfileEditPage: React.FC = () => {
               <div className="space-y-4">
                 <ProfilePhotoUploader
                   value={avatarUrl}
+                  businessName={name || currentBiz.name}
+                  enableCoverBannerOption={true}
+                  coverValue={coverUrl}
+                  onCoverChange={(newCover) => {
+                    setCoverUrl(newCover);
+                    updateBusinessProfile(currentBiz.id, {
+                      coverUrl: newCover || undefined,
+                    });
+                    showToast(
+                      newCover
+                        ? 'تصویر افقی کارت صفحه اصلی و بنر پروفایل ذخیره شد ✓'
+                        : 'تصویر کارت صفحه اصلی با تصویر اصلی پروفایل یکسان شد ✓'
+                    );
+                  }}
                   onChange={(url) => {
                     setAvatarUrl(url);
                     updateBusinessProfile(currentBiz.id, {
@@ -4800,7 +4905,7 @@ export const BusinessProfileEditPage: React.FC = () => {
                       showToast('تصویر پروفایل سالن بلافاصله ذخیره و ثبت شد ✓');
                     }
                   }}
-                  label="تصویر پروفایل یا لوگوی سالن (به محض انتخاب، خودکار ذخیره می‌شود)"
+                  label="تصویر پروفایل و ویترین سالن (با قابلیت کراپ، چپ/راست و پیش‌نمایش در ۳ جایگاه)"
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

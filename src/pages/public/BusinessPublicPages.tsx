@@ -188,9 +188,11 @@ export const BusinessPublicProfileView: React.FC<{
   const heroBannerUrl =
     mode === 'pro' && matchedSpecialist
       ? matchedSpecialist.avatarUrl ||
+        business.coverUrl ||
         business.avatarUrl ||
         getBeautyPhotoUrl(displayName, business.typeLabel, 'botanical')
-      : business.avatarUrl ||
+      : business.coverUrl ||
+        business.avatarUrl ||
         getBeautyPhotoUrl(displayName, business.typeLabel);
 
   const proAvatarUrl =
@@ -201,6 +203,7 @@ export const BusinessPublicProfileView: React.FC<{
           matchedSpecialist.roleTitle
         )
       : business.avatarUrl ||
+        business.coverUrl ||
         getBeautyPhotoUrl(business.name, business.typeLabel);
 
   const [activeActionModal, setActiveActionModal] = useState<
@@ -248,47 +251,13 @@ export const BusinessPublicProfileView: React.FC<{
     },
   ];
 
-  // اگر گالری دیتابیس کم بود، چند نمونه کار تصویری واقعی مکمل برای چیدمان ۳ ستونی نمایش دهیم
-  const portfolioPhotos =
-    bizGallery.length >= 6
-      ? bizGallery.map((g) => ({
-          id: g.id,
-          title: g.title,
-          categoryLabel: g.categoryLabel,
-          url: getBeautyPhotoUrl(g.title, g.categoryLabel),
-        }))
-      : [
-          ...bizGallery.map((g) => ({
-            id: g.id,
-            title: g.title,
-            categoryLabel: g.categoryLabel,
-            url: getBeautyPhotoUrl(g.title, g.categoryLabel),
-          })),
-          {
-            id: 'pf-extra-1',
-            title: 'استایل و براشینگ تخصصی',
-            categoryLabel: 'مو و رنگ',
-            url: getBeautyPhotoUrl('استایل و براشینگ تخصصی', 'مو و رنگ'),
-          },
-          {
-            id: 'pf-extra-2',
-            title: 'میکاپ لایت و کانتورینگ',
-            categoryLabel: 'میکاپ تخصصی',
-            url: getBeautyPhotoUrl('میکاپ لایت و کانتورینگ', 'میکاپ'),
-          },
-          {
-            id: 'pf-extra-3',
-            title: 'طراحی و ژلیش ناخن طبیعی',
-            categoryLabel: 'طراحی ناخن',
-            url: getBeautyPhotoUrl('طراحی و ژلیش ناخن طبیعی', 'ناخن'),
-          },
-          {
-            id: 'pf-extra-4',
-            title: 'فیشیال و پاکسازی تخصصی',
-            categoryLabel: 'پوست و اسپا',
-            url: getBeautyPhotoUrl('فیشیال و پاکسازی تخصصی', 'پوست و فیشیال'),
-          },
-        ].slice(0, 6);
+  // فقط عکس‌های واقعی آپلودشده توسط صاحب کسب‌وکار در گالری نمایش داده می‌شود (بدون هیچ عکس نمونه فیک)
+  const portfolioPhotos = bizGallery.map((g) => ({
+    id: g.id,
+    title: g.title,
+    categoryLabel: g.categoryLabel,
+    url: g.imageUrl || getBeautyPhotoUrl(g.title, g.categoryLabel),
+  }));
 
   return (
     <div className="space-y-8 pb-24 lg:pb-8">
@@ -877,46 +846,77 @@ export const BusinessPublicProfileView: React.FC<{
               </div>
             )
           ) : activeTab === 'gallery' ? (
-            /* شبکه ۳ ستونی مربعی نمونه‌کارها — دقیقاً مطابق Capture1.PNG و Capture4.PNG راست */
+            /* شبکه نمونه‌کارهای واقعی سالن */
             <Card className="rounded-3xl space-y-4">
-              <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6E0F5] pb-3">
                 <div>
                   <h3 className="text-sm font-extrabold text-[#1E1B2E]">
                     گالری نمونه‌کارهای واقعی سالن
                   </h3>
                   <p className="text-xs text-[#6B6480] mt-0.5">
-                    تصاویر خدمات انجام‌شده توسط متخصصان {business.name}
+                    تصاویر واقعی خدمات انجام‌شده در {business.name}
                   </p>
                 </div>
-                <span className="text-xs font-bold text-[#8B5CF6] tabular-nums">
-                  {toPersianDigits(portfolioPhotos.length)} تصویر
-                </span>
+                <div className="flex items-center gap-2">
+                  {authUser && ownedBusinessId === business.id ? (
+                    <Link
+                      to="/app/gallery"
+                      className="px-3 py-1.5 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold transition-colors"
+                    >
+                      + آپلود عکس نمونه‌کار در گالری
+                    </Link>
+                  ) : null}
+                  <span className="text-xs font-bold text-[#8B5CF6] tabular-nums">
+                    {toPersianDigits(portfolioPhotos.length)} تصویر
+                  </span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-                {portfolioPhotos.map((item) => (
-                  <div
-                    key={item.id}
-                    className="group relative aspect-square rounded-2xl overflow-hidden bg-[#EDE9FE] border border-[#E6E0F5]"
-                  >
-                    <img
-                      src={item.url}
-                      alt={item.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/80 via-transparent to-transparent" />
-                    <div className="absolute bottom-2.5 inset-x-2.5 text-white">
-                      <span className="text-[10px] font-bold text-white/80 block">
-                        {item.categoryLabel}
-                      </span>
-                      <p className="text-xs font-extrabold truncate">
-                        {item.title}
-                      </p>
+              {portfolioPhotos.length === 0 ? (
+                <div className="py-8 text-center space-y-3">
+                  <p className="text-sm font-extrabold text-[#1E1B2E]">
+                    هنوز عکسی در گالری نمونه‌کارهای این مرکز ثبت نشده است
+                  </p>
+                  <p className="text-xs text-[#6B6480] max-w-md mx-auto">
+                    صاحب این کسب‌وکار می‌تواند از پنل مدیریت خود، تصاویر واقعی نمونه‌کارها را در گالری منتشر کند.
+                  </p>
+                  {authUser && ownedBusinessId === business.id ? (
+                    <div className="pt-1">
+                      <Link
+                        to="/app/gallery"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold"
+                      >
+                        <span>ورود به بخش گالری و آپلود اولین نمونه‌کار ←</span>
+                      </Link>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+                  {portfolioPhotos.map((item) => (
+                    <div
+                      key={item.id}
+                      className="group relative aspect-[4/3] rounded-2xl overflow-hidden bg-[#EDE9FE] border border-[#E6E0F5]"
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/80 via-transparent to-transparent" />
+                      <div className="absolute bottom-2.5 inset-x-2.5 text-white">
+                        <span className="text-[10px] font-bold text-white/80 block">
+                          {item.categoryLabel}
+                        </span>
+                        <p className="text-xs font-extrabold truncate">
+                          {item.title}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           ) : activeTab === 'reviews' ? (
             <div className="space-y-4">
