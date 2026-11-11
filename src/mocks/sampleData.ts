@@ -37,7 +37,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'makeup',
     title: 'آرایش و میکاپ',
     subtitle: 'میکاپ محفلی، گریم تخصصی عروس و شینیون‌های مدرن',
-    serviceCount: 42,
+    serviceCount: 0,
     targetAudience: 'سالن‌های زیبایی و میکاپ‌آرتیست‌ها',
     iconName: 'Sparkles',
   },
@@ -46,7 +46,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'nails',
     title: 'ناخن',
     subtitle: 'مانیکور روسی، استحکام‌سازی (لمینت)، ژلیش و پدیکور اسپا',
-    serviceCount: 38,
+    serviceCount: 0,
     targetAudience: 'سالن‌ها و ناخن‌کاران تخصصی',
     iconName: 'Gem',
   },
@@ -55,7 +55,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'hair-color',
     title: 'مو و رنگ',
     subtitle: 'کوتاهی ژورنالی، بالیاژ، آمبره، کراتین و پروتئین‌تراپی مو',
-    serviceCount: 54,
+    serviceCount: 0,
     targetAudience: 'سالن‌های تخصصی مو',
     iconName: 'Scissors',
   },
@@ -64,7 +64,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'skincare-facial',
     title: 'پوست و فیشیال',
     subtitle: 'پاکسازی چندمرحله‌ای، هیدرافیشیال، آبرسانی عمیق و اسیدتراپی',
-    serviceCount: 31,
+    serviceCount: 0,
     targetAudience: 'استودیوهای مراقبت پوست و فیشیالیست‌ها',
     iconName: 'Droplets',
   },
@@ -73,7 +73,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'brows-lashes',
     title: 'ابرو و مژه',
     subtitle: 'لیفت و لمینت مژه و ابرو، اکستنشن کلاسیک و طراحی قرینه ابرو',
-    serviceCount: 27,
+    serviceCount: 0,
     targetAudience: 'متخصصان ابرو و مژه',
     iconName: 'Eye',
   },
@@ -82,7 +82,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'men-barbershop',
     title: 'آرایشگاه مردانه',
     subtitle: 'کوتاهی مدرن و کلاسیک مردانه، فید تخصصی و گریم داماد',
-    serviceCount: 33,
+    serviceCount: 0,
     targetAudience: 'آرایشگاه‌ها و پیرایشگاه‌های مردانه',
     iconName: 'UserCheck',
   },
@@ -91,7 +91,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'grooming',
     title: 'اصلاح و پیرایش',
     subtitle: 'اصلاح و قرینه‌سازی ریش با حوله گرم، پاکسازی صورت و استایلینگ',
-    serviceCount: 22,
+    serviceCount: 0,
     targetAudience: 'پیرایشگران حرفه‌ای',
     iconName: 'Award',
   },
@@ -100,7 +100,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'massage-spa',
     title: 'ماساژ و مراقبت بدن',
     subtitle: 'ماساژ ریلکسیشن، اسپا، بادی‌اسکراب و رفع گرفتگی عضلات',
-    serviceCount: 19,
+    serviceCount: 0,
     targetAudience: 'مراکز اسپا و مراقبت بدن',
     iconName: 'HeartHandshake',
   },
@@ -109,7 +109,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'bridal',
     title: 'عروس',
     subtitle: 'پکیج VIP میکاپ و شینیون عروس، گریم سینمایی، تاج و تور و مشاوره تخصصی عروس',
-    serviceCount: 28,
+    serviceCount: 0,
     targetAudience: 'سالن‌های تخصصی عروس و میکاپ‌آرتیست‌های VIP',
     iconName: 'Crown',
   },
@@ -118,7 +118,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'groom',
     title: 'داماد',
     subtitle: 'پکیج VIP گریم و پیرایش داماد، فیشیال و پاکسازی صورت داماد و استایلینگ روز مراسم',
-    serviceCount: 21,
+    serviceCount: 0,
     targetAudience: 'آرایشگاه‌های تخصصی داماد و استودیوهای پیرایش VIP',
     iconName: 'Award',
   },
@@ -127,7 +127,7 @@ export const SAMPLE_CATEGORIES: CategoryItem[] = [
     slug: 'laser-hair-removal',
     title: 'لیزر موهای زائد',
     subtitle: 'پکیج‌های فول‌بادی، توتال و نواحی تکی لیزر موهای زائد بانوان و آقایان با دستگاه‌های روز',
-    serviceCount: 44,
+    serviceCount: 0,
     targetAudience: 'مراکز تخصصی لیزر موهای زائد بانوان و آقایان',
     iconName: 'Sparkles',
   },
@@ -149,6 +149,530 @@ export interface LaserPresetServiceItem {
   durationMinutes: number;
   description: string;
 }
+
+export interface FacialPresetServiceItem {
+  group: 'FACIAL_PACKAGES' | 'THERAPY_PACKAGES' | 'SINGLE_FACIAL';
+  categoryLabel: string;
+  title: string;
+  pricingType: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+  priceToman: number;
+  maxPriceToman?: number;
+  durationMinutes: number;
+  packageIncludes: string[];
+  description: string;
+}
+
+export const FACIAL_SERVICE_PRESETS: FacialPresetServiceItem[] = [
+  // ۱. پکیج‌های جامع فیشیال و پاکسازی
+  {
+    group: 'FACIAL_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج فیشیال کلاسیک و پاکسازی عمیق پوست (۶ مرحله‌ای)',
+    pricingType: 'RANGE',
+    priceToman: 550000,
+    maxPriceToman: 850000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'آنالیز تخصصی نوع پوست',
+      'بخور اوزون و لایه‌برداری آنزیمی',
+      'تخلیه کومدون‌ها و جوش‌های سرسیاه با درمااف',
+      'ماسک آبرسان و تسکین‌دهنده متناسب با پوست',
+      'ماساژ لیفتینگ صورت و سرم فینیشینگ',
+    ],
+    description: 'پاکسازی کامل منافذ، تنظیم چربی و شادابی فوری پوست (بازه قیمت متناسب با برند مواد مصرفی)',
+  },
+  {
+    group: 'FACIAL_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج هیدروفیشیال تخصصی و آبرسانی چندمرحله‌ای (HydroFacial VIP)',
+    pricingType: 'RANGE',
+    priceToman: 850000,
+    maxPriceToman: 1350000,
+    durationMinutes: 75,
+    packageIncludes: [
+      'پاکسازی و میکرودرم ابریژن آبی (هیدرودرم)',
+      'تزریق سرم‌های هیالورونیک اسید با دستگاه',
+      'اولتراسونیک و جذب عمقی ویال‌های مغذی',
+      'چکش سرد جهت بستن منافذ باز',
+      'نوردرمانی (LED تراپی) کلاژن‌ساز',
+      'ماسک هیدروژلی طلا یا خاویار',
+    ],
+    description: 'آبرسانی عمقی، شفافیت شیشه‌ای پوست و رفع کدری و خشکی با دستگاه هیدروفیشیال',
+  },
+  {
+    group: 'FACIAL_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج VIP جوانسازی، لیفتینگ و ضدچروک (Anti-Aging Facial)',
+    pricingType: 'RANGE',
+    priceToman: 1100000,
+    maxPriceToman: 1750000,
+    durationMinutes: 90,
+    packageIncludes: [
+      'لایه‌برداری ملایم AHA و آماده‌سازی سد پوستی',
+      'آراف فرکشنال سطحی (RF) جهت تحریک کلاژن',
+      'ویال تخصصی پپتاید و رتینول کلینیکی',
+      'ماساژ تخصصی Kobido لیفت عضلات صورت و گردن',
+      'ماسک گچی یا رابرماسک سفت‌کننده',
+    ],
+    description: 'کاهش خطوط ریز، سفت‌شدن قوام پوست و بازگرداندن خاصیت ارتجاعی با متریال کلینیکی',
+  },
+  {
+    group: 'FACIAL_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج فیشیال تخصصی داماد / آقایان (Deep Men Facial)',
+    pricingType: 'RANGE',
+    priceToman: 600000,
+    maxPriceToman: 950000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'بخور گرم و اسکراب تخصصی پوست ضخیم آقایان',
+      'تخلیه کامل جوش‌های سرسیاه بینی و پیشانی',
+      'کنترل چربی (سبوم) و رفع التهاب اصلاح',
+      'ماسک دتوکس زغال فعال و آبرسان دور چشم',
+    ],
+    description: 'رفع تیرگی، چربی اضافه و منافذ باز پوست آقایان همراه با ریلکسیشن صورت',
+  },
+
+  // ۲. پکیج‌های درمانی، اسیدتراپی و کربوکسی
+  {
+    group: 'THERAPY_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج اسیدتراپی تخصصی ضدجوش، آکنه و منافذ باز (Acne Control)',
+    pricingType: 'STARTING_FROM',
+    priceToman: 750000,
+    durationMinutes: 65,
+    packageIncludes: [
+      'آنالیز التهاب و تعیین درصد اسید (سالیسیلیک / ماندلیک)',
+      'تخلیه استریل ضایعات التهابی و سرسیاه',
+      'هایفرکوئنسی (High Frequency) آنتی‌باکتریال و ضدقارچ',
+      'سرم نیاسینامید + زینک و ماسک جلبک تسکین‌دهنده',
+      'نوردرمانی آبی ضدآکنه',
+    ],
+    description: 'کنترل ترشح چربی، خشک‌کردن جوش‌های فعال و جمع‌کردن منافذ باز (قیمت دقیق پس از آنالیز پوست)',
+  },
+  {
+    group: 'THERAPY_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج کربوکسی‌تراپی و روشن‌کننده لک و تیرگی (Brightening & Carboxy)',
+    pricingType: 'RANGE',
+    priceToman: 890000,
+    maxPriceToman: 1400000,
+    durationMinutes: 70,
+    packageIncludes: [
+      'پاکسازی اولیه و آنزیم‌تراپی روشن‌کننده',
+      'ژل و ماسک کربوکسی اکسیژن‌رسان بافتی',
+      'کوکتل مزووایت / ویتامین C پایدار',
+      'نوردرمانی سبز ضدلک و یکدست‌کننده رنگ پوست',
+    ],
+    description: 'افزایش گردش خون مویرگی، رفع تیرگی و لک‌های ناشی از آفتاب یا جای جوش',
+  },
+  {
+    group: 'THERAPY_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج پلاژن‌تراپی و اکسیژن‌رسانی سه‌گانه (Pollogen OxyGeneo)',
+    pricingType: 'RANGE',
+    priceToman: 950000,
+    maxPriceToman: 1450000,
+    durationMinutes: 70,
+    packageIncludes: [
+      'کپسول OxyGeneo لایه‌بردار و اکسیژن‌ساز',
+      'امواج رادیوفرکوئنسی TriPollar لیفتینگ',
+      'اولتراسوند جذب سرم‌های روشن‌کننده یا جوانساز',
+      'ماسک نهایی آبرسان عمیق',
+    ],
+    description: 'سه فناوری هم‌زمان لایه‌برداری، اکسیژن‌رسانی درونی و سفت‌کنندگی پوست در یک جلسه',
+  },
+  {
+    group: 'THERAPY_PACKAGES',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج میکرونیدلینگ و مزونیدلینگ بازسازی پوست و اسکار',
+    pricingType: 'STARTING_FROM',
+    priceToman: 980000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'بی‌حسی موضعی و ضدعفونی کلینیکی',
+      'کار با کارتریج استریل یک‌بارمصرف و کوکتل اسپانیایی/فرانسوی',
+      'ماسک ورقه‌ای ترمیم‌کننده و تسکین‌دهنده سرد',
+      'مشاوره مراقبت خانگی پس از نیدلینگ',
+    ],
+    description: 'درمان جای جوش (اسکار)، منافذ باز و لک‌های مقاوم با کوکتل‌های مزوتراپی اورجینال',
+  },
+
+  // ۳. خدمات تک‌مرحله‌ای و مکمل پوست
+  {
+    group: 'SINGLE_FACIAL',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پکیج تخصصی سیاهی، پف و خطوط دور چشم (Eye Contour Therapy)',
+    pricingType: 'RANGE',
+    priceToman: 420000,
+    maxPriceToman: 650000,
+    durationMinutes: 40,
+    packageIncludes: [
+      'کربوکسی یا آر‌اف مخصوص دور چشم',
+      'ویال کافئین و پپتاید ضدتیرگی و پف',
+      'پچ هیدروژلی کلاژن و ماساژ درناژ لنفاوی',
+    ],
+    description: 'رفع خستگی، کبودی و خطوط پنجه کلاغی دور چشم',
+  },
+  {
+    group: 'SINGLE_FACIAL',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'پاکسازی اکسپرس و شاداب‌سازی سریع (Mini Facial ۳۰ دقیقه‌ای)',
+    pricingType: 'FIXED',
+    priceToman: 420000,
+    durationMinutes: 35,
+    packageIncludes: [
+      'شست‌وشوی تخصصی و اسکراب ملایم',
+      'آبرسانی سریع و ماسک ورقه‌ای مغذی',
+      'کرم مرطوب‌کننده و ضدآفتاب تخصصی',
+    ],
+    description: 'مناسب افراد پرمشغله یا آماده‌سازی سریع پوست قبل از میکاپ و مهمانی',
+  },
+  {
+    group: 'SINGLE_FACIAL',
+    categoryLabel: 'پوست و فیشیال',
+    title: 'مشاوره، آنالیز دستگاهی پوست و تجویز روتین مراقبت خانگی',
+    pricingType: 'FIXED',
+    priceToman: 200000,
+    durationMinutes: 25,
+    packageIncludes: [
+      'بررسی میزان رطوبت، چربی، عمق لک و منافذ',
+      'تدوین برنامه درمانی کابین و روتین خانگی صبح و شب',
+    ],
+    description: 'ارزیابی دقیق نیازهای پوست قبل از شروع جلسات فیشیال (در صورت انجام فیشیال کسر می‌گردد)',
+  },
+];
+
+/** چک‌لیست هوشمند مراحل، آیتم‌ها و جزئیات شخصی‌سازی خدمات و پکیج‌ها به تفکیک هر لاین زیبایی (تا هیچ موردی از قلم نیفتد) */
+export const CATEGORY_PACKAGE_STAGE_CHECKLISTS: Record<
+  string,
+  {
+    stages: string[];
+    materialsAndNotes: string[];
+  }
+> = {
+  'پوست و فیشیال': {
+    stages: [
+      'آنالیز دیجیتال و تعیین تیپ پوستی',
+      'کلینزینگ و شست‌وشوی تخصصی دو مرحله‌ای',
+      'بخور گرم + اوزون‌تراپی',
+      'لایه‌برداری آنزیمی / گلایکولیک اسید',
+      'تخلیه کومدون و جوش سرسیاه با درمااف اولتراسونیک',
+      'میکرودرم / هیدرودرم ابریژن آبی',
+      'کربوکسی‌تراپی اکسیژن‌رسان',
+      'ویال تخصصی آبرسان / ضدلک / ضدجوش',
+      'آراف (RF) لیفتینگ یا هایفرکوئنسی آنتی‌باکتریال',
+      'ماسک هیدروژلی / رابرماسک / ماسک طلا',
+      'تونل نوردرمانی (LED تراپی کلاژن‌ساز)',
+      'چکش سرد جهت بستن منافذ',
+      'ماساژ تخصصی صورت، گردن و دکلته',
+      'سرم فینیشینگ، دور چشم و ضدآفتاب کلینیکی',
+    ],
+    materialsAndNotes: [
+      'با متریال اورجینال اروپایی (تالگو / استادرم / کلینیک)',
+      'انتخاب نوع اسید و ویال پس از معاینه حضوری پوست',
+      'مناسب پوست‌های چرب، مختلط و مستعد آکنه',
+      'مناسب پوست‌های خشک، دهیدراته و کدر',
+      'بدون درد، التهاب یا دوره نقاهت',
+    ],
+  },
+  'مو و رنگ': {
+    stages: [
+      'مشاوره تخصصی انتخاب تناژ رنگ و تست سلامت تار مو',
+      'پلکس‌تراپی و محافظت از ساختار مو حین دکلره',
+      'دکلره بدون آمونیاک تا پایه دلخواه بدون آسیب',
+      'رنگساژ ترکیبی ژورنالی و خنثی‌سازی زردی',
+      'پروتئین‌تراپی / بوتاکس سرد احیاکننده بعد از رنگ',
+      'شست‌وشوی تخصصی با شامپو و ماسک تثبیت‌کننده PH',
+      'کات لیزری / موخوره‌گیری روسی هدیه پکیج',
+      'براشینگ و استایلینگ حرفه‌ای پایانی',
+    ],
+    materialsAndNotes: [
+      'قیمت نهایی بر اساس قد و حجم مو در سالن محاسبه می‌شود',
+      'با مواد ایتالیایی و آلمانی (پرفکت، اولاپلکس، شوارتسکف)',
+      'تضمین سلامت و ابریشمی ماندن مو بدون کشسانی',
+    ],
+  },
+  'کاشت و طراحی ناخن': {
+    stages: [
+      'مانیکور روسی و زیرسازی تمیز کوتیکول',
+      'ضدقارچ و پرایمر اسیدی/غیراسیدی اورجینال',
+      'کاشت پودر / پلی‌ژل / لمینت استحکام‌دهنده',
+      'فرم‌دهی اصولی (بادامی، گلدانی، مربع، تیز)',
+      'لاک‌ژل با تنوع بیش از ۲۰۰ رنگ + تاپ‌کات شاین/مات',
+      'دیزاین ۲ ناخن رایگان (کروم، فرنچ، شوگر، ورق طلا)',
+      'روغن کوتیکول و کرم آبرسان دست',
+    ],
+    materialsAndNotes: [
+      'پک استریل اتوکلاوشده مخصوص هر مراجع',
+      'بدون هواگرفتگی یا شکستگی تا نوبت ترمیم بعدی',
+      'هزینه دیزاین‌های پرکار یا ناخن بلند جداگانه محاسبه می‌شود',
+    ],
+  },
+  'میکاپ و عروس': {
+    stages: [
+      'پاکسازی سطحی، آبرسانی و پرایمر زیرساز پوست',
+      'کانتورینگ و نوریینگ استخری / ضدآب ۲۴ ساعته',
+      'سایه چشم ژورنالی (لایت، اسموکی، خطی، بادیگارد)',
+      'مژه مصنوعی ابریشمی تکی/ریه‌ای متناسب با فرم چشم',
+      'اصلاح و قرینه‌سازی هاشورگونه ابرو',
+      'شینیون تخصصی (اروپایی، باز و بسته، رترو، کرلی)',
+      'فیکس نهایی با اسپری فیکس مک / اربن دیکی',
+    ],
+    materialsAndNotes: [
+      'با برندهای لوکس (نارس، استی‌لودر، هدی بیوتی، شارلوت تیلبری)',
+      'ماندگاری تضمین‌شده تا پایان مراسم بدون ماسیدگی',
+      'امکان مشاوره حضوری و انتخاب سبک قبل از مراسم',
+    ],
+  },
+  'مژه و ابرو': {
+    stages: [
+      'مشاوره و طراحی مپ اختصاصی متناسب با فرم چشم و صورت',
+      'شست‌وشوی مژه و ابرو با فوم تخصصی و پرایمر',
+      'اکستنشن تار به تار با مژه ابریشمی سبک و چسب ضدحساسیت',
+      'لیفت و لمینت با مواد کراتینه و تقویتی (مای‌لمینیشن)',
+      'بوتاکس‌تراپی و رنگ تخصصی مژه/ابرو',
+      'براش اختصاصی و آموزش مراقبت خانگی',
+    ],
+    materialsAndNotes: [
+      'بدون ریزش یا آسیب به مژه‌های طبیعی',
+      'استفاده از چسب گازگیر و ضدحساسیت چشم',
+    ],
+  },
+  'لیزر موهای زائد': {
+    stages: [
+      'مشاوره تعیین تیپ پوستی و تنظیم انرژی شات دستگاه',
+      'پک بهداشتی و سری شخصی استریل مخصوص هر مراجع',
+      'پوشش کامل و دقیق نواحی بدون جاافتادگی',
+      'کولینگ (خنک‌کننده) قوی بدون درد و سوختگی',
+      'ژل و لوسیون تسکین‌دهنده پس از لیزر',
+      'شارژ رایگان (ترمیم) دو هفته بعد در صورت نیاز',
+    ],
+    materialsAndNotes: [
+      'اپراتور مجرب با نظارت پزشک مجموعه',
+      'لطفاً ۲۴ ساعت قبل از نوبت، نواحی را با ژیلت شیو نمایید',
+    ],
+  },
+  'پیرایش و استایل مردانه': {
+    stages: [
+      'مشاوره استایل متناسب با فرم صورت و جمجمه',
+      'کوتاهی ژورنالی و فید (Skin Fade / Taper / Classic)',
+      'آنالیز و خط‌اندازی دقیق ریش و سبیل با تیغ استریل',
+      'حوله داغ، بخور صورت و اسکراب پاکسازی منافذ',
+      'شست‌وشوی مو و ماسک خنک‌کننده پوست سر',
+      'براشینگ و استایلینگ با واکس/پوماد اورجینال',
+    ],
+    materialsAndNotes: [
+      'استفاده از تیغ و پیش‌بند یک‌بارمصرف بهداشتی',
+      'محیط VIP و بدون معطلی دقیقاً در ساعت رزروشده',
+    ],
+  },
+};
+
+/** کیت‌های آماده سایر حوزه‌های تخصصی (مو و رنگ، ناخن، میکاپ، مژه و ابرو، پیرایش مردانه) */
+export const OTHER_DOMAIN_SERVICE_PRESETS: Array<{
+  domainCategory: string;
+  categorySlug: string;
+  title: string;
+  pricingType: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+  priceToman: number;
+  maxPriceToman?: number;
+  durationMinutes: number;
+  packageIncludes: string[];
+  description: string;
+}> = [
+  // مو و رنگ
+  {
+    domainCategory: 'مو و رنگ',
+    categorySlug: 'hair-color',
+    title: 'پکیج تخصصی بالیاژ، آمبره و لایت ژورنالی (با پلکس‌تراپی)',
+    pricingType: 'RANGE',
+    priceToman: 2200000,
+    maxPriceToman: 4800000,
+    durationMinutes: 180,
+    packageIncludes: [
+      'مشاوره تناژ رنگ و تست سلامت مو',
+      'دکلره بدون آسیب همراه با پلکس‌تراپی',
+      'رنگساژ ترکیبی و ماسک تثبیت‌کننده',
+      'براشینگ و استایلینگ پایانی',
+    ],
+    description: 'تکنیک‌های روز لایت، بالیاژ و ایرتاچ (قیمت نهایی بر اساس قد و حجم مو)',
+  },
+  {
+    domainCategory: 'مو و رنگ',
+    categorySlug: 'hair-color',
+    title: 'پکیج کراتین، پروتئین‌تراپی و احیای ۱۰۰٪ موهای آسیب‌دیده',
+    pricingType: 'RANGE',
+    priceToman: 1800000,
+    maxPriceToman: 4200000,
+    durationMinutes: 150,
+    packageIncludes: [
+      'شست‌وشوی قلیایی و آماده‌سازی فلس مو',
+      'موادگذاری اورجینال برزیلی بدون قرنطینه',
+      'اتوکشی تخصصی تیتانیومی و فوتون‌تراپی',
+      'موخوره‌گیری و کات لیزری رایگان انتهای کار',
+    ],
+    description: 'صافی ابریشمی و احیای کامل موهای دکلره‌شده و خشک (متناسب با قد و حجم مو)',
+  },
+  {
+    domainCategory: 'مو و رنگ',
+    categorySlug: 'hair-color',
+    title: 'کوتاهی ژورنالی مو + موخوره‌گیری روسی + براشینگ',
+    pricingType: 'RANGE',
+    priceToman: 450000,
+    maxPriceToman: 750000,
+    durationMinutes: 50,
+    packageIncludes: [
+      'مشاوره فرم صورت و انتخاب مدل کوتاهی',
+      'کوتاهی تخصصی ژورنالی (باب، لیر، پیکسی)',
+      'موخوره‌گیری بدون کوتاه شدن قد مو',
+      'براشینگ حرفه‌ای',
+    ],
+    description: 'کوتاهی تخصصی به همراه استایلینگ کامل',
+  },
+  // کاشت و طراحی ناخن
+  {
+    domainCategory: 'کاشت و طراحی ناخن',
+    categorySlug: 'nail-design',
+    title: 'پکیج کاشت اولیه ناخن (پودر / پلی‌ژل) + مانیکور روسی + لاک‌ژل',
+    pricingType: 'RANGE',
+    priceToman: 550000,
+    maxPriceToman: 850000,
+    durationMinutes: 90,
+    packageIncludes: [
+      'مانیکور روسی و زیرسازی کوتیکول',
+      'کاشت پودر یا پلی‌ژل با فرم دلخواه',
+      'لاک‌ژل از کالکشن ۲۰۰ رنگ + دیزاین ۲ ناخن',
+    ],
+    description: 'کاشت ظریف و مقاوم با پک استریل اختصاصی',
+  },
+  {
+    domainCategory: 'کاشت و طراحی ناخن',
+    categorySlug: 'nail-design',
+    title: 'پکیج ترمیم ناخن + تغییر فرم + لاک‌ژل و تاپ‌شاین',
+    pricingType: 'RANGE',
+    priceToman: 380000,
+    maxPriceToman: 550000,
+    durationMinutes: 65,
+    packageIncludes: [
+      'سوهان‌کشی، هواگیری و مانیکور تمیز',
+      'موادگذاری مجدد و اصلاح فرم ناخن',
+      'لاک‌ژل دلخواه + روغن تقویتی کوتیکول',
+    ],
+    description: 'ترمیم اصولی بدون هواگرفتگی یا ضخامت اضافه',
+  },
+  {
+    domainCategory: 'کاشت و طراحی ناخن',
+    categorySlug: 'nail-design',
+    title: 'پکیج پدیکور VIP و کف‌سابی درمانی پا (Foot Spa & Jelly)',
+    pricingType: 'RANGE',
+    priceToman: 480000,
+    maxPriceToman: 750000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'جکوزی پا با کوکتل نمک دریایی و جلی‌پدیکور',
+      'کف‌سابی و رفع کامل پینه و ترک پاشنه',
+      'اسکراب، ماسک آبرسان و ماساژ ریلکسی پا',
+      'مرتب‌سازی و لاک‌ژل ناخن پا',
+    ],
+    description: 'رفع کامل خشکی و ترک پا همراه با اسپا و ریلکسیشن',
+  },
+  // میکاپ و عروس
+  {
+    domainCategory: 'میکاپ و عروس',
+    categorySlug: 'makeup-bridal',
+    title: 'پکیج کامل میکاپ و شینیون ویژه محفلی (VIP Party Package)',
+    pricingType: 'RANGE',
+    priceToman: 1600000,
+    maxPriceToman: 2800000,
+    durationMinutes: 120,
+    packageIncludes: [
+      'زیرسازی و آبرسانی پوست قبل از میکاپ',
+      'میکاپ ضدآب و کانتورینگ با متریال لوکس',
+      'مژه ابریشمی + شینیون ژورنالی متناسب با لباس',
+      'فیکس ۲۴ ساعته تضمینی',
+    ],
+    description: 'پکیج کامل همراهی و محفلی با ماندگاری بالا',
+  },
+  {
+    domainCategory: 'میکاپ و عروس',
+    categorySlug: 'makeup-bridal',
+    title: 'پکیج رویال عروس / عقد و نامزدی (مشاوره و تست + خدمات کامل)',
+    pricingType: 'STARTING_FROM',
+    priceToman: 6500000,
+    durationMinutes: 240,
+    packageIncludes: [
+      'فیشیال و آماده‌سازی پوست قبل از مراسم',
+      'میکاپ و گریم تخصصی عروس با برندهای اورجینال',
+      'شینیون اختصاصی، نصب تاج و تور',
+      'طراحی ناخن و مژه ابریشمی VIP',
+    ],
+    description: 'پکیج اختصاصی عروس، عقد و فرمالیته (تعیین جزئیات در جلسه مشاوره حضوری)',
+  },
+  // مژه و ابرو
+  {
+    domainCategory: 'مژه و ابرو',
+    categorySlug: 'eyelash-brow',
+    title: 'پکیج اکستنشن مژه ابریشمی (کلاسیک / اسپایکی / والیوم)',
+    pricingType: 'RANGE',
+    priceToman: 550000,
+    maxPriceToman: 900000,
+    durationMinutes: 90,
+    packageIncludes: [
+      'طراحی مپ اختصاصی متناسب با فرم چشم',
+      'نصب تار به تار مژه ابریشمی سبک با چسب ضدحساسیت',
+      'براش اختصاصی و آموزش مراقبت',
+    ],
+    description: 'اکستنشن طبیعی تا پرحجم بدون آسیب به مژه اصلی',
+  },
+  {
+    domainCategory: 'مژه و ابرو',
+    categorySlug: 'eyelash-brow',
+    title: 'پکیج لیفت و لمینت مژه و ابرو با مواد کراتینه ایتالیایی',
+    pricingType: 'RANGE',
+    priceToman: 480000,
+    maxPriceToman: 820000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'لیفت با مواد اورجینال مای‌لمینیشن',
+      'بوتاکس‌تراپی و کراتین تقویتی تار مژه/ابرو',
+      'رنگ تخصصی مژه در صورت تمایل',
+    ],
+    description: 'خوش‌حالت شدن و تقویت مژه و ابرو با ماندگاری ۶ تا ۸ هفته',
+  },
+  // پیرایش مردانه
+  {
+    domainCategory: 'پیرایش و استایل مردانه',
+    categorySlug: 'men-barber',
+    title: 'پکیج VIP پیرایش مو، آنالیز ریش و پاکسازی صورت آقایان',
+    pricingType: 'RANGE',
+    priceToman: 350000,
+    maxPriceToman: 600000,
+    durationMinutes: 60,
+    packageIncludes: [
+      'کوتاهی ژورنالی و فید تخصصی متناسب با فرم صورت',
+      'اصلاح و خط‌اندازی ریش با حوله داغ و تیغ استریل',
+      'بخور و ماسک سیاه پاکسازی جوش‌های سرسیاه بینی',
+      'شست‌وشو و استایلینگ نهایی مو',
+    ],
+    description: 'سرویس کامل پیرایش و مراقبت پوست آقایان در یک نوبت',
+  },
+  {
+    domainCategory: 'پیرایش و استایل مردانه',
+    categorySlug: 'men-barber',
+    title: 'پکیج تشریفاتی داماد (Groom VIP Package)',
+    pricingType: 'STARTING_FROM',
+    priceToman: 1800000,
+    durationMinutes: 120,
+    packageIncludes: [
+      'کوتاهی و هیرکات تخصصی داماد',
+      'فیشیال و پاکسازی کامل پوست صورت',
+      'گریم سینمایی نامحسوس و متعادل‌سازی چهره',
+      'استایلینگ فیکس ضدتعریق تا پایان مراسم',
+    ],
+    description: 'پکیج کامل داماد با مشاوره قبلی',
+  },
+];
 
 export const LASER_SERVICE_PRESETS: LaserPresetServiceItem[] = [
   // ۱. پکیج‌های لیزر خانم‌ها (۱۱ پکیج + ناحیه اضافه)
@@ -520,403 +1044,91 @@ export const LASER_SERVICE_PRESETS: LaserPresetServiceItem[] = [
   },
 ];
 
-export const SAMPLE_BUSINESSES: BusinessItem[] = [
-  {
-    id: 'biz-1',
-    slug: 'royal-golzar',
-    name: 'سالن زیبایی رویال گلزار',
-    type: BusinessType.WomenSalon,
-    typeLabel: 'سالن زیبایی زنانه',
-    categorySlug: 'hair-color',
-    city: 'اصفهان',
-    neighborhood: 'چهارباغ بالا',
-    address: 'اصفهان، خیابان چهارباغ بالا، مجتمع پارک، طبقه دوم، واحد ۴۲ (آدرس نمونه)',
-    phoneDisplay: '۰۳۱-۳۶۲۸۰۰۰۰ (نمونه)',
-    rating: 4.9,
-    reviewCount: 2,
-    startingPriceToman: 480000,
-    shortDescription:
-      'ارائه خدمات تخصصی رنگ و لایت، احیا و کراتین مو، طراحی ناخن و میکاپ در محیطی آرام و مدرن (پروفایل نمونه نمایشی).',
-    aboutText:
-      'سالن زیبایی رویال گلزار با بیش از ۱۰ سال سابقه در محدوده چهارباغ بالای اصفهان، با بهره‌گیری از کادر مجرب و محصولات استاندارد، خدمات تخصصی مو، ناخن، پوست و میکاپ را با نوبت‌دهی دقیق آنلاین ارائه می‌دهد.',
-    verifiedBadge: true,
-    approvalStatus: 'APPROVED',
-    subscriptionPlan: 'حرفه‌ای',
-    subscriptionStatus: SubscriptionStatus.Active,
-    visualTheme: 'rose',
-    featured: true,
-    isSampleShowcase: true,
-    isSponsored: true,
-    sponsoredLabel: 'پیشنهاد ویژه چهارباغ (نمونه)',
-    sponsoredPlacement: 'HOME_BANNER',
-    sponsoredOrder: 1,
-    sponsoredDaysRemaining: 24,
-    sponsoredExpiresJalali: '۱۴۰۵/۰۸/۲۸',
-    extraSmsBalance: 0,
-    instagramHandle: '@royalgolzar.salon',
-    mapLat: 32.6321,
-    mapLng: 51.6654,
-    workingHours: [
-      { dayName: 'شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
-      { dayName: 'یکشنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
-      { dayName: 'دوشنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
-      { dayName: 'سه‌شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
-      { dayName: 'چهارشنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۹:۳۰' },
-      { dayName: 'پنج‌شنبه', isOpen: true, openTime: '۰۹:۳۰', closeTime: '۱۸:۰۰' },
-      { dayName: 'جمعه', isOpen: false, openTime: '۱۰:۰۰', closeTime: '۱۶:۰۰' },
-    ],
-  },
-];
+// حذف کامل داده‌های نمونه/تستی تا فقط کسب‌وکارها، متخصصان و خدمات واقعی در کل سامانه نمایش داده شوند
+export const SAMPLE_BUSINESSES: BusinessItem[] = [];
 
-export const SAMPLE_SERVICES: ServiceItem[] = [
-  {
-    id: 'srv-101',
-    businessId: 'biz-1',
-    categorySlug: 'hair-color',
-    title: 'کوتاهی ژورنالی و براشینگ تخصصی مو',
-    category: 'مو و رنگ',
-    durationMinutes: 60,
-    priceToman: 650000,
-    description: 'مشاوره فرم چهره، شست‌وشو، کوتاهی دقیق و براشینگ کامل.',
-    isPopular: true,
-    isActive: true,
-  },
-  {
-    id: 'srv-102',
-    businessId: 'biz-1',
-    categorySlug: 'hair-color',
-    title: 'پروتئین‌تراپی و احیای موهای آسیب‌دیده',
-    category: 'مو و رنگ',
-    durationMinutes: 150,
-    priceToman: 2450000,
-    description: 'احیا و آبرسانی عمیق ساقه مو با مواد اورجینال بدون فرمالدهید.',
-    isPopular: true,
-    isActive: true,
-  },
-  {
-    id: 'srv-103',
-    businessId: 'biz-1',
-    categorySlug: 'nails',
-    title: 'مانیکور روسی و استحکام‌سازی ناخن (لمینت)',
-    category: 'ناخن',
-    durationMinutes: 75,
-    priceToman: 480000,
-    description: 'مانیکور تمیز، زیرسازی استاندارد و لاک‌ژل دلخواه.',
-    isActive: true,
-  },
-  {
-    id: 'srv-104',
-    businessId: 'biz-1',
-    categorySlug: 'makeup',
-    title: 'میکاپ و شینیون محفلی VIP',
-    category: 'آرایش و میکاپ',
-    durationMinutes: 120,
-    priceToman: 2100000,
-    description: 'کانتورینگ متناسب با چهره، مژه موقت طبیعی و فیکس ۲۴ ساعته.',
-    isPopular: true,
-    isActive: true,
-  },
-];
+export const SAMPLE_SERVICES: ServiceItem[] = [];
 
-export const SAMPLE_SPECIALISTS: SpecialistItem[] = [
-  {
-    id: 'spc-1',
-    businessId: 'biz-1',
-    slug: 'mahsa-kiani',
-    fullName: 'مهسا کیانی',
-    roleTitle: 'مدیر فنی و متخصص رنگ و احیای مو (نمونه)',
-    experienceYears: 9,
-    rating: 4.9,
-    reviewCount: 2,
-    specialties: ['آمبره و بالیاژ', 'پروتئین‌تراپی مو', 'کوتاهی ژورنالی'],
-    bio: 'دارای مدرک بین‌المللی و فنی‌وحرفه‌ای مراقبت زیبایی با ۹ سال سابقه تخصصی در حوزه رنگ، لایت و احیای موهای آسیب‌دیده در اصفهان (پروفایل نمونه نمایشی).',
-    isIndependent: false,
-    isActive: true,
-    city: 'اصفهان',
-    startingPriceToman: 650000,
-  },
-];
+export const SAMPLE_SPECIALISTS: SpecialistItem[] = [];
 
-export const SAMPLE_REVIEWS: ReviewItem[] = [
-  {
-    id: 'rev-1',
-    businessId: 'biz-1',
-    specialistSlug: 'mahsa-kiani',
-    authorName: 'المیرا شمس',
-    serviceTitle: 'پروتئین‌تراپی و احیای مو',
-    rating: 5,
-    dateJalali: '۱۴۰۵/۰۷/۲۴',
-    comment:
-      'نوبت‌دهی بسیار منظم بود و دقیقاً سر ساعت پذیرش شدم. کیفیت مواد احیای مو عالی بود و برخورد پرسنل بسیار محترمانه بود.',
-  },
-  {
-    id: 'rev-2',
-    businessId: 'biz-1',
-    specialistSlug: 'mahsa-kiani',
-    authorName: 'پرنیا توکلی',
-    serviceTitle: 'مانیکور روسی و لمینت ناخن',
-    rating: 5,
-    dateJalali: '۱۴۰۵/۰۷/۱۹',
-    comment:
-      'تمیزی محیط و ضدعفونی ابزارها کاملاً مشهود بود. ظرافت کار فوق‌العاده است.',
-  },
-];
+export const SAMPLE_REVIEWS: ReviewItem[] = [];
 
-export const SAMPLE_GALLERY: GalleryItem[] = [
-  {
-    id: 'gal-1',
-    businessId: 'biz-1',
-    title: 'نمای داخلی لاین رنگ و احیای مو',
-    categoryLabel: 'مو و رنگ',
-    theme: 'rose',
-  },
-  {
-    id: 'gal-2',
-    businessId: 'biz-1',
-    title: 'استودیو اختصاصی مانیکور و پدیکور VIP',
-    categoryLabel: 'ناخن',
-    theme: 'violet',
-  },
-  {
-    id: 'gal-3',
-    businessId: 'biz-1',
-    title: 'اتاق اختصاصی میکاپ و گریم عروس',
-    categoryLabel: 'آرایش و میکاپ',
-    theme: 'emerald',
-  },
-];
+export const SAMPLE_GALLERY: GalleryItem[] = [];
 
-export const SAMPLE_APPOINTMENTS: AppointmentItem[] = [
-  {
-    id: 'apt-1001',
-    referenceCode: 'BH-403112',
-    businessId: 'biz-1',
-    businessSlug: 'royal-golzar',
-    businessName: 'سالن زیبایی رویال گلزار',
-    customerName: 'المیرا شمس',
-    customerPhoneMasked: '۰۹۱۳***۴۵۸۱',
-    serviceId: 'srv-101',
-    serviceTitle: 'کوتاهی ژورنالی و براشینگ تخصصی مو',
-    specialistId: 'spc-1',
-    specialistName: 'مهسا کیانی',
-    dateJalali: '۱۴۰۵/۰۸/۰۳',
-    timeSlot: '۱۱:۰۰',
-    durationMinutes: 60,
-    priceToman: 650000,
-    status: AppointmentStatus.Confirmed,
-    notes: 'ترجیحاً مدل لیر کوتاه بررسی شود.',
-  },
-  {
-    id: 'apt-1002',
-    referenceCode: 'BH-403113',
-    businessId: 'biz-1',
-    businessSlug: 'royal-golzar',
-    businessName: 'سالن زیبایی رویال گلزار',
-    customerName: 'پرنیا توکلی',
-    customerPhoneMasked: '۰۹۳۵***۹۱۲۰',
-    serviceId: 'srv-103',
-    serviceTitle: 'مانیکور روسی و استحکام‌سازی ناخن',
-    specialistId: 'spc-2',
-    specialistName: 'نگین مرادی',
-    dateJalali: '۱۴۰۵/۰۸/۰۳',
-    timeSlot: '۱۳:۳۰',
-    durationMinutes: 75,
-    priceToman: 480000,
-    status: AppointmentStatus.Pending,
-    notes: 'ترمیم هم‌زمان دو ناخن شکسته.',
-  },
-  {
-    id: 'apt-1003',
-    referenceCode: 'BH-403114',
-    businessId: 'biz-2',
-    businessSlug: 'parseh-barber',
-    businessName: 'آرایشگاه مردانه پارسه استایل',
-    customerName: 'کیوان رضایی',
-    customerPhoneMasked: '۰۹۱۳***۳۳۰۹',
-    serviceId: 'srv-201',
-    serviceTitle: 'اصلاح موی سر مردانه و استایلینگ',
-    specialistId: 'spc-3',
-    specialistName: 'آرش داوودی',
-    dateJalali: '۱۴۰۵/۰۸/۰۲',
-    timeSlot: '۱۷:۰۰',
-    durationMinutes: 45,
-    priceToman: 350000,
-    status: AppointmentStatus.Completed,
-  },
-  {
-    id: 'apt-1004',
-    referenceCode: 'BH-403115',
-    businessId: 'biz-3',
-    businessSlug: 'sara-rad',
-    businessName: 'استودیو پوست و میکاپ سارا راد',
-    customerName: 'غزل کاظمی',
-    customerPhoneMasked: '۰۹۱۳***۶۴۱۰',
-    serviceId: 'srv-301',
-    serviceTitle: 'فیشیال تخصصی و پاکسازی چندمرحله‌ای پوست',
-    specialistId: 'spc-4',
-    specialistName: 'سارا راد',
-    dateJalali: '۱۴۰۵/۰۸/۰۱',
-    timeSlot: '۱۵:۰۰',
-    durationMinutes: 90,
-    priceToman: 890000,
-    status: AppointmentStatus.Cancelled,
-    notes: 'لغو توسط مشتری ۲۴ ساعت قبل از نوبت.',
-  },
-  {
-    id: 'apt-1005',
-    referenceCode: 'BH-403116',
-    businessId: 'biz-1',
-    businessSlug: 'royal-golzar',
-    businessName: 'سالن زیبایی رویال گلزار',
-    customerName: 'رویا احمدی',
-    customerPhoneMasked: '۰۹۱۳***۷۷۲۳',
-    serviceId: 'srv-102',
-    serviceTitle: 'پروتئین‌تراپی و احیای موهای آسیب‌دیده',
-    specialistId: 'spc-1',
-    specialistName: 'مهسا کیانی',
-    dateJalali: '۱۴۰۵/۰۸/۰۴',
-    timeSlot: '۱۰:۰۰',
-    durationMinutes: 150,
-    priceToman: 2450000,
-    status: AppointmentStatus.Confirmed,
-  },
-];
+export const SAMPLE_APPOINTMENTS: AppointmentItem[] = [];
 
-export const SAMPLE_CUSTOMERS: CustomerRecord[] = [
-  {
-    id: 'cust-1',
-    fullName: 'المیرا شمس',
-    phoneMasked: '۰۹۱۳***۴۵۸۱',
-    city: 'اصفهان',
-    totalVisits: 6,
-    lastVisitJalali: '۱۴۰۵/۰۸/۰۳',
-    totalSpentToman: 5400000,
-    favoriteService: 'کوتاهی ژورنالی و احیای مو',
-    notes: 'حساسیت به اکسیدان‌های قوی؛ ترجیح نوبت‌های صبح.',
-  },
-  {
-    id: 'cust-2',
-    fullName: 'پرنیا توکلی',
-    phoneMasked: '۰۹۳۵***۹۱۲۰',
-    city: 'اصفهان',
-    totalVisits: 4,
-    lastVisitJalali: '۱۴۰۵/۰۷/۱۹',
-    totalSpentToman: 2150000,
-    favoriteService: 'مانیکور روسی و لمینت ناخن',
-    notes: 'مراجعه منظم هر ۳ هفته یک‌بار.',
-  },
-  {
-    id: 'cust-3',
-    fullName: 'کیوان رضایی',
-    phoneMasked: '۰۹۱۳***۳۳۰۹',
-    city: 'اصفهان',
-    totalVisits: 9,
-    lastVisitJalali: '۱۴۰۵/۰۸/۰۲',
-    totalSpentToman: 3150000,
-    favoriteService: 'اصلاح موی سر مردانه و استایلینگ',
-    notes: 'مشتری وفادار پنج‌شنبه‌ها.',
-  },
-  {
-    id: 'cust-4',
-    fullName: 'غزل کاظمی',
-    phoneMasked: '۰۹۱۳***۶۴۱۰',
-    city: 'اصفهان',
-    totalVisits: 3,
-    lastVisitJalali: '۱۴۰۵/۰۸/۰۱',
-    totalSpentToman: 2670000,
-    favoriteService: 'فیشیال تخصصی پوست',
-    notes: 'پوست مختلط؛ نیازمند سرم هیالورونیک اسید.',
-  },
-];
+export const SAMPLE_CUSTOMERS: CustomerRecord[] = [];
 
 export const SAMPLE_SUBSCRIPTION_PLANS: SubscriptionPlanItem[] = [
   {
     id: 'plan-free-start',
     name: 'شروع رایگان (پایه)',
     audience:
-      'ویژه آشنایی اولیه با محیط سامانه؛ با ظرفیت محدود بدون ارسال پیامک خودکار',
+      'ویژه شروع سریع و تست عملی نوبت‌دهی آنلاین به همراه ۱۵ پیامک هدیه تست ارسال اتوماتیک به مشتری و سالن',
     monthlyPriceToman: 0,
     staffLimit: '۱ متخصص (شخصی)',
-    smsQuotaMonthly: 0,
+    smsQuotaMonthly: 15,
     features: [
-      'صفحه پروفایل پایه در تایم تو (نمایش عادی در انتهای فهرست)',
-      'سقف محدود تا ۱۵ نوبت آنلاین در ماه (فقط ۱ متخصص)',
-      'ثبت حداکثر ۳ خدمت در منوی سالن (بدون گالری نمونه‌کار)',
-      'بدون پیامک تایید یا یادآور خودکار (مدیریت دستی در پنل)',
+      '۱۵ عدد پیامک هدیه تست (ارسال خودکار تایید نوبت به مشتری و مدیر سالن)',
+      'صفحه پروفایل آنلاین اختصاصی، لینک کوتاه بایو اینستاگرام و پوستر QR کد',
+      'تقویم نوبت‌دهی آنلاین (سقف تا ۱۵ نوبت در ماه · ۱ متخصص)',
+      'کیف پول دریافت بیعانه آنلاین (قفل بودن حسابداری دخل روزانه و کمپین پیامکی)',
     ],
     comparison: {
-      onlineBooking: 'محدود (حداکثر ۱۵ نوبت در ماه)',
-      smsReminders: 'ندارد (۰ پیامک خودکار)',
-      analyticsLevel: 'ندارد (فقط لیست نوبت روزانه)',
-      supportType: 'راهنمای متنی سامانه',
+      onlineBooking: 'پایه (تا ۱۵ نوبت در ماه · ۱ متخصص)',
+      smsReminders: '۱۵ پیامک هدیه تست اولیه',
+      analyticsLevel: 'قفل (نیازمند ارتقا به پلن حرفه‌ای)',
+      supportType: 'پشتیبانی تیکتی سامانه',
     },
   },
   {
     id: 'plan-professional',
     name: 'حرفه‌ای (پرفروش)',
     audience:
-      'انتخاب اول سالن‌های زیبایی فعال برای حذف نوبت‌های سوخته و جذب مشتریان جدید از جست‌وجوی اصفهان',
+      'انتخاب اول سالن‌ها و متخصصان فعال برای باز شدن حسابداری دخل روزانه، باشگاه مشتریان و حذف کنسلی نوبت‌ها',
     monthlyPriceToman: 980000,
     staffLimit: 'تا ۳ متخصص هم‌زمان',
     smsQuotaMonthly: 150,
     features: [
-      'کاهش ۷۰٪ کنسلی نوبت‌ها با پیامک یادآور خودکار ۲۴ ساعت قبل',
-      'نوبت‌دهی آنلاین نامحدود ۲۴ ساعته برای تا ۳ متخصص هم‌زمان',
-      'تقویم مجزا برای هر آرایشگر و مدیریت شیفت‌های کاری',
-      'نشان «مرکز تاییدشده» و اولویت نمایش بالاتر از پلن رایگان',
-      'تعریف نامحدود خدمات، گالری نمونه‌کار و دریافت نظرات واقعی',
+      'باز شدن کامل «حسابداری دوحالته و ثبت دخل روزانه حضوری + بیعانه آنلاین»',
+      '۱۵۰ پیامک خدماتی خودکار در ماه (ثبت نوبت + یادآور ۲۴ ساعت قبل)',
+      'باز شدن «باشگاه مشتریان (CRM) و ورود گروهی شماره‌ها از اکسل/موبایل»',
+      'نوبت‌دهی آنلاین نامحدود ۲۴ ساعته برای تا ۳ متخصص با تقویم مجزا',
+      'نشان «مرکز تاییدشده» و اولویت نمایش بالاتر از پلن رایگان در جست‌وجو',
     ],
     comparison: {
       onlineBooking: 'نامحدود (تا ۳ متخصص هم‌زمان)',
       smsReminders: '۱۵۰ پیامک خدماتی در ماه',
-      analyticsLevel: 'گزارش کامل مالی و سهم هر متخصص',
+      analyticsLevel: 'کامل (حسابداری دخل حضوری + بیعانه + سهم متخصص)',
       supportType: 'پشتیبانی تلفنی و آنلاین سریع',
     },
     isRecommended: true,
   },
   {
-    id: 'plan-enterprise',
+    id: 'plan-vip-brand',
     name: 'کسب‌وکار پیشرفته (VIP)',
     audience:
-      'ویژه سالن‌های بزرگ، کلینیک‌های زیبایی و مجموعه‌های پرتردد با تیم کامل (تا ۸ متخصص) و باشگاه مشتریان',
+      'ویژه سالن‌های بزرگ، کلینیک‌های زیبایی و مراکز لیزر پرتردد با تیم کامل (تا ۸ متخصص)، کمپین پیامکی و تسویه شبانه',
     monthlyPriceToman: 1850000,
     staffLimit: 'تا ۸ متخصص هم‌زمان',
     smsQuotaMonthly: 350,
     features: [
-      'تمامی امکانات پلن حرفه‌ای برای تیم کامل تا ۸ متخصص هم‌زمان',
-      '۳۵۰ پیامک خدماتی و یادآور ماهانه + امکان خرید بسته پیامک اضافه',
+      'تمامی امکانات پلن حرفه‌ای (حسابداری دخل روزانه + باشگاه مشتریان) برای تا ۸ متخصص',
+      '۳۵۰ پیامک خدماتی ماهانه + باز شدن «کمپین پیامکی انبوه، کد تخفیف و بازگشت مشتری»',
+      'فعالسازی «تسویه حساب اتوماتیک شبانه (پایا)» موجودی کیف پول بیعانه‌ها',
+      'قابلیت انتشار «استوری ۲۴ ساعته ظرفیت لحظه‌ای و تخفیف» در بالای پروفایل',
       '۱۵٪ تخفیف دائمی رزرو «جایگاه تبلیغاتی صدر جست‌وجو و بنر صفحه اول»',
-      'کمپین‌های بازگشت مشتری، کد تخفیف و گزارش وفاداری مراجعان',
     ],
     comparison: {
-      onlineBooking: 'نامحدود (تا ۸ متخصص + اولویت ویژه)',
-      smsReminders: '۳۵۰ پیامک خدماتی در ماه',
-      analyticsLevel: 'هوش تجاری و گزارش تفکیکی پیشرفته',
+      onlineBooking: 'نامحدود (تا ۸ متخصص + استوری ۲۴ ساعته)',
+      smsReminders: '۳۵۰ پیامک خدماتی + پنل کمپین انبوه',
+      analyticsLevel: 'هوش تجاری VIP + تسویه اتوماتیک شبانه',
       supportType: 'مدیر حساب و پشتیبانی VIP اختصاصی',
     },
   },
 ];
 
-export const SAMPLE_CAMPAIGNS: MarketingCampaignItem[] = [
-  {
-    id: 'cmp-1',
-    title: 'تخفیف پاییزی احیا و پروتئین‌تراپی مو',
-    targetSegment: 'مشتریان وفادار (بیش از ۳ مراجعه)',
-    discountPercent: 15,
-    channel: 'پیامک یادآور هدفمند (نمونه)',
-    statusLabel: 'فعال (آزمایشی)',
-    createdAtJalali: '۱۴۰۵/۰۸/۰۱',
-  },
-  {
-    id: 'cmp-2',
-    title: 'هدیه اولین رزرو آنلاین خدمات ناخن',
-    targetSegment: 'مشتریان جدید بازارچه BeautyHub',
-    discountPercent: 10,
-    channel: 'کد تخفیف پروفایل عمومی',
-    statusLabel: 'زمان‌بندی‌شده (دمو)',
-    createdAtJalali: '۱۴۰۵/۰۷/۲۵',
-  },
-];
+export const SAMPLE_CAMPAIGNS: MarketingCampaignItem[] = [];
 
 export const SAMPLE_AD_PACKAGES: AdPackageItem[] = [
   {
@@ -969,34 +1181,5 @@ export const DEFAULT_PAYMENT_GATEWAY_CONFIG: PaymentGatewayConfig = {
     'پرداخت آنلاین از طریق درگاه امن شتاب (زیبال - Zibal) انجام شده و اشتراک یا بسته تبلیغاتی بلافاصله به صورت خودکار فعال می‌گردد.',
 };
 
-export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [
-  {
-    id: 'ORD-1405-101',
-    businessId: 'biz-7',
-    businessName: 'سالن زیبایی و عروس مهتاب',
-    itemType: 'AD_PACKAGE',
-    itemId: 'ad-search-top',
-    itemTitle: 'صدرنشینی در نتایج جست‌وجوی شهر (۱۴ روزه)',
-    amountToman: 290000,
-    paymentMethod: 'ZIBAL',
-    trackingCode: 'ZBL-88412095',
-    createdAtJalali: '۱۴۰۵/۰۸/۰۴',
-    status: 'APPROVED',
-    requestedPlacement: 'SEARCH_TOP',
-    requestedDurationDays: 14,
-    requestedLabel: 'منتخب چهارباغ',
-  },
-  {
-    id: 'ORD-1405-102',
-    businessId: 'biz-1',
-    businessName: 'سالن زیبایی رویال گلزار',
-    itemType: 'PLAN',
-    itemId: 'plan-professional',
-    itemTitle: 'حرفه‌ای (پرفروش) — اشتراک ماهانه',
-    amountToman: 980000,
-    paymentMethod: 'ZIBAL',
-    trackingCode: 'ZBL-45819920',
-    createdAtJalali: '۱۴۰۵/۰۸/۰۱',
-    status: 'APPROVED',
-  },
-];
+export const SAMPLE_PAYMENT_ORDERS: PaymentOrderItem[] = [];
+

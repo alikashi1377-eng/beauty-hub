@@ -33,7 +33,11 @@ import {
   computeSelectedServicesSummary,
   formatDurationMinutes,
   formatPriceToman,
+  formatServicePriceDisplay,
+  formatServicePriceShort,
+  formatWorkingHourDisplay,
   getUpcomingJalaliDays,
+  isTimeSlotWithinWorkingHours,
   isValidIranMobile,
   normalizeIranMobileInput,
   toEnglishDigitsClient,
@@ -428,24 +432,53 @@ export const BookingStepPage: React.FC = () => {
     );
   }
 
-  const mockTimeSlotOptions: TimeSlotAvailabilityItem[] = [
-    { time: '۰۹:۳۰', available: true },
-    { time: '۱۰:۳۰', available: false, reason: 'پر شده' },
-    { time: '۱۱:۰۰', available: true },
-    { time: '۱۳:۳۰', available: true },
-    { time: '۱۴:۳۰', available: false, reason: 'پر شده' },
-    { time: '۱۵:۳۰', available: true },
-    { time: '۱۷:۰۰', available: true },
-  ];
-
-  const timeSlotOptions: TimeSlotAvailabilityItem[] =
-    dataMode === 'real' ? (realSlots ?? []) : mockTimeSlotOptions;
-
   const selectedDayIdx = Math.max(
     0,
     upcomingDays.findIndex((d) => d.date === bookingDraft.dateJalali)
   );
   const selectedDayObj = upcomingDays[selectedDayIdx] ?? upcomingDays[0];
+  const dayWorkingHour = business.workingHours.find(
+    (w) => w.dayName === selectedDayObj?.dayName
+  );
+
+  const mockTimeSlotOptions: TimeSlotAvailabilityItem[] = [
+    { time: '۰۹:۳۰', available: true },
+    { time: '۱۰:۳۰', available: true },
+    { time: '۱۱:۳۰', available: true },
+    { time: '۱۲:۳۰', available: true },
+    { time: '۱۳:۳۰', available: true },
+    { time: '۱۴:۳۰', available: true },
+    { time: '۱۵:۳۰', available: true },
+    { time: '۱۶:۳۰', available: true },
+    { time: '۱۷:۳۰', available: true },
+    { time: '۱۸:۳۰', available: true },
+    { time: '۱۹:۳۰', available: true },
+  ];
+
+  const rawTimeSlotOptions: TimeSlotAvailabilityItem[] =
+    dataMode === 'real' && realSlots && realSlots.length > 0
+      ? realSlots
+      : mockTimeSlotOptions;
+
+  const timeSlotOptions: TimeSlotAvailabilityItem[] = rawTimeSlotOptions.map(
+    (slot) => {
+      if (dayWorkingHour && !dayWorkingHour.isOpen) {
+        return { ...slot, available: false, reason: 'تعطیل' };
+      }
+      if (
+        dayWorkingHour &&
+        !isTimeSlotWithinWorkingHours(slot.time, dayWorkingHour)
+      ) {
+        return {
+          ...slot,
+          available: false,
+          reason: dayWorkingHour.hasBreak ? 'استراحت بین روز' : 'خارج از ساعت کاری',
+        };
+      }
+      return slot;
+    }
+  );
+
   const salonAvatar =
     business.avatarUrl && business.avatarUrl.trim()
       ? business.avatarUrl
@@ -581,9 +614,10 @@ export const BookingStepPage: React.FC = () => {
           ) : null}
 
           {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود تا کل صفحه اسکرول نخورد */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
+              const stages = srv.packageIncludes ?? [];
               return (
                 <div
                   key={srv.id}
@@ -597,7 +631,7 @@ export const BookingStepPage: React.FC = () => {
                       handleToggleService(srv.id);
                     }
                   }}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-center justify-between gap-2.5 ${
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-start justify-between gap-2.5 ${
                     isSelected
                       ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
                       : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
@@ -613,11 +647,11 @@ export const BookingStepPage: React.FC = () => {
                     >
                       <Check className="w-3.5 h-3.5" />
                     </span>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 space-y-1">
                       <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug truncate">
                         {srv.title}
                       </p>
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] mt-1 tabular-nums">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
                         <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
                           {srv.category}
                         </span>
@@ -625,12 +659,36 @@ export const BookingStepPage: React.FC = () => {
                           <Clock className="w-3 h-3 text-[#0057FF]" />
                           {formatDurationMinutes(srv.durationMinutes)}
                         </span>
+                        {stages.length > 0 ? (
+                          <span className="px-1.5 py-0.5 rounded bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-extrabold">
+                            پکیج {toPersianDigits(stages.length)} مرحله‌ای
+                          </span>
+                        ) : null}
                       </div>
+                      {stages.length > 0 ? (
+                        <p className="text-[10px] text-[#475569] truncate">
+                          شامل: {stages.slice(0, 3).join(' · ')}
+                          {stages.length > 3
+                            ? ` + ${toPersianDigits(stages.length - 3)} مورد`
+                            : ''}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
-                  <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums shrink-0">
-                    {formatPriceToman(srv.priceToman)}
-                  </span>
+                  <div className="text-left shrink-0">
+                    <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums block">
+                      {formatServicePriceShort(srv)}
+                    </span>
+                    {srv.pricingType === 'RANGE' ? (
+                      <span className="text-[9px] font-bold text-amber-700">
+                        بازه متغیر
+                      </span>
+                    ) : srv.pricingType === 'STARTING_FROM' ? (
+                      <span className="text-[9px] font-bold text-sky-700">
+                        پایه + مشاوره
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               );
             })}
@@ -841,9 +899,17 @@ export const BookingStepPage: React.FC = () => {
 
           {/* ساعت‌های قابل انتخاب */}
           <div className="space-y-2">
-            <span className="text-xs font-extrabold text-[#061138] block">
-              ۲. انتخاب ساعت مراجعه:
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-extrabold text-[#061138] block">
+                ۲. انتخاب ساعت مراجعه:
+              </span>
+              {dayWorkingHour ? (
+                <span className="text-[11px] font-bold text-[#0057FF] bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-1 rounded-full tabular-nums">
+                  ساعات کاری {dayWorkingHour.dayName}:{' '}
+                  {formatWorkingHourDisplay(dayWorkingHour)}
+                </span>
+              ) : null}
+            </div>
 
             {isLoadingSlots ? (
               <div className="py-5 flex items-center justify-center gap-2 text-xs text-[#475569]">
@@ -1105,7 +1171,7 @@ export const BookingConfirmPage: React.FC = () => {
                     key={s.id}
                     className="px-2.5 py-1 rounded-xl bg-white/12 border border-white/20 text-xs font-extrabold text-white"
                   >
-                    {s.title} ({formatPriceToman(s.priceToman)})
+                    {s.title} ({formatServicePriceDisplay(s)})
                   </span>
                 ))}
               </div>

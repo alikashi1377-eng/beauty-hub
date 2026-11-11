@@ -4,6 +4,7 @@ import {
   BusinessType,
   ServiceItem,
   SubscriptionStatus,
+  WorkingHourItem,
 } from '../types';
 
 const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
@@ -66,6 +67,83 @@ export function formatPriceToman(amount: number): string {
   }
   const formatted = Math.round(amount).toLocaleString('en-US');
   return `${toPersianDigits(formatted)} تومان`;
+}
+
+export function formatServicePriceDisplay(
+  service: Pick<ServiceItem, 'priceToman' | 'pricingType' | 'maxPriceToman'>
+): string {
+  const base = Number(service.priceToman) || 0;
+  const max = Number(service.maxPriceToman) || 0;
+  if (service.pricingType === 'RANGE' && max > base) {
+    return `از ${toPersianDigits(Math.round(base).toLocaleString('en-US'))} تا ${toPersianDigits(
+      Math.round(max).toLocaleString('en-US')
+    )} تومان`;
+  }
+  if (service.pricingType === 'STARTING_FROM') {
+    return `شروع از ${formatPriceToman(base)} (تعیین دقیق پس از مشاوره)`;
+  }
+  return formatPriceToman(base);
+}
+
+export function formatServicePriceShort(
+  service: Pick<ServiceItem, 'priceToman' | 'pricingType' | 'maxPriceToman'>
+): string {
+  const base = Number(service.priceToman) || 0;
+  const max = Number(service.maxPriceToman) || 0;
+  if (service.pricingType === 'RANGE' && max > base) {
+    return `از ${toPersianDigits(Math.round(base).toLocaleString('en-US'))} تا ${toPersianDigits(
+      Math.round(max).toLocaleString('en-US')
+    )} تومان`;
+  }
+  if (service.pricingType === 'STARTING_FROM') {
+    return `شروع از ${formatPriceToman(base)}`;
+  }
+  return formatPriceToman(base);
+}
+
+export function formatWorkingHourDisplay(wh: WorkingHourItem): string {
+  if (!wh || !wh.isOpen) return 'تعطیل';
+  if (wh.hasBreak && wh.secondOpenTime && wh.secondCloseTime) {
+    return `شیفت ۱: ${wh.openTime} تا ${wh.closeTime} | شیفت ۲: ${wh.secondOpenTime} تا ${wh.secondCloseTime}`;
+  }
+  return `${wh.openTime} تا ${wh.closeTime}`;
+}
+
+export function parseTimeToMinutes(rawTime?: string): number {
+  if (!rawTime) return -1;
+  const clean = toEnglishDigitsClient(rawTime).trim();
+  const parts = clean.split(':');
+  if (parts.length < 2) return -1;
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return -1;
+  return h * 60 + m;
+}
+
+export function isTimeSlotWithinWorkingHours(
+  timeSlot: string,
+  wh?: WorkingHourItem
+): boolean {
+  if (!wh) return true;
+  if (!wh.isOpen) return false;
+  const slotMin = parseTimeToMinutes(timeSlot);
+  if (slotMin < 0) return true;
+
+  const s1Start = parseTimeToMinutes(wh.openTime);
+  const s1End = parseTimeToMinutes(wh.closeTime);
+  const inShift1 =
+    s1Start >= 0 && s1End > s1Start ? slotMin >= s1Start && slotMin < s1End : true;
+
+  if (!wh.hasBreak || !wh.secondOpenTime || !wh.secondCloseTime) {
+    return inShift1;
+  }
+
+  const s2Start = parseTimeToMinutes(wh.secondOpenTime);
+  const s2End = parseTimeToMinutes(wh.secondCloseTime);
+  const inShift2 =
+    s2Start >= 0 && s2End > s2Start ? slotMin >= s2Start && slotMin < s2End : false;
+
+  return inShift1 || inShift2;
 }
 
 export function formatDurationMinutes(minutes: number): string {

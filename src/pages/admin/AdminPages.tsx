@@ -326,8 +326,8 @@ export const AdminDashboardPage: React.FC = () => {
     categories,
     appointments,
     paymentOrders,
-    supportTickets,
     updateBusinessApproval,
+    adminReviewedBizIds,
     adminNotifications,
     markAdminNotificationRead,
     clearAllAdminNotifications,
@@ -340,30 +340,15 @@ export const AdminDashboardPage: React.FC = () => {
   // در پنل مدیریت کلان، سالن‌های نمونه نمایشی به‌طور کامل کنار گذاشته می‌شوند و فقط کسب‌وکارهای واقعی نمایش می‌یابند
   const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
 
-  const pendingCount = realBusinesses.filter(
-    (b) => b.approvalStatus === 'PENDING_REVIEW'
-  ).length;
-
-  const activeSubscriptionsCount = realBusinesses.filter(
-    (b) =>
-      b.subscriptionStatus === 'ACTIVE' || b.subscriptionStatus === 'TRIAL'
-  ).length;
-
-  const realAppointments = appointments.filter((a) =>
-    realBusinesses.some((b) => b.id === a.businessId)
-  );
-
-  const approvedRevenueToman = paymentOrders
-    .filter((o) => o.status === 'APPROVED')
-    .reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
-
-  const openTicketsCount = supportTickets.filter(
-    (t) => t.status === 'OPEN'
-  ).length;
-
-  // اولویت نمایش با کسب‌وکارهای در انتظار بررسی (کسب‌وکارهای رد صلاحیت‌شده به زباله‌دان منتقل می‌شوند)
+  // صف بررسی فقط شامل کسب‌وکارهایی است که هنوز توسط مدیر کل تعیین تکلیف (تایید یا رد) نشده‌اند
   const sortedBusinesses = [...realBusinesses]
-    .filter((b) => b.approvalStatus !== 'REJECTED')
+    .filter(
+      (b) =>
+        b.approvalStatus !== 'REJECTED' &&
+        (b.approvalStatus === 'PENDING_REVIEW' ||
+          (!adminReviewedBizIds.includes(b.id) &&
+            !adminReviewedBizIds.includes(b.slug)))
+    )
     .sort((a, b) => {
       if (
         a.approvalStatus === 'PENDING_REVIEW' &&
@@ -377,6 +362,21 @@ export const AdminDashboardPage: React.FC = () => {
         return 1;
       return 0;
     });
+
+  const pendingCount = sortedBusinesses.length;
+
+  const activeSubscriptionsCount = realBusinesses.filter(
+    (b) =>
+      b.subscriptionStatus === 'ACTIVE' || b.subscriptionStatus === 'TRIAL'
+  ).length;
+
+  const realAppointments = appointments.filter((a) =>
+    realBusinesses.some((b) => b.id === a.businessId)
+  );
+
+  const approvedRevenueToman = paymentOrders
+    .filter((o) => o.status === 'APPROVED')
+    .reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
 
   // فقط اعلان‌های خوانده‌نشده در نوار بالا نمایش داده می‌شوند تا به‌محض تایید/رد یا بستن، از صفحه جمع شوند
   const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
@@ -566,36 +566,6 @@ export const AdminDashboardPage: React.FC = () => {
           ) : null}
         </Card>
       ) : null}
-
-      {/* بنر دسترسی سریع به تنظیمات پیامک ملی‌پیامک و تیکت‌های پشتیبانی */}
-      <div className="rounded-3xl bg-[#061138] text-white p-4 sm:p-5 border border-[#1E293B] flex flex-wrap items-center justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-[#0057FF] flex items-center justify-center shrink-0">
-            <MessageSquare className="w-5 h-5 text-[#00E5FF]" />
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-xs sm:text-sm font-extrabold text-white">
-              تنظیمات مدیر کل، نام کاربری/رمز عبور و اتصال پیامک ملی‌پیامک
-            </p>
-            <p className="text-[11px] sm:text-xs text-slate-300">
-              تنظیم نام کاربری و رمز عبور مدیریت، درگاه پیامک و پاسخگویی به تیکت‌های پشتیبانی ({toPersianDigits(openTicketsCount)} تیکت باز)
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to="/admin/support">
-            <Button variant="secondary" size="sm">
-              <Headphones className="w-4 h-4" />
-              <span>تیکت‌های پشتیبانی ({toPersianDigits(openTicketsCount)})</span>
-            </Button>
-          </Link>
-          <Link to="/admin/settings">
-            <Button variant="accent" size="sm">
-              <span>تنظیمات مدیر و پیامک</span>
-            </Button>
-          </Link>
-        </div>
-      </div>
 
       {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (فقط بر اساس آمار واقعی دیتابیس) */}
       <div className="rounded-3xl bg-white border border-[#E6E0F5] p-5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-[#E6E0F5] shadow-2xs">
@@ -971,6 +941,7 @@ export const AdminBusinessesPage: React.FC = () => {
     updateBusinessApproval,
     permanentlyDeleteBusiness,
     updateBusinessProfile,
+    grantBusinessPlanOrAdByAdmin,
     platformBusinessNotices,
     sendPlatformBusinessNotice,
     showToast,
@@ -985,6 +956,49 @@ export const AdminBusinessesPage: React.FC = () => {
   );
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
+
+  // مودال فعال‌سازی زمان‌دار (روزشمار تستی/هدیه) پلن اشتراک یا تبلیغات ویژه توسط مدیر کل
+  const [grantModalBiz, setGrantModalBiz] = useState<BusinessItem | null>(null);
+  const [grantTargetType, setGrantTargetType] = useState<
+    'PLAN' | 'SPONSORED_AD' | 'BOTH'
+  >('PLAN');
+  const [grantPlanName, setGrantPlanName] = useState<'حرفه‌ای' | 'VIP'>('حرفه‌ای');
+  const [grantPlacement, setGrantPlacement] = useState<
+    'SEARCH_TOP' | 'HOME_BANNER' | 'HERO_SPOTLIGHT'
+  >('SEARCH_TOP');
+  const [grantLabel, setGrantLabel] = useState('پیشنهاد ویژه · تست هدیه');
+  const [grantDurationDays, setGrantDurationDays] = useState<number>(7);
+  const [grantExtraSms, setGrantExtraSms] = useState<number>(30);
+  const [grantIsTrial, setGrantIsTrial] = useState<boolean>(true);
+
+  const openGrantModal = (biz: BusinessItem) => {
+    setGrantModalBiz(biz);
+    setGrantTargetType('PLAN');
+    setGrantPlanName(
+      biz.subscriptionPlan === 'VIP' ? 'VIP' : 'حرفه‌ای'
+    );
+    setGrantPlacement(biz.sponsoredPlacement || 'SEARCH_TOP');
+    setGrantLabel(biz.sponsoredLabel || 'پیشنهاد ویژه · رزرو آنلاین');
+    setGrantDurationDays(7);
+    setGrantExtraSms(30);
+    setGrantIsTrial(true);
+  };
+
+  const handleGrantSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grantModalBiz) return;
+    grantBusinessPlanOrAdByAdmin({
+      businessId: grantModalBiz.id,
+      grantType: grantTargetType,
+      planId: grantPlanName === 'VIP' ? 'plan-vip-brand' : 'plan-professional',
+      sponsoredPlacement: grantPlacement,
+      sponsoredLabel: grantLabel,
+      durationDays: Math.max(1, Number(grantDurationDays) || 7),
+      bonusSmsCount: Math.max(0, Number(grantExtraSms) || 0),
+      isTrialGift: grantIsTrial,
+    });
+    setGrantModalBiz(null);
+  };
 
   // مودال ارسال پیام/نکته از طرف مدیر کل پلتفرم به یک کسب‌وکار یا همه کسب‌وکارها
   const [noticeModalOpen, setNoticeModalOpen] = useState(false);
@@ -1231,15 +1245,29 @@ export const AdminBusinessesPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار و زمان ثبت',
+            header: 'عنوان کسب‌وکار، پلن و روزشمار اعتبار',
             render: (b) => (
-              <div className="space-y-0.5">
+              <div className="space-y-1">
                 <span className="font-extrabold text-[#1E1B2E] block">
                   {b.name}
                 </span>
-                <span className="text-[11px] text-[#0057FF] font-bold block">
-                  {b.subscriptionPlan} · ثبت: {b.createdAtJalali || 'جدید'}
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-[#0057FF] font-bold">
+                    پلن: {b.subscriptionPlan} · ثبت: {b.createdAtJalali || 'جدید'}
+                  </span>
+                  {b.trialDaysRemaining && b.trialDaysRemaining > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black tabular-nums">
+                      ⏳ {toPersianDigits(b.trialDaysRemaining)} روز اعتبار پلن
+                    </span>
+                  ) : null}
+                  {b.isSponsored &&
+                  b.sponsoredDaysRemaining &&
+                  b.sponsoredDaysRemaining > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black tabular-nums">
+                      ★ {toPersianDigits(b.sponsoredDaysRemaining)} روز تبلیغ ویژه
+                    </span>
+                  ) : null}
+                </div>
               </div>
             ),
           },
@@ -1298,7 +1326,7 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'عملیات مدیر، ارسال پیام و مدیریت زباله‌دان',
+            header: 'عملیات مدیر، فعال‌سازی اشتراک زمان‌دار و مدیریت',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
                 {b.approvalStatus !== 'REJECTED' ? (
@@ -1318,6 +1346,16 @@ export const AdminBusinessesPage: React.FC = () => {
                   <Eye className="w-3.5 h-3.5" />
                   <span>مشاهده پنل</span>
                 </Button>
+
+                {b.approvalStatus !== 'REJECTED' ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => openGrantModal(b)}
+                  >
+                    <span>🎁 فعال‌سازی پلن / تبلیغ زمان‌دار</span>
+                  </Button>
+                ) : null}
 
                 <Button
                   variant="outline"
@@ -1393,6 +1431,199 @@ export const AdminBusinessesPage: React.FC = () => {
           },
         ]}
       />
+
+      {/* مودال فعال‌سازی زمان‌دار (روزشمار تستی یا رسمی) پلن اشتراک و تبلیغات ویژه برای کسب‌وکار */}
+      <Modal
+        isOpen={Boolean(grantModalBiz)}
+        onClose={() => setGrantModalBiz(null)}
+        title={`فعال‌سازی پلن یا تبلیغ زمان‌دار برای «${grantModalBiz?.name || ''}»`}
+        description="می‌توانید برای این کسب‌وکار پلن حرفه‌ای/VIP یا جایگاه تبلیغاتی ویژه را به صورت تست هدیه یا اشتراک زمان‌دار با روزشمار خودکار فعال کنید."
+      >
+        <form onSubmit={handleGrantSubmit} className="space-y-4 text-xs">
+          <div className="space-y-1.5">
+            <label className="font-extrabold text-[#061138] block">
+              ۱. چه قابلیتی برای این کسب‌وکار فعال شود؟
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'PLAN' as const, label: 'فقط پلن اشتراک' },
+                { id: 'SPONSORED_AD' as const, label: 'فقط تبلیغ ویژه' },
+                { id: 'BOTH' as const, label: 'پلن + تبلیغ ویژه' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setGrantTargetType(opt.id)}
+                  className={`py-2 px-2.5 rounded-xl font-extrabold border transition-all cursor-pointer ${
+                    grantTargetType === opt.id
+                      ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                      : 'bg-[#F8FAFC] text-[#334155] border-[#CBD5E1]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {grantTargetType === 'PLAN' || grantTargetType === 'BOTH' ? (
+            <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
+              <label className="font-extrabold text-[#061138] block">
+                انتخاب سطح پلن اشتراک:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  {
+                    id: 'حرفه‌ای' as const,
+                    label: 'پلن حرفه‌ای (۱۰ متخصص + قفل‌گشایی کامل مالی/مشتریان)',
+                  },
+                  {
+                    id: 'VIP' as const,
+                    label: 'پلن VIP و چندشعبه‌ای (پرسنل نامحدود + امکانات کامل)',
+                  },
+                ].map((pl) => (
+                  <button
+                    key={pl.id}
+                    type="button"
+                    onClick={() => setGrantPlanName(pl.id)}
+                    className={`p-2.5 rounded-xl text-right font-extrabold border transition-all cursor-pointer ${
+                      grantPlanName === pl.id
+                        ? 'bg-[#061138] text-white border-[#061138]'
+                        : 'bg-white text-[#061138] border-[#CBD5E1]'
+                    }`}
+                  >
+                    {pl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {grantTargetType === 'SPONSORED_AD' || grantTargetType === 'BOTH' ? (
+            <div className="space-y-3 p-3 rounded-2xl bg-[#ECFDF5]/60 border border-[#A7F3D0]">
+              <FormField id="grant-ad-slot" label="جایگاه تبلیغاتی ویژه">
+                <Select
+                  id="grant-ad-slot"
+                  value={grantPlacement}
+                  onChange={(e) =>
+                    setGrantPlacement(
+                      e.target.value as
+                        | 'SEARCH_TOP'
+                        | 'HOME_BANNER'
+                        | 'HERO_SPOTLIGHT'
+                    )
+                  }
+                  options={[
+                    {
+                      value: 'SEARCH_TOP',
+                      label: 'صدر نتایج جست‌وجوی شهر (/search)',
+                    },
+                    {
+                      value: 'HOME_BANNER',
+                      label: 'بنر ویژه در صفحه اول سایت + صدر جست‌وجو',
+                    },
+                    {
+                      value: 'HERO_SPOTLIGHT',
+                      label: 'ویترین طلایی بالای صفحه اول',
+                    },
+                  ]}
+                />
+              </FormField>
+              <FormField id="grant-ad-label" label="برچسب تبلیغاتی روی کارت">
+                <Input
+                  id="grant-ad-label"
+                  value={grantLabel}
+                  onChange={(e) => setGrantLabel(e.target.value)}
+                  placeholder="مثلاً: پیشنهاد ویژه · تست هدیه"
+                />
+              </FormField>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <label className="font-extrabold text-[#061138] block">
+              ۲. مدت اعتبار (روزشمار خودکار در پنل کسب‌وکار):
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              {[3, 7, 14, 30, 90].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setGrantDurationDays(d)}
+                  className={`px-3 py-1.5 rounded-xl font-extrabold border transition-all cursor-pointer tabular-nums ${
+                    grantDurationDays === d
+                      ? 'bg-[#8B5CF6] text-white border-[#8B5CF6]'
+                      : 'bg-white text-[#334155] border-[#CBD5E1]'
+                  }`}
+                >
+                  {toPersianDigits(d)} روز
+                </button>
+              ))}
+              <div className="flex items-center gap-1.5 mr-auto">
+                <span className="text-[#64748B] font-bold">تعداد روز دلخواه:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  dir="ltr"
+                  value={grantDurationDays}
+                  onChange={(e) =>
+                    setGrantDurationDays(Math.max(1, Number(e.target.value) || 1))
+                  }
+                  className="w-20 rounded-xl border border-[#CBD5E1] px-2.5 py-1.5 text-center font-black text-[#061138] tabular-nums"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <FormField
+              id="grant-extra-sms"
+              label="شارژ پیامک هدیه همراه این فعال‌سازی (اختیاری)"
+            >
+              <Input
+                id="grant-extra-sms"
+                type="number"
+                min={0}
+                dir="ltr"
+                value={String(grantExtraSms)}
+                onChange={(e) =>
+                  setGrantExtraSms(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            </FormField>
+
+            <div className="flex items-end pb-1">
+              <label className="inline-flex items-center gap-2 cursor-pointer font-bold text-[#061138]">
+                <input
+                  type="checkbox"
+                  checked={grantIsTrial}
+                  onChange={(e) => setGrantIsTrial(e.target.checked)}
+                  className="w-4 h-4 accent-[#0057FF]"
+                />
+                <span>ثبت به‌عنوان «تست هدیه مدیریت» (با اعلان در پنل سالن)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E2E8F0]">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setGrantModalBiz(null)}
+            >
+              انصراف
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              <Check className="w-3.5 h-3.5" />
+              <span>
+                فعال‌سازی فوری به مدت {toPersianDigits(grantDurationDays)} روز
+              </span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <BusinessFullInspectModal
         business={inspectingBusiness}
@@ -2543,6 +2774,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
     const daysNum = Math.max(0, Number(bizSponsoredDays) || 0);
     const orderNum = Math.max(1, Number(bizSponsoredOrder) || 1);
     const trialNum = Math.max(0, Number(bizTrialDays) || 0);
+    const nowMs = Date.now();
     updateBusinessProfile(managingBiz.id, {
       isSponsored: bizSponsoredActive && daysNum > 0,
       featured:
@@ -2554,10 +2786,16 @@ export const AdminSubscriptionsPage: React.FC = () => {
       sponsoredPlacement: bizPlacementSlot,
       sponsoredOrder: orderNum,
       sponsoredDaysRemaining: daysNum,
+      sponsoredExpiresAtMs:
+        bizSponsoredActive && daysNum > 0
+          ? nowMs + daysNum * 24 * 60 * 60 * 1000
+          : undefined,
       sponsoredLabel: bizSponsoredLabel.trim() || 'پیشنهاد ویژه',
       extraSmsBalance: Math.max(0, Number(bizExtraSms) || 0),
       subscriptionPlan: bizPlanName || managingBiz.subscriptionPlan,
       trialDaysRemaining: trialNum,
+      planExpiresAtMs:
+        trialNum > 0 ? nowMs + trialNum * 24 * 60 * 60 * 1000 : undefined,
       subscriptionStatus:
         trialNum > 0 ? SubscriptionStatus.Trial : SubscriptionStatus.Active,
     });

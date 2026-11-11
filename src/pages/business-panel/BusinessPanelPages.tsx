@@ -32,15 +32,21 @@ import {
   SpecialistItem,
 } from '../../types';
 import {
+  CATEGORY_PACKAGE_STAGE_CHECKLISTS,
+  FACIAL_SERVICE_PRESETS,
   ISFAHAN_NEIGHBORHOODS,
   LASER_DEVICE_PRESETS,
   LASER_SERVICE_PRESETS,
+  OTHER_DOMAIN_SERVICE_PRESETS,
   SAMPLE_CATEGORIES,
 } from '../../mocks/sampleData';
 import {
   formatDurationMinutes,
   formatNumericInputWithCommas,
   formatPriceToman,
+  formatServicePriceDisplay,
+  formatServicePriceShort,
+  formatWorkingHourDisplay,
   getAppointmentStatusMeta,
   getPlanStaffLimitCount,
   getSuggestedServiceTitlesForCategory,
@@ -83,20 +89,47 @@ import {
 import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
 import { BusinessQrCodeCard } from '../../components/business/BusinessQrCodeCard';
 
-/** بررسی رایگان بودن پلن فعلی کسب‌وکار */
+/** بررسی رایگان بودن پلن فعلی کسب‌وکار (با پشتیبانی از قفل‌گشایی خودکار هنگام فعال‌سازی پلن تستی توسط مدیریت) */
 const isFreeSubscriptionPlan = (
   planId?: string,
   planName?: string
 ): boolean => {
   const id = (planId || '').toLowerCase();
   const name = (planName || '').trim();
-  if (id === 'plan-professional' || id === 'plan-vip-multi' || id === 'plan-vip') {
+  if (
+    id === 'plan-professional' ||
+    id === 'plan-vip-multi' ||
+    id === 'plan-vip' ||
+    id === 'plan-vip-brand' ||
+    id === 'plan-enterprise'
+  ) {
     return false;
   }
-  if (name.includes('حرفه‌ای') || name.includes('VIP') || name.includes('ویژه')) {
+  if (
+    name.includes('حرفه‌ای') ||
+    name.includes('VIP') ||
+    name.includes('پیشرفته') ||
+    name.includes('ویژه')
+  ) {
     return false;
   }
   return true;
+};
+
+/** بررسی فعال بودن پلن VIP (شامل خرید مستقیم یا فعال‌سازی تستی زمان‌دار VIP توسط مدیر کل) */
+const isVipSubscriptionPlan = (
+  planId?: string,
+  planName?: string
+): boolean => {
+  const id = (planId || '').toLowerCase();
+  const name = (planName || '').trim();
+  return (
+    id === 'plan-vip-brand' ||
+    id === 'plan-vip-multi' ||
+    id === 'plan-vip' ||
+    id === 'plan-enterprise' ||
+    name.includes('VIP')
+  );
 };
 
 /** بنر قفل امکانات ویژه پلن‌های بالاتر (حرفه‌ای / VIP) */
@@ -147,7 +180,9 @@ export const BusinessDashboardPage: React.FC = () => {
     gallery,
     customers,
     plans,
+    dailyIncomeLogs,
     updateAppointmentStatus,
+    settleAppointmentInPerson,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
@@ -204,14 +239,60 @@ export const BusinessDashboardPage: React.FC = () => {
 
   const todayAppointmentsList = bizAppointments.filter(
     (apt) =>
-      selectedStaffFilter === 'ALL' ||
-      apt.specialistName === selectedStaffFilter
+      selectedStaffFilter === 'ALL' || apt.specialistName === selectedStaffFilter
   );
 
   return (
     <div className="space-y-5">
       {/* ۱. نوار استوری‌های آموزشی و اطلاعیه‌ها (به سبک اینستاگرام با پوستر تصویری و لینک مستقیم به بخش‌ها) */}
       <BusinessStoriesBar />
+
+      {/* بنر روزشمار زنده اشتراک تستی / فعال و جایگاه تبلیغاتی ویژه */}
+      {currentBiz &&
+      ((currentBiz.trialDaysRemaining && currentBiz.trialDaysRemaining > 0 && !isFreeSubscriptionPlan(undefined, currentBiz.subscriptionPlan)) ||
+        (currentBiz.isSponsored &&
+          currentBiz.sponsoredDaysRemaining &&
+          currentBiz.sponsoredDaysRemaining > 0)) ? (
+        <div className="rounded-3xl bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#1E1B4B] text-white p-4 sm:p-5 border border-[#0057FF]/40 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#00E5FF] text-[#061138] text-[11px] font-black">
+                ⏳ روزشمار اعتبار فعال شما
+              </span>
+              {currentBiz.trialDaysRemaining &&
+              currentBiz.trialDaysRemaining > 0 &&
+              !isFreeSubscriptionPlan(undefined, currentBiz.subscriptionPlan) ? (
+                <span className="text-xs sm:text-sm font-extrabold text-amber-300 tabular-nums">
+                  پلن «{currentBiz.subscriptionPlan}»: {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
+                </span>
+              ) : null}
+              {currentBiz.isSponsored &&
+              currentBiz.sponsoredDaysRemaining &&
+              currentBiz.sponsoredDaysRemaining > 0 ? (
+                <span className="text-xs sm:text-sm font-extrabold text-emerald-300 tabular-nums">
+                  ★ تبلیغ ویژه ({currentBiz.sponsoredLabel || 'صدر نتایج'}):{' '}
+                  {toPersianDigits(currentBiz.sponsoredDaysRemaining)} روز باقی‌مانده
+                </span>
+              ) : null}
+            </div>
+            <p className="text-[11px] text-slate-300">
+              تمامی ابزارهای حسابداری دخل روزانه، باشگاه مشتریان و گزارش‌های مالی پیشرفته برای پنل شما فعال است.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/app/analytics">
+              <Button variant="secondary" size="sm">
+                <span>ثبت دخل روزانه و مالی</span>
+              </Button>
+            </Link>
+            <Link to="/app/subscription">
+              <Button variant="accent" size="sm">
+                <span>مدیریت اشتراک ←</span>
+              </Button>
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       {/* ۲. نوار جمع‌وجور درصد تکمیل پروفایل سالن (فقط نمایش موارد باقی‌مانده) */}
       <BusinessProfileCompletionBanner summary={profileCompletion} />
@@ -461,7 +542,7 @@ export const BusinessDashboardPage: React.FC = () => {
               todayAppointmentsList.slice(0, 4).map((apt) => (
                 <div
                   key={apt.id}
-                  className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-3"
+                  className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="px-2.5 py-1.5 rounded-xl bg-[#061138] text-[#00E5FF] text-xs font-black tabular-nums shrink-0">
@@ -476,12 +557,27 @@ export const BusinessDashboardPage: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  <Link
-                    to="/app/calendar"
-                    className="text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
-                  >
-                    تقویم
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {apt.inPersonSettled ? (
+                      <span className="px-2 py-1 rounded-lg bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
+                        تسویه حضوری ثبت شد ✓
+                      </span>
+                    ) : apt.status !== AppointmentStatus.Cancelled ? (
+                      <button
+                        type="button"
+                        onClick={() => settleAppointmentInPerson(apt.id)}
+                        className="px-2.5 py-1 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-[10px] font-extrabold transition-colors cursor-pointer"
+                      >
+                        + ثبت دریافتی حضوری ✓
+                      </button>
+                    ) : null}
+                    <Link
+                      to="/app/calendar"
+                      className="text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
+                    >
+                      تقویم
+                    </Link>
+                  </div>
                 </div>
               ))
             )}
@@ -491,13 +587,23 @@ export const BusinessDashboardPage: React.FC = () => {
 
       {/* نمودار روند درآمد و سهم خدمات در داشبورد (همیشه قابل مشاهده حتی با مقدار صفر) */}
       {(() => {
-        const dashboardMonthlyRevenue = bizAppointments
-          .filter(
-            (a) =>
-              a.status === AppointmentStatus.Confirmed ||
-              a.status === AppointmentStatus.Completed
-          )
-          .reduce((sum, a) => sum + a.priceToman, 0);
+        const manualIncomeTotal = currentBiz
+          ? dailyIncomeLogs
+              .filter(
+                (log) =>
+                  log.businessId === currentBiz.id &&
+                  log.entryType === 'DAILY_BULK'
+              )
+              .reduce((s, l) => s + (l.amountToman || 0), 0)
+          : 0;
+        const dashboardMonthlyRevenue =
+          bizAppointments
+            .filter(
+              (a) =>
+                a.status === AppointmentStatus.Confirmed ||
+                a.status === AppointmentStatus.Completed
+            )
+            .reduce((sum, a) => sum + a.priceToman, 0) + manualIncomeTotal;
         const breakdownRows =
           bizServicesList.length > 0
             ? bizServicesList.slice(0, 4).map((srv: ServiceItem) => {
@@ -1348,7 +1454,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
   );
 };
 
-/** ۴. خدمات و تعرفه‌ها (/app/services) */
+/** ۴. خدمات و تعرفه‌ها (/app/services) — مجهز به ۳ مدل قیمت‌گذاری، شخصی‌سازی کامل پکیج و خدمت، و نمایش کیت آماده فقط متناسب با حوزه تخصصی کسب‌وکار */
 export const BusinessServicesPage: React.FC = () => {
   const {
     currentBusiness,
@@ -1363,14 +1469,62 @@ export const BusinessServicesPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
-  const isLaserBusiness = Boolean(
-    currentBiz?.categorySlug === 'laser-hair-removal' ||
-      currentBiz?.typeLabel?.includes('لیزر') ||
-      currentBiz?.name?.includes('لیزر') ||
-      currentBiz?.shortDescription?.includes('لیزر') ||
+  // تشخیص هوشمند حوزه تخصصی کسب‌وکار تا فقط کیت مربوط به همان حوزه نمایش داده شود
+  const detectedPrimaryCategory = React.useMemo(() => {
+    const slug = (currentBiz?.categorySlug || '').toLowerCase();
+    const label = `${currentBiz?.typeLabel || ''} ${currentBiz?.name || ''} ${currentBiz?.shortDescription || ''}`;
+    if (
+      slug === 'laser-hair-removal' ||
+      label.includes('لیزر') ||
       currentBiz?.targetGender === 'BOTH'
-  );
+    ) {
+      return 'لیزر موهای زائد';
+    }
+    if (
+      slug === 'skincare-facial' ||
+      slug === 'skin-facial' ||
+      label.includes('پوست') ||
+      label.includes('فیشیال') ||
+      label.includes('اسکین')
+    ) {
+      return 'پوست و فیشیال';
+    }
+    if (
+      slug === 'men-barber' ||
+      currentBiz?.type === 'MEN_BARBERSHOP' ||
+      label.includes('مردانه') ||
+      label.includes('پیرایش')
+    ) {
+      return 'پیرایش و استایل مردانه';
+    }
+    if (slug === 'nail-design' || label.includes('ناخن')) {
+      return 'کاشت و طراحی ناخن';
+    }
+    if (
+      slug === 'makeup-bridal' ||
+      label.includes('میکاپ') ||
+      label.includes('عروس')
+    ) {
+      return 'میکاپ و عروس';
+    }
+    if (
+      slug === 'eyelash-brow' ||
+      label.includes('مژه') ||
+      label.includes('ابرو')
+    ) {
+      return 'مژه و ابرو';
+    }
+    return 'مو و رنگ';
+  }, [currentBiz]);
 
+  const [activeKitCategory, setActiveKitCategory] = useState<string>(
+    detectedPrimaryCategory
+  );
+  useEffect(() => {
+    setActiveKitCategory(detectedPrimaryCategory);
+  }, [detectedPrimaryCategory]);
+
+  const [kitPanelOpen, setKitPanelOpen] = useState<boolean>(true);
   const [selectedCat, setSelectedCat] = useState<string>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<ServiceItem | null>(
@@ -1378,22 +1532,33 @@ export const BusinessServicesPage: React.FC = () => {
   );
   const [deleteTarget, setDeleteTarget] = useState<ServiceItem | null>(null);
   const [confirmClearAllOpen, setConfirmClearAllOpen] = useState(false);
-  const [laserPanelOpen, setLaserPanelOpen] = useState<boolean>(
-    isLaserBusiness
-  );
+
   const [selectedLaserDevice, setSelectedLaserDevice] = useState<string>(
     currentBiz?.laserDeviceModel || LASER_DEVICE_PRESETS[0]
   );
   const [laserFilterTab, setLaserFilterTab] = useState<
     'WOMEN_PACKAGES' | 'WOMEN_SINGLE' | 'MEN_PACKAGES' | 'MEN_SINGLE'
   >('WOMEN_PACKAGES');
+  const [facialFilterTab, setFacialFilterTab] = useState<
+    'FACIAL_PACKAGES' | 'THERAPY_PACKAGES' | 'SINGLE_FACIAL'
+  >('FACIAL_PACKAGES');
 
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState(
-    isLaserBusiness ? 'لیزر موهای زائد' : 'مو و رنگ'
+  // استیت‌های فرم شخصی‌سازی کامل خدمت و پکیج
+  const [serviceMode, setServiceMode] = useState<'SINGLE' | 'PACKAGE'>(
+    'PACKAGE'
   );
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState(detectedPrimaryCategory);
   const [durationMinutes, setDurationMinutes] = useState('60');
+  const [pricingType, setPricingType] = useState<
+    'FIXED' | 'RANGE' | 'STARTING_FROM'
+  >('RANGE');
   const [priceToman, setPriceToman] = useState('650000');
+  const [maxPriceToman, setMaxPriceToman] = useState('950000');
+  const [selectedPackageStages, setSelectedPackageStages] = useState<string[]>(
+    []
+  );
+  const [customStageInput, setCustomStageInput] = useState('');
   const [description, setDescription] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -1406,6 +1571,9 @@ export const BusinessServicesPage: React.FC = () => {
       ? bizServices
       : bizServices.filter((s) => s.category === selectedCat);
   const suggestedTitles = getSuggestedServiceTitlesForCategory(category);
+  const currentChecklist =
+    CATEGORY_PACKAGE_STAGE_CHECKLISTS[category] ??
+    CATEGORY_PACKAGE_STAGE_CHECKLISTS['پوست و فیشیال'];
 
   const handleClearAllServices = () => {
     if (bizServices.length === 0) return;
@@ -1415,6 +1583,166 @@ export const BusinessServicesPage: React.FC = () => {
     setSelectedCat('ALL');
     setConfirmClearAllOpen(false);
     showToast('تمام خدمات سالن با موفقیت پاک شدند.');
+  };
+
+  // باز کردن مودال شخصی‌سازی با اطلاعات پیش‌فرض یک آیتم از کیت آماده
+  const openCustomizePresetModal = (preset: {
+    title: string;
+    category: string;
+    durationMinutes: number;
+    pricingType: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+    priceToman: number;
+    maxPriceToman?: number;
+    packageIncludes?: string[];
+    description: string;
+  }) => {
+    setEditingService(null);
+    setTitle(preset.title);
+    setCategory(preset.category);
+    setDurationMinutes(String(preset.durationMinutes));
+    setPricingType(preset.pricingType);
+    setPriceToman(formatNumericInputWithCommas(String(preset.priceToman)));
+    setMaxPriceToman(
+      formatNumericInputWithCommas(
+        String(
+          preset.maxPriceToman || Math.round((preset.priceToman || 500000) * 1.4)
+        )
+      )
+    );
+    const stages = preset.packageIncludes ?? [];
+    setSelectedPackageStages(stages);
+    setServiceMode(stages.length > 0 ? 'PACKAGE' : 'SINGLE');
+    setCustomStageInput('');
+    setDescription(preset.description);
+    setFormErrors({});
+    setModalOpen(true);
+  };
+
+  const handleBulkAddFacialPresets = (
+    group: 'FACIAL_PACKAGES' | 'THERAPY_PACKAGES' | 'SINGLE_FACIAL' | 'ALL'
+  ) => {
+    if (!currentBiz) return;
+    const presets =
+      group === 'ALL'
+        ? FACIAL_SERVICE_PRESETS
+        : FACIAL_SERVICE_PRESETS.filter((p) => p.group === group);
+    const existingTitles = new Set(bizServices.map((s) => s.title.trim()));
+    let addedCount = 0;
+
+    presets.forEach((preset) => {
+      if (!existingTitles.has(preset.title.trim())) {
+        addService({
+          businessId: currentBiz.id,
+          categorySlug: 'skincare-facial',
+          title: preset.title,
+          category: 'پوست و فیشیال',
+          durationMinutes: preset.durationMinutes,
+          pricingType: preset.pricingType,
+          priceToman: preset.priceToman,
+          maxPriceToman: preset.maxPriceToman,
+          packageIncludes: preset.packageIncludes,
+          description: preset.description,
+          isActive: true,
+        });
+        addedCount += 1;
+      }
+    });
+
+    if (addedCount > 0) {
+      showToast(
+        `${toPersianDigits(addedCount)} پکیج و خدمت تخصصی «پوست و فیشیال» همراه با مراحل پکیج و بازه قیمتی اضافه شد ✓`
+      );
+    } else {
+      showToast('تمام پکیج‌های این بخش قبلاً به لیست خدمات شما اضافه شده‌اند.');
+    }
+  };
+
+  const handleAddSingleFacialPreset = (
+    preset: (typeof FACIAL_SERVICE_PRESETS)[number]
+  ) => {
+    if (!currentBiz) return;
+    const exists = bizServices.some(
+      (s) => s.title.trim() === preset.title.trim()
+    );
+    if (exists) {
+      showToast('این پکیج یا خدمت فیشیال قبلاً ثبت شده است.');
+      return;
+    }
+    addService({
+      businessId: currentBiz.id,
+      categorySlug: 'skincare-facial',
+      title: preset.title,
+      category: 'پوست و فیشیال',
+      durationMinutes: preset.durationMinutes,
+      pricingType: preset.pricingType,
+      priceToman: preset.priceToman,
+      maxPriceToman: preset.maxPriceToman,
+      packageIncludes: preset.packageIncludes,
+      description: preset.description,
+      isActive: true,
+    });
+    showToast(`«${preset.title}» با مراحل پکیج و بازه قیمت اضافه شد ✓`);
+  };
+
+  const handleAddOtherDomainPreset = (
+    preset: (typeof OTHER_DOMAIN_SERVICE_PRESETS)[number]
+  ) => {
+    if (!currentBiz) return;
+    const exists = bizServices.some(
+      (s) => s.title.trim() === preset.title.trim()
+    );
+    if (exists) {
+      showToast('این پکیج یا خدمت قبلاً در لیست شما ثبت شده است.');
+      return;
+    }
+    addService({
+      businessId: currentBiz.id,
+      categorySlug: preset.categorySlug,
+      title: preset.title,
+      category: preset.domainCategory,
+      durationMinutes: preset.durationMinutes,
+      pricingType: preset.pricingType,
+      priceToman: preset.priceToman,
+      maxPriceToman: preset.maxPriceToman,
+      packageIncludes: preset.packageIncludes,
+      description: preset.description,
+      isActive: true,
+    });
+    showToast(`«${preset.title}» با موفقیت به لیست خدمات شما اضافه شد ✓`);
+  };
+
+  const handleBulkAddOtherDomainPresets = (domainCat: string) => {
+    if (!currentBiz) return;
+    const list = OTHER_DOMAIN_SERVICE_PRESETS.filter(
+      (p) => p.domainCategory === domainCat
+    );
+    const existingTitles = new Set(bizServices.map((s) => s.title.trim()));
+    let addedCount = 0;
+    list.forEach((preset) => {
+      if (!existingTitles.has(preset.title.trim())) {
+        addService({
+          businessId: currentBiz.id,
+          categorySlug: preset.categorySlug,
+          title: preset.title,
+          category: preset.domainCategory,
+          durationMinutes: preset.durationMinutes,
+          pricingType: preset.pricingType,
+          priceToman: preset.priceToman,
+          maxPriceToman: preset.maxPriceToman,
+          packageIncludes: preset.packageIncludes,
+          description: preset.description,
+          isActive: true,
+        });
+        addedCount += 1;
+      }
+    });
+    if (addedCount > 0) {
+      showToast(
+        `${toPersianDigits(addedCount)} پکیج تخصصی «${domainCat}» یکجا اضافه شد ✓`
+      );
+    } else {
+      showToast('تمام پکیج‌های این بخش قبلاً اضافه شده‌اند.');
+    }
   };
 
   const handleBulkAddLaserPresets = (
@@ -1435,6 +1763,7 @@ export const BusinessServicesPage: React.FC = () => {
           title: preset.title,
           category: 'لیزر موهای زائد',
           durationMinutes: preset.durationMinutes,
+          pricingType: 'FIXED',
           priceToman: preset.priceToman,
           description: `${preset.categoryLabel} · ${preset.description} — دستگاه: ${deviceLabel}`,
           isActive: true,
@@ -1477,6 +1806,7 @@ export const BusinessServicesPage: React.FC = () => {
       title: preset.title,
       category: 'لیزر موهای زائد',
       durationMinutes: preset.durationMinutes,
+      pricingType: 'FIXED',
       priceToman: preset.priceToman,
       description: `${preset.categoryLabel} · ${preset.description} — دستگاه: ${deviceLabel}`,
       isActive: true,
@@ -1484,12 +1814,23 @@ export const BusinessServicesPage: React.FC = () => {
     showToast(`«${preset.title}» در دسته لیزر موهای زائد اضافه شد ✓`);
   };
 
-  const openAddModal = () => {
+  const openAddModal = (initialMode: 'SINGLE' | 'PACKAGE' = 'PACKAGE') => {
     setEditingService(null);
+    setServiceMode(initialMode);
     setTitle('');
-    setCategory(isLaserBusiness ? 'لیزر موهای زائد' : 'مو و رنگ');
+    setCategory(activeKitCategory || detectedPrimaryCategory);
     setDurationMinutes('60');
+    setPricingType(
+      activeKitCategory === 'پوست و فیشیال' ||
+        activeKitCategory === 'مو و رنگ' ||
+        initialMode === 'PACKAGE'
+        ? 'RANGE'
+        : 'FIXED'
+    );
     setPriceToman(formatNumericInputWithCommas('650000'));
+    setMaxPriceToman(formatNumericInputWithCommas('980000'));
+    setSelectedPackageStages([]);
+    setCustomStageInput('');
     setDescription('');
     setFormErrors({});
     setModalOpen(true);
@@ -1497,6 +1838,8 @@ export const BusinessServicesPage: React.FC = () => {
 
   const openEditModal = (srv: ServiceItem) => {
     setEditingService(srv);
+    const stages = srv.packageIncludes ?? [];
+    setServiceMode(stages.length > 0 ? 'PACKAGE' : 'SINGLE');
     setTitle(srv.title);
     setCategory(
       srv.categorySlug === 'laser-hair-removal' || srv.category.includes('لیزر')
@@ -1504,15 +1847,43 @@ export const BusinessServicesPage: React.FC = () => {
         : srv.category
     );
     setDurationMinutes(String(srv.durationMinutes));
+    setPricingType(srv.pricingType || 'FIXED');
     setPriceToman(formatNumericInputWithCommas(String(srv.priceToman)));
+    setMaxPriceToman(
+      formatNumericInputWithCommas(
+        String(
+          srv.maxPriceToman || Math.round((srv.priceToman || 500000) * 1.4)
+        )
+      )
+    );
+    setSelectedPackageStages(stages);
+    setCustomStageInput('');
     setDescription(srv.description);
     setFormErrors({});
     setModalOpen(true);
   };
 
+  const handleToggleStageInModal = (stageText: string) => {
+    setSelectedPackageStages((prev) =>
+      prev.includes(stageText)
+        ? prev.filter((item) => item !== stageText)
+        : [...prev, stageText]
+    );
+  };
+
+  const handleAddCustomStageInModal = () => {
+    const clean = customStageInput.trim();
+    if (!clean) return;
+    if (!selectedPackageStages.includes(clean)) {
+      setSelectedPackageStages((prev) => [...prev, clean]);
+    }
+    setCustomStageInput('');
+  };
+
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
     const numericPrice = parseNumericInput(priceToman);
+    const numericMaxPrice = parseNumericInput(maxPriceToman);
     const numericDuration = parseNumericInput(durationMinutes) || 60;
     const validation = validateServiceForm({
       title,
@@ -1525,13 +1896,28 @@ export const BusinessServicesPage: React.FC = () => {
       return;
     }
 
+    const finalStages =
+      serviceMode === 'PACKAGE'
+        ? selectedPackageStages.map((s) => s.trim()).filter(Boolean)
+        : [];
+
     const matchedCat = (
       categories.length > 0 ? categories : SAMPLE_CATEGORIES
     ).find((c) => c.title === category);
     const resolvedCategorySlug =
       category.includes('لیزر')
         ? 'laser-hair-removal'
+        : category.includes('پوست') || category.includes('فیشیال')
+        ? 'skincare-facial'
         : matchedCat?.slug ?? editingService?.categorySlug ?? 'hair-color';
+
+    const resolvedMaxPrice =
+      pricingType === 'RANGE'
+        ? Math.max(
+            numericPrice + 50000,
+            numericMaxPrice || numericPrice + 200000
+          )
+        : undefined;
 
     if (editingService) {
       updateService(editingService.id, {
@@ -1539,7 +1925,10 @@ export const BusinessServicesPage: React.FC = () => {
         title: title.trim(),
         category,
         durationMinutes: numericDuration,
+        pricingType,
         priceToman: numericPrice,
+        maxPriceToman: resolvedMaxPrice,
+        packageIncludes: finalStages.length > 0 ? finalStages : undefined,
         description: description.trim() || 'خدمت تخصصی زیبایی',
       });
     } else {
@@ -1549,7 +1938,10 @@ export const BusinessServicesPage: React.FC = () => {
         title: title.trim(),
         category,
         durationMinutes: numericDuration,
+        pricingType,
         priceToman: numericPrice,
+        maxPriceToman: resolvedMaxPrice,
+        packageIncludes: finalStages.length > 0 ? finalStages : undefined,
         description: description.trim() || 'خدمت تخصصی سالن زیبایی',
         isActive: true,
       });
@@ -1560,22 +1952,41 @@ export const BusinessServicesPage: React.FC = () => {
   const activeLaserPresets = LASER_SERVICE_PRESETS.filter(
     (p) => p.group === laserFilterTab
   );
+  const activeFacialPresets = FACIAL_SERVICE_PRESETS.filter(
+    (p) => p.group === facialFilterTab
+  );
+  const activeOtherDomainPresets = OTHER_DOMAIN_SERVICE_PRESETS.filter(
+    (p) => p.domainCategory === activeKitCategory
+  );
+
+  const allKitDomains = [
+    'پوست و فیشیال',
+    'لیزر موهای زائد',
+    'مو و رنگ',
+    'کاشت و طراحی ناخن',
+    'میکاپ و عروس',
+    'مژه و ابرو',
+    'پیرایش و استایل مردانه',
+  ];
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="مدیریت خدمات و تعرفه‌ها"
+        title="مدیریت خدمات، ساخت پکیج و تعرفه‌های هوشمند"
+        subtitle={`حوزه تخصصی تشخیص‌داده‌شده برای مجموعه شما: «${detectedPrimaryCategory}» — امکان تعریف پکیج چندمرحله‌ای، شخصی‌سازی کامل آیتم‌ها و تعیین بازه قیمتی`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {isLaserBusiness ? (
-              <Button
-                variant={laserPanelOpen ? 'secondary' : 'outline'}
-                size="sm"
-                onClick={() => setLaserPanelOpen((prev) => !prev)}
-              >
-                <span>⚡ کیت ۱-کلیکی مراکز لیزر (بانوان و آقایان)</span>
-              </Button>
-            ) : null}
+            <Button
+              variant={kitPanelOpen ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setKitPanelOpen((prev) => !prev)}
+            >
+              <span>
+                {kitPanelOpen
+                  ? `بستن کیت آماده «${activeKitCategory}»`
+                  : `✨ باز کردن کیت آماده «${activeKitCategory}»`}
+              </span>
+            </Button>
             {bizServices.length > 0 ? (
               <Button
                 variant="outline"
@@ -1584,12 +1995,26 @@ export const BusinessServicesPage: React.FC = () => {
                 className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>پاک کردن همه خدمات ({toPersianDigits(bizServices.length)})</span>
+                <span>
+                  پاک کردن همه ({toPersianDigits(bizServices.length)})
+                </span>
               </Button>
             ) : null}
-            <Button variant="primary" size="sm" onClick={openAddModal}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openAddModal('SINGLE')}
+            >
               <Plus className="w-4 h-4" />
-              <span>افزودن خدمت جدید</span>
+              <span>خدمت تکی</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => openAddModal('PACKAGE')}
+            >
+              <Plus className="w-4 h-4" />
+              <span>ساخت پکیج سفارشی / چندمرحله‌ای</span>
             </Button>
           </div>
         }
@@ -1625,193 +2050,447 @@ export const BusinessServicesPage: React.FC = () => {
         </div>
       ) : null}
 
-      {/* پنل اختصاصی ۱-کلیکی مراکز لیزر موهای زائد (فقط برای مراکز لیزر) */}
-      {isLaserBusiness && laserPanelOpen ? (
-        <Card className="border-2 border-[#8B5CF6]/30 bg-gradient-to-br from-[#F5F3FF] via-white to-[#EEF2FF] space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
-            <div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#8B5CF6] text-white text-[11px] font-black">
-                ⚡ ویژه کلینیک‌ها و مراکز لیزر موهای زائد (بانوان و آقایان)
-              </span>
-              <h2 className="text-sm sm:text-base font-black text-[#1E1B2E] mt-1.5">
-                افزودن یکجای پکیج‌ها و نواحی لیزر در دسته‌بندی «لیزر موهای زائد»
+      {/* کیت هوشمند اختصاصی — فقط کیت مربوط به حوزه فعالیت سالن نمایش داده می‌شود (با قابلیت تغییر لاین برای سالن‌های چندلاینی) */}
+      {kitPanelOpen ? (
+        <Card className="border-2 border-[#8B5CF6]/30 bg-gradient-to-br from-[#FAF8FF] via-white to-[#F0FDFA] space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#061138] text-[#00E5FF] text-[11px] font-black">
+                  ✨ کیت اختصاصی لاین «{activeKitCategory}»
+                </span>
+                <span className="text-[11px] text-[#64748B] font-bold">
+                  (فقط خدمات و پکیج‌های مرتبط با حوزه انتخابی شما نمایش داده می‌شود)
+                </span>
+              </div>
+              <h2 className="text-sm sm:text-base font-black text-[#061138]">
+                افزودن سریع یا «شخصی‌سازی کامل مراحل و قیمت» قبل از ثبت در منوی سالن
               </h2>
             </div>
-            <button
-              type="button"
-              onClick={() => setLaserPanelOpen(false)}
-              className="text-xs font-bold text-[#6B6480] hover:text-[#1E1B2E] px-2.5 py-1 rounded-lg border border-[#E6E0F5] bg-white cursor-pointer"
-            >
-              بستن پنل لیزر
-            </button>
-          </div>
 
-          {/* گام ۱: انتخاب یا تایپ مدل دستگاه لیزر */}
-          <div className="space-y-2.5">
-            <label className="text-xs font-extrabold text-[#1E1B2E] block">
-              ۱. مدل دستگاه لیزر مرکز خود را از لیست انتخاب کنید یا نام دلخواه آن را بنویسید:
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {LASER_DEVICE_PRESETS.map((devTitle) => {
-                const active = selectedLaserDevice === devTitle;
-                return (
-                  <button
-                    key={devTitle}
-                    type="button"
-                    onClick={() => setSelectedLaserDevice(devTitle)}
-                    className={`text-right p-2.5 rounded-xl border transition-all cursor-pointer ${
-                      active
-                        ? 'bg-[#1E1B2E] text-white border-[#1E1B2E] shadow-sm'
-                        : 'bg-white text-[#1E1B2E] border-[#E6E0F5] hover:border-[#8B5CF6]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-black">{devTitle}</span>
-                      {active ? (
-                        <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
-              <span className="text-xs font-bold text-[#475569] shrink-0">
-                نام دستگاه شما در لیست بالا نیست؟ اینجا بنویسید:
-              </span>
-              <input
-                type="text"
-                value={selectedLaserDevice}
-                onChange={(e) => setSelectedLaserDevice(e.target.value)}
-                placeholder="مثلاً: کندلا جنتل مکس پرو ۲۰۲۴ / تیتانیوم پلاس..."
-                className="flex-1 rounded-xl border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-extrabold text-[#061138] focus:border-[#8B5CF6] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* گام ۲: دکمه‌های افزودن یکجا (۱-کلیکی) */}
-          <div className="space-y-2">
-            <label className="text-xs font-extrabold text-[#1E1B2E] block">
-              ۲. افزودن یکجای لیست کامل با ۱ کلیک (بعد از افزودن، هر قیمتی را مستقیماً در جدول پایین تغییر دهید):
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              <button
-                type="button"
-                onClick={() => handleBulkAddLaserPresets('WOMEN_PACKAGES')}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-[11px] font-bold text-[#475569]">
+                تغییر لاین کیت (ویژه سالن‌های چندلاینی):
+              </label>
+              <select
+                value={activeKitCategory}
+                onChange={(e) => setActiveKitCategory(e.target.value)}
+                aria-label="انتخاب حوزه تخصصی کیت آماده"
+                className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] cursor-pointer focus:border-[#0057FF] focus:outline-none"
               >
-                <span>+ افزودن یکجای ۱۲ پکیج بانوان</span>
-                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
-                  توتال، فول، اقتصادی
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkAddLaserPresets('WOMEN_SINGLE')}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#EC4899] hover:bg-[#DB2777] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
-              >
-                <span>+ افزودن یکجای ۱۲ ناحیه تکی بانوان</span>
-                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
-                  صورت، بیکینی، پا...
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkAddLaserPresets('MEN_PACKAGES')}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
-              >
-                <span>+ افزودن یکجای ۱۱ پکیج آقایان</span>
-                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
-                  توتال، بالاتنه، تلفیقی
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkAddLaserPresets('MEN_SINGLE')}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
-              >
-                <span>+ افزودن یکجای ۱۰ ناحیه تکی آقایان</span>
-                <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
-                  خط ریش، کمر، دست...
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* گام ۳: مشاهده و انتخاب تکی از بین ۴۵ پکیج و ناحیه استاندارد */}
-          <div className="pt-2 border-t border-[#E6E0F5] space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-[#6B6480]">
-                یا اگر فقط چند مورد خاص را می‌خواهید، از تب‌های زیر تکی انتخاب کنید:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { id: 'WOMEN_PACKAGES', label: 'پکیج‌های بانوان (۱۲)' },
-                  { id: 'WOMEN_SINGLE', label: 'نواحی تکی بانوان (۱۲)' },
-                  { id: 'MEN_PACKAGES', label: 'پکیج‌های آقایان (۱۱)' },
-                  { id: 'MEN_SINGLE', label: 'نواحی تکی آقایان (۱۰)' },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() =>
-                      setLaserFilterTab(
-                        tab.id as
-                          | 'WOMEN_PACKAGES'
-                          | 'WOMEN_SINGLE'
-                          | 'MEN_PACKAGES'
-                          | 'MEN_SINGLE'
-                      )
-                    }
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-all ${
-                      laserFilterTab === tab.id
-                        ? 'bg-[#1E1B2E] text-white'
-                        : 'bg-white border border-[#E6E0F5] text-[#6B6480]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
+                {allKitDomains.map((dom) => (
+                  <option key={dom} value={dom}>
+                    {dom}
+                    {dom === detectedPrimaryCategory ? ' (حوزه اصلی شما)' : ''}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1">
-              {activeLaserPresets.map((preset) => {
-                const alreadyAdded = bizServices.some(
-                  (s) => s.title.trim() === preset.title.trim()
-                );
-                return (
-                  <div
-                    key={preset.title}
-                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E6E0F5] text-xs"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-extrabold text-[#1E1B2E] truncate">
-                        {preset.title}
-                      </p>
-                      <p className="text-[11px] text-[#8B5CF6] font-bold tabular-nums mt-0.5">
-                        {formatPriceToman(preset.priceToman)} ·{' '}
-                        {toPersianDigits(preset.durationMinutes)} دقیقه
-                      </p>
-                    </div>
+          {/* حالت ۱: اگر حوزه فعلی «پوست و فیشیال» است */}
+          {activeKitCategory === 'پوست و فیشیال' ? (
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddFacialPresets('FACIAL_PACKAGES')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-black shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۴ پکیج اصلی فیشیال</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    کلاسیک، هیدروفیشیال، VIP
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddFacialPresets('THERAPY_PACKAGES')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white text-xs font-black shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۴ پکیج درمانی پوست</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    اسیدتراپی، کربوکسی، پلاژن
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddFacialPresets('SINGLE_FACIAL')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-black shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۳ خدمت مکمل و آنالیز</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    دور چشم، مینی‌فیشیال، مشاوره
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddFacialPresets('ALL')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#061138] hover:bg-[#1E293B] text-white text-xs font-black shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>+ افزودن کامل هر ۱۱ پکیج پوست</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    کامل‌ترین منو
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E2E8F0]">
+                <span className="text-xs font-bold text-[#065F46]">
+                  می‌توانید هر پکیج را مستقیم اضافه کنید یا با دکمه «⚙️ شخصی‌سازی» مراحل و قیمت آن را تغییر دهید:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'FACIAL_PACKAGES', label: 'پکیج‌های جامع فیشیال (۴)' },
+                    { id: 'THERAPY_PACKAGES', label: 'اسیدتراپی، کربوکسی و درمانی (۴)' },
+                    { id: 'SINGLE_FACIAL', label: 'خدمات تکی و آنالیز پوست (۳)' },
+                  ].map((tab) => (
                     <button
+                      key={tab.id}
                       type="button"
-                      disabled={alreadyAdded}
-                      onClick={() => handleAddSingleLaserPreset(preset)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold shrink-0 cursor-pointer transition-colors ${
-                        alreadyAdded
-                          ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] cursor-default'
-                          : 'bg-[#F5F3FF] hover:bg-[#8B5CF6] text-[#8B5CF6] hover:text-white border border-[#DDD6FE]'
+                      onClick={() =>
+                        setFacialFilterTab(
+                          tab.id as
+                            | 'FACIAL_PACKAGES'
+                            | 'THERAPY_PACKAGES'
+                            | 'SINGLE_FACIAL'
+                        )
+                      }
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-all ${
+                        facialFilterTab === tab.id
+                          ? 'bg-[#061138] text-white'
+                          : 'bg-white border border-[#A7F3D0] text-[#065F46]'
                       }`}
                     >
-                      {alreadyAdded ? 'ثبت‌شده ✓' : '+ افزودن'}
+                      {tab.label}
                     </button>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto p-1">
+                {activeFacialPresets.map((preset) => {
+                  const alreadyAdded = bizServices.some(
+                    (s) => s.title.trim() === preset.title.trim()
+                  );
+                  return (
+                    <div
+                      key={preset.title}
+                      className="p-3 rounded-xl bg-white border border-[#A7F3D0] text-xs space-y-2 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-extrabold text-[#061138]">
+                            {preset.title}
+                          </p>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openCustomizePresetModal({
+                                  title: preset.title,
+                                  category: 'پوست و فیشیال',
+                                  durationMinutes: preset.durationMinutes,
+                                  pricingType: preset.pricingType,
+                                  priceToman: preset.priceToman,
+                                  maxPriceToman: preset.maxPriceToman,
+                                  packageIncludes: preset.packageIncludes,
+                                  description: preset.description,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] text-[#0057FF] border border-[#CBD5E1] text-[10px] font-extrabold cursor-pointer transition-colors"
+                              title="ویرایش مراحل پکیج، مواد مصرفی و قیمت قبل از ثبت"
+                            >
+                              ⚙️ شخصی‌سازی
+                            </button>
+                            <button
+                              type="button"
+                              disabled={alreadyAdded}
+                              onClick={() => handleAddSingleFacialPreset(preset)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                                alreadyAdded
+                                  ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                                  : 'bg-[#059669] hover:bg-[#047857] text-white'
+                              }`}
+                            >
+                              {alreadyAdded ? 'ثبت‌شده ✓' : '+ افزودن'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-[#059669] font-extrabold tabular-nums">
+                          {formatServicePriceDisplay(preset)} ·{' '}
+                          {toPersianDigits(preset.durationMinutes)} دقیقه
+                        </p>
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {preset.packageIncludes.map((stepItem) => (
+                            <span
+                              key={stepItem}
+                              className="px-2 py-0.5 rounded-md bg-[#F0FDFA] border border-[#CCFBF1] text-[10px] font-bold text-[#0F766E]"
+                            >
+                              ✓ {stepItem}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          ) : activeKitCategory === 'لیزر موهای زائد' ? (
+            /* حالت ۲: اگر حوزه فعلی «لیزر موهای زائد» است */
+            <div className="space-y-3.5">
+              <div className="space-y-2">
+                <label className="text-xs font-extrabold text-[#1E1B2E] block">
+                  ۱. مدل دستگاه لیزر مرکز خود را انتخاب یا تایپ کنید:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {LASER_DEVICE_PRESETS.map((devTitle) => {
+                    const active = selectedLaserDevice === devTitle;
+                    return (
+                      <button
+                        key={devTitle}
+                        type="button"
+                        onClick={() => setSelectedLaserDevice(devTitle)}
+                        className={`text-right p-2.5 rounded-xl border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-[#1E1B2E] text-white border-[#1E1B2E] shadow-sm'
+                            : 'bg-white text-[#1E1B2E] border-[#E6E0F5] hover:border-[#8B5CF6]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-black">{devTitle}</span>
+                          {active ? (
+                            <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" />
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddLaserPresets('WOMEN_PACKAGES')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۱۲ پکیج بانوان</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    توتال، فول، اقتصادی
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddLaserPresets('WOMEN_SINGLE')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#EC4899] hover:bg-[#DB2777] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۱۲ ناحیه تکی بانوان</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    صورت، بیکینی، پا...
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddLaserPresets('MEN_PACKAGES')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۱۱ پکیج آقایان</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    توتال، بالاتنه، تلفیقی
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkAddLaserPresets('MEN_SINGLE')}
+                  className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-xs font-black shadow-sm transition-all cursor-pointer"
+                >
+                  <span>+ افزودن ۱۰ ناحیه تکی آقایان</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-white/20 text-[10px]">
+                    خط ریش، کمر، دست...
+                  </span>
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-[#E6E0F5] space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-[#6B6480]">
+                    انتخاب تکی یا شخصی‌سازی نواحی هر پکیج لیزر:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'WOMEN_PACKAGES', label: 'پکیج‌های بانوان (۱۲)' },
+                      { id: 'WOMEN_SINGLE', label: 'نواحی تکی بانوان (۱۲)' },
+                      { id: 'MEN_PACKAGES', label: 'پکیج‌های آقایان (۱۱)' },
+                      { id: 'MEN_SINGLE', label: 'نواحی تکی آقایان (۱۰)' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() =>
+                          setLaserFilterTab(
+                            tab.id as
+                              | 'WOMEN_PACKAGES'
+                              | 'WOMEN_SINGLE'
+                              | 'MEN_PACKAGES'
+                              | 'MEN_SINGLE'
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-all ${
+                          laserFilterTab === tab.id
+                            ? 'bg-[#1E1B2E] text-white'
+                            : 'bg-white border border-[#E6E0F5] text-[#6B6480]'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1">
+                  {activeLaserPresets.map((preset) => {
+                    const alreadyAdded = bizServices.some(
+                      (s) => s.title.trim() === preset.title.trim()
+                    );
+                    return (
+                      <div
+                        key={preset.title}
+                        className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-[#E6E0F5] text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-[#1E1B2E] truncate">
+                            {preset.title}
+                          </p>
+                          <p className="text-[11px] text-[#8B5CF6] font-bold tabular-nums mt-0.5">
+                            {formatPriceToman(preset.priceToman)} ·{' '}
+                            {toPersianDigits(preset.durationMinutes)} دقیقه
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openCustomizePresetModal({
+                                title: preset.title,
+                                category: 'لیزر موهای زائد',
+                                durationMinutes: preset.durationMinutes,
+                                pricingType: 'FIXED',
+                                priceToman: preset.priceToman,
+                                packageIncludes: [preset.description],
+                                description: `${preset.categoryLabel} · دستگاه: ${selectedLaserDevice}`,
+                              })
+                            }
+                            className="px-2 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] text-[#0057FF] border border-[#CBD5E1] text-[10px] font-extrabold cursor-pointer"
+                          >
+                            ⚙️ شخصی‌سازی
+                          </button>
+                          <button
+                            type="button"
+                            disabled={alreadyAdded}
+                            onClick={() => handleAddSingleLaserPreset(preset)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                              alreadyAdded
+                                ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] cursor-default'
+                                : 'bg-[#F5F3FF] hover:bg-[#8B5CF6] text-[#8B5CF6] hover:text-white border border-[#DDD6FE]'
+                            }`}
+                          >
+                            {alreadyAdded ? 'ثبت‌شده ✓' : '+ افزودن'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* حالت ۳: سایر حوزه‌های تخصصی (مو و رنگ، ناخن، میکاپ، مژه و ابرو، پیرایش مردانه) */
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-[#334155]">
+                  پکیج‌ها و خدمات پیشنهادی ویژه لاین «{activeKitCategory}»:
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleBulkAddOtherDomainPresets(activeKitCategory)
+                  }
+                  className="px-3 py-1.5 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-extrabold cursor-pointer transition-colors"
+                >
+                  + افزودن یکجای همه پکیج‌های «{activeKitCategory}»
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {activeOtherDomainPresets.map((preset) => {
+                  const alreadyAdded = bizServices.some(
+                    (s) => s.title.trim() === preset.title.trim()
+                  );
+                  return (
+                    <div
+                      key={preset.title}
+                      className="p-3 rounded-xl bg-white border border-[#CBD5E1] text-xs space-y-2 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-extrabold text-[#061138]">
+                            {preset.title}
+                          </p>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openCustomizePresetModal({
+                                  title: preset.title,
+                                  category: preset.domainCategory,
+                                  durationMinutes: preset.durationMinutes,
+                                  pricingType: preset.pricingType,
+                                  priceToman: preset.priceToman,
+                                  maxPriceToman: preset.maxPriceToman,
+                                  packageIncludes: preset.packageIncludes,
+                                  description: preset.description,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] text-[#0057FF] border border-[#CBD5E1] text-[10px] font-extrabold cursor-pointer"
+                            >
+                              ⚙️ شخصی‌سازی
+                            </button>
+                            <button
+                              type="button"
+                              disabled={alreadyAdded}
+                              onClick={() => handleAddOtherDomainPreset(preset)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                                alreadyAdded
+                                  ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                                  : 'bg-[#0057FF] hover:bg-[#0046CC] text-white'
+                              }`}
+                            >
+                              {alreadyAdded ? 'ثبت‌شده ✓' : '+ افزودن'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-[#0057FF] font-extrabold tabular-nums">
+                          {formatServicePriceDisplay(preset)} ·{' '}
+                          {toPersianDigits(preset.durationMinutes)} دقیقه
+                        </p>
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {preset.packageIncludes.map((st) => (
+                            <span
+                              key={st}
+                              className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-bold text-[#334155]"
+                            >
+                              ✓ {st}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </Card>
       ) : null}
 
@@ -1850,11 +2529,30 @@ export const BusinessServicesPage: React.FC = () => {
         columns={[
           {
             key: 'title',
-            header: 'عنوان و شرح خدمت',
+            header: 'عنوان، مراحل پکیج و شرح خدمت',
             render: (s) => (
-              <div>
-                <p className="font-extrabold text-[#1E1B2E]">{s.title}</p>
-                <p className="text-xs text-[#6B6480] mt-0.5">{s.description}</p>
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="font-extrabold text-[#1E1B2E]">{s.title}</p>
+                  {s.packageIncludes && s.packageIncludes.length > 0 ? (
+                    <span className="px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
+                      پکیج {toPersianDigits(s.packageIncludes.length)} مرحله‌ای
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-[#6B6480]">{s.description}</p>
+                {s.packageIncludes && s.packageIncludes.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {s.packageIncludes.map((inc) => (
+                      <span
+                        key={inc}
+                        className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-[#475569]"
+                      >
+                        • {inc}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ),
           },
@@ -1875,27 +2573,50 @@ export const BusinessServicesPage: React.FC = () => {
           },
           {
             key: 'price',
-            header: 'تعرفه (ویرایش آنی تومان)',
+            header: 'مدل قیمت‌گذاری و تعرفه (تومان)',
             align: 'left',
             render: (s) => (
-              <div className="inline-flex items-center gap-1.5">
-                <input
-                  type="text"
-                  dir="ltr"
-                  inputMode="numeric"
-                  aria-label={`قیمت ${s.title}`}
-                  value={formatNumericInputWithCommas(String(s.priceToman))}
-                  onChange={(e) => {
-                    const nextPrice = parseNumericInput(e.target.value);
-                    if (nextPrice >= 0) {
-                      updateService(s.id, { priceToman: nextPrice });
-                    }
-                  }}
-                  className="w-28 px-2.5 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-xs font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
-                />
-                <span className="text-[11px] font-bold text-[#6B6480]">
-                  تومان
+              <div className="space-y-1 text-left">
+                <span className="text-xs font-extrabold text-[#8B5CF6] block tabular-nums">
+                  {formatServicePriceShort(s)}
                 </span>
+                <div className="inline-flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    dir="ltr"
+                    inputMode="numeric"
+                    aria-label={`قیمت پایه ${s.title}`}
+                    value={formatNumericInputWithCommas(String(s.priceToman))}
+                    onChange={(e) => {
+                      const nextPrice = parseNumericInput(e.target.value);
+                      if (nextPrice >= 0) {
+                        updateService(s.id, { priceToman: nextPrice });
+                      }
+                    }}
+                    className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
+                  />
+                  {s.pricingType === 'RANGE' ? (
+                    <>
+                      <span className="text-[10px] text-[#64748B]">تا</span>
+                      <input
+                        type="text"
+                        dir="ltr"
+                        inputMode="numeric"
+                        aria-label={`سقف قیمت ${s.title}`}
+                        value={formatNumericInputWithCommas(
+                          String(s.maxPriceToman || s.priceToman)
+                        )}
+                        onChange={(e) => {
+                          const nextMax = parseNumericInput(e.target.value);
+                          if (nextMax >= 0) {
+                            updateService(s.id, { maxPriceToman: nextMax });
+                          }
+                        }}
+                        className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
+                      />
+                    </>
+                  ) : null}
+                </div>
               </div>
             ),
           },
@@ -1929,7 +2650,7 @@ export const BusinessServicesPage: React.FC = () => {
                   aria-label={`ویرایش ${s.title}`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
-                  <span>ویرایش</span>
+                  <span>ویرایش و شخصی‌سازی</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -1946,41 +2667,93 @@ export const BusinessServicesPage: React.FC = () => {
         ]}
       />
 
-      {/* مودال افزودن / ویرایش خدمت */}
+      {/* مودال جامع ساخت پکیج و شخصی‌سازی کامل خدمت (با چک‌لیست مراحل و مواد مصرفی تا هیچ موردی از قلم نیفتد) */}
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editingService ? 'ویرایش خدمت' : 'افزودن خدمت جدید'}
+        title={
+          editingService
+            ? 'ویرایش و شخصی‌سازی کامل خدمت / پکیج'
+            : 'تعریف خدمت یا ساخت پکیج سفارشی جدید'
+        }
       >
         <form onSubmit={handleSaveService} className="space-y-4" noValidate>
-          <FormField
-            id="srv-form-cat"
-            label="دسته‌بندی خدمت"
-            required
-            error={formErrors.category}
-          >
-            <Select
+          {/* ۱. انتخاب حالت خدمت تکی یا پکیج چندمرحله‌ای */}
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#F1F5F9] border border-[#CBD5E1]">
+            <button
+              type="button"
+              onClick={() => setServiceMode('PACKAGE')}
+              className={`py-2 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                serviceMode === 'PACKAGE'
+                  ? 'bg-[#061138] text-[#00E5FF] shadow-xs'
+                  : 'text-[#475569] hover:text-[#061138]'
+              }`}
+            >
+              📦 پکیج چندمرحله‌ای (با چک‌لیست آیتم‌ها)
+            </button>
+            <button
+              type="button"
+              onClick={() => setServiceMode('SINGLE')}
+              className={`py-2 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                serviceMode === 'SINGLE'
+                  ? 'bg-[#061138] text-white shadow-xs'
+                  : 'text-[#475569] hover:text-[#061138]'
+              }`}
+            >
+              ✂️ خدمت تکی ساده
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField
               id="srv-form-cat"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              options={Array.from(
-                new Set([
-                  ...(categories.length > 0 ? categories : SAMPLE_CATEGORIES).map(
-                    (c) => c.title
-                  ),
-                  'لیزر موهای زائد',
-                  ...(category ? [category] : []),
-                ])
-              ).map((titleItem) => ({
-                value: titleItem,
-                label: titleItem,
-              }))}
-            />
-          </FormField>
+              label="دسته‌بندی تخصصی"
+              required
+              error={formErrors.category}
+            >
+              <Select
+                id="srv-form-cat"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                options={Array.from(
+                  new Set([
+                    ...allKitDomains,
+                    ...(categories.length > 0
+                      ? categories
+                      : SAMPLE_CATEGORIES
+                    ).map((c) => c.title),
+                    ...(category ? [category] : []),
+                  ])
+                ).map((titleItem) => ({
+                  value: titleItem,
+                  label: titleItem,
+                }))}
+              />
+            </FormField>
+
+            <FormField
+              id="srv-form-dur"
+              label="مدت زمان حدودی (دقیقه)"
+              required
+              error={formErrors.durationMinutes}
+            >
+              <Input
+                id="srv-form-dur"
+                dir="ltr"
+                type="number"
+                value={durationMinutes}
+                onChange={(e) => setDurationMinutes(e.target.value)}
+              />
+            </FormField>
+          </div>
 
           <FormField
             id="srv-form-title"
-            label="نام خدمت"
+            label={
+              serviceMode === 'PACKAGE'
+                ? 'عنوان پکیج اختصاصی شما'
+                : 'عنوان خدمت'
+            }
             required
             error={formErrors.title}
           >
@@ -1989,14 +2762,18 @@ export const BusinessServicesPage: React.FC = () => {
               value={title}
               hasError={Boolean(formErrors.title)}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="نام خدمت را بنویسید یا از پیشنهادهای زیر انتخاب کنید"
+              placeholder={
+                serviceMode === 'PACKAGE'
+                  ? 'مثلاً: پکیج VIP فیشیال، هیدرودرمی و نوردرمانی (۷ مرحله‌ای)'
+                  : 'نام خدمت را بنویسید یا از پیشنهادهای زیر انتخاب کنید'
+              }
             />
           </FormField>
 
           {suggestedTitles.length > 0 ? (
-            <div className="space-y-1.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] p-3">
+            <div className="space-y-1.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] p-2.5">
               <span className="text-[11px] font-extrabold text-[#475569] block">
-                پیشنهاد سریع نام خدمت در دسته «{category}» (با لمس انتخاب می‌شود):
+                پیشنهاد سریع عنوان در دسته «{category}» (با لمس جایگذاری می‌شود):
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {suggestedTitles.map((sug) => (
@@ -2017,25 +2794,157 @@ export const BusinessServicesPage: React.FC = () => {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3">
-            <FormField
-              id="srv-form-dur"
-              label="مدت زمان (دقیقه)"
-              required
-              error={formErrors.durationMinutes}
-            >
-              <Input
-                id="srv-form-dur"
-                dir="ltr"
-                type="number"
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(e.target.value)}
-              />
-            </FormField>
+          {/* ۲. سازنده هوشمند مراحل و آیتم‌های داخل پکیج (چک‌لیست آماده + افزودن مورد دلخواه) */}
+          {serviceMode === 'PACKAGE' ? (
+            <div className="p-3.5 rounded-2xl bg-[#F0FDFA] border border-[#99F6E4] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-xs font-extrabold text-[#065F46] block">
+                    چک‌لیست آماده مراحل و آیتم‌های «{category}» (تا هیچ موردی از قلم نیفتد):
+                  </span>
+                  <span className="text-[11px] text-[#0F766E]">
+                    روی هر مرحله که در این پکیج انجام می‌دهید کلیک کنید تا تیک بخورد یا مرحله دلخواه خودتان را اضافه کنید
+                  </span>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-[#059669] text-white text-[11px] font-black tabular-nums">
+                  {toPersianDigits(selectedPackageStages.length)} مرحله انتخاب‌شده
+                </span>
+              </div>
 
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-1">
+                {currentChecklist.stages.map((st) => {
+                  const isChecked = selectedPackageStages.includes(st);
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => handleToggleStageInModal(st)}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
+                        isChecked
+                          ? 'bg-[#059669] text-white border-[#059669] shadow-2xs'
+                          : 'bg-white text-[#064E3B] border-[#A7F3D0] hover:border-[#059669]'
+                      }`}
+                    >
+                      <span>{isChecked ? '✓' : '+'}</span>
+                      <span>{st}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* افزودن مرحله یا آیتم سفارشی توسط صاحب کسب‌وکار */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={customStageInput}
+                  onChange={(e) => setCustomStageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomStageInModal();
+                    }
+                  }}
+                  placeholder="مرحله یا آیتم اختصاصی دیگری دارید؟ اینجا بنویسید (مثلاً: ماسک طلای ۲۴ عیار)..."
+                  className="flex-1 rounded-xl border border-[#A7F3D0] bg-white px-3 py-1.5 text-xs font-bold text-[#061138] focus:border-[#059669] focus:outline-none"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddCustomStageInModal}
+                >
+                  + افزودن مرحله
+                </Button>
+              </div>
+
+              {selectedPackageStages.length > 0 ? (
+                <div className="pt-2 border-t border-[#99F6E4] space-y-1.5">
+                  <span className="text-[11px] font-extrabold text-[#065F46] block">
+                    ترتیب مراحل ثبت‌شده در پکیج شما (با زدن ✕ حذف می‌شود):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedPackageStages.map((st, idx) => (
+                      <span
+                        key={`${st}-${idx}`}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#059669]/40 text-[11px] font-extrabold text-[#061138]"
+                      >
+                        <span className="text-[#059669] tabular-nums">
+                          {toPersianDigits(idx + 1)}.
+                        </span>
+                        <span>{st}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStageInModal(st)}
+                          className="text-rose-500 hover:text-rose-700 font-black cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* ۳. انتخاب مدل قیمت‌گذاری (مقطوع / بازه قیمتی / شروع قیمت پایه + مشاوره حضوری) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-extrabold text-[#061138] block">
+              مدل نمایش قیمت به مشتری (ویژه خدماتی که قیمتشان به مواد مصرفی یا حجم کار بستگی دارد):
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                {
+                  id: 'FIXED' as const,
+                  title: '۱. قیمت مقطوع و ثابت',
+                  sub: 'مثلاً ۶۵۰,۰۰۰ تومان',
+                },
+                {
+                  id: 'RANGE' as const,
+                  title: '۲. بازه قیمتی (از ... تا ...)',
+                  sub: 'بر اساس مواد یا حجم کار',
+                },
+                {
+                  id: 'STARTING_FROM' as const,
+                  title: '۳. شروع قیمت پایه + مشاوره',
+                  sub: 'تعیین دقیق پس از آنالیز حضوری',
+                },
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setPricingType(mode.id)}
+                  className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                    pricingType === mode.id
+                      ? 'bg-[#061138] text-white border-[#061138]'
+                      : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1]'
+                  }`}
+                >
+                  <p className="text-xs font-extrabold">{mode.title}</p>
+                  <p
+                    className={`text-[10px] mt-0.5 ${
+                      pricingType === mode.id
+                        ? 'text-[#00E5FF]'
+                        : 'text-[#64748B]'
+                    }`}
+                  >
+                    {mode.sub}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField
               id="srv-form-price"
-              label="قیمت (تومان)"
+              label={
+                pricingType === 'RANGE'
+                  ? 'حداقل قیمت (از تومان)'
+                  : pricingType === 'STARTING_FROM'
+                  ? 'شروع قیمت پایه (تومان)'
+                  : 'قیمت مقطوع (تومان)'
+              }
               required
               error={formErrors.priceToman}
             >
@@ -2051,19 +2960,65 @@ export const BusinessServicesPage: React.FC = () => {
                 placeholder="650,000"
               />
             </FormField>
+
+            {pricingType === 'RANGE' ? (
+              <FormField
+                id="srv-form-max-price"
+                label="حداکثر قیمت (تا تومان)"
+                required
+              >
+                <Input
+                  id="srv-form-max-price"
+                  dir="ltr"
+                  type="text"
+                  inputMode="numeric"
+                  value={maxPriceToman}
+                  onChange={(e) =>
+                    setMaxPriceToman(
+                      formatNumericInputWithCommas(e.target.value)
+                    )
+                  }
+                  placeholder="950,000"
+                />
+              </FormField>
+            ) : null}
           </div>
 
-          <FormField
-            id="srv-form-desc"
-            label="توضیحات کوتاه خدمت"
-            optionalLabel="اختیاری"
-          >
-            <Input
+          {/* ۴. تگ‌های آماده برند متریال و شرایط خدمت + توضیحات */}
+          <div className="space-y-2">
+            <FormField
               id="srv-form-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </FormField>
+              label="توضیحات تکمیلی، برند متریال یا شرایط پذیرش"
+              optionalLabel="با کلیک روی پیشنهادها خودکار اضافه می‌شود"
+            >
+              <Input
+                id="srv-form-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="توضیح کوتاه درباره برند مواد، نوع پوست/مو مناسب یا شرایط قیمت..."
+              />
+            </FormField>
+            <div className="flex flex-wrap gap-1.5">
+              {currentChecklist.materialsAndNotes.map((note) => (
+                <button
+                  key={note}
+                  type="button"
+                  onClick={() =>
+                    setDescription((prev) =>
+                      prev.includes(note)
+                        ? prev
+                        : prev.trim()
+                        ? `${prev.trim()} · ${note}`
+                        : note
+                    )
+                  }
+                  className="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-[10px] font-bold text-[#334155] hover:text-[#0057FF] cursor-pointer transition-colors"
+                >
+                  + {note}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button
@@ -2074,7 +3029,7 @@ export const BusinessServicesPage: React.FC = () => {
               انصراف
             </Button>
             <Button type="submit" variant="primary" size="sm">
-              ذخیره خدمت
+              ذخیره نهایی خدمت / پکیج
             </Button>
           </div>
         </form>
@@ -3249,24 +4204,52 @@ export const BusinessCustomersPage: React.FC = () => {
   );
 };
 
-/** ۷. گالری نمونه کارها (/app/gallery) */
+/** ۷. گالری نمونه کارها و استوری‌های ویژه VIP (/app/gallery) */
 export const BusinessGalleryPage: React.FC = () => {
   const {
     currentBusiness,
     businesses,
+    services,
+    activePlanId,
     gallery,
     addGalleryItem,
     removeGalleryItem,
+    businessStories,
+    addBusinessStory,
+    deleteBusinessStory,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [title, setTitle] = useState('');
   const [categoryLabel, setCategoryLabel] = useState('مو و رنگ');
 
+  // استیت‌های فرم انتشار استوری ویژه (مختص پلن VIP)
+  const [storyTitle, setStoryTitle] = useState('');
+  const [storyBadge, setStoryBadge] = useState('🔥 نوبت خالی امروز');
+  const [storyCaption, setStoryCaption] = useState('');
+  const [storyImageUrl, setStoryImageUrl] = useState('');
+  const [storyLinkedServiceId, setStoryLinkedServiceId] = useState('');
+  const [storyCtaLabel, setStoryCtaLabel] = useState(
+    'رزرو آنلاین این پیشنهاد ←'
+  );
+
+  const isVipPlanActive = isVipSubscriptionPlan(
+    activePlanId,
+    currentBiz?.subscriptionPlan
+  );
+
+  const bizServices = currentBiz
+    ? services.filter((s) => s.businessId === currentBiz.id)
+    : [];
+  const bizStories = currentBiz
+    ? businessStories.filter((st) => st.businessId === currentBiz.id)
+    : [];
+
   const handleAddDemoImage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
     addGalleryItem({
-      businessId: currentBiz?.id ?? 'biz-1',
+      businessId: currentBiz?.id ?? 'biz-owner-zero',
       title: title.trim(),
       categoryLabel,
       theme: 'violet',
@@ -3274,20 +4257,259 @@ export const BusinessGalleryPage: React.FC = () => {
     setTitle('');
   };
 
+  const handlePublishStory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentBiz) return;
+    if (!isVipPlanActive) {
+      showToast(
+        'انتشار استوری و هایلایت روزانه در بالای پروفایل، اختصاصی مشترکین پلن VIP است.',
+        'warning'
+      );
+      return;
+    }
+    if (!storyTitle.trim()) {
+      showToast('لطفاً عنوان کوتاه استوری (مثلاً تخفیف فیشیال یا نوبت خالی امروز) را وارد کنید.');
+      return;
+    }
+    addBusinessStory({
+      businessId: currentBiz.id,
+      title: storyTitle.trim(),
+      badgeLabel: storyBadge,
+      caption:
+        storyCaption.trim() ||
+        `${storyTitle.trim()} در ${currentBiz.name} — جهت رزرو آنلاین روی دکمه زیر کلیک کنید.`,
+      imageUrl: storyImageUrl || currentBiz.avatarUrl,
+      ctaLabel: storyCtaLabel.trim() || 'رزرو آنلاین این پیشنهاد ←',
+      linkedServiceId: storyLinkedServiceId || undefined,
+    });
+    setStoryTitle('');
+    setStoryCaption('');
+  };
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
-        kicker="کسب‌وکار · نمونه کارها"
-        title="گالری نمونه کارها و تصاویر سالن"
-        subtitle="مدیریت قاب‌های تصویری پروفایل عمومی سالن برای نمایش کیفیت خدمات به مشتریان"
+        kicker="کسب‌وکار · ویترین تصویری و استوری VIP"
+        title="مدیریت استوری‌های روزانه (VIP) و گالری نمونه‌کارها"
+        subtitle="در این بخش می‌توانید هم استوری و هایلایت ویژه بالای پروفایل سالن (مختص پلن VIP) را منتشر کنید و هم عکس‌های گالری نمونه‌کارها را مدیریت نمایید"
         routePattern="/app/gallery"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'گالری نمونه کارها' },
+          { label: 'استوری VIP و گالری نمونه‌کارها' },
         ]}
+        actions={
+          currentBiz ? (
+            <Link to={`/salon/${currentBiz.slug}`}>
+              <Button variant="outline" size="sm">
+                <span>مشاهده استوری و گالری در پروفایل عمومی</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Button>
+            </Link>
+          ) : null
+        }
       />
 
-      <Card className="mb-6">
+      {/* بخش ۱: مدیریت استوری و هایلایت روزانه بالای پروفایل (اختصاصی پلن VIP) */}
+      <Card className="border-2 border-[#8B5CF6]/35 bg-gradient-to-br from-[#FAF8FF] via-white to-[#FDF4FF] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-l from-[#061138] to-[#7C3AED] text-[#00E5FF] text-xs font-black">
+                ✨ استوری و هایلایت ویژه بالای پروفایل سالن (اختصاصی پلن VIP)
+              </span>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                  isVipPlanActive
+                    ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}
+              >
+                {isVipPlanActive
+                  ? 'فعال روی حساب VIP شما ✓'
+                  : '🔒 نیازمند پلن VIP'}
+              </span>
+            </div>
+            <p className="text-xs text-[#475569] leading-relaxed">
+              <strong>جایگاه نمایش به مشتری کجاست؟</strong> استوری‌های شما دقیقاً در{' '}
+              <strong>بالای صفحه پروفایل عمومی سالن شما (`/salon/{currentBiz?.slug || 'your-salon'}`)</strong>{' '}
+              به صورت دایره‌های استوری با حلقه طلایی-بنفش (مشابه اینستاگرام) و همچنین حلقه استوری دور عکس پروفایل سالن نمایش داده می‌شود و مشتری با کلیک روی استوری می‌تواند مستقیماً همان خدمت یا تخفیف را رزرو کند.
+            </p>
+          </div>
+        </div>
+
+        {!isVipPlanActive ? (
+          <PlanUpgradeLockBanner
+            featureTitle="انتشار استوری روزانه، اعلام نوبت خالی لحظه‌آخری و هایلایت تخفیف در بالای پروفایل"
+            description="این قابلیت منحصراً برای مشترکین «پلن VIP (برندینگ و استوری)» فعال است. با ارتقا به پلن VIP (یا فعال‌سازی تست VIP توسط مدیریت)، می‌توانید نامحدود استوری تصویری با دکمه رزرو مستقیم در بالای پروفایل خود منتشر کنید."
+            requiredPlanLabel="پلن VIP (برندینگ و استوری)"
+          />
+        ) : (
+          <form onSubmit={handlePublishStory} className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+              <div className="lg:col-span-5">
+                <ProfilePhotoUploader
+                  value={storyImageUrl}
+                  businessName={currentBiz?.name}
+                  label="۱. تصویر استوری (آپلود عکس نمونه‌کار یا بنر تخفیف)"
+                  onChange={(url) => setStoryImageUrl(url)}
+                />
+              </div>
+
+              <div className="lg:col-span-7 space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-extrabold text-[#061138] block">
+                    ۲. انتخاب برچسب بالای استوری:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      '🔥 نوبت خالی امروز',
+                      '🎁 تخفیف ویژه امروز',
+                      '✨ نمونه‌کار جدید VIP',
+                      '💆‍♀️ پکیج ویژه فیشیال',
+                      '⚡ پیشنهاد لحظه‌آخری',
+                    ].map((b) => (
+                      <button
+                        key={b}
+                        type="button"
+                        onClick={() => setStoryBadge(b)}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-extrabold border cursor-pointer transition-all ${
+                          storyBadge === b
+                            ? 'bg-[#7C3AED] text-white border-[#7C3AED]'
+                            : 'bg-white text-[#334155] border-[#CBD5E1] hover:border-[#7C3AED]'
+                        }`}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField
+                    id="story-title"
+                    label="۳. عنوان کوتاه زیر دایره استوری"
+                    required
+                  >
+                    <Input
+                      id="story-title"
+                      value={storyTitle}
+                      onChange={(e) => setStoryTitle(e.target.value)}
+                      placeholder="مثلاً: ۲۰٪ تخفیف فیشیال فردا"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="story-service"
+                    label="۴. اتصال دکمه رزرو استوری به خدمت"
+                  >
+                    <Select
+                      id="story-service"
+                      value={storyLinkedServiceId}
+                      onChange={(e) => setStoryLinkedServiceId(e.target.value)}
+                      options={[
+                        {
+                          value: '',
+                          label: 'صفحه اصلی رزرو سالن (همه خدمات)',
+                        },
+                        ...bizServices.map((s) => ({
+                          value: s.id,
+                          label: `${s.title} (${formatServicePriceShort(s)})`,
+                        })),
+                      ]}
+                    />
+                  </FormField>
+                </div>
+
+                <FormField
+                  id="story-caption"
+                  label="۵. متن توضیحات داخل استوری برای مشتری"
+                >
+                  <Textarea
+                    id="story-caption"
+                    rows={2}
+                    value={storyCaption}
+                    onChange={(e) => setStoryCaption(e.target.value)}
+                    placeholder="توضیح کوتاه درباره تخفیف، ظرفیت خالی یا جزئیات نمونه‌کار..."
+                  />
+                </FormField>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[#475569] font-bold">متن دکمه رزرو:</span>
+                    <input
+                      type="text"
+                      value={storyCtaLabel}
+                      onChange={(e) => setStoryCtaLabel(e.target.value)}
+                      className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1 text-xs font-extrabold text-[#7C3AED]"
+                    />
+                  </div>
+                  <Button type="submit" variant="primary" size="sm">
+                    <Plus className="w-4 h-4" />
+                    <span>انتشار استوری در بالای پروفایل</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* لیست استوری‌های فعال سالن */}
+        {bizStories.length > 0 ? (
+          <div className="pt-3 border-t border-[#E6E0F5] space-y-2.5">
+            <span className="text-xs font-extrabold text-[#1E1B2E] block">
+              استوری‌های فعال شما در بالای پروفایل ({toPersianDigits(bizStories.length)} استوری):
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {bizStories.map((st) => (
+                <div
+                  key={st.id}
+                  className="p-3 rounded-2xl bg-white border border-[#DDD6FE] flex items-center justify-between gap-3 text-xs shadow-2xs"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-12 h-12 rounded-full p-0.5 bg-gradient-to-tr from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] shrink-0">
+                      <img
+                        src={
+                          st.imageUrl ||
+                          currentBiz?.avatarUrl ||
+                          '/assets/beauty/salon-1.jpg'
+                        }
+                        alt={st.title}
+                        className="w-full h-full rounded-full object-cover border-2 border-white"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold text-[#7C3AED] block">
+                        {st.badgeLabel}
+                      </span>
+                      <p className="font-black text-[#061138] truncate">
+                        {st.title}
+                      </p>
+                      <p className="text-[11px] text-[#64748B] truncate">
+                        {st.caption}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteBusinessStory(st.id)}
+                    className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-[11px] shrink-0 cursor-pointer"
+                  >
+                    حذف
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </Card>
+
+      {/* بخش ۲: گالری نمونه‌کارهای دائمی سالن */}
+      <Card className="mb-6 space-y-3">
+        <div className="border-b border-[#E2E8F0] pb-2">
+          <h2 className="text-sm font-extrabold text-[#061138]">
+            افزودن تصویر به گالری نمونه‌کارهای پروفایل
+          </h2>
+        </div>
         <form
           onSubmit={handleAddDemoImage}
           className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
@@ -4002,7 +5224,7 @@ export const BusinessProfileEditPage: React.FC = () => {
   );
 };
 
-/** ۹. ساعات کاری هفتگی (/app/working-hours) */
+/** ۹. ساعات کاری هفتگی (/app/working-hours) — پشتیبانی از یک‌سره یا دو شیفته (استراحت بین روز) */
 export const BusinessWorkingHoursPage: React.FC = () => {
   const { currentBusiness, businesses, updateBusinessWorkingHours, showToast } =
     usePrototypeData();
@@ -4017,9 +5239,25 @@ export const BusinessWorkingHoursPage: React.FC = () => {
     );
   };
 
+  const handleToggleBreak = (index: number) => {
+    setHours((prev) =>
+      prev.map((item, idx) =>
+        idx === index
+          ? {
+              ...item,
+              hasBreak: !item.hasBreak,
+              closeTime: !item.hasBreak ? '۱۳:۳۰' : '۱۹:۳۰',
+              secondOpenTime: item.secondOpenTime || '۱۶:۰۰',
+              secondCloseTime: item.secondCloseTime || '۲۱:۰۰',
+            }
+          : item
+      )
+    );
+  };
+
   const handleTimeChange = (
     index: number,
-    field: 'openTime' | 'closeTime',
+    field: 'openTime' | 'closeTime' | 'secondOpenTime' | 'secondCloseTime',
     val: string
   ) => {
     setHours((prev) =>
@@ -4037,10 +5275,13 @@ export const BusinessWorkingHoursPage: React.FC = () => {
         ...item,
         openTime: sourceDay.openTime,
         closeTime: sourceDay.closeTime,
+        hasBreak: sourceDay.hasBreak,
+        secondOpenTime: sourceDay.secondOpenTime,
+        secondCloseTime: sourceDay.secondCloseTime,
       }))
     );
     showToast(
-      `ساعت کاری (${sourceDay.openTime} تا ${sourceDay.closeTime}) روی تمام روزهای هفته اعمال شد.`
+      `برنامه کاری (${formatWorkingHourDisplay(sourceDay)}) روی تمام روزهای هفته اعمال شد.`
     );
   };
 
@@ -4049,9 +5290,9 @@ export const BusinessWorkingHoursPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="کسب‌وکار · برنامه پذیرش"
-        title="تنظیم ساعات کاری هفتگی"
-        subtitle="بدون نیاز به تایپ دستی، ساعت شروع و پایان را از فهرست انتخاب کنید و با یک دکمه روی تمام روزهای هفته اعمال نمایید"
+        kicker="کسب‌وکار · برنامه پذیرش یک‌سره یا دو شیفته"
+        title="تنظیم ساعات کاری هفتگی و استراحت بین روز"
+        subtitle="می‌توانید ساعت کاری هر روز را به صورت «یک‌سره» یا «دو شیفته (با استراحت ظهر)» تنظیم کنید؛ ساعات استراحت به‌صورت خودکار از اسلات‌های رزرو مشتریان حذف می‌شوند"
         routePattern="/app/working-hours"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -4063,7 +5304,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
         <Card padding="lg" className="lg:col-span-8 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
             <span className="text-xs font-extrabold text-[#061138]">
-              انتخاب سریع بازه ساعت کاری روزهای هفته
+              انتخاب بازه ساعت کاری روزهای هفته (تک‌شیفت یا دو شیفته با استراحت ظهر)
             </span>
             {hours.length > 0 ? (
               <Button
@@ -4073,7 +5314,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                 onClick={() => handleApplyDayToAllWeek(0)}
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>اعمال ساعت شنبه روی تمام روزهای هفته</span>
+                <span>اعمال برنامه شنبه روی تمام روزهای هفته</span>
               </Button>
             ) : null}
           </div>
@@ -4082,62 +5323,137 @@ export const BusinessWorkingHoursPage: React.FC = () => {
             {hours.map((d, idx) => (
               <div
                 key={d.dayName}
-                className="py-3.5 first:pt-0 last:pb-0 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm"
+                className="py-4 first:pt-0 last:pb-0 space-y-2.5 text-xs sm:text-sm"
               >
-                <label className="inline-flex items-center gap-2.5 font-extrabold text-[#1E1B2E] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={d.isOpen}
-                    onChange={() => handleToggleDay(idx)}
-                    className="accent-[#8B5CF6] w-4 h-4"
-                  />
-                  <span>{d.dayName}</span>
-                </label>
-
-                {d.isOpen ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      value={d.openTime}
-                      onChange={(e) =>
-                        handleTimeChange(idx, 'openTime', e.target.value)
-                      }
-                      aria-label={`ساعت شروع ${d.dayName}`}
-                      className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
-                    >
-                      {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
-                        <option key={`open-${d.dayName}-${t}`} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-[#6B6480] text-xs font-bold">تا</span>
-                    <select
-                      value={d.closeTime}
-                      onChange={(e) =>
-                        handleTimeChange(idx, 'closeTime', e.target.value)
-                      }
-                      aria-label={`ساعت پایان ${d.dayName}`}
-                      className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
-                    >
-                      {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
-                        <option key={`close-${d.dayName}-${t}`} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                    {idx === 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <label className="inline-flex items-center gap-2.5 font-extrabold text-[#1E1B2E] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={d.isOpen}
+                        onChange={() => handleToggleDay(idx)}
+                        className="accent-[#8B5CF6] w-4 h-4"
+                      />
+                      <span>{d.dayName}</span>
+                    </label>
+                    {d.isOpen ? (
                       <button
                         type="button"
-                        onClick={() => handleApplyDayToAllWeek(idx)}
-                        className="text-[11px] font-extrabold text-[#0057FF] bg-[#E0ECFF] hover:bg-[#0057FF] hover:text-white px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                        onClick={() => handleToggleBreak(idx)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
+                          d.hasBreak
+                            ? 'bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]'
+                            : 'bg-[#F8FAFC] text-[#475569] border-[#CBD5E1] hover:border-[#0057FF]'
+                        }`}
                       >
-                        اعمال به کل هفته
+                        {d.hasBreak
+                          ? '☕ دو شیفته (دارای استراحت بین روز ✓)'
+                          : '+ افزودن استراحت بین روز (دو شیفته)'}
                       </button>
                     ) : null}
                   </div>
-                ) : (
-                  <StatusBadge label="تعطیل" tone="neutral" />
-                )}
+
+                  {d.isOpen ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {d.hasBreak ? (
+                        <span className="text-[11px] font-bold text-[#0057FF]">
+                          شیفت صبح:
+                        </span>
+                      ) : null}
+                      <select
+                        value={d.openTime}
+                        onChange={(e) =>
+                          handleTimeChange(idx, 'openTime', e.target.value)
+                        }
+                        aria-label={`ساعت شروع ${d.dayName}`}
+                        className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`open-${d.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[#6B6480] text-xs font-bold">تا</span>
+                      <select
+                        value={d.closeTime}
+                        onChange={(e) =>
+                          handleTimeChange(idx, 'closeTime', e.target.value)
+                        }
+                        aria-label={`ساعت پایان شیفت اول ${d.dayName}`}
+                        className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] tabular-nums focus:outline-none focus:border-[#0057FF] cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`close-${d.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      {idx === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleApplyDayToAllWeek(idx)}
+                          className="text-[11px] font-extrabold text-[#0057FF] bg-[#E0ECFF] hover:bg-[#0057FF] hover:text-white px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                        >
+                          اعمال به کل هفته
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <StatusBadge label="تعطیل" tone="neutral" />
+                  )}
+                </div>
+
+                {d.isOpen && d.hasBreak ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-xs">
+                    <span className="text-[11px] font-bold text-[#92400E]">
+                      ⏸ استراحت ظهر از ساعت {d.closeTime} تا{' '}
+                      {d.secondOpenTime || '۱۶:۰۰'} (غیرقابل رزرو)
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-extrabold text-[#061138]">
+                        شیفت عصر:
+                      </span>
+                      <select
+                        value={d.secondOpenTime || '۱۶:۰۰'}
+                        onChange={(e) =>
+                          handleTimeChange(
+                            idx,
+                            'secondOpenTime',
+                            e.target.value
+                          )
+                        }
+                        aria-label={`شروع شیفت عصر ${d.dayName}`}
+                        className="rounded-xl border border-[#F59E0B] bg-white px-2.5 py-1 text-xs font-extrabold text-[#061138] tabular-nums cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`s2open-${d.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[#92400E] font-bold">تا</span>
+                      <select
+                        value={d.secondCloseTime || '۲۱:۰۰'}
+                        onChange={(e) =>
+                          handleTimeChange(
+                            idx,
+                            'secondCloseTime',
+                            e.target.value
+                          )
+                        }
+                        aria-label={`پایان شیفت عصر ${d.dayName}`}
+                        className="rounded-xl border border-[#F59E0B] bg-white px-2.5 py-1 text-xs font-extrabold text-[#061138] tabular-nums cursor-pointer"
+                      >
+                        {STANDARD_WORKING_TIME_OPTIONS.map((t) => (
+                          <option key={`s2close-${d.dayName}-${t}`} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -4152,7 +5468,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                 }
               }}
             >
-              ذخیره ساعات کاری
+              ذخیره ساعات کاری و شیفت‌ها
             </Button>
           </div>
         </Card>
@@ -4165,8 +5481,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
             {toPersianDigits(openDaysCount)} روز کاری فعال در هفته
           </p>
           <p className="text-xs text-[#6B6480] leading-relaxed">
-            ساعات کاری تنظیم‌شده مستقیماً بازه‌های قابل انتخاب در تقویم رزرو آنلاین
-            مشتریان را مشخص می‌کند.
+            ساعات کاری و استراحت بین روز مستقیماً بازه‌های قابل انتخاب در تقویم رزرو آنلاین مشتریان را فیلتر می‌کند تا در ساعت استراحت نوبتی ثبت نشود.
           </p>
         </Card>
       </div>
@@ -5194,7 +6509,7 @@ export const BusinessMarketingPage: React.FC = () => {
   );
 };
 
-/** ۱۱. گزارش‌ها و آمار عملکرد (/app/analytics) */
+/** ۱۱. گزارش‌ها، حسابداری دوحالته دخل روزانه و آمار عملکرد (/app/analytics) */
 export const BusinessAnalyticsPage: React.FC = () => {
   const {
     currentBusiness,
@@ -5205,12 +6520,23 @@ export const BusinessAnalyticsPage: React.FC = () => {
     replyToReview,
     reportReviewAbuse,
     activePlanId,
+    dailyIncomeLogs,
+    addDailyIncomeLog,
+    deleteDailyIncomeLog,
+    settleAppointmentInPerson,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const isFreePlan = isFreeSubscriptionPlan(
     activePlanId,
     currentBiz?.subscriptionPlan
   );
+
+  // استیت ثبت سریع دخل روزانه یک‌جا (کارت‌خوان / نقد / کارت‌به‌کارت)
+  const [bulkIncomeAmount, setBulkIncomeAmount] = React.useState('');
+  const [bulkIncomeMethod, setBulkIncomeMethod] = React.useState<
+    'POS_CARD' | 'CASH' | 'CARD_TO_CARD'
+  >('POS_CARD');
+  const [bulkIncomeNote, setBulkIncomeNote] = React.useState('');
 
   const [replyingReviewId, setReplyingReviewId] = React.useState<string | null>(
     null
@@ -5235,14 +6561,45 @@ export const BusinessAnalyticsPage: React.FC = () => {
   const bizCustomers = currentBiz
     ? customers.filter((c) => !c.businessId || c.businessId === currentBiz.id)
     : [];
+  const bizIncomeLogs = currentBiz
+    ? dailyIncomeLogs.filter((l) => l.businessId === currentBiz.id)
+    : [];
 
   const activeOrDoneAppointments = bizAppointments.filter(
     (a) => a.status !== AppointmentStatus.Cancelled
   );
-  const totalRevenueToman = activeOrDoneAppointments.reduce(
+  const appointmentsRevenueToman = activeOrDoneAppointments.reduce(
     (sum, a) => sum + (a.priceToman || 0),
     0
   );
+  const bulkLogsRevenueToman = bizIncomeLogs
+    .filter((l) => l.entryType === 'DAILY_BULK')
+    .reduce((sum, l) => sum + (l.amountToman || 0), 0);
+  const inPersonTotalToman = bizIncomeLogs.reduce(
+    (sum, l) => sum + (l.amountToman || 0),
+    0
+  );
+  const totalRevenueToman = appointmentsRevenueToman + bulkLogsRevenueToman;
+
+  const handleAddDailyBulkIncome = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentBiz) return;
+    const numericAmount = parseNumericInput(bulkIncomeAmount);
+    if (!numericAmount || numericAmount <= 0) return;
+    addDailyIncomeLog({
+      businessId: currentBiz.id,
+      dateJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
+      amountToman: numericAmount,
+      paymentMethod: bulkIncomeMethod,
+      entryType: 'DAILY_BULK',
+      note:
+        bulkIncomeNote.trim() ||
+        'ثبت یک‌جای دخل روزانه حضوری (کارت‌خوان و نقدی)',
+    });
+    setBulkIncomeAmount('');
+    setBulkIncomeNote('');
+  };
+
   const repeatCustomersCount = bizCustomers.filter(
     (c) => (c.totalVisits ?? 0) >= 2
   ).length;
@@ -5255,6 +6612,13 @@ export const BusinessAnalyticsPage: React.FC = () => {
   for (const apt of activeOrDoneAppointments) {
     const prev = serviceRevenueMap.get(apt.serviceTitle) ?? 0;
     serviceRevenueMap.set(apt.serviceTitle, prev + (apt.priceToman || 0));
+  }
+  if (bulkLogsRevenueToman > 0) {
+    serviceRevenueMap.set(
+      'دخل روزانه حضوری (ثبت یک‌جا)',
+      (serviceRevenueMap.get('دخل روزانه حضوری (ثبت یک‌جا)') ?? 0) +
+        bulkLogsRevenueToman
+    );
   }
   const popularBreakdown = Array.from(serviceRevenueMap.entries()).map(
     ([name, amount]) => ({
@@ -5286,56 +6650,241 @@ export const BusinessAnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · گزارش عملکرد"
-        title="گزارش‌ها و آمار عملکرد سالن"
-        subtitle="بررسی کارکرد ماهانه، نرخ بازگشت مراجعان و مدیریت دیدگاه‌های ثبت‌شده توسط مشتریان"
+        kicker="مالی · حسابداری دوحالته دخل روزانه و بیعانه"
+        title="حسابداری دخل روزانه، دریافتی‌های حضوری و آمار عملکرد"
+        subtitle="علاوه بر بیعانه‌های آنلاین، دریافتی‌های حضوری (کارت‌خوان، نقد یا کارت‌به‌کارت) را به‌صورت «۱-کلیکی روی هر نوبت» یا «یک‌جا در پایان روز» ثبت کنید تا سود و کارکرد واقعی سالن محاسبه شود"
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'گزارش‌ها و آمار' },
+          { label: 'حسابداری و گزارش‌ها' },
         ]}
       />
 
       {isFreePlan ? (
         <PlanUpgradeLockBanner
-          featureTitle="گزارش‌های تحلیلی پیشرفته، تفکیک پورسانت متخصصان و خروجی مالی اکسل"
-          description="در پلن شروع رایگان خلاصه پایه نمایش داده می‌شود. برای دسترسی به تحلیل کامل مالی و تفکیک عملکرد هر پرسنل، پلن سالن خود را به حرفه‌ای یا VIP ارتقا دهید."
+          featureTitle="حسابداری دخل روزانه حضوری، گزارش‌های تحلیلی پیشرفته و تفکیک سهم متخصصان"
+          description="در پلن شروع رایگان خلاصه پایه نمایش داده می‌شود. برای باز شدن «ثبت دخل روزانه حضوری»، «تسویه ۱-کلیکی نوبت‌ها» و نمودارهای کامل مالی، پلن سالن خود را به حرفه‌ای یا VIP ارتقا دهید."
         />
       ) : null}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#6B6480]">درآمد کل ماه جاری</p>
+          <p className="text-xs font-bold text-[#6B6480]">
+            کل درآمد ماه (بیعانه آنلاین + دریافتی حضوری)
+          </p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {totalRevenueToman > 0 ? formatPriceToman(totalRevenueToman) : '۰ تومان'}
           </p>
           <p className="text-xs text-[#64748B] font-semibold tabular-nums">
-            بر اساس {toPersianDigits(activeOrDoneAppointments.length)} نوبت ثبت‌شده
+            {toPersianDigits(activeOrDoneAppointments.length)} نوبت +{' '}
+            {toPersianDigits(bizIncomeLogs.length)} ثبت دریافتی حضوری
           </p>
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            نرخ بازگشت مجدد مشتریان
+            مجموع دریافتی‌های حضوری ثبت‌شده (کارت‌خوان / نقد)
           </p>
-          <p className="text-2xl font-extrabold text-[#1E1B2E] tabular-nums">
-            {toPersianDigits(repeatRatePct)}٪
+          <p className="text-2xl font-extrabold text-[#059669] tabular-nums">
+            {inPersonTotalToman > 0
+              ? formatPriceToman(inPersonTotalToman)
+              : '۰ تومان'}
           </p>
           <p className="text-xs text-[#6B6480] tabular-nums">
-            از مجموع {toPersianDigits(bizCustomers.length)} مشتری ثبت‌شده در پرونده‌ها
+            موجودی کیف پول بیعانه آنلاین:{' '}
+            {formatPriceToman(currentBiz?.walletBalanceToman ?? 0)}
           </p>
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            دیدگاه‌ها و امتیاز مشتریان
+            نرخ بازگشت مشتریان و رضایت
           </p>
           <p className="text-2xl font-extrabold text-[#F59E0B] tabular-nums">
-            {currentBiz?.reviewCount
-              ? `★ ${toPersianDigits(currentBiz.rating)} از ۵`
-              : 'بدون دیدگاه (جدید)'}
+            {toPersianDigits(repeatRatePct)}٪ بازگشت مجدد
           </p>
           <p className="text-xs text-[#6B6480] tabular-nums">
-            بر اساس {toPersianDigits(currentBiz?.reviewCount ?? 0)} دیدگاه ثبت‌شده
+            از مجموع {toPersianDigits(bizCustomers.length)} مشتری پرونده‌دار
           </p>
+        </Card>
+      </div>
+
+      {/* بخش حسابداری دوحالته دریافتی‌های حضوری (حالت ۱: دخل روزانه یک‌جا | حالت ۲: تسویه ۱-کلیکی نوبت‌ها) */}
+      <div
+        className={`grid grid-cols-1 lg:grid-cols-12 gap-5 ${
+          isFreePlan ? 'opacity-65 pointer-events-none select-none' : ''
+        }`}
+      >
+        {/* حالت ۱: ثبت سریع کل دخل روزانه یک‌جا آخر شب */}
+        <Card className="lg:col-span-6 border-2 border-[#0057FF]/25 space-y-4">
+          <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-black">
+              روش اول · سریع‌ترین حالت برای آخر شب
+            </span>
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              ثبت یک‌جای کل دخل روزانه حضوری (کارت‌خوان / نقد)
+            </h2>
+            <p className="text-xs text-[#64748B]">
+              اگر فرصت ثبت تک‌به‌تک نوبت‌ها را ندارید، در پایان روز جمع کل دریافتی کارت‌خوان یا نقدی امروز را یک‌جا وارد کنید:
+            </p>
+          </div>
+
+          <form onSubmit={handleAddDailyBulkIncome} className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField
+                id="daily-bulk-amount"
+                label="مبلغ کل دریافتی حضوری امروز (تومان)"
+                required
+              >
+                <Input
+                  id="daily-bulk-amount"
+                  dir="ltr"
+                  type="text"
+                  inputMode="numeric"
+                  value={bulkIncomeAmount}
+                  onChange={(e) =>
+                    setBulkIncomeAmount(
+                      formatNumericInputWithCommas(e.target.value)
+                    )
+                  }
+                  placeholder="3,500,000"
+                />
+              </FormField>
+
+              <FormField id="daily-bulk-method" label="روش دریافت وجه">
+                <Select
+                  id="daily-bulk-method"
+                  value={bulkIncomeMethod}
+                  onChange={(e) =>
+                    setBulkIncomeMethod(
+                      e.target.value as 'POS_CARD' | 'CASH' | 'CARD_TO_CARD'
+                    )
+                  }
+                  options={[
+                    { value: 'POS_CARD', label: 'دستگاه کارت‌خوان سالن (POS)' },
+                    { value: 'CARD_TO_CARD', label: 'کارت‌به‌کارت حضوری' },
+                    { value: 'CASH', label: 'دریافت نقدی' },
+                  ]}
+                />
+              </FormField>
+            </div>
+
+            <FormField
+              id="daily-bulk-note"
+              label="توضیح کوتاه (اختیاری)"
+            >
+              <Input
+                id="daily-bulk-note"
+                value={bulkIncomeNote}
+                onChange={(e) => setBulkIncomeNote(e.target.value)}
+                placeholder="مثلاً: جمع کارت‌خوان شیفت صبح و عصر پنجشنبه..."
+              />
+            </FormField>
+
+            <Button type="submit" variant="primary" size="sm" fullWidth>
+              <Plus className="w-4 h-4" />
+              <span>+ ثبت در دخل روزانه و نمودار مالی</span>
+            </Button>
+          </form>
+
+          {bizIncomeLogs.length > 0 ? (
+            <div className="pt-3 border-t border-[#E2E8F0] space-y-2 max-h-48 overflow-y-auto">
+              <p className="text-xs font-extrabold text-[#061138]">
+                آخرین دریافتی‌های حضوری ثبت‌شده ({toPersianDigits(bizIncomeLogs.length)} مورد):
+              </p>
+              {bizIncomeLogs.slice(0, 6).map((log) => (
+                <div
+                  key={log.id}
+                  className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-[#061138] tabular-nums">
+                      {formatPriceToman(log.amountToman)} ·{' '}
+                      <span className="text-[11px] text-[#059669]">
+                        {log.entryType === 'SINGLE_APPOINTMENT'
+                          ? `تسویه نوبت (${log.customerName || ''})`
+                          : 'ثبت یک‌جای دخل روزانه'}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-[#64748B] truncate">
+                      {log.dateJalali} — {log.note}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => deleteDailyIncomeLog(log.id)}
+                    className="text-rose-600 hover:underline text-[11px] font-bold shrink-0 cursor-pointer"
+                  >
+                    حذف
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+
+        {/* حالت ۲: تسویه ۱-کلیکی الباقی نوبت‌های حضوری */}
+        <Card className="lg:col-span-6 border-2 border-[#059669]/25 space-y-4">
+          <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[10px] font-black">
+              روش دوم · ثبت تکی ۱-کلیکی روی نوبت‌ها
+            </span>
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              تسویه ۱-کلیکی الباقی نوبت‌ها در محل سالن
+            </h2>
+            <p className="text-xs text-[#64748B]">
+              وقتی مشتری پس از انجام کار الباقی مبلغ را در سالن پرداخت کرد، فقط دکمه سبز کنار نام او را بزنید:
+            </p>
+          </div>
+
+          {activeOrDoneAppointments.length === 0 ? (
+            <div className="p-6 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1">
+              <p className="text-xs font-extrabold text-[#061138]">
+                هنوز نوبت فعالی برای تسویه حضوری ثبت نشده است
+              </p>
+              <p className="text-[11px] text-[#64748B]">
+                می‌توانید از کارت سمت راست، کل دخل روزانه خود را یک‌جا وارد کنید.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-80 overflow-y-auto">
+              {activeOrDoneAppointments.slice(0, 8).map((apt) => (
+                <div
+                  key={apt.id}
+                  className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="space-y-0.5 min-w-0">
+                    <p className="font-extrabold text-[#061138]">
+                      {apt.customerName} — {apt.serviceTitle}
+                    </p>
+                    <p className="text-[11px] text-[#64748B] tabular-nums">
+                      {apt.dateJalali} ساعت {apt.timeSlot} · مبلغ خدمت:{' '}
+                      <strong className="text-[#8B5CF6]">
+                        {formatPriceToman(apt.priceToman)}
+                      </strong>
+                    </p>
+                  </div>
+                  {apt.inPersonSettled ? (
+                    <span className="px-2.5 py-1 rounded-xl bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-black tabular-nums">
+                      ✓ تسویه حضوری شد (
+                      {formatPriceToman(
+                        apt.inPersonSettledAmountToman || apt.priceToman
+                      )}
+                      )
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => settleAppointmentInPerson(apt.id)}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>ثبت تسویه الباقی در محل ✓</span>
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 
@@ -5496,7 +7045,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
         <Card className="lg:col-span-7 space-y-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-extrabold text-[#1E1B2E]">
-              سهم خدمات از درآمد ماهانه
+              سهم خدمات و دخل روزانه از درآمد ماه
             </h2>
             {isFreePlan ? (
               <StatusBadge label="🔒 ویژه پلن حرفه‌ای" tone="warning" />
@@ -5542,7 +7091,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
               ) : null}
             </div>
             <p className="text-xs text-[#6B6480] mt-0.5">
-              نمودار درآمد ماهانه بر اساس نوبت‌های ثبت‌شده در سیستم
+              نمودار درآمد ماهانه بر اساس نوبت‌های ثبت‌شده و دخل حضوری
             </p>
           </div>
 
@@ -5587,7 +7136,11 @@ export const BusinessSubscriptionPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const currentPlan =
-    plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
+    plans.find(
+      (p) =>
+        p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
+    ) ??
+    plans[0];
 
   const [checkoutItem, setCheckoutItem] = useState<CheckoutItemPayload | null>(
     null
@@ -5602,7 +7155,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
       <PageHeader
         kicker="مالی · اشتراک ماهانه و ارتقای پنل سالن"
         title="مدیریت اشتراک و ارتقای کسب‌وکار"
-        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP با امکان تسویه فوری از طریق بله‌پی (BalePay) یا کارت‌به‌کارت"
+        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP با امکان تسویه فوری از طریق درگاه آنلاین زیبال"
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -5618,17 +7171,24 @@ export const BusinessSubscriptionPage: React.FC = () => {
                 پلن فعال فعلی کسب‌وکار شما:
               </span>
               <h2 className="text-xl font-extrabold text-white">
-                {currentPlan.name}
+                {currentBiz?.subscriptionPlan || currentPlan.name}
               </h2>
               <p className="text-xs text-slate-200 tabular-nums">
                 ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک یادآور
                 ماهانه: {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {currentBiz?.trialDaysRemaining &&
+              currentBiz.trialDaysRemaining > 0 ? (
+                <span className="px-3.5 py-1.5 rounded-xl bg-amber-400/20 border border-amber-300/40 text-xs font-black text-amber-300 tabular-nums">
+                  ⏳ روزشمار اعتبار فعلی:{' '}
+                  {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
+                </span>
+              ) : null}
               <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
                 {dataMode === 'real'
-                  ? 'پرداخت آسان بله‌پی / کارت‌به‌کارت: فعال'
+                  ? 'درگاه آنلاین زیبال: فعال'
                   : 'وضعیت اشتراک: فعال'}
               </span>
             </div>

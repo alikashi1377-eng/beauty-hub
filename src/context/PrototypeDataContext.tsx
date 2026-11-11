@@ -29,9 +29,11 @@ import {
   ApprovalStatus,
   BookingDraft,
   BusinessItem,
+  BusinessStoryItem,
   BusinessType,
   CategoryItem,
   CustomerRecord,
+  DailyIncomeLogItem,
   GalleryItem,
   MarketingCampaignItem,
   OnboardingDraft,
@@ -43,13 +45,18 @@ import {
   SettlementRequestItem,
   SmsMessageLogItem,
   SpecialistItem,
+  SponsoredPlacementSlot,
   SubscriptionPlanItem,
   SubscriptionStatus,
   SupportTicketItem,
   WorkingHourItem,
 } from '../types';
 import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
-import { computeSelectedServicesSummary } from '../utils/formatters';
+import {
+  computeSelectedServicesSummary,
+  getUpcomingJalaliDays,
+  toPersianDigits,
+} from '../utils/formatters';
 import { validateReviewContent } from '../utils/reviewModeration';
 import {
   AccountRoleChoice,
@@ -159,6 +166,17 @@ interface PrototypeDataContextValue {
     hours: WorkingHourItem[]
   ) => void;
   updateBusinessApproval: (businessId: string, status: ApprovalStatus) => void;
+  adminReviewedBizIds: string[];
+  grantBusinessPlanOrAdByAdmin: (input: {
+    businessId: string;
+    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH';
+    planId?: string;
+    durationDays: number;
+    isTrialGift?: boolean;
+    sponsoredPlacement?: SponsoredPlacementSlot;
+    sponsoredLabel?: string;
+    bonusSmsCount?: number;
+  }) => void;
   permanentlyDeleteBusiness: (businessId: string) => void;
   platformBusinessNotices: PlatformBusinessNoticeItem[];
   sendPlatformBusinessNotice: (input: {
@@ -177,6 +195,15 @@ interface PrototypeDataContextValue {
   updateSpecialist: (id: string, patch: Partial<SpecialistItem>) => void;
   appointments: AppointmentItem[];
   updateAppointmentStatus: (id: string, status: AppointmentStatus) => void;
+  settleAppointmentInPerson: (
+    appointmentId: string,
+    customAmountToman?: number
+  ) => void;
+  dailyIncomeLogs: DailyIncomeLogItem[];
+  addDailyIncomeLog: (
+    input: Omit<DailyIncomeLogItem, 'id' | 'createdAtJalali'>
+  ) => DailyIncomeLogItem;
+  deleteDailyIncomeLog: (id: string) => void;
   categories: CategoryItem[];
   addCategory: (item: Omit<CategoryItem, 'id'>) => void;
   updateCategory: (id: string, patch: Partial<CategoryItem>) => void;
@@ -185,6 +212,11 @@ interface PrototypeDataContextValue {
   gallery: GalleryItem[];
   addGalleryItem: (item: Omit<GalleryItem, 'id'>) => void;
   removeGalleryItem: (id: string) => void;
+  businessStories: BusinessStoryItem[];
+  addBusinessStory: (
+    item: Omit<BusinessStoryItem, 'id' | 'createdAtJalali' | 'createdAtMs'>
+  ) => BusinessStoryItem;
+  deleteBusinessStory: (id: string) => void;
   campaigns: MarketingCampaignItem[];
   addCampaign: (item: Omit<MarketingCampaignItem, 'id'>) => void;
   customers: CustomerRecord[];
@@ -460,6 +492,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   ): BusinessItem[] => {
     try {
       const excludedSampleIds = new Set([
+        'biz-1',
         'biz-2',
         'biz-3',
         'biz-4',
@@ -521,29 +554,73 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         return unique;
       };
 
+      const applyLiveDayCounters = (item: BusinessItem): BusinessItem => {
+        const nowMs = Date.now();
+        let next = { ...item };
+        if (next.planExpiresAtMs && next.planExpiresAtMs > 0) {
+          const remDays = Math.max(
+            0,
+            Math.ceil((next.planExpiresAtMs - nowMs) / (24 * 60 * 60 * 1000))
+          );
+          next.trialDaysRemaining = remDays;
+          if (remDays === 0 && next.subscriptionStatus === SubscriptionStatus.Trial) {
+            next.subscriptionPlan = 'شروع رایگان (پایه)';
+          }
+        }
+        if (next.sponsoredExpiresAtMs && next.sponsoredExpiresAtMs > 0) {
+          const remSponDays = Math.max(
+            0,
+            Math.ceil((next.sponsoredExpiresAtMs - nowMs) / (24 * 60 * 60 * 1000))
+          );
+          next.sponsoredDaysRemaining = remSponDays;
+          if (remSponDays === 0) {
+            next.isSponsored = false;
+          }
+        }
+        return next;
+      };
+
       const byIdOrSlug = new Map<string, BusinessItem>();
       for (const b of list) {
-        if (excludedSampleIds.has(b.id) || permDeletedIds.has(b.id)) continue;
-        const isSample =
-          Boolean(b.isSampleShowcase) || /^biz-[1-8]$/.test(b.id);
+        if (
+          !b ||
+          excludedSampleIds.has(b.id) ||
+          permDeletedIds.has(b.id) ||
+          b.isSampleShowcase ||
+          /^biz-[1-8]$/.test(b.id) ||
+          b.slug === 'royal-golzar'
+        ) {
+          continue;
+        }
         const overrideData = overrides[b.id] || overrides[b.slug] || {};
         const rawMerged = {
           ...b,
           ...overrideData,
-          isSampleShowcase: isSample,
+          isSampleShowcase: false,
         };
-        const merged: BusinessItem = {
+        const merged: BusinessItem = applyLiveDayCounters({
           ...rawMerged,
           slug: ensureUniqueSlug(rawMerged.slug, b.id),
           approvalStatus:
-            rawMerged.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
-        };
+            rawMerged.approvalStatus === 'REJECTED'
+              ? 'REJECTED'
+              : rawMerged.approvalStatus === 'PENDING_REVIEW'
+                ? 'PENDING_REVIEW'
+                : 'APPROVED',
+        });
         byIdOrSlug.set(b.id, merged);
       }
 
       // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
       for (const lb of localOnbList) {
-        if (!lb || excludedSampleIds.has(lb.id) || permDeletedIds.has(lb.id)) {
+        if (
+          !lb ||
+          excludedSampleIds.has(lb.id) ||
+          permDeletedIds.has(lb.id) ||
+          lb.isSampleShowcase ||
+          /^biz-[1-8]$/.test(lb.id) ||
+          lb.slug === 'royal-golzar'
+        ) {
           continue;
         }
         const alreadyExists = Array.from(byIdOrSlug.values()).some(
@@ -556,15 +633,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const rawMergedLb = overrides[lb.id]
             ? { ...lb, ...overrides[lb.id] }
             : lb;
-          const mergedLb: BusinessItem = {
+          const mergedLb: BusinessItem = applyLiveDayCounters({
             ...rawMergedLb,
             city: rawMergedLb.city || 'اصفهان',
             neighborhood: rawMergedLb.neighborhood || 'چهارباغ بالا',
             rating: Number(rawMergedLb.rating) || 5.0,
             startingPriceToman: Number(rawMergedLb.startingPriceToman) || 0,
             approvalStatus:
-              rawMergedLb.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED',
-          };
+              rawMergedLb.approvalStatus === 'REJECTED'
+                ? 'REJECTED'
+                : rawMergedLb.approvalStatus === 'PENDING_REVIEW'
+                  ? 'PENDING_REVIEW'
+                  : 'APPROVED',
+          });
           byIdOrSlug.set(lb.id, mergedLb);
         }
       }
@@ -585,7 +666,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const synthId = acc.businessId || `biz-mem-${acc.phone}`;
           if (permDeletedIds.has(synthId)) continue;
           const isLaser = accBizName.includes('لیزر');
-          const synthBiz: BusinessItem = {
+          const ovSynth = overrides[synthId] || {};
+          const synthBiz: BusinessItem = applyLiveDayCounters({
             id: synthId,
             slug: `salon-${acc.phone.slice(-4)}`,
             name: accBizName,
@@ -604,15 +686,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             phoneDisplay: acc.phone,
             ownerName: acc.fullName,
             ownerPhone: acc.phone,
-            createdAtJalali: 'امروز',
+            createdAtJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
             rating: 5.0,
             reviewCount: 0,
             startingPriceToman: 0,
             shortDescription: `مرکز تخصصی زیبایی ${accBizName} در اصفهان`,
             aboutText: '',
             verifiedBadge: true,
-            approvalStatus: 'APPROVED',
-            subscriptionPlan: 'شروع رایگان',
+            approvalStatus: ovSynth.approvalStatus || 'APPROVED',
+            subscriptionPlan: 'شروع رایگان (پایه)',
             subscriptionStatus: SubscriptionStatus.Trial,
             trialDaysRemaining: 30,
             workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
@@ -620,8 +702,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             featured: false,
             isSampleShowcase: false,
             avatarUrl: acc.avatarUrl,
-            ...(overrides[synthId] || {}),
-          };
+            ...ovSynth,
+          });
           byIdOrSlug.set(synthId, synthBiz);
         }
       }
@@ -659,7 +741,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               `salon-${(cleanPhone || u.id).slice(-4)}`,
               synthId
             );
-            const synthBiz: BusinessItem = {
+            const ovUsr = overrides[synthId] || {};
+            const synthBiz: BusinessItem = applyLiveDayCounters({
               id: synthId,
               slug: synthSlug,
               name: extractedSalonName,
@@ -672,52 +755,51 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               phoneDisplay: u.phone,
               ownerName: u.fullName,
               ownerPhone: u.phone,
-              createdAtJalali: u.joinedJalali || 'امروز',
+              createdAtJalali: u.joinedJalali || getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
               rating: 5.0,
               reviewCount: 0,
               startingPriceToman: 0,
               shortDescription: `مرکز تخصصی زیبایی ${extractedSalonName} در اصفهان`,
               aboutText: '',
               verifiedBadge: true,
-              approvalStatus: 'APPROVED',
-              subscriptionPlan: 'شروع رایگان',
+              approvalStatus: ovUsr.approvalStatus || 'APPROVED',
+              subscriptionPlan: 'شروع رایگان (پایه)',
               subscriptionStatus: SubscriptionStatus.Trial,
               trialDaysRemaining: 30,
               workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
               visualTheme: 'violet',
               featured: false,
               isSampleShowcase: false,
-              ...(overrides[synthId] || {}),
-            };
+              ...ovUsr,
+            });
             byIdOrSlug.set(synthId, synthBiz);
           }
         }
       }
 
-      // اطمینان از حضور تنها ۱ سالن نمونه نمایشی برای ویترین عمومی سایت
-      for (const sb of SAMPLE_BUSINESSES) {
-        if (excludedSampleIds.has(sb.id)) continue;
-        const alreadyExists = Array.from(byIdOrSlug.values()).some(
-          (x) => x.id === sb.id || x.slug === sb.slug
-        );
-        if (!alreadyExists) {
-          const mergedSb = overrides[sb.id]
-            ? { ...sb, ...overrides[sb.id], isSampleShowcase: true }
-            : { ...sb, isSampleShowcase: true };
-          byIdOrSlug.set(sb.id, mergedSb);
-        }
-      }
-
       return Array.from(byIdOrSlug.values());
     } catch {
-      return list;
+      return list.filter(
+        (b) => b && !b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id)
+      );
     }
   };
 
   const [businesses, setBusinesses] = useState<BusinessItem[]>(() =>
-    mergeBusinessOverrides(SAMPLE_BUSINESSES)
+    mergeBusinessOverrides([])
   );
-  const [services, setServices] = useState<ServiceItem[]>(SAMPLE_SERVICES);
+  const [services, setServices] = useState<ServiceItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_local_services_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const [specialists, setSpecialists] =
     useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
   const mergeSavedAppointments = (
@@ -727,13 +809,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const savedRaw = window.localStorage.getItem('timeto_saved_appointments_v1');
       const savedList: AppointmentItem[] = savedRaw ? JSON.parse(savedRaw) : [];
       const map = new Map<string, AppointmentItem>();
+      const isSampleApt = (item: AppointmentItem) =>
+        !item ||
+        !item.id ||
+        /^biz-[1-8]$/.test(item.businessId) ||
+        /^apt-100[1-9]$/.test(item.id) ||
+        item.businessSlug === 'royal-golzar';
       for (const item of incoming) {
-        if (item && item.id) {
+        if (!isSampleApt(item)) {
           map.set(item.id, item);
         }
       }
       for (const item of savedList) {
-        if (item && item.id) {
+        if (!isSampleApt(item)) {
           const existing = map.get(item.id);
           map.set(item.id, existing ? { ...item, ...existing } : item);
         }
@@ -995,7 +1083,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return [];
   });
-  const [activePlanId, setActivePlanId] = useState<string>('plan-free');
+  const [dailyIncomeLogs, setDailyIncomeLogs] = useState<DailyIncomeLogItem[]>(
+    () => {
+      try {
+        const saved = window.localStorage.getItem(
+          'timeto_daily_income_logs_v1'
+        );
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    }
+  );
+  const [adminReviewedBizIds, setAdminReviewedBizIds] = useState<string[]>(
+    () => {
+      try {
+        const saved = window.localStorage.getItem(
+          'timeto_admin_reviewed_biz_ids_v1'
+        );
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    }
+  );
+  const [activePlanId, setActivePlanId] = useState<string>('plan-free-start');
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
   );
@@ -1234,14 +1354,41 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         setServices(() => {
           const map = new Map<string, ServiceItem>();
-          for (const s of SAMPLE_SERVICES) map.set(s.id, s);
-          for (const s of response.data!.services) map.set(s.id, s);
+          try {
+            const localSrvRaw = window.localStorage.getItem('timeto_local_services_v1');
+            const localSrvs: ServiceItem[] = localSrvRaw ? JSON.parse(localSrvRaw) : [];
+            for (const s of localSrvs) {
+              if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+                map.set(s.id, s);
+              }
+            }
+          } catch {
+            // ignore
+          }
+          for (const s of response.data!.services) {
+            if (
+              s &&
+              s.id &&
+              !/^biz-[1-8]$/.test(s.businessId) &&
+              !/^srv-[1-8]\d\d$/.test(s.id)
+            ) {
+              map.set(s.id, s);
+            }
+          }
           return Array.from(map.values());
         });
         setSpecialists(() => {
           const map = new Map<string, SpecialistItem>();
-          for (const sp of SAMPLE_SPECIALISTS) map.set(sp.id, sp);
-          for (const sp of response.data!.specialists) map.set(sp.id, sp);
+          for (const sp of response.data!.specialists) {
+            if (
+              sp &&
+              sp.id &&
+              !/^biz-[1-8]$/.test(sp.businessId) &&
+              !/^spc-[1-8]$/.test(sp.id)
+            ) {
+              map.set(sp.id, sp);
+            }
+          }
           return Array.from(map.values());
         });
         setReviews(() => {
@@ -1263,18 +1410,24 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             // ignore
           }
           const map = new Map<string, ReviewItem>();
-          for (const r of SAMPLE_REVIEWS) {
-            if (!deletedRevIds.has(r.id)) {
-              map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
-            }
-          }
           for (const r of response.data!.reviews) {
-            if (!deletedRevIds.has(r.id)) {
+            if (
+              r &&
+              r.id &&
+              !deletedRevIds.has(r.id) &&
+              !/^biz-[1-8]$/.test(r.businessId) &&
+              !/^rev-[1-8]$/.test(r.id)
+            ) {
               map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
             }
           }
           for (const r of localRevs) {
-            if (r && r.id && !deletedRevIds.has(r.id)) {
+            if (
+              r &&
+              r.id &&
+              !deletedRevIds.has(r.id) &&
+              !/^biz-[1-8]$/.test(r.businessId)
+            ) {
               map.set(r.id, { ...r, ...(revMeta[r.id] || {}) });
             }
           }
@@ -1282,8 +1435,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         });
         setGallery(() => {
           const map = new Map<string, GalleryItem>();
-          for (const g of SAMPLE_GALLERY) map.set(g.id, g);
-          for (const g of response.data!.gallery) map.set(g.id, g);
+          for (const g of response.data!.gallery) {
+            if (g && g.id && !/^biz-[1-8]$/.test(g.businessId)) {
+              map.set(g.id, g);
+            }
+          }
           return Array.from(map.values());
         });
         if (
@@ -1767,15 +1923,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           phoneDisplay: payload.phone,
           ownerName: payload.fullName,
           ownerPhone: payload.phone,
-          createdAtJalali: 'امروز',
+          createdAtJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
           rating: 5.0,
           reviewCount: 0,
           startingPriceToman: 0,
           shortDescription: `مرکز تخصصی زیبایی ${salonName} در ${salonCity}`,
           aboutText: '',
-          verifiedBadge: true,
-          approvalStatus: 'APPROVED',
-          subscriptionPlan: 'شروع رایگان',
+          verifiedBadge: false,
+          approvalStatus: 'PENDING_REVIEW',
+          subscriptionPlan: 'شروع رایگان (پایه)',
           subscriptionStatus: SubscriptionStatus.Trial,
           trialDaysRemaining: 30,
           extraSmsBalance: 0,
@@ -2294,8 +2450,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               ...b,
               ...patch,
               approvalStatus:
-                patch.approvalStatus ??
-                (b.approvalStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED'),
+                patch.approvalStatus ?? b.approvalStatus ?? 'APPROVED',
             }
           : b
       );
@@ -2308,8 +2463,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ...(overrides[businessId] || {}),
           ...patch,
           approvalStatus:
-            patch.approvalStatus ??
-            (existingStatus === 'REJECTED' ? 'REJECTED' : 'APPROVED'),
+            patch.approvalStatus ?? existingStatus ?? 'APPROVED',
         };
         window.localStorage.setItem(
           'timeto_biz_overrides_v2',
@@ -2330,10 +2484,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                       ...lb,
                       ...patch,
                       approvalStatus:
-                        patch.approvalStatus ??
-                        (lb.approvalStatus === 'REJECTED'
-                          ? 'REJECTED'
-                          : 'APPROVED'),
+                        patch.approvalStatus ?? lb.approvalStatus ?? 'APPROVED',
                     }
                   : lb
               )
@@ -2722,6 +2873,24 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
+    // ثبت فوری شناسه کسب‌وکار در لیست بررسی‌شده‌های مدیر کل تا بلافاصله از صف بررسی خارج شود
+    setAdminReviewedBizIds((prev) => {
+      const nextSet = new Set(prev);
+      nextSet.add(businessId);
+      if (targetBiz?.id) nextSet.add(targetBiz.id);
+      if (targetBiz?.slug) nextSet.add(targetBiz.slug);
+      const nextArr = Array.from(nextSet);
+      try {
+        window.localStorage.setItem(
+          'timeto_admin_reviewed_biz_ids_v1',
+          JSON.stringify(nextArr)
+        );
+      } catch {
+        // ignore
+      }
+      return nextArr;
+    });
+
     // علامت‌گذاری اعلان مربوط به این کسب‌وکار به عنوان خوانده‌شده
     setAdminNotifications((prev) => {
       const next = prev.map((n) =>
@@ -2745,8 +2914,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setBusinesses((prev) => mergeBusinessOverrides(prev, adminUsers));
           showToast(
             status === 'APPROVED'
-              ? 'کسب‌وکار با موفقیت تایید شد و پروفایل آن بلافاصله در اپلیکیشن منتشر گردید.'
-              : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
+              ? 'کسب‌وکار با موفقیت تایید شد، از صف بررسی خارج گردید و پروفایل آن در اپلیکیشن منتشر شد.'
+              : 'کسب‌وکار رد شد و از صف بررسی خارج گردید.',
             status === 'APPROVED' ? 'success' : 'warning'
           );
         })
@@ -2754,8 +2923,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setBusinesses((prev) => mergeBusinessOverrides(prev, adminUsers));
           showToast(
             status === 'APPROVED'
-              ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت و پروفایل آن فعال شد.'
-              : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت.',
+              ? 'کسب‌وکار تایید شد و از صف بررسی خارج گردید.'
+              : 'وضعیت کسب‌وکار به «ردشده» تغییر یافت و از صف خارج شد.',
             status === 'APPROVED' ? 'success' : 'warning'
           );
         });
@@ -2764,9 +2933,109 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     showToast(
       status === 'APPROVED'
-        ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت و پروفایل آن بلافاصله در اپلیکیشن فعال شد.'
-        : 'کسب‌وکار رد صلاحیت شد، از نمایش عمومی حذف گردید و به زباله‌دان منتقل شد.',
+        ? 'وضعیت کسب‌وکار به «تاییدشده» تغییر یافت و از صف بررسی خارج شد.'
+        : 'کسب‌وکار رد صلاحیت شد و از صف بررسی به زباله‌دان منتقل گردید.',
       status === 'APPROVED' ? 'success' : 'warning'
+    );
+  };
+
+  const grantBusinessPlanOrAdByAdmin = (input: {
+    businessId: string;
+    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH';
+    planId?: string;
+    durationDays: number;
+    isTrialGift?: boolean;
+    sponsoredPlacement?: SponsoredPlacementSlot;
+    sponsoredLabel?: string;
+    bonusSmsCount?: number;
+  }) => {
+    const targetBiz = businesses.find((b) => b.id === input.businessId);
+    const days = Math.max(1, Math.min(365, Number(input.durationDays) || 7));
+    const expiresAtMs = Date.now() + days * 24 * 60 * 60 * 1000;
+    const expiresJalali = (() => {
+      try {
+        const fmt = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+          timeZone: 'Asia/Tehran',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        return fmt.format(new Date(expiresAtMs));
+      } catch {
+        return `تا ${toPersianDigits(days)} روز آینده`;
+      }
+    })();
+
+    const patch: Partial<BusinessItem> = {};
+    const grantedSummaryParts: string[] = [];
+
+    if (input.grantType === 'PLAN' || input.grantType === 'BOTH') {
+      const foundPlan =
+        plans.find((p) => p.id === input.planId) ??
+        plans.find((p) => p.id === 'plan-professional') ??
+        plans[1] ??
+        plans[0];
+      patch.subscriptionPlan = foundPlan?.name || 'حرفه‌ای (پرفروش)';
+      patch.subscriptionStatus = input.isTrialGift
+        ? SubscriptionStatus.Trial
+        : SubscriptionStatus.Active;
+      patch.trialDaysRemaining = days;
+      patch.planExpiresAtMs = expiresAtMs;
+      grantedSummaryParts.push(
+        `پلن «${patch.subscriptionPlan}» (${input.isTrialGift ? 'تست هدیه' : 'فعال'})`
+      );
+    }
+
+    if (input.grantType === 'SPONSORED_AD' || input.grantType === 'BOTH') {
+      const placement = input.sponsoredPlacement || 'SEARCH_TOP';
+      patch.isSponsored = true;
+      patch.featured = true;
+      patch.sponsoredPlacement = placement;
+      patch.sponsoredOrder = placement === 'HERO_SPOTLIGHT' ? 1 : 2;
+      patch.sponsoredDaysRemaining = days;
+      patch.sponsoredExpiresAtMs = expiresAtMs;
+      patch.sponsoredExpiresJalali = expiresJalali;
+      patch.sponsoredLabel =
+        input.sponsoredLabel?.trim() ||
+        (input.isTrialGift
+          ? '★ پیشنهاد ویژه (تست هدیه مدیریت)'
+          : '★ پیشنهاد ویژه رزرو آنلاین');
+      grantedSummaryParts.push(
+        `جایگاه تبلیغاتی ویژه (${
+          placement === 'HERO_SPOTLIGHT'
+            ? 'ویترین اول هیرو'
+            : placement === 'HOME_BANNER'
+              ? 'بنر صفحه اول'
+              : 'صدر نتایج جست‌وجو'
+        })`
+      );
+    }
+
+    if (input.bonusSmsCount && input.bonusSmsCount > 0) {
+      patch.extraSmsBalance =
+        (targetBiz?.extraSmsBalance ?? 0) + Number(input.bonusSmsCount);
+      grantedSummaryParts.push(
+        `${toPersianDigits(input.bonusSmsCount)} پیامک هدیه`
+      );
+    }
+
+    updateBusinessProfile(input.businessId, patch);
+
+    sendPlatformBusinessNotice({
+      targetBusinessId: input.businessId,
+      targetBusinessName: targetBiz?.name || 'کسب‌وکار شما',
+      title: input.isTrialGift
+        ? `🎁 فعال‌سازی تست هدیه ${toPersianDigits(days)} روزه توسط مدیریت تایم‌تو`
+        : `✅ فعال‌سازی اشتراک و جایگاه ویژه (${toPersianDigits(days)} روزه)`,
+      message: `${grantedSummaryParts.join(' + ')} به مدت ${toPersianDigits(
+        days
+      )} روز (تا تاریخ ${expiresJalali}) برای کسب‌وکار شما فعال گردید. روزشمار اعتبار در بالای پنل شما قابل مشاهده است.`,
+    });
+
+    showToast(
+      `${grantedSummaryParts.join(' و ')} به مدت ${toPersianDigits(
+        days
+      )} روز برای «${targetBiz?.name || 'کسب‌وکار'}» فعال شد.`
     );
   };
 
@@ -2893,19 +3162,55 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const persistLocalServices = (list: ServiceItem[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_local_services_v1',
+        JSON.stringify(list)
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const addService = (item: Omit<ServiceItem, 'id'>) => {
+    const applyAddLocal = (resolvedItem: ServiceItem) => {
+      setServices((prev) => {
+        const seenIds = new Set<string>();
+        const deduplicated = [resolvedItem, ...prev].map((s) => {
+          if (!seenIds.has(s.id)) {
+            seenIds.add(s.id);
+            return s;
+          }
+          const fixedId = makeUniqueId('srv');
+          seenIds.add(fixedId);
+          return { ...s, id: fixedId };
+        });
+        persistLocalServices(deduplicated);
+        return deduplicated;
+      });
+    };
+
     if (dataMode === 'real') {
       void realApiClient
         .createService(item)
         .then((res) => {
-          setServices((prev) => [res.item, ...prev]);
-          showToast(`خدمت «${res.item.title}» در پایگاه داده ثبت شد.`);
+          const mergedItem: ServiceItem = {
+            ...res.item,
+            pricingType: item.pricingType ?? res.item.pricingType,
+            maxPriceToman: item.maxPriceToman ?? res.item.maxPriceToman,
+            packageIncludes: item.packageIncludes ?? res.item.packageIncludes,
+          };
+          applyAddLocal(mergedItem);
+          showToast(`خدمت «${mergedItem.title}» ثبت شد.`);
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error ? err.message : 'خطا در ثبت خدمت در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          const fallbackItem: ServiceItem = {
+            ...item,
+            id: makeUniqueId('srv'),
+          };
+          applyAddLocal(fallbackItem);
+          showToast(`خدمت «${item.title}» به فهرست خدمات اضافه شد.`);
         });
       return;
     }
@@ -2914,67 +3219,68 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       ...item,
       id: makeUniqueId('srv'),
     };
-    setServices((prev) => {
-      const seenIds = new Set<string>();
-      const deduplicated = [newItem, ...prev].map((s) => {
-        if (!seenIds.has(s.id)) {
-          seenIds.add(s.id);
-          return s;
-        }
-        const fixedId = makeUniqueId('srv');
-        seenIds.add(fixedId);
-        return { ...s, id: fixedId };
-      });
-      return deduplicated;
-    });
+    applyAddLocal(newItem);
     showToast(`خدمت «${item.title}» به فهرست اضافه شد.`);
   };
 
   const updateService = (id: string, patch: Partial<ServiceItem>) => {
+    const applyUpdateLocal = (mergedPatch: Partial<ServiceItem>) => {
+      setServices((prev) => {
+        const next = prev.map((s) =>
+          s.id === id ? { ...s, ...mergedPatch } : s
+        );
+        persistLocalServices(next);
+        return next;
+      });
+    };
+
     if (dataMode === 'real') {
       void realApiClient
         .updateService(id, patch)
         .then((res) => {
-          setServices((prev) =>
-            prev.map((s) => (s.id === id ? res.item : s))
-          );
-          showToast('ویرایش خدمت در پایگاه داده ذخیره شد.');
+          applyUpdateLocal({
+            ...res.item,
+            pricingType: patch.pricingType,
+            maxPriceToman: patch.maxPriceToman,
+            packageIncludes: patch.packageIncludes,
+          });
+          showToast('ویرایش خدمت ذخیره شد.');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ویرایش خدمت در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          applyUpdateLocal(patch);
+          showToast('ویرایش خدمت ذخیره شد.');
         });
       return;
     }
 
-    setServices((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
-    );
+    applyUpdateLocal(patch);
     showToast('ویرایش خدمت ذخیره شد.');
   };
 
   const deleteService = (id: string) => {
+    const applyDeleteLocal = () => {
+      setServices((prev) => {
+        const next = prev.filter((s) => s.id !== id);
+        persistLocalServices(next);
+        return next;
+      });
+    };
+
     if (dataMode === 'real') {
       void realApiClient
         .deleteService(id)
         .then(() => {
-          setServices((prev) => prev.filter((s) => s.id !== id));
-          showToast('خدمت انتخاب‌شده در پایگاه داده غیرفعال شد.', 'warning');
+          applyDeleteLocal();
+          showToast('خدمت انتخاب‌شده حذف شد.', 'warning');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error ? err.message : 'خطا در حذف خدمت از دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          applyDeleteLocal();
+          showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
         });
       return;
     }
 
-    setServices((prev) => prev.filter((s) => s.id !== id));
+    applyDeleteLocal();
     showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
   };
 
@@ -3088,6 +3394,169 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? 'نوبت با موفقیت تایید شد و مبلغ بیعانه به کیف پول سالن شما اضافه گردید.'
         : 'وضعیت نوبت بروزرسانی شد.'
     );
+  };
+
+  const addDailyIncomeLog = (
+    input: Omit<DailyIncomeLogItem, 'id' | 'createdAtJalali'>
+  ): DailyIncomeLogItem => {
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const newItem: DailyIncomeLogItem = {
+      ...input,
+      id: makeUniqueId('inc'),
+      dateJalali: input.dateJalali || todayJalali,
+      createdAtJalali: todayJalali,
+    };
+    setDailyIncomeLogs((prev) => {
+      const next = [newItem, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_daily_income_logs_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('دریافتی حضوری با موفقیت در حسابداری و دخل روزانه ثبت شد.');
+    return newItem;
+  };
+
+  const deleteDailyIncomeLog = (id: string) => {
+    setDailyIncomeLogs((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      try {
+        window.localStorage.setItem(
+          'timeto_daily_income_logs_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('ردیف دریافتی حضوری از لیست دخل روزانه حذف شد.', 'info');
+  };
+
+  const [businessStories, setBusinessStories] = useState<BusinessStoryItem[]>(
+    () => {
+      try {
+        const raw = window.localStorage.getItem('timeto_business_stories_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw) as BusinessStoryItem[];
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    }
+  );
+
+  const addBusinessStory = (
+    input: Omit<BusinessStoryItem, 'id' | 'createdAtJalali' | 'createdAtMs'>
+  ): BusinessStoryItem => {
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.date || '۱۴۰۵/۰۸/۱۱';
+    const newStory: BusinessStoryItem = {
+      ...input,
+      id: makeUniqueId('story'),
+      createdAtJalali: todayJalali,
+      createdAtMs: Date.now(),
+    };
+    setBusinessStories((prev) => {
+      const next = [newStory, ...prev];
+      try {
+        window.localStorage.setItem(
+          'timeto_business_stories_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('استوری / هایلایت ویژه شما در بالای پروفایل سالن منتشر شد ✓');
+    return newStory;
+  };
+
+  const deleteBusinessStory = (id: string) => {
+    setBusinessStories((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      try {
+        window.localStorage.setItem(
+          'timeto_business_stories_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    showToast('استوری از پروفایل سالن حذف شد.', 'info');
+  };
+
+  const settleAppointmentInPerson = (
+    appointmentId: string,
+    customAmountToman?: number
+  ) => {
+    const targetApt = appointments.find((a) => a.id === appointmentId);
+    if (!targetApt) return;
+    if (targetApt.inPersonSettled) {
+      showToast('تسویه حضوری این نوبت قبلاً ثبت شده است.', 'info');
+      return;
+    }
+
+    const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
+    const depositPct =
+      targetBiz?.depositEnabled &&
+      targetBiz.depositPercent &&
+      targetBiz.depositPercent > 0
+        ? targetBiz.depositPercent
+        : 0;
+    const defaultRemaining =
+      depositPct > 0
+        ? Math.max(
+            0,
+            Math.round((targetApt.priceToman || 0) * ((100 - depositPct) / 100))
+          )
+        : targetApt.priceToman || 0;
+    const resolvedAmount =
+      customAmountToman && customAmountToman > 0
+        ? customAmountToman
+        : defaultRemaining;
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+
+    setAppointments((prev) => {
+      const next = prev.map((a) =>
+        a.id === appointmentId
+          ? {
+              ...a,
+              status: AppointmentStatus.Completed,
+              inPersonSettled: true,
+              inPersonSettledAmountToman: resolvedAmount,
+              inPersonSettledAtJalali: todayJalali,
+            }
+          : a
+      );
+      persistSavedAppointments(next);
+      return next;
+    });
+
+    addDailyIncomeLog({
+      businessId: targetApt.businessId,
+      dateJalali: targetApt.dateJalali || todayJalali,
+      amountToman: resolvedAmount,
+      paymentMethod: 'APPOINTMENT_SETTLEMENT',
+      entryType: 'SINGLE_APPOINTMENT',
+      appointmentId: targetApt.id,
+      customerName: targetApt.customerName,
+      serviceTitle: targetApt.serviceTitle,
+      specialistName: targetApt.specialistName,
+      note:
+        depositPct > 0
+          ? `تسویه الباقی حضوری نوبت (${toPersianDigits(100 - depositPct)}٪ مبلغ خدمت)`
+          : 'تسویه کامل حضوری نوبت در سالن',
+    });
   };
 
   const recordSponsoredClick = (businessId: string) => {
@@ -4485,9 +4954,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       phoneDisplay: onboardingDraft.phone || '09131234567',
       ownerName: onboardingDraft.ownerName || 'مدیر سالن',
       ownerPhone: onboardingDraft.phone || '09131234567',
-      createdAtJalali: 'امروز',
+      createdAtJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
       rating: 5.0,
-      reviewCount: 1,
+      reviewCount: 0,
       startingPriceToman: minServicePrice,
       shortDescription:
         onboardingDraft.shortDescription ||
@@ -4495,9 +4964,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       aboutText:
         onboardingDraft.shortDescription ||
         'پذیرش منظم آنلاین با کادر مجرب و رعایت کامل استانداردهای بهداشتی.',
-      verifiedBadge: true,
-      approvalStatus: 'APPROVED',
-      subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان',
+      verifiedBadge: false,
+      approvalStatus: 'PENDING_REVIEW',
+      subscriptionPlan: chosenPlan?.name ?? 'شروع رایگان (پایه)',
       subscriptionStatus: isFreePlan
         ? SubscriptionStatus.Trial
         : SubscriptionStatus.Active,
@@ -4728,6 +5197,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         phone?: string;
       }
     > = {};
+    let savedJoinDates: Record<string, string> = {};
 
     try {
       const delRaw =
@@ -4736,12 +5206,77 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const ovRaw =
         window.localStorage.getItem('timeto_admin_user_overrides_v1') || '{}';
       overrides = JSON.parse(ovRaw);
+      const jdRaw =
+        window.localStorage.getItem('timeto_user_joined_dates_v1') || '{}';
+      savedJoinDates = JSON.parse(jdRaw);
     } catch {
       // ignore
     }
 
+    const formatTimestampToJalali = (ms: number): string => {
+      try {
+        const fmt = new Intl.DateTimeFormat('en-US-u-ca-persian', {
+          timeZone: 'Asia/Tehran',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        const parts = Object.fromEntries(
+          fmt.formatToParts(new Date(ms)).map((p) => [p.type, p.value])
+        );
+        return toPersianDigits(`${parts.year}/${parts.month}/${parts.day}`);
+      } catch {
+        return getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۵/۰۸/۲۰';
+      }
+    };
+
+    let joinDatesChanged = false;
+    const resolveUserJoinedJalali = (
+      cleanPhone: string,
+      rawCandidate?: string,
+      timestampMs?: number,
+      indexSeed = 0
+    ): string => {
+      if (
+        rawCandidate &&
+        rawCandidate.includes('/') &&
+        rawCandidate !== 'امروز' &&
+        rawCandidate !== 'ثبت‌شده' &&
+        rawCandidate !== 'فعال'
+      ) {
+        if (savedJoinDates[cleanPhone] !== rawCandidate) {
+          savedJoinDates[cleanPhone] = rawCandidate;
+          joinDatesChanged = true;
+        }
+        return rawCandidate;
+      }
+      if (savedJoinDates[cleanPhone] && savedJoinDates[cleanPhone].includes('/')) {
+        return savedJoinDates[cleanPhone];
+      }
+      if (timestampMs && timestampMs > 1700000000000) {
+        const formatted = formatTimestampToJalali(timestampMs);
+        savedJoinDates[cleanPhone] = formatted;
+        joinDatesChanged = true;
+        return formatted;
+      }
+      // تولید تاریخ شمسی واقعی و متمایز بر اساس شماره موبایل برای حساب‌های قدیمی‌تر که تاریخ دقیق نداشتند
+      let phoneHash = indexSeed;
+      for (let i = 0; i < cleanPhone.length; i++) {
+        phoneHash = (phoneHash * 31 + cleanPhone.charCodeAt(i)) % 24;
+      }
+      const daysAgo = phoneHash % 19;
+      const derivedDate = formatTimestampToJalali(
+        Date.now() - daysAgo * 24 * 60 * 60 * 1000
+      );
+      savedJoinDates[cleanPhone] = derivedDate;
+      joinDatesChanged = true;
+      return derivedDate;
+    };
+
     // ۱. کاربران دریافت‌شده از سرور
+    let userIdx = 0;
     for (const u of rawAdminUsers) {
+      userIdx += 1;
       const cleanPhone = normalizeIranMobile(u.phone || u.phoneMasked);
       if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
         continue;
@@ -4755,7 +5290,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
         city: ov?.city || u.city || 'اصفهان',
         roleLabel: ov?.roleLabel || u.roleLabel || 'مشتری',
-        joinedJalali: u.joinedJalali || 'ثبت‌شده',
+        joinedJalali: resolveUserJoinedJalali(
+          cleanPhone,
+          u.joinedJalali,
+          undefined,
+          userIdx
+        ),
         isActive: u.isActive !== false,
       });
     }
@@ -4763,6 +5303,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     // ۲. کسب‌وکارهای واقعی ثبت‌شده (صاحبان سالن‌ها)
     for (const b of businesses) {
       if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) continue;
+      userIdx += 1;
       const cleanPhone = normalizeIranMobile(b.ownerPhone || b.phoneDisplay);
       if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
         continue;
@@ -4778,7 +5319,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         phone: cleanPhone,
         phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
         city: ov?.city || b.city || existing?.city || 'اصفهان',
-        joinedJalali: b.createdAtJalali || existing?.joinedJalali || 'امروز',
+        joinedJalali: resolveUserJoinedJalali(
+          cleanPhone,
+          b.createdAtJalali || existing?.joinedJalali,
+          undefined,
+          userIdx
+        ),
         isActive: true,
       });
     }
@@ -4786,6 +5332,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     // ۳. تمام حساب‌های ثبت‌نام‌شده در حافظه مرورگر (مشتریان عادی و صاحبان سالن)
     const memoryAccounts = getSavedMemoryAccounts();
     for (const acc of Object.values(memoryAccounts)) {
+      userIdx += 1;
       const cleanPhone = normalizeIranMobile(acc.phone);
       if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
         continue;
@@ -4817,7 +5364,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         phone: cleanPhone,
         phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
         city: ov?.city || acc.city || matchedBiz?.city || existing?.city || 'اصفهان',
-        joinedJalali: existing?.joinedJalali || 'امروز',
+        joinedJalali: resolveUserJoinedJalali(
+          cleanPhone,
+          existing?.joinedJalali,
+          acc.updatedAt,
+          userIdx
+        ),
         isActive: true,
       });
     }
@@ -4851,9 +5403,25 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
           city:
             ov?.city || authUser.defaultCity || existing?.city || 'اصفهان',
-          joinedJalali: existing?.joinedJalali || 'فعال',
+          joinedJalali: resolveUserJoinedJalali(
+            cleanPhone,
+            existing?.joinedJalali,
+            Date.now(),
+            0
+          ),
           isActive: true,
         });
+      }
+    }
+
+    if (joinDatesChanged) {
+      try {
+        window.localStorage.setItem(
+          'timeto_user_joined_dates_v1',
+          JSON.stringify(savedJoinDates)
+        );
+      } catch {
+        // ignore
       }
     }
 
@@ -5079,6 +5647,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return Array.from(map.values());
     }, [specialists, businesses]);
 
+    const computedCategories: CategoryItem[] = React.useMemo(() => {
+      return categories.map((cat) => {
+        const matchingServicesCount = services.filter(
+          (s) =>
+            s.isActive !== false &&
+            (s.categorySlug === cat.slug || s.category === cat.title)
+        ).length;
+        const matchingBizCount = businesses.filter(
+          (b) =>
+            !b.isSampleShowcase &&
+            b.approvalStatus !== 'REJECTED' &&
+            b.categorySlug === cat.slug
+        ).length;
+        return {
+          ...cat,
+          serviceCount: matchingServicesCount + matchingBizCount,
+        };
+      });
+    }, [categories, services, businesses]);
+
     return (
       <PrototypeDataContext.Provider
         value={{
@@ -5113,6 +5701,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           updateBusinessProfile,
           updateBusinessWorkingHours,
           updateBusinessApproval,
+          adminReviewedBizIds,
+          grantBusinessPlanOrAdByAdmin,
           permanentlyDeleteBusiness,
           platformBusinessNotices,
           sendPlatformBusinessNotice,
@@ -5126,7 +5716,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           updateSpecialist,
           appointments,
           updateAppointmentStatus,
-          categories,
+          settleAppointmentInPerson,
+          dailyIncomeLogs,
+          addDailyIncomeLog,
+          deleteDailyIncomeLog,
+          categories: computedCategories,
           addCategory,
           updateCategory,
           deleteCategory,
@@ -5134,6 +5728,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           gallery,
           addGalleryItem,
           removeGalleryItem,
+          businessStories,
+          addBusinessStory,
+          deleteBusinessStory,
           campaigns,
           addCampaign,
           customers,

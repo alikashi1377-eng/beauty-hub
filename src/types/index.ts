@@ -53,6 +53,9 @@ export interface ServiceItem {
   category: string;
   durationMinutes: number;
   priceToman: number;
+  pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+  maxPriceToman?: number;
+  packageIncludes?: string[];
   description: string;
   isPopular?: boolean;
   isActive?: boolean;
@@ -81,6 +84,9 @@ export interface WorkingHourItem {
   isOpen: boolean;
   openTime: string;
   closeTime: string;
+  hasBreak?: boolean;
+  secondOpenTime?: string;
+  secondCloseTime?: string;
 }
 
 export interface ReviewItem {
@@ -136,11 +142,13 @@ export interface BusinessItem {
   sponsoredOrder?: number;
   sponsoredDaysRemaining?: number;
   sponsoredExpiresJalali?: string;
+  sponsoredExpiresAtMs?: number;
   sponsoredCategorySlug?: string;
   sponsoredNeighborhood?: string;
   sponsoredImpressions?: number;
   sponsoredClicks?: number;
   trialDaysRemaining?: number;
+  planExpiresAtMs?: number;
   extraSmsBalance?: number;
   smsSentCount?: number;
   instagramHandle?: string;
@@ -310,6 +318,24 @@ export interface AppointmentItem {
   priceToman: number;
   status: AppointmentStatus;
   notes?: string;
+  inPersonSettled?: boolean;
+  inPersonSettledAmountToman?: number;
+  inPersonSettledAtJalali?: string;
+}
+
+export interface DailyIncomeLogItem {
+  id: string;
+  businessId: string;
+  dateJalali: string;
+  amountToman: number;
+  paymentMethod: 'POS_CARD' | 'CASH' | 'CARD_TO_CARD' | 'APPOINTMENT_SETTLEMENT';
+  entryType: 'DAILY_BULK' | 'SINGLE_APPOINTMENT';
+  appointmentId?: string;
+  customerName?: string;
+  serviceTitle?: string;
+  specialistName?: string;
+  note?: string;
+  createdAtJalali: string;
 }
 
 export interface CustomerRecord {
@@ -385,6 +411,9 @@ export interface OnboardingDraft {
     category: string;
     durationMinutes: number;
     priceToman: number;
+    pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+    maxPriceToman?: number;
+    packageIncludes?: string[];
   }>;
   staff: Array<{
     id: string;
@@ -436,5 +465,20 @@ export interface PlatformBusinessNoticeItem {
   createdAtJalali: string;
   readByBusinessIds: string[];
 }
+
+export interface BusinessStoryItem {
+  id: string;
+  businessId: string;
+  title: string;
+  badgeLabel: string;
+  caption: string;
+  imageUrl?: string;
+  ctaLabel?: string;
+  linkedServiceId?: string;
+  createdAtJalali: string;
+  createdAtMs?: number;
+}
+
+
 
 

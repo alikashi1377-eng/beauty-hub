@@ -25,7 +25,11 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
-import { formatPriceToman, toPersianDigits } from '../../utils/formatters';
+import {
+  formatPriceToman,
+  formatWorkingHourDisplay,
+  toPersianDigits,
+} from '../../utils/formatters';
 import { validateReviewContent } from '../../utils/reviewModeration';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -66,6 +70,7 @@ export const BusinessPublicProfileView: React.FC<{
     reportReviewAbuse,
     deleteReviewByAdmin,
     gallery,
+    businessStories,
     favoriteBusinessIds,
     toggleFavoriteBusiness,
     favoriteSpecialistIds,
@@ -74,6 +79,7 @@ export const BusinessPublicProfileView: React.FC<{
   } = usePrototypeData();
 
   const [activeTab, setActiveTab] = useState<string>('services');
+  const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
   const [selectedServiceCategory, setSelectedServiceCategory] =
     useState<string>('ALL');
   const [publicServiceQuery, setPublicServiceQuery] = useState<string>('');
@@ -376,14 +382,45 @@ export const BusinessPublicProfileView: React.FC<{
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
             <div className="lg:col-span-7 flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-right gap-4">
-              {/* آواتار دایره‌ای بزرگ متخصص یا سالن — مطابق Capture1.PNG */}
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden ring-4 ring-[#EDE9FE] shadow-md shrink-0">
-                <img
-                  src={proAvatarUrl}
-                  alt={displayName}
-                  className="w-full h-full object-cover"
-                />
-              </div>
+                {/* آواتار دایره‌ای بزرگ متخصص یا سالن + حلقه استوری VIP */}
+              {(() => {
+                const salonStories = (businessStories || []).filter(
+                  (st) => st.businessId === business.id
+                );
+                const hasStories = salonStories.length > 0;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasStories) setActiveStoryIndex(0);
+                    }}
+                    disabled={!hasStories}
+                    title={
+                      hasStories
+                        ? 'مشاهده استوری و پیشنهاد ویژه امروز سالن'
+                        : displayName
+                    }
+                    className={`relative shrink-0 rounded-full ${
+                      hasStories
+                        ? 'p-1 bg-gradient-to-tr from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] cursor-pointer shadow-lg hover:scale-105 transition-transform'
+                        : ''
+                    }`}
+                  >
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full overflow-hidden ring-4 ring-white shadow-md">
+                      <img
+                        src={proAvatarUrl}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    {hasStories ? (
+                      <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-gradient-to-r from-[#EC4899] to-[#8B5CF6] text-white text-[9px] font-extrabold whitespace-nowrap shadow-xs">
+                        🔥 استوری فعال
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })()}
 
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-[#8B5CF6] font-bold">
@@ -468,6 +505,204 @@ export const BusinessPublicProfileView: React.FC<{
           </div>
         </div>
       </section>
+
+      {/* ۱.۵. ردیف استوری‌ها و هایلایت‌های روزانه سالن (اختصاصی پلن VIP) — جایگاه بالای پروفایل */}
+      {(() => {
+        const salonStories = (businessStories || []).filter(
+          (st) => st.businessId === business.id
+        );
+        const isCurrentSalonOwner = Boolean(
+          authUser && ownedBusinessId === business.id
+        );
+        if (salonStories.length === 0 && !isCurrentSalonOwner) return null;
+
+        const activeStory =
+          activeStoryIndex !== null ? salonStories[activeStoryIndex] : null;
+
+        return (
+          <>
+            <section className="rounded-3xl bg-gradient-to-l from-[#FFFBEB] via-white to-[#F5F0FF] border border-[#FDE68A] p-4 sm:p-5 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-[#F59E0B] to-[#EC4899] text-white text-[10px] font-extrabold">
+                    ✨ استوری و هایلایت VIP
+                  </span>
+                  <h2 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
+                    استوری‌های روزانه، تخفیف‌ها و ظرفیت‌های ویژه امروز سالن
+                  </h2>
+                </div>
+                {isCurrentSalonOwner ? (
+                  <Link
+                    to="/app/gallery"
+                    className="text-[11px] font-extrabold text-[#7C3AED] hover:underline"
+                  >
+                    + مدیریت / افزودن استوری جدید در پنل کسب‌وکار ←
+                  </Link>
+                ) : (
+                  <span className="text-[11px] text-[#6B6480] font-semibold">
+                    برای مشاهده روی دایره‌ها کلیک کنید
+                  </span>
+                )}
+              </div>
+
+              {salonStories.length === 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white/90 border border-dashed border-[#F59E0B]/50 text-xs text-[#6B6480]">
+                  <span>
+                    شما صاحب این کسب‌وکار هستید. استوری‌های روزانه و هایلایت‌های VIP شما دقیقاً در همین نوار بالای پروفایل به مراجعین نمایش داده می‌شود.
+                  </span>
+                  <Link
+                    to="/app/gallery"
+                    className="px-3.5 py-1.5 rounded-xl bg-[#8B5CF6] text-white text-xs font-extrabold hover:bg-[#7C3AED]"
+                  >
+                    ثبت اولین استوری VIP
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex items-center gap-4 overflow-x-auto pb-1">
+                  {salonStories.map((st, idx) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setActiveStoryIndex(idx)}
+                      className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer"
+                    >
+                      <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] shadow-md group-hover:scale-105 transition-transform">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border-2 border-white bg-[#FAF8FF]">
+                          <img
+                            src={st.imageUrl}
+                            alt={st.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] text-[9px] font-extrabold -mt-3 relative z-10 border border-[#FDE68A]">
+                        {st.badgeLabel || 'پیشنهاد ویژه'}
+                      </span>
+                      <span className="text-[11px] font-extrabold text-[#1E1B2E] max-w-[96px] truncate">
+                        {st.title}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* مودال تمام‌صفحه مشاهده استوری سالن با دکمه رزرو مستقیم */}
+            {activeStory ? (
+              <div
+                className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+                onClick={() => setActiveStoryIndex(null)}
+              >
+                <div
+                  className="relative w-full max-w-md rounded-3xl overflow-hidden bg-[#1E1B2E] text-white shadow-2xl border border-white/15"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* نوار پیشرفت بالای استوری */}
+                  <div className="flex gap-1.5 p-3 bg-gradient-to-b from-black/70 to-transparent absolute top-0 inset-x-0 z-20">
+                    {salonStories.map((sItem, i) => (
+                      <button
+                        key={sItem.id}
+                        type="button"
+                        onClick={() => setActiveStoryIndex(i)}
+                        className={`h-1 flex-1 rounded-full transition-all cursor-pointer ${
+                          i === activeStoryIndex ? 'bg-white' : 'bg-white/35'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* هدر اطلاعات سالن در استوری */}
+                  <div className="flex items-center justify-between px-4 pt-6 pb-3 bg-gradient-to-b from-black/80 to-transparent absolute top-2 inset-x-0 z-10">
+                    <div className="flex items-center gap-2.5">
+                      <img
+                        src={proAvatarUrl}
+                        alt={displayName}
+                        className="w-9 h-9 rounded-full object-cover border-2 border-[#EC4899]"
+                      />
+                      <div>
+                        <p className="text-xs font-extrabold text-white">
+                          {displayName}
+                        </p>
+                        <p className="text-[10px] text-white/75">
+                          {activeStory.createdAtJalali} ·{' '}
+                          {activeStory.badgeLabel || 'استوری ویژه'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveStoryIndex(null)}
+                      className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold flex items-center justify-center cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* تصویر استوری */}
+                  <div className="relative aspect-[4/5] w-full bg-black">
+                    <img
+                      src={activeStory.imageUrl}
+                      alt={activeStory.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-5 pt-16 space-y-3">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#F59E0B] text-[#1E1B2E] text-[10px] font-extrabold">
+                        {activeStory.badgeLabel || 'پیشنهاد ویژه'}
+                      </span>
+                      <h3 className="text-base sm:text-lg font-extrabold text-white">
+                        {activeStory.title}
+                      </h3>
+                      {activeStory.caption ? (
+                        <p className="text-xs text-white/90 leading-relaxed">
+                          {activeStory.caption}
+                        </p>
+                      ) : null}
+
+                      <div className="pt-2 flex items-center gap-2">
+                        <Link
+                          to={`/booking/${business.slug}${
+                            activeStory.linkedServiceId
+                              ? `?service=${activeStory.linkedServiceId}`
+                              : ''
+                          }`}
+                          onClick={(e) => {
+                            setActiveStoryIndex(null);
+                            handleRequireAuthForBooking(
+                              e,
+                              `/booking/${business.slug}${
+                                activeStory.linkedServiceId
+                                  ? `?service=${activeStory.linkedServiceId}`
+                                  : ''
+                              }`
+                            );
+                          }}
+                          className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-[#8B5CF6] to-[#EC4899] hover:opacity-95 text-white text-xs sm:text-sm font-extrabold text-center shadow-lg"
+                        >
+                          {activeStory.ctaLabel || 'رزرو آنلاین این پیشنهاد ←'}
+                        </Link>
+                        {salonStories.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveStoryIndex(
+                                ((activeStoryIndex ?? 0) + 1) %
+                                  salonStories.length
+                              )
+                            }
+                            className="px-3.5 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold cursor-pointer"
+                          >
+                            بعدی
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </>
+        );
+      })()}
 
       {/* ۲. بخش خدمات پرطرفدار با کارت‌های پاستلی رنگی — دقیقاً مطابق Capture1.PNG (Karikos Julieta Popular Services) */}
       {popularServices.length > 0 ? (
@@ -1243,14 +1478,14 @@ export const BusinessPublicProfileView: React.FC<{
               {business.workingHours.map((wh, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between py-1.5 border-b border-[#F3EEFF] last:border-b-0"
+                  className="flex items-center justify-between gap-2 py-1.5 border-b border-[#F3EEFF] last:border-b-0"
                 >
-                  <span className="text-[#6B6480] font-medium">
+                  <span className="text-[#6B6480] font-medium shrink-0">
                     {wh.dayName}
                   </span>
                   {wh.isOpen ? (
-                    <span className="text-[#1E1B2E] font-bold tabular-nums">
-                      {wh.openTime} تا {wh.closeTime}
+                    <span className="text-[#1E1B2E] font-bold tabular-nums text-left">
+                      {formatWorkingHourDisplay(wh)}
                     </span>
                   ) : (
                     <span className="text-[#6B6480]">تعطیل</span>
