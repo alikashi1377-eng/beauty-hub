@@ -1040,7 +1040,7 @@ export const BookingConfirmPage: React.FC = () => {
 
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
-    (dataMode === 'mock' ? businesses[0] : undefined);
+    businesses[0];
 
   const bizServices = business
     ? services.filter((s) => s.businessId === business.id)
@@ -1053,7 +1053,8 @@ export const BookingConfirmPage: React.FC = () => {
   );
   const service =
     selectedServicesSummary.services[0] ??
-    (dataMode === 'mock' ? services[0] : undefined);
+    bizServices[0] ??
+    services[0];
   const bizSpecialists = business
     ? specialists.filter((sp) => sp.businessId === business.id)
     : [];
@@ -1073,20 +1074,9 @@ export const BookingConfirmPage: React.FC = () => {
         }
       : undefined);
 
-  if (!business || !service || !specialist) {
-    return (
-      <div className="my-8">
-        <EmptyState
-          title="اطلاعات نوبت انتخابی کامل نیست"
-          description="لطفاً ابتدا از صفحه سالن، خدمت و متخصص مورد نظر خود را انتخاب کنید."
-        />
-      </div>
-    );
-  }
-
   // بیعانه آنلاین به صورت پیش‌فرض برای قطعی شدن نوبت فعال است (حداقل ۳۰٪ یا درصد تنظیمی کارفرما)
   const depositPercent =
-    business.depositPercent && business.depositPercent > 0
+    business?.depositPercent && business.depositPercent > 0
       ? business.depositPercent
       : 30;
   const depositAmountToman = Math.max(
@@ -1097,31 +1087,29 @@ export const BookingConfirmPage: React.FC = () => {
     0,
     selectedServicesSummary.totalPriceToman - depositAmountToman
   );
-  const cancellationDeadlineHours = business.cancellationDeadlineHours ?? 12;
-  const latePenaltyPercent = business.lateCancellationPenaltyPercent ?? 50;
+  const cancellationDeadlineHours = business?.cancellationDeadlineHours ?? 12;
+  const latePenaltyPercent = business?.lateCancellationPenaltyPercent ?? 50;
   const hasEnoughWalletBalance = customerWalletBalanceToman >= depositAmountToman;
 
-  const validateCustomerFields = (): boolean => {
-    if (dataMode === 'real' && !authUser) {
-      setFormError(
-        'برای ثبت نهایی نوبت و پرداخت بیعانه، لطفاً ابتدا با شماره موبایل خود وارد شوید.'
+  // بازیابی اطلاعات پیش‌نویس نوبت در صورت بازگشت از درگاه پرداخت زیبال با دکمه Back گوشی
+  useEffect(() => {
+    if (bookingDraft.businessSlug && bookingDraft.serviceId) return;
+    try {
+      const rawPending = window.localStorage.getItem(
+        'timeto_pending_zibal_booking_v1'
       );
-      return false;
+      if (rawPending) {
+        const parsed = JSON.parse(rawPending) as {
+          bookingDraft?: Partial<typeof bookingDraft>;
+        };
+        if (parsed?.bookingDraft?.businessSlug) {
+          updateBookingDraft(parsed.bookingDraft);
+        }
+      }
+    } catch {
+      // ignore
     }
-    if (
-      !bookingDraft.customerName.trim() ||
-      bookingDraft.customerName.trim().length < 2
-    ) {
-      setFormError('لطفاً نام و نام خانوادگی مراجع را کامل وارد کنید.');
-      return false;
-    }
-    if (!/^09\d{9}$/.test(bookingDraft.customerPhone.trim())) {
-      setFormError('شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
-      return false;
-    }
-    setFormError('');
-    return true;
-  };
+  }, [bookingDraft.businessSlug, bookingDraft.serviceId]);
 
   // بررسی بازگشت کاربر از درگاه پرداخت اینترنتی زیبال (Callback URL)
   useEffect(() => {
@@ -1162,7 +1150,7 @@ export const BookingConfirmPage: React.FC = () => {
         const isPaid = Boolean(data?.verified) || successParam === '1';
         const trackingRef = data?.refNumber || `ZBL-${trackId}`;
 
-        // پاک کردن پارامترهای بازگشتی از آدرس مرورگر
+        // پاک کردن پارامترهای بازگشتی از آدرس مرورگر با حفظ تاریخچه
         const cleanedParams = new URLSearchParams(searchParams);
         cleanedParams.delete('zibal_booking');
         cleanedParams.delete('zibal_wallet');
@@ -1208,7 +1196,7 @@ export const BookingConfirmPage: React.FC = () => {
 
         // ثبت نهایی نوبت پس از تایید پرداخت بیعانه در زیبال
         let resolvedDeposit = depositAmountToman;
-        let resolvedBizId = business.id;
+        let resolvedBizId = business?.id || '';
         try {
           const rawPending = window.localStorage.getItem(
             'timeto_pending_zibal_booking_v1'
@@ -1237,10 +1225,12 @@ export const BookingConfirmPage: React.FC = () => {
         });
         const targetBiz =
           businesses.find((b) => b.id === resolvedBizId) ?? business;
-        updateBusinessProfile(targetBiz.id, {
-          walletBalanceToman:
-            (targetBiz.walletBalanceToman ?? 0) + resolvedDeposit,
-        });
+        if (targetBiz) {
+          updateBusinessProfile(targetBiz.id, {
+            walletBalanceToman:
+              (targetBiz.walletBalanceToman ?? 0) + resolvedDeposit,
+          });
+        }
         navigate('/booking/result');
       } catch {
         if (!cancelled) {
@@ -1260,6 +1250,44 @@ export const BookingConfirmPage: React.FC = () => {
       cancelled = true;
     };
   }, [searchParams]);
+
+  if (!business || !service || !specialist) {
+    return (
+      <div className="my-8 space-y-4">
+        <EmptyState
+          title="اطلاعات نوبت انتخابی کامل نیست"
+          description="لطفاً ابتدا از صفحه سالن، خدمت و متخصص مورد نظر خود را انتخاب کنید."
+        />
+        <div className="text-center">
+          <Link to="/search">
+            <Button variant="primary">مشاهده لیست سالن‌ها</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const validateCustomerFields = (): boolean => {
+    if (dataMode === 'real' && !authUser) {
+      setFormError(
+        'برای ثبت نهایی نوبت و پرداخت بیعانه، لطفاً ابتدا با شماره موبایل خود وارد شوید.'
+      );
+      return false;
+    }
+    if (
+      !bookingDraft.customerName.trim() ||
+      bookingDraft.customerName.trim().length < 2
+    ) {
+      setFormError('لطفاً نام و نام خانوادگی مراجع را کامل وارد کنید.');
+      return false;
+    }
+    if (!/^09\d{9}$/.test(bookingDraft.customerPhone.trim())) {
+      setFormError('شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
+      return false;
+    }
+    setFormError('');
+    return true;
+  };
 
   // مرحله ۱: کلیک روی دکمه پرداخت و ثبت نوبت
   const handleInitiateCheckout = async (e: React.FormEvent) => {
@@ -1363,7 +1391,7 @@ export const BookingConfirmPage: React.FC = () => {
         return;
       }
 
-      // در مرورگر اصلی (سایت واقعی timeto24.ir یا تب مستقل موبایل/دسکتاپ) مستقیماً وارد صفحه شاپرک زیبال می‌شود
+      // در مرورگر اصلی (سایت واقعی timeto24.ir یا تب مستقل موبایل/دسکتاپ) مستقیماً در همان تب وارد درگاه شاپرک زیبال می‌شود تا با زدن دکمه Back دقیقاً به همین صفحه برگردد
       const isEmbeddedInIframe = (() => {
         try {
           return window.self !== window.top;
@@ -1373,27 +1401,20 @@ export const BookingConfirmPage: React.FC = () => {
       })();
 
       if (!isEmbeddedInIframe) {
-        window.location.assign(data.paymentUrl);
+        window.location.href = data.paymentUrl;
         return;
       }
 
-      // در محیط پیش‌نمایش که داخل iframe است (به دلیل هدر امنیتی X-Frame-Options: DENY درگاه زیبال)، درگاه زیبال در تب جدید باز می‌شود
+      // فقط در محیط پیش‌نمایش که داخل iframe است، کارت ورود به درگاه نمایش داده می‌شود
       setZibalGatewayRedirect({
         paymentUrl: data.paymentUrl,
         trackId: String(data.trackId),
         amountToman: depositAmountToman,
         purpose: 'BOOKING',
       });
-      const anchor = document.createElement('a');
-      anchor.href = data.paymentUrl;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
     } catch {
       setFormError(
-        'خطا در برقراری ارتباط با درگاه پرداخت زیبال (gateway.zibal.ir). لطفاً اتصال اینترنت خود را بررسی کنید.'
+        'خطا در برقراری ارتباط با درگاه پرداخت زیبال (gateway.zibal.ir). لطفاً اتصال اینترنت و خاموش بودن VPN خود را بررسی کنید.'
       );
     } finally {
       setIsSubmitting(false);
@@ -1460,7 +1481,7 @@ export const BookingConfirmPage: React.FC = () => {
       })();
 
       if (!isEmbeddedInIframe) {
-        window.location.assign(data.paymentUrl);
+        window.location.href = data.paymentUrl;
         return;
       }
 
@@ -1471,13 +1492,6 @@ export const BookingConfirmPage: React.FC = () => {
         amountToman: quickTopUpAmount,
         purpose: 'WALLET',
       });
-      const anchor = document.createElement('a');
-      anchor.href = data.paymentUrl;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
     } catch {
       setFormError('خطا در اتصال به درگاه پرداخت زیبال.');
     } finally {
@@ -1851,6 +1865,21 @@ export const BookingConfirmPage: React.FC = () => {
               </div>
             ) : null}
 
+            {/* هشدار مهم خاموش کردن VPN پیش از ورود به درگاه بانکی */}
+            {paymentMethod === 'GATEWAY' ? (
+              <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] flex items-start gap-2.5 text-xs text-[#92400E] leading-relaxed">
+                <span className="text-base leading-none shrink-0 mt-0.5">⚠️</span>
+                <div>
+                  <strong className="font-extrabold text-[#78350F] block mb-0.5">
+                    لطفاً پیش از ورود به درگاه پرداخت، فیلترشکن (VPN) خود را خاموش کنید!
+                  </strong>
+                  <span>
+                    درگاه بانکی شاپرک و زیبال به آی‌پی‌های خارج از کشور حساس است و با روشن بودن VPN باز نمی‌شود یا خطا می‌دهد. پس از خاموش کردن VPN روی دکمه زیر بزنید.
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
             <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
               <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
               <span>
@@ -1942,6 +1971,10 @@ export const BookingConfirmPage: React.FC = () => {
               {quickTopUpSuccess}
             </div>
           ) : null}
+
+          <div className="p-3 rounded-xl bg-[#FFFBEB] border border-[#F59E0B] text-[#92400E] text-[11px] font-bold leading-relaxed">
+            ⚠️ توجه: پیش از ورود به درگاه پرداخت زیبال، لطفاً فیلترشکن (VPN) خود را خاموش کنید تا صفحه شاپرک بدون خطا باز شود.
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
             <Button
@@ -2312,7 +2345,7 @@ export const CustomerOverviewPage: React.FC = () => {
       })();
 
       if (!isEmbeddedInIframe) {
-        window.location.assign(data.paymentUrl);
+        window.location.href = data.paymentUrl;
         return;
       }
 
@@ -2322,13 +2355,6 @@ export const CustomerOverviewPage: React.FC = () => {
         trackId: String(data.trackId),
         amountToman: topUpAmount,
       });
-      const anchor = document.createElement('a');
-      anchor.href = data.paymentUrl;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
     } catch {
       setWalletError('خطا در برقراری ارتباط با درگاه زیبال.');
     } finally {
@@ -2758,6 +2784,9 @@ export const CustomerOverviewPage: React.FC = () => {
               }
             />
           </FormField>
+          <div className="p-3 rounded-xl bg-[#FFFBEB] border border-[#F59E0B] text-[#92400E] text-[11px] font-bold leading-relaxed">
+            ⚠️ توجه: پیش از ورود به درگاه پرداخت زیبال، لطفاً فیلترشکن (VPN) خود را خاموش کنید تا صفحه شاپرک بدون خطا باز شود.
+          </div>
           <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
             <Button
               type="button"

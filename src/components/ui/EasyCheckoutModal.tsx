@@ -147,17 +147,9 @@ export const EasyCheckoutModal: React.FC<{
       })();
 
       if (!isEmbeddedInIframe) {
-        window.location.assign(paymentGatewayUrl);
+        window.location.href = paymentGatewayUrl;
         return;
       }
-
-      const anchor = document.createElement('a');
-      anchor.href = paymentGatewayUrl;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
     }
 
     const createdOrder = submitPaymentOrder(
@@ -358,6 +350,10 @@ export const EasyCheckoutModal: React.FC<{
               </strong>{' '}
               بابت «{resolvedItemTitle}» مستقیماً از طریق درگاه امن شتاب (زیبال) پرداخت شده و بلافاصله روی حساب کسب‌وکار شما فعال می‌گردد.
             </p>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#FFFBEB] border border-[#F59E0B] text-[#92400E] text-[11px] font-bold leading-relaxed">
+            ⚠️ توجه مهم: درگاه بانکی شاپرک و زیبال با آی‌پی خارج از کشور باز نمی‌شود. لطفاً پیش از زدن دکمه پرداخت، فیلترشکن (VPN) خود را خاموش کنید.
           </div>
 
           <div className="flex items-center gap-2 p-3 rounded-xl bg-[#ECFDF5] border border-[#10B981]/40 text-[#065F46]">

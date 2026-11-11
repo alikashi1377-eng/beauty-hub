@@ -1222,9 +1222,77 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [onboardingDraft, setOnboardingDraft] = useState<OnboardingDraft>(
     INITIAL_ONBOARDING_DRAFT
   );
-  const [bookingDraft, setBookingDraft] = useState<BookingDraft>(
-    INITIAL_BOOKING_DRAFT
-  );
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_booking_draft_v2');
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<BookingDraft>;
+        if (parsed && typeof parsed === 'object') {
+          return { ...INITIAL_BOOKING_DRAFT, ...parsed };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_BOOKING_DRAFT;
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'timeto_booking_draft_v2',
+        JSON.stringify(bookingDraft)
+      );
+    } catch {
+      // ignore
+    }
+  }, [bookingDraft]);
+
+  useEffect(() => {
+    fetch('/api/v1/payments/zibal/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          data: {
+            merchantId?: string;
+            isCustomMerchant?: boolean;
+          } | null
+        ) => {
+          if (data?.isCustomMerchant && data.merchantId) {
+            setPaymentConfig((prev) => {
+              if (prev.zibalMerchantId === data.merchantId) return prev;
+              const next = {
+                ...prev,
+                zibalMerchantId: data.merchantId,
+                zarinpalMerchantId: data.merchantId,
+              };
+              try {
+                window.localStorage.setItem(
+                  'timeto_payment_config_v2',
+                  JSON.stringify(next)
+                );
+              } catch {
+                // ignore
+              }
+              return next;
+            });
+          } else if (
+            paymentConfig.zibalMerchantId &&
+            paymentConfig.zibalMerchantId !== 'zibal'
+          ) {
+            fetch('/api/v1/payments/zibal/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                merchantId: paymentConfig.zibalMerchantId,
+              }),
+            }).catch(() => {});
+          }
+        }
+      )
+      .catch(() => {});
+  }, []);
+
   const [toast, setToast] = useState<ToastNotice | null>(null);
 
   const showToast = (

@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Router, Request, Response } from 'express';
 import {
   createRequireAuthMiddleware,
@@ -2367,7 +2369,27 @@ export function createApiV1Router(
    * POST /api/v1/payments/zibal/request
    * POST /api/v1/payments/zibal/verify
    */
+  const zibalConfigFilePath = path.resolve(
+    process.cwd(),
+    'zibal-gateway-config.json'
+  );
+  const readPersistedZibalMerchant = (): string => {
+    try {
+      if (fs.existsSync(zibalConfigFilePath)) {
+        const raw = fs.readFileSync(zibalConfigFilePath, 'utf-8');
+        const parsed = JSON.parse(raw) as { merchantId?: string };
+        if (parsed?.merchantId && parsed.merchantId.trim()) {
+          return parsed.merchantId.trim();
+        }
+      }
+    } catch {
+      // ignore file read error
+    }
+    return '';
+  };
+
   let runtimeZibalMerchantId =
+    readPersistedZibalMerchant() ||
     process.env.ZIBAL_MERCHANT_ID?.trim() ||
     process.env.PAYMENT_MERCHANT_ID?.trim() ||
     '';
@@ -2385,20 +2407,44 @@ export function createApiV1Router(
 
   router.post('/payments/zibal/config', (req: Request, res: Response) => {
     const incoming = String(req.body?.merchantId || '').trim();
-    if (incoming) {
-      runtimeZibalMerchantId = incoming;
+    runtimeZibalMerchantId = incoming;
+    try {
+      fs.writeFileSync(
+        zibalConfigFilePath,
+        JSON.stringify({ merchantId: incoming, updatedAt: new Date().toISOString() }, null, 2),
+        'utf-8'
+      );
+    } catch {
+      // ignore write error
     }
     res.status(200).json({
       ok: true,
       provider: 'zibal',
       merchantId: runtimeZibalMerchantId || 'zibal',
+      isCustomMerchant: Boolean(
+        runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
+      ),
     });
   });
 
   router.post('/payments/zibal/request', async (req: Request, res: Response) => {
     try {
+      const incomingMerchant = String(req.body?.merchantId || '').trim();
+      if (incomingMerchant && incomingMerchant !== 'zibal' && !runtimeZibalMerchantId) {
+        runtimeZibalMerchantId = incomingMerchant;
+        try {
+          fs.writeFileSync(
+            zibalConfigFilePath,
+            JSON.stringify({ merchantId: incomingMerchant, updatedAt: new Date().toISOString() }, null, 2),
+            'utf-8'
+          );
+        } catch {
+          // ignore
+        }
+      }
+
       const preferredMerchant =
-        String(req.body?.merchantId || '').trim() ||
+        (incomingMerchant && incomingMerchant !== 'zibal' ? incomingMerchant : '') ||
         runtimeZibalMerchantId ||
         process.env.ZIBAL_MERCHANT_ID?.trim() ||
         process.env.PAYMENT_MERCHANT_ID?.trim() ||
@@ -2415,7 +2461,10 @@ export function createApiV1Router(
         `${req.protocol}://${req.get('host')}/booking/confirm?zibal_booking=1&orderId=${encodeURIComponent(orderId)}`;
       const mobile = String(req.body?.mobile || '').trim() || undefined;
 
-      const requestZibal = async (merchantToUse: string) => {
+      const requestZibal = async (
+        merchantToUse: string,
+        cbUrlToUse: string
+      ) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         try {
@@ -2428,7 +2477,7 @@ export function createApiV1Router(
             body: JSON.stringify({
               merchant: merchantToUse,
               amount: amountRial,
-              callbackUrl,
+              callbackUrl: cbUrlToUse,
               description,
               orderId,
               ...(mobile ? { mobile } : {}),
@@ -2445,14 +2494,40 @@ export function createApiV1Router(
         }
       };
 
-      let data = await requestZibal(preferredMerchant);
+      let usedMerchant = preferredMerchant;
+      let data = await requestZibal(preferredMerchant, callbackUrl);
 
-      // اگر مرچنت اختصاصی روی دامنه فعلی خطای عدم تطابق دامنه یا مرچنت داد، با مرچنت استاندارد زیبال تلاش شود تا درگاه باز شود
+      // اگر مرچنت واقعی روی آدرس پیش‌نمایش به خاطر دامنه callbackUrl خطای 105/113 داد، با دامنه اصلی timeto24.ir و همان مرچنت واقعی تلاش شود تا درگاه اصلی شاپرک باز شود
       if (
         (!data || data.result !== 100 || !data.trackId) &&
         preferredMerchant !== 'zibal'
       ) {
-        data = await requestZibal('zibal');
+        try {
+          const parsedCb = new URL(callbackUrl);
+          if (parsedCb.hostname !== 'timeto24.ir') {
+            const prodCallbackUrl = `https://timeto24.ir${parsedCb.pathname}${parsedCb.search}`;
+            const retryProdDomain = await requestZibal(
+              preferredMerchant,
+              prodCallbackUrl
+            );
+            if (retryProdDomain?.result === 100 && retryProdDomain?.trackId) {
+              data = retryProdDomain;
+            }
+          }
+        } catch {
+          // ignore URL parse error
+        }
+      }
+
+      // تنها در صورتی که هیچ مرچنت واقعی تنظیم نشده باشد یا مرچنت واقعی غیرفعال باشد، با مرچنت زیبال باز شود
+      let fallbackNotice: string | null = null;
+      if (
+        (!data || data.result !== 100 || !data.trackId) &&
+        preferredMerchant !== 'zibal'
+      ) {
+        fallbackNotice = `مرچنت اختصاصی (${preferredMerchant}) توسط زیبال پذیرفته نشد (کد ${data?.result ?? -1}: ${data?.message || 'عدم تطابق دامنه یا مرچنت'}).`;
+        usedMerchant = 'zibal';
+        data = await requestZibal('zibal', callbackUrl);
       }
 
       if (data?.result === 100 && data?.trackId) {
@@ -2462,6 +2537,8 @@ export function createApiV1Router(
           trackId: String(data.trackId),
           paymentUrl: `https://gateway.zibal.ir/start/${data.trackId}`,
           orderId,
+          isSandbox: usedMerchant === 'zibal',
+          fallbackNotice,
         });
         return;
       }
