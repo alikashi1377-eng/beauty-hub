@@ -2670,9 +2670,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (next.zibalMerchantId) {
+        fetch('/api/v1/payments/zibal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ merchantId: next.zibalMerchantId }),
+        }).catch(() => {});
+      }
       return next;
     });
-    showToast('تنظیمات درگاه پرداخت (بله‌پی و کارت‌به‌کارت) ذخیره شد.');
+    showToast('تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) ذخیره شد.');
   };
 
   const applyApprovedOrderEffect = (order: PaymentOrderItem) => {

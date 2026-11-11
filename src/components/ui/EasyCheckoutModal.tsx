@@ -98,7 +98,10 @@ export const EasyCheckoutModal: React.FC<{
     setIsConnectingZibal(true);
 
     let zibalTrackId = `ZBL-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    let paymentGatewayUrl: string | null = null;
     try {
+      const orderId = `ZBL-PL-${Date.now()}`;
+      const callbackUrl = `${window.location.origin}${window.location.pathname}?zibal_order=${encodeURIComponent(orderId)}`;
       const res = await fetch('/api/v1/payments/zibal/request', {
         method: 'POST',
         headers: {
@@ -111,6 +114,8 @@ export const EasyCheckoutModal: React.FC<{
             '',
           amountToman: computedAmount,
           description: `${resolvedItemTitle} — ${businessName}`,
+          orderId,
+          callbackUrl,
         }),
       });
       if (res.ok) {
@@ -122,13 +127,37 @@ export const EasyCheckoutModal: React.FC<{
           zibalTrackId = String(data.trackId);
         }
         if (data?.paymentUrl) {
+          paymentGatewayUrl = data.paymentUrl;
           setZibalPaymentUrl(data.paymentUrl);
         }
       }
     } catch {
-      // ادامه ثبت سفارش در صورت عدم پاسخ شبکه
+      // ادامه در صورت خطای شبکه
     } finally {
       setIsConnectingZibal(false);
+    }
+
+    if (paymentGatewayUrl) {
+      const isEmbeddedInIframe = (() => {
+        try {
+          return window.self !== window.top;
+        } catch {
+          return true;
+        }
+      })();
+
+      if (!isEmbeddedInIframe) {
+        window.location.assign(paymentGatewayUrl);
+        return;
+      }
+
+      const anchor = document.createElement('a');
+      anchor.href = paymentGatewayUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
     }
 
     const createdOrder = submitPaymentOrder(

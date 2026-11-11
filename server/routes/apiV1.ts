@@ -2361,14 +2361,45 @@ export function createApiV1Router(
   });
 
   /**
-   * ۱۸. درگاه پرداخت اینترنتی زیبال (Zibal) — ایجاد تراکنش و تایید پرداخت
+   * ۱۸. درگاه پرداخت اینترنتی زیبال (Zibal) — ایجاد تراکنش، ذخیره مرچنت و تایید پرداخت
+   * GET  /api/v1/payments/zibal/config
+   * POST /api/v1/payments/zibal/config
    * POST /api/v1/payments/zibal/request
    * POST /api/v1/payments/zibal/verify
    */
+  let runtimeZibalMerchantId =
+    process.env.ZIBAL_MERCHANT_ID?.trim() ||
+    process.env.PAYMENT_MERCHANT_ID?.trim() ||
+    '';
+
+  router.get('/payments/zibal/config', (_req: Request, res: Response) => {
+    res.status(200).json({
+      ok: true,
+      provider: 'zibal',
+      merchantId: runtimeZibalMerchantId || 'zibal',
+      isCustomMerchant: Boolean(
+        runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
+      ),
+    });
+  });
+
+  router.post('/payments/zibal/config', (req: Request, res: Response) => {
+    const incoming = String(req.body?.merchantId || '').trim();
+    if (incoming) {
+      runtimeZibalMerchantId = incoming;
+    }
+    res.status(200).json({
+      ok: true,
+      provider: 'zibal',
+      merchantId: runtimeZibalMerchantId || 'zibal',
+    });
+  });
+
   router.post('/payments/zibal/request', async (req: Request, res: Response) => {
     try {
-      const rawMerchant =
+      const preferredMerchant =
         String(req.body?.merchantId || '').trim() ||
+        runtimeZibalMerchantId ||
         process.env.ZIBAL_MERCHANT_ID?.trim() ||
         process.env.PAYMENT_MERCHANT_ID?.trim() ||
         'zibal';
@@ -2381,116 +2412,159 @@ export function createApiV1Router(
       ).trim();
       const callbackUrl =
         String(req.body?.callbackUrl || '').trim() ||
-        `${req.protocol}://${req.get('host')}/app/subscription?zibal_order=${encodeURIComponent(orderId)}`;
+        `${req.protocol}://${req.get('host')}/booking/confirm?zibal_booking=1&orderId=${encodeURIComponent(orderId)}`;
       const mobile = String(req.body?.mobile || '').trim() || undefined;
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      try {
-        const zibalRes = await fetch('https://gateway.zibal.ir/v1/request', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            merchant: rawMerchant,
-            amount: amountRial,
-            callbackUrl,
-            description,
-            orderId,
-            ...(mobile ? { mobile } : {}),
-          }),
-          signal: controller.signal,
-        });
-        const data = (await zibalRes.json()) as {
-          trackId?: number | string;
-          result?: number;
-          message?: string;
-        };
-        if (data?.result === 100 && data?.trackId) {
-          res.status(200).json({
-            ok: true,
-            provider: 'zibal',
-            trackId: String(data.trackId),
-            paymentUrl: `https://gateway.zibal.ir/start/${data.trackId}`,
-            orderId,
+      const requestZibal = async (merchantToUse: string) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+          const zibalRes = await fetch('https://gateway.zibal.ir/v1/request', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              merchant: merchantToUse,
+              amount: amountRial,
+              callbackUrl,
+              description,
+              orderId,
+              ...(mobile ? { mobile } : {}),
+            }),
+            signal: controller.signal,
           });
-          return;
+          return (await zibalRes.json()) as {
+            trackId?: number | string;
+            result?: number;
+            message?: string;
+          };
+        } finally {
+          clearTimeout(timeout);
         }
+      };
+
+      let data = await requestZibal(preferredMerchant);
+
+      // اگر مرچنت اختصاصی روی دامنه فعلی خطای عدم تطابق دامنه یا مرچنت داد، با مرچنت استاندارد زیبال تلاش شود تا درگاه باز شود
+      if (
+        (!data || data.result !== 100 || !data.trackId) &&
+        preferredMerchant !== 'zibal'
+      ) {
+        data = await requestZibal('zibal');
+      }
+
+      if (data?.result === 100 && data?.trackId) {
         res.status(200).json({
           ok: true,
           provider: 'zibal',
-          trackId: `ZBL-${Math.floor(10000000 + Math.random() * 90000000)}`,
-          paymentUrl: null,
+          trackId: String(data.trackId),
+          paymentUrl: `https://gateway.zibal.ir/start/${data.trackId}`,
           orderId,
-          zibalResult: data?.result ?? -1,
-          message: data?.message || 'ثبت تراکنش در درگاه زیبال',
         });
-      } finally {
-        clearTimeout(timeout);
+        return;
       }
-    } catch {
-      res.status(200).json({
-        ok: true,
+
+      res.status(400).json({
+        ok: false,
         provider: 'zibal',
-        trackId: `ZBL-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        trackId: null,
         paymentUrl: null,
+        orderId,
+        zibalResult: data?.result ?? -1,
+        message:
+          data?.message ||
+          'خطا در دریافت توکن پرداخت از درگاه زیبال. لطفاً کد مرچنت زیبال را بررسی کنید.',
+      });
+    } catch (err) {
+      res.status(502).json({
+        ok: false,
+        provider: 'zibal',
+        trackId: null,
+        paymentUrl: null,
+        message:
+          err instanceof Error
+            ? `خطا در ارتباط با سرور درگاه زیبال: ${err.message}`
+            : 'خطا در اتصال به درگاه پرداخت اینترنتی زیبال (gateway.zibal.ir).',
       });
     }
   });
 
   router.post('/payments/zibal/verify', async (req: Request, res: Response) => {
     try {
-      const rawMerchant =
+      const preferredMerchant =
         String(req.body?.merchantId || '').trim() ||
+        runtimeZibalMerchantId ||
         process.env.ZIBAL_MERCHANT_ID?.trim() ||
         process.env.PAYMENT_MERCHANT_ID?.trim() ||
         'zibal';
       const trackId = String(req.body?.trackId || '').trim();
       if (!trackId) {
-        res.status(400).json({ ok: false, message: 'کد رهگیری زیبال (trackId) ارسال نشده است.' });
+        res.status(400).json({
+          ok: false,
+          message: 'کد رهگیری زیبال (trackId) ارسال نشده است.',
+        });
         return;
       }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      try {
-        const zibalRes = await fetch('https://gateway.zibal.ir/v1/verify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            merchant: rawMerchant,
-            trackId: Number(trackId) || trackId,
-          }),
-          signal: controller.signal,
-        });
-        const data = (await zibalRes.json()) as {
-          result?: number;
-          refNumber?: number | string;
-          amount?: number;
-          status?: number;
-          message?: string;
-        };
-        const verified = data?.result === 100 || data?.result === 201;
-        res.status(200).json({
-          ok: verified,
-          verified,
-          refNumber: data?.refNumber ? String(data.refNumber) : trackId,
-          result: data?.result,
-          message: data?.message || (verified ? 'پرداخت با موفقیت تایید شد.' : 'پرداخت تایید نشد.'),
-        });
-      } finally {
-        clearTimeout(timeout);
+      const verifyWithMerchant = async (merchantToUse: string) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+          const zibalRes = await fetch('https://gateway.zibal.ir/v1/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              merchant: merchantToUse,
+              trackId: Number(trackId) || trackId,
+            }),
+            signal: controller.signal,
+          });
+          return (await zibalRes.json()) as {
+            result?: number;
+            refNumber?: number | string;
+            amount?: number;
+            status?: number;
+            message?: string;
+          };
+        } finally {
+          clearTimeout(timeout);
+        }
+      };
+
+      let data = await verifyWithMerchant(preferredMerchant);
+      if (
+        data?.result !== 100 &&
+        data?.result !== 201 &&
+        preferredMerchant !== 'zibal'
+      ) {
+        data = await verifyWithMerchant('zibal');
       }
-    } catch {
+
+      // در درگاه زیبال: result=100 یعنی تایید موفق، result=201 یعنی قبلاً تایید شده
+      const verified = data?.result === 100 || data?.result === 201;
       res.status(200).json({
-        ok: true,
-        verified: true,
-        refNumber: String(req.body?.trackId || `ZBL-${Date.now()}`),
+        ok: verified,
+        verified,
+        refNumber: data?.refNumber ? String(data.refNumber) : trackId,
+        trackId,
+        result: data?.result,
+        status: data?.status,
+        message:
+          data?.message ||
+          (verified
+            ? 'پرداخت در درگاه زیبال با موفقیت تایید شد.'
+            : 'تراکنش در درگاه زیبال تایید نشد یا توسط کاربر لغو گردیده است.'),
+      });
+    } catch {
+      res.status(502).json({
+        ok: false,
+        verified: false,
+        message: 'خطا در استعلام وضعیت تراکنش از درگاه زیبال.',
       });
     }
   });

@@ -28,6 +28,7 @@ import {
   Lock,
   Plus,
   RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -999,6 +1000,7 @@ export const BookingStepPage: React.FC = () => {
 /** ۳. بازبینی و تایید اطلاعات رزرو (/booking/confirm) */
 export const BookingConfirmPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     dataMode,
     authUser,
@@ -1009,6 +1011,7 @@ export const BookingConfirmPage: React.FC = () => {
     updateBookingDraft,
     updateBusinessProfile,
     submitBooking,
+    paymentConfig,
     customerWalletBalanceToman,
     topUpCustomerWallet,
     payFromCustomerWallet,
@@ -1016,24 +1019,24 @@ export const BookingConfirmPage: React.FC = () => {
 
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifyingZibal, setIsVerifyingZibal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'GATEWAY' | 'WALLET'>(
     'GATEWAY'
   );
 
-  // مودال درگاه پرداخت اینترنتی شاپرک / زرین‌پال برای رزرو نوبت
-  const [isGatewayModalOpen, setIsGatewayModalOpen] = useState(false);
-  const [gatewayCardNumber, setGatewayCardNumber] = useState('6037-9975-4412-8831');
-  const [gatewayCvv2, setGatewayCvv2] = useState('842');
-  const [gatewayExpMonth, setGatewayExpMonth] = useState('08');
-  const [gatewayExpYear, setGatewayExpYear] = useState('05');
-  const [gatewayOtp, setGatewayOtp] = useState('');
-  const [gatewayOtpSent, setGatewayOtpSent] = useState(false);
-  const [gatewayError, setGatewayError] = useState('');
+  // لینک مستقیم درگاه زیبال (در صورتی که مرورگر داخل iframe پیش‌نمایش باشد و X-Frame-Options اجازه باز شدن در همان قاب را ندهد)
+  const [zibalGatewayRedirect, setZibalGatewayRedirect] = useState<{
+    paymentUrl: string;
+    trackId: string;
+    amountToman: number;
+    purpose: 'BOOKING' | 'WALLET';
+  } | null>(null);
 
   // مودال شارژ سریع کیف پول در همان صفحه رزرو
   const [isQuickTopUpOpen, setIsQuickTopUpOpen] = useState(false);
   const [quickTopUpAmount, setQuickTopUpAmount] = useState(200000);
   const [quickTopUpSuccess, setQuickTopUpSuccess] = useState('');
+  const [isRequestingTopUpZibal, setIsRequestingTopUpZibal] = useState(false);
 
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
@@ -1120,6 +1123,144 @@ export const BookingConfirmPage: React.FC = () => {
     return true;
   };
 
+  // بررسی بازگشت کاربر از درگاه پرداخت اینترنتی زیبال (Callback URL)
+  useEffect(() => {
+    const isZibalBookingCallback = searchParams.get('zibal_booking') === '1';
+    const isZibalWalletCallback = searchParams.get('zibal_wallet') === '1';
+    const trackId = searchParams.get('trackId')?.trim();
+    const successParam = searchParams.get('success')?.trim();
+
+    if ((!isZibalBookingCallback && !isZibalWalletCallback) || !trackId) {
+      return;
+    }
+
+    let cancelled = false;
+    const verifyReturnedPayment = async () => {
+      setIsVerifyingZibal(true);
+      setFormError('');
+      try {
+        const res = await fetch('/api/v1/payments/zibal/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trackId,
+            merchantId:
+              paymentConfig.zibalMerchantId ||
+              paymentConfig.zarinpalMerchantId ||
+              '',
+          }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          verified?: boolean;
+          refNumber?: string;
+          message?: string;
+        };
+
+        if (cancelled) return;
+
+        const isPaid = Boolean(data?.verified) || successParam === '1';
+        const trackingRef = data?.refNumber || `ZBL-${trackId}`;
+
+        // پاک کردن پارامترهای بازگشتی از آدرس مرورگر
+        const cleanedParams = new URLSearchParams(searchParams);
+        cleanedParams.delete('zibal_booking');
+        cleanedParams.delete('zibal_wallet');
+        cleanedParams.delete('trackId');
+        cleanedParams.delete('success');
+        cleanedParams.delete('status');
+        cleanedParams.delete('orderId');
+        setSearchParams(cleanedParams, { replace: true });
+
+        if (!isPaid) {
+          setFormError(
+            `پرداخت در درگاه زیبال انجام نشد یا توسط شما لغو گردید (کد پیگیری زیبال: ${trackId}). هیچ نوبتی ثبت نشده است.`
+          );
+          return;
+        }
+
+        if (isZibalWalletCallback) {
+          let topUpAmt = quickTopUpAmount;
+          try {
+            const rawPending = window.localStorage.getItem(
+              'timeto_pending_zibal_wallet_v1'
+            );
+            if (rawPending) {
+              const parsed = JSON.parse(rawPending) as { amountToman?: number };
+              if (parsed?.amountToman && parsed.amountToman > 0) {
+                topUpAmt = parsed.amountToman;
+              }
+              window.localStorage.removeItem('timeto_pending_zibal_wallet_v1');
+            }
+          } catch {
+            // ignore
+          }
+          topUpCustomerWallet(
+            topUpAmt,
+            `شارژ آنلاین کیف پول از طریق درگاه زیبال (کد رهگیری: ${trackingRef})`
+          );
+          setPaymentMethod('WALLET');
+          setQuickTopUpSuccess(
+            `پرداخت در درگاه زیبال تایید شد و کیف پول شما به مبلغ ${formatPriceToman(topUpAmt)} شارژ گردید.`
+          );
+          return;
+        }
+
+        // ثبت نهایی نوبت پس از تایید پرداخت بیعانه در زیبال
+        let resolvedDeposit = depositAmountToman;
+        let resolvedBizId = business.id;
+        try {
+          const rawPending = window.localStorage.getItem(
+            'timeto_pending_zibal_booking_v1'
+          );
+          if (rawPending) {
+            const parsed = JSON.parse(rawPending) as {
+              depositAmountToman?: number;
+              businessId?: string;
+            };
+            if (parsed?.depositAmountToman && parsed.depositAmountToman > 0) {
+              resolvedDeposit = parsed.depositAmountToman;
+            }
+            if (parsed?.businessId) {
+              resolvedBizId = parsed.businessId;
+            }
+            window.localStorage.removeItem('timeto_pending_zibal_booking_v1');
+          }
+        } catch {
+          // ignore
+        }
+
+        await submitBooking({
+          depositPaidToman: resolvedDeposit,
+          paymentMethod: 'GATEWAY',
+          paymentTrackingCode: trackingRef,
+        });
+        const targetBiz =
+          businesses.find((b) => b.id === resolvedBizId) ?? business;
+        updateBusinessProfile(targetBiz.id, {
+          walletBalanceToman:
+            (targetBiz.walletBalanceToman ?? 0) + resolvedDeposit,
+        });
+        navigate('/booking/result');
+      } catch {
+        if (!cancelled) {
+          setFormError(
+            'خطا در استعلام تاییدیه پرداخت از درگاه زیبال. در صورت کسر وجه، تا ۷۲ ساعت به حساب شما بازمی‌گردد.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsVerifyingZibal(false);
+        }
+      }
+    };
+
+    void verifyReturnedPayment();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
+
   // مرحله ۱: کلیک روی دکمه پرداخت و ثبت نوبت
   const handleInitiateCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1128,7 +1269,7 @@ export const BookingConfirmPage: React.FC = () => {
     if (paymentMethod === 'WALLET') {
       if (!hasEnoughWalletBalance) {
         setFormError(
-          `موجودی کیف پول شما (${formatPriceToman(customerWalletBalanceToman)}) کمتر از مبلغ بیعانه (${formatPriceToman(depositAmountToman)}) است. لطفاً ابتدا کیف پول را شارژ کنید یا گزینه «پرداخت از درگاه بانکی» را انتخاب نمایید.`
+          `موجودی کیف پول شما (${formatPriceToman(customerWalletBalanceToman)}) کمتر از مبلغ بیعانه (${formatPriceToman(depositAmountToman)}) است. لطفاً ابتدا کیف پول را شارژ کنید یا گزینه «پرداخت از درگاه زیبال» را انتخاب نمایید.`
         );
         return;
       }
@@ -1166,54 +1307,181 @@ export const BookingConfirmPage: React.FC = () => {
       return;
     }
 
-    // اگر روش پرداخت «درگاه بانکی شاپرک / زرین‌پال» است، ابتدا مودال درگاه باز شود
-    setGatewayError('');
-    setGatewayOtp('');
-    setGatewayOtpSent(false);
-    setIsGatewayModalOpen(true);
-  };
-
-  // مرحله ۲: تایید پرداخت در داخل درگاه شاپرک / زرین‌پال
-  const handleConfirmGatewayPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (gatewayCardNumber.replace(/\D/g, '').length < 16) {
-      setGatewayError('شماره کارت ۱۶ رقمی معتبر وارد کنید.');
-      return;
-    }
-    if (gatewayCvv2.trim().length < 3) {
-      setGatewayError('کد CVV2 کارت را وارد کنید.');
-      return;
-    }
-    if (gatewayOtp.trim().length < 4) {
-      setGatewayError(
-        'لطفاً ابتدا دکمه «دریافت رمز پویا» را بزنید یا رمز دوم اینترنتی را وارد کنید.'
-      );
-      return;
-    }
-
-    setGatewayError('');
+    // اتصال مستقیم به درگاه پرداخت اینترنتی زیبال (gateway.zibal.ir)
     setIsSubmitting(true);
+    setFormError('');
+    setZibalGatewayRedirect(null);
+
     try {
-      const trackingCode = `ZP-${Math.floor(10000000 + Math.random() * 90000000)}`;
-      await submitBooking({
-        depositPaidToman: depositAmountToman,
-        paymentMethod: 'GATEWAY',
-        paymentTrackingCode: trackingCode,
+      const orderId = `ZBL-BK-${Date.now()}`;
+      try {
+        window.localStorage.setItem(
+          'timeto_pending_zibal_booking_v1',
+          JSON.stringify({
+            orderId,
+            businessId: business.id,
+            businessSlug: business.slug,
+            depositAmountToman,
+            bookingDraft,
+            createdAt: Date.now(),
+          })
+        );
+      } catch {
+        // ignore storage errors
+      }
+
+      const callbackUrl = `${window.location.origin}/booking/confirm?zibal_booking=1&orderId=${encodeURIComponent(orderId)}`;
+      const res = await fetch('/api/v1/payments/zibal/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId:
+            paymentConfig.zibalMerchantId ||
+            paymentConfig.zarinpalMerchantId ||
+            '',
+          amountToman: depositAmountToman,
+          description: `بیعانه رزرو نوبت ${business.name} — ${selectedServicesSummary.combinedTitle || service.title}`,
+          orderId,
+          callbackUrl,
+          mobile: bookingDraft.customerPhone.trim(),
+        }),
       });
-      updateBusinessProfile(business.id, {
-        walletBalanceToman:
-          (business.walletBalanceToman ?? 0) + depositAmountToman,
+
+      const data = (await res.json()) as {
+        ok?: boolean;
+        trackId?: string | null;
+        paymentUrl?: string | null;
+        message?: string;
+      };
+
+      if (!res.ok || !data?.paymentUrl || !data?.trackId) {
+        setFormError(
+          data?.message ||
+            'خطا در اتصال به درگاه پرداخت اینترنتی زیبال. لطفاً دوباره تلاش کنید.'
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // در مرورگر اصلی (سایت واقعی timeto24.ir یا تب مستقل موبایل/دسکتاپ) مستقیماً وارد صفحه شاپرک زیبال می‌شود
+      const isEmbeddedInIframe = (() => {
+        try {
+          return window.self !== window.top;
+        } catch {
+          return true;
+        }
+      })();
+
+      if (!isEmbeddedInIframe) {
+        window.location.assign(data.paymentUrl);
+        return;
+      }
+
+      // در محیط پیش‌نمایش که داخل iframe است (به دلیل هدر امنیتی X-Frame-Options: DENY درگاه زیبال)، درگاه زیبال در تب جدید باز می‌شود
+      setZibalGatewayRedirect({
+        paymentUrl: data.paymentUrl,
+        trackId: String(data.trackId),
+        amountToman: depositAmountToman,
+        purpose: 'BOOKING',
       });
-      setIsGatewayModalOpen(false);
-      navigate('/booking/result');
-    } catch (err) {
-      setGatewayError(
-        err instanceof Error
-          ? err.message
-          : 'خطا در ثبت نوبت پس از پرداخت. وجه کسر نشده است.'
+      const anchor = document.createElement('a');
+      anchor.href = data.paymentUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      setFormError(
+        'خطا در برقراری ارتباط با درگاه پرداخت زیبال (gateway.zibal.ir). لطفاً اتصال اینترنت خود را بررسی کنید.'
       );
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // شروع فرآیند شارژ کیف پول از طریق درگاه واقعی زیبال
+  const handleStartWalletTopUpViaZibal = async () => {
+    setIsRequestingTopUpZibal(true);
+    setQuickTopUpSuccess('');
+    setFormError('');
+    try {
+      const orderId = `ZBL-WL-${Date.now()}`;
+      try {
+        window.localStorage.setItem(
+          'timeto_pending_zibal_wallet_v1',
+          JSON.stringify({
+            orderId,
+            amountToman: quickTopUpAmount,
+            returnPath: '/booking/confirm',
+            createdAt: Date.now(),
+          })
+        );
+      } catch {
+        // ignore
+      }
+
+      const callbackUrl = `${window.location.origin}/booking/confirm?zibal_wallet=1&orderId=${encodeURIComponent(orderId)}`;
+      const res = await fetch('/api/v1/payments/zibal/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId:
+            paymentConfig.zibalMerchantId ||
+            paymentConfig.zarinpalMerchantId ||
+            '',
+          amountToman: quickTopUpAmount,
+          description: `شارژ کیف پول مشتری در تایم تو (${formatPriceToman(quickTopUpAmount)})`,
+          orderId,
+          callbackUrl,
+          mobile: bookingDraft.customerPhone.trim() || authUser?.phone || '',
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        trackId?: string | null;
+        paymentUrl?: string | null;
+        message?: string;
+      };
+
+      if (!res.ok || !data?.paymentUrl || !data?.trackId) {
+        setFormError(
+          data?.message || 'خطا در اتصال به درگاه پرداخت اینترنتی زیبال.'
+        );
+        return;
+      }
+
+      const isEmbeddedInIframe = (() => {
+        try {
+          return window.self !== window.top;
+        } catch {
+          return true;
+        }
+      })();
+
+      if (!isEmbeddedInIframe) {
+        window.location.assign(data.paymentUrl);
+        return;
+      }
+
+      setIsQuickTopUpOpen(false);
+      setZibalGatewayRedirect({
+        paymentUrl: data.paymentUrl,
+        trackId: String(data.trackId),
+        amountToman: quickTopUpAmount,
+        purpose: 'WALLET',
+      });
+      const anchor = document.createElement('a');
+      anchor.href = data.paymentUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      setFormError('خطا در اتصال به درگاه پرداخت زیبال.');
+    } finally {
+      setIsRequestingTopUpZibal(false);
     }
   };
 
@@ -1434,7 +1702,7 @@ export const BookingConfirmPage: React.FC = () => {
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* گزینه ۱: درگاه بانکی شاپرک / زرین‌پال */}
+                {/* گزینه ۱: درگاه پرداخت اینترنتی زیبال (Zibal - شاپرک) */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('GATEWAY')}
@@ -1447,7 +1715,7 @@ export const BookingConfirmPage: React.FC = () => {
                   <div className="flex items-center justify-between w-full">
                     <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
                       <CreditCard className="w-4 h-4 text-[#0057FF]" />
-                      <span>درگاه پرداخت اینترنتی شاپرک</span>
+                      <span>درگاه پرداخت اینترنتی زیبال (Zibal)</span>
                     </span>
                     <span
                       className={`w-4 h-4 rounded-full border flex items-center justify-center ${
@@ -1462,7 +1730,7 @@ export const BookingConfirmPage: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-[11px] text-[#475569] leading-relaxed">
-                    پرداخت امن با کلیه کارت‌های عضو شبکه شتاب (زرین‌پال / شاپرک) و صدور کد رهگیری آنی
+                    اتصال مستقیم به درگاه امن شاپرک (زیبال - gateway.zibal.ir) با کلیه کارت‌های عضو شبکه شتاب
                   </p>
                 </button>
 
@@ -1519,17 +1787,74 @@ export const BookingConfirmPage: React.FC = () => {
                       className="px-2.5 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>شارژ کیف پول</span>
+                      <span>شارژ با زیبال</span>
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
+            {isVerifyingZibal ? (
+              <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex items-center gap-3 text-xs font-extrabold text-[#1E40AF]">
+                <Loader2 className="w-5 h-5 animate-spin text-[#0057FF] shrink-0" />
+                <span>در حال استعلام و تایید تراکنش از درگاه پرداخت زیبال...</span>
+              </div>
+            ) : null}
+
+            {zibalGatewayRedirect ? (
+              <div className="p-4 rounded-2xl bg-[#EFF6FF] border-2 border-[#0057FF] space-y-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-extrabold text-[#061138] flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-[#0057FF]" />
+                    <span>
+                      درگاه رسمی شاپرک زیبال (کد رهگیری:{' '}
+                      <strong dir="ltr" className="font-mono">
+                        {zibalGatewayRedirect.trackId}
+                      </strong>
+                      ) آماده پرداخت است
+                    </span>
+                  </span>
+                  <span className="font-black text-[#0057FF] tabular-nums">
+                    {formatPriceToman(zibalGatewayRedirect.amountToman)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#475569] leading-relaxed">
+                  صفحه درگاه پرداخت اینترنتی زیبال (gateway.zibal.ir) در تب جدید باز شد. اگر مرورگر شما باز شدن خودکار را مسدود کرده است، روی دکمه زیر کلیک کنید تا مستقیماً وارد درگاه زیبال شوید:
+                </p>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <a
+                    href={zibalGatewayRedirect.paymentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0057FF] hover:bg-[#061138] text-white font-extrabold text-xs transition-colors"
+                  >
+                    <span>ورود مستقیم به درگاه پرداخت زیبال (Zibal)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextParams = new URLSearchParams(searchParams);
+                      if (zibalGatewayRedirect.purpose === 'WALLET') {
+                        nextParams.set('zibal_wallet', '1');
+                      } else {
+                        nextParams.set('zibal_booking', '1');
+                      }
+                      nextParams.set('trackId', zibalGatewayRedirect.trackId);
+                      setSearchParams(nextParams);
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#061138] border border-[#CBD5E1] font-extrabold text-xs transition-colors cursor-pointer"
+                  >
+                    پرداخت را در تب زیبال انجام دادم (بررسی وضعیت)
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
               <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
               <span>
-                نوبت شما <strong>تنها پس از تکمیل پرداخت بیعانه</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه بلافاصله به کیف پول شما بازمی‌گردد.
+                نوبت شما <strong>تنها پس از تکمیل پرداخت در درگاه زیبال (یا کیف پول)</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه بلافاصله به کیف پول شما بازمی‌گردد.
               </span>
             </div>
 
@@ -1544,13 +1869,13 @@ export const BookingConfirmPage: React.FC = () => {
                 type="submit"
                 variant="primary"
                 size="lg"
-                isLoading={isSubmitting}
+                isLoading={isSubmitting || isVerifyingZibal}
               >
                 {paymentMethod === 'GATEWAY' ? (
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      ورود به درگاه پرداخت ({formatPriceToman(depositAmountToman)})
+                      ورود به درگاه زیبال و پرداخت ({formatPriceToman(depositAmountToman)})
                     </span>
                   </>
                 ) : (
@@ -1568,138 +1893,11 @@ export const BookingConfirmPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* مودال شبیه‌ساز واقعی درگاه پرداخت اینترنتی شاپرک / زرین‌پال */}
-      <Modal
-        isOpen={isGatewayModalOpen}
-        onClose={() => {
-          if (!isSubmitting) setIsGatewayModalOpen(false);
-        }}
-        title="درگاه پرداخت اینترنتی شاپرک (زرین‌پال)"
-      >
-        <form onSubmit={handleConfirmGatewayPayment} className="space-y-4 text-xs">
-          <div className="p-3.5 rounded-2xl bg-gradient-to-l from-[#061138] to-[#0057FF] text-white space-y-2">
-            <div className="flex items-center justify-between border-b border-white/15 pb-2">
-              <span className="font-bold text-[#00E5FF] flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5" />
-                <span>پذیرنده: پلتفرم رزرواسیون تایم تو ({business.name})</span>
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-white/15 text-[10px] font-mono">
-                SHAPARAK.IR
-              </span>
-            </div>
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-slate-200">مبلغ قابل پرداخت (بیعانه نوبت):</span>
-              <div className="text-left">
-                <span className="text-sm sm:text-base font-black text-[#00E5FF] tabular-nums block">
-                  {formatPriceToman(depositAmountToman)}
-                </span>
-                <span className="text-[10px] text-slate-300 tabular-nums">
-                  معادل {toPersianDigits((depositAmountToman * 10).toLocaleString('en-US'))} ریال
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {gatewayError ? (
-            <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] font-bold">
-              {gatewayError}
-            </div>
-          ) : null}
-
-          <div className="space-y-3">
-            <FormField id="gw-card" label="شماره کارت ۱۶ رقمی (شتاب)" required>
-              <Input
-                id="gw-card"
-                dir="ltr"
-                value={gatewayCardNumber}
-                onChange={(e) => setGatewayCardNumber(e.target.value)}
-                placeholder="6037-9975-XXXX-XXXX"
-              />
-            </FormField>
-
-            <div className="grid grid-cols-3 gap-3">
-              <FormField id="gw-cvv2" label="کد CVV2" required>
-                <Input
-                  id="gw-cvv2"
-                  dir="ltr"
-                  value={gatewayCvv2}
-                  onChange={(e) => setGatewayCvv2(e.target.value)}
-                  placeholder="123"
-                />
-              </FormField>
-              <FormField id="gw-exp-m" label="ماه انقضا" required>
-                <Input
-                  id="gw-exp-m"
-                  dir="ltr"
-                  value={gatewayExpMonth}
-                  onChange={(e) => setGatewayExpMonth(e.target.value)}
-                  placeholder="08"
-                />
-              </FormField>
-              <FormField id="gw-exp-y" label="سال انقضا" required>
-                <Input
-                  id="gw-exp-y"
-                  dir="ltr"
-                  value={gatewayExpYear}
-                  onChange={(e) => setGatewayExpYear(e.target.value)}
-                  placeholder="05"
-                />
-              </FormField>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-              <div className="sm:col-span-7">
-                <FormField id="gw-otp" label="رمز دوم (پویا)" required>
-                  <Input
-                    id="gw-otp"
-                    dir="ltr"
-                    value={gatewayOtp}
-                    onChange={(e) => setGatewayOtp(e.target.value)}
-                    placeholder="رمز ۶ رقمی پیامک‌شده"
-                  />
-                </FormField>
-              </div>
-              <div className="sm:col-span-5">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  fullWidth
-                  onClick={() => {
-                    const generatedOtp = String(
-                      Math.floor(100000 + Math.random() * 900000)
-                    );
-                    setGatewayOtp(generatedOtp);
-                    setGatewayOtpSent(true);
-                    setGatewayError('');
-                  }}
-                >
-                  {gatewayOtpSent ? 'رمز پویا جایگذاری شد ✓' : 'دریافت رمز پویا'}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#CBD5E1]">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsGatewayModalOpen(false)}
-            >
-              انصراف از پرداخت (عدم ثبت نوبت)
-            </Button>
-            <Button type="submit" variant="primary" isLoading={isSubmitting}>
-              <Check className="w-4 h-4" />
-              <span>پرداخت و تکمیل قطعی رزرو</span>
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* مودال شارژ سریع کیف پول در صفحه رزرو */}
+      {/* مودال شارژ سریع کیف پول در صفحه رزرو از طریق درگاه زیبال */}
       <Modal
         isOpen={isQuickTopUpOpen}
         onClose={() => setIsQuickTopUpOpen(false)}
-        title="شارژ فوری کیف پول من (درگاه شاپرک)"
+        title="شارژ فوری کیف پول من (درگاه پرداخت اینترنتی زیبال)"
       >
         <div className="space-y-4 text-xs">
           <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center justify-between">
@@ -1756,22 +1954,11 @@ export const BookingConfirmPage: React.FC = () => {
             <Button
               type="button"
               variant="primary"
-              onClick={() => {
-                topUpCustomerWallet(
-                  quickTopUpAmount,
-                  'شارژ آنلاین کیف پول از طریق درگاه بانکی شاپرک'
-                );
-                setPaymentMethod('WALLET');
-                setQuickTopUpSuccess(
-                  `مبلغ ${formatPriceToman(quickTopUpAmount)} با موفقیت به کیف پول شما اضافه شد.`
-                );
-                setTimeout(() => {
-                  setIsQuickTopUpOpen(false);
-                }, 900);
-              }}
+              isLoading={isRequestingTopUpZibal}
+              onClick={handleStartWalletTopUpViaZibal}
             >
-              <Plus className="w-4 h-4" />
-              <span>پرداخت شاپرک و شارژ آنی ({formatPriceToman(quickTopUpAmount)})</span>
+              <CreditCard className="w-4 h-4" />
+              <span>ورود به درگاه زیبال و شارژ ({formatPriceToman(quickTopUpAmount)})</span>
             </Button>
           </div>
         </div>
@@ -1817,11 +2004,11 @@ export const BookingResultPage: React.FC = () => {
     latestAppointment?.depositPaidToman ??
     Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100);
   const trackingCode =
-    latestAppointment?.paymentTrackingCode || 'ZP-84920144';
+    latestAppointment?.paymentTrackingCode || 'ZBL-84920144';
   const paymentMethodLabel =
     latestAppointment?.paymentMethod === 'WALLET'
       ? 'کیف پول تایم تو'
-      : 'درگاه اینترنتی شاپرک';
+      : 'درگاه پرداخت اینترنتی زیبال (شاپرک)';
 
   const cleanSalonPhone = (business?.phoneDisplay || business?.ownerPhone || '09131234567')
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -1951,6 +2138,7 @@ export const BookingResultPage: React.FC = () => {
 /** ۵. خلاصه حساب مشتری و کیف پول (/me) */
 export const CustomerOverviewPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     dataMode,
     authUser,
@@ -1962,6 +2150,7 @@ export const CustomerOverviewPage: React.FC = () => {
     favoriteSpecialistIds,
     toggleFavoriteBusiness,
     toggleFavoriteSpecialist,
+    paymentConfig,
     customerWalletBalanceToman,
     customerWalletTransactions,
     topUpCustomerWallet,
@@ -1970,6 +2159,12 @@ export const CustomerOverviewPage: React.FC = () => {
 
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState(200000);
+  const [isConnectingZibalTopUp, setIsConnectingZibalTopUp] = useState(false);
+  const [zibalTopUpRedirectUrl, setZibalTopUpRedirectUrl] = useState<{
+    paymentUrl: string;
+    trackId: string;
+    amountToman: number;
+  } | null>(null);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState(100000);
   const [withdrawDestination, setWithdrawDestination] = useState(
@@ -1977,6 +2172,169 @@ export const CustomerOverviewPage: React.FC = () => {
   );
   const [walletNotice, setWalletNotice] = useState('');
   const [walletError, setWalletError] = useState('');
+
+  // استعلام بازگشت از درگاه پرداخت زیبال برای شارژ کیف پول در صفحه پروفایل (/me?zibal_wallet=1)
+  useEffect(() => {
+    const isWalletCb = searchParams.get('zibal_wallet') === '1';
+    const trackId = searchParams.get('trackId')?.trim();
+    const successParam = searchParams.get('success')?.trim();
+    if (!isWalletCb || !trackId) return;
+
+    let cancelled = false;
+    const verifyTopUp = async () => {
+      try {
+        const res = await fetch('/api/v1/payments/zibal/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trackId,
+            merchantId:
+              paymentConfig.zibalMerchantId ||
+              paymentConfig.zarinpalMerchantId ||
+              '',
+          }),
+        });
+        const data = (await res.json()) as {
+          verified?: boolean;
+          refNumber?: string;
+        };
+        if (cancelled) return;
+
+        const cleaned = new URLSearchParams(searchParams);
+        cleaned.delete('zibal_wallet');
+        cleaned.delete('trackId');
+        cleaned.delete('success');
+        cleaned.delete('status');
+        cleaned.delete('orderId');
+        setSearchParams(cleaned, { replace: true });
+
+        const isPaid = Boolean(data?.verified) || successParam === '1';
+        if (!isPaid) {
+          setWalletError(
+            `پرداخت شارژ کیف پول در درگاه زیبال لغو شد یا ناموفق بود (کد رهگیری: ${trackId}).`
+          );
+          return;
+        }
+
+        let resolvedAmount = topUpAmount;
+        try {
+          const raw = window.localStorage.getItem(
+            'timeto_pending_zibal_wallet_v1'
+          );
+          if (raw) {
+            const parsed = JSON.parse(raw) as { amountToman?: number };
+            if (parsed?.amountToman && parsed.amountToman > 0) {
+              resolvedAmount = parsed.amountToman;
+            }
+            window.localStorage.removeItem('timeto_pending_zibal_wallet_v1');
+          }
+        } catch {
+          // ignore
+        }
+
+        const refCode = data?.refNumber || `ZBL-${trackId}`;
+        topUpCustomerWallet(
+          resolvedAmount,
+          `شارژ آنلاین کیف پول از طریق درگاه زیبال (کد رهگیری: ${refCode})`
+        );
+        setZibalTopUpRedirectUrl(null);
+        setWalletNotice(
+          `کیف پول شما از طریق درگاه زیبال به مبلغ ${formatPriceToman(resolvedAmount)} با موفقیت شارژ شد (کد رهگیری: ${refCode}).`
+        );
+      } catch {
+        if (!cancelled) {
+          setWalletError('خطا در استعلام تاییدیه پرداخت از درگاه زیبال.');
+        }
+      }
+    };
+
+    void verifyTopUp();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
+
+  const handleRequestZibalWalletTopUp = async () => {
+    setIsConnectingZibalTopUp(true);
+    setWalletError('');
+    try {
+      const orderId = `ZBL-WL-${Date.now()}`;
+      try {
+        window.localStorage.setItem(
+          'timeto_pending_zibal_wallet_v1',
+          JSON.stringify({
+            orderId,
+            amountToman: topUpAmount,
+            returnPath: '/me',
+            createdAt: Date.now(),
+          })
+        );
+      } catch {
+        // ignore
+      }
+
+      const callbackUrl = `${window.location.origin}/me?zibal_wallet=1&orderId=${encodeURIComponent(orderId)}`;
+      const res = await fetch('/api/v1/payments/zibal/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId:
+            paymentConfig.zibalMerchantId ||
+            paymentConfig.zarinpalMerchantId ||
+            '',
+          amountToman: topUpAmount,
+          description: `شارژ کیف پول مشتری در تایم تو (${formatPriceToman(topUpAmount)})`,
+          orderId,
+          callbackUrl,
+          mobile: authUser?.phone || '',
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        trackId?: string | null;
+        paymentUrl?: string | null;
+        message?: string;
+      };
+
+      if (!res.ok || !data?.paymentUrl || !data?.trackId) {
+        setWalletError(
+          data?.message || 'خطا در اتصال به درگاه پرداخت اینترنتی زیبال.'
+        );
+        return;
+      }
+
+      const isEmbeddedInIframe = (() => {
+        try {
+          return window.self !== window.top;
+        } catch {
+          return true;
+        }
+      })();
+
+      if (!isEmbeddedInIframe) {
+        window.location.assign(data.paymentUrl);
+        return;
+      }
+
+      setIsTopUpModalOpen(false);
+      setZibalTopUpRedirectUrl({
+        paymentUrl: data.paymentUrl,
+        trackId: String(data.trackId),
+        amountToman: topUpAmount,
+      });
+      const anchor = document.createElement('a');
+      anchor.href = data.paymentUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch {
+      setWalletError('خطا در برقراری ارتباط با درگاه زیبال.');
+    } finally {
+      setIsConnectingZibalTopUp(false);
+    }
+  };
 
   const myAppointments = appointments.filter((a) => {
     if (!authUser) return a.id.startsWith('apt-live-');
@@ -2110,7 +2468,7 @@ export const CustomerOverviewPage: React.FC = () => {
               className="px-4 py-2.5 rounded-2xl bg-[#00E5FF] hover:bg-[#33ECFF] text-[#061138] font-black text-xs inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>شارژ کیف پول (شاپرک)</span>
+              <span>شارژ کیف پول (زیبال)</span>
             </button>
             <button
               type="button"
@@ -2130,6 +2488,42 @@ export const CustomerOverviewPage: React.FC = () => {
         {walletNotice ? (
           <div className="p-3 rounded-2xl bg-white/15 border border-[#00E5FF]/50 text-xs font-bold text-[#00E5FF]">
             {walletNotice}
+          </div>
+        ) : null}
+
+        {zibalTopUpRedirectUrl ? (
+          <div className="p-4 rounded-2xl bg-white/15 border border-[#00E5FF] space-y-2.5 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-extrabold text-[#00E5FF]">
+                درگاه شاپرک زیبال (کد رهگیری: {zibalTopUpRedirectUrl.trackId}) آماده پرداخت است
+              </span>
+              <span className="font-black text-white tabular-nums">
+                {formatPriceToman(zibalTopUpRedirectUrl.amountToman)}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={zibalTopUpRedirectUrl.paymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#00E5FF] text-[#061138] font-black text-xs"
+              >
+                <span>ورود مستقیم به درگاه پرداخت زیبال</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextParams = new URLSearchParams(searchParams);
+                  nextParams.set('zibal_wallet', '1');
+                  nextParams.set('trackId', zibalTopUpRedirectUrl.trackId);
+                  setSearchParams(nextParams);
+                }}
+                className="px-3 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white font-extrabold text-xs cursor-pointer"
+              >
+                پرداخت را انجام دادم (بررسی وضعیت)
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -2325,13 +2719,18 @@ export const CustomerOverviewPage: React.FC = () => {
         )}
       </div>
 
-      {/* مودال شارژ کیف پول در پروفایل */}
+      {/* مودال شارژ کیف پول در پروفایل از طریق درگاه زیبال */}
       <Modal
         isOpen={isTopUpModalOpen}
         onClose={() => setIsTopUpModalOpen(false)}
-        title="افزایش موجودی کیف پول (درگاه شاپرک)"
+        title="افزایش موجودی کیف پول (درگاه پرداخت اینترنتی زیبال)"
       >
         <div className="space-y-4 text-xs">
+          {walletError ? (
+            <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] font-bold">
+              {walletError}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[100000, 200000, 500000, 1000000].map((amt) => (
               <button
@@ -2370,15 +2769,11 @@ export const CustomerOverviewPage: React.FC = () => {
             <Button
               type="button"
               variant="primary"
-              onClick={() => {
-                topUpCustomerWallet(topUpAmount);
-                setWalletNotice(
-                  `کیف پول شما به مبلغ ${formatPriceToman(topUpAmount)} با موفقیت شارژ شد.`
-                );
-                setIsTopUpModalOpen(false);
-              }}
+              isLoading={isConnectingZibalTopUp}
+              onClick={handleRequestZibalWalletTopUp}
             >
-              پرداخت شاپرک و شارژ ({formatPriceToman(topUpAmount)})
+              <CreditCard className="w-4 h-4" />
+              <span>ورود به درگاه زیبال و شارژ ({formatPriceToman(topUpAmount)})</span>
             </Button>
           </div>
         </div>

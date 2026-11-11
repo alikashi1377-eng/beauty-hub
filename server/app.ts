@@ -339,6 +339,10 @@ export function createApiApp(
   app.use(
     '/api/v1',
     async (req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith('/payments/zibal')) {
+        return next();
+      }
+
       const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
         req.method.toUpperCase()
       );
