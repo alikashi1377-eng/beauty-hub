@@ -152,6 +152,14 @@ async function startServer() {
           res.setHeader('Content-Type', mimeMap[ext]);
         }
         if (
+          req.path === '/sw.js' ||
+          req.path === '/manifest.webmanifest'
+        ) {
+          res.setHeader(
+            'Cache-Control',
+            'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+          );
+        } else if (
           req.path.startsWith('/assets/') ||
           req.path.startsWith('/fonts/') ||
           ext === '.svg'
@@ -161,7 +169,7 @@ async function startServer() {
             'public, max-age=31536000, immutable'
           );
         } else {
-          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Cache-Control', 'no-cache, must-revalidate');
         }
         res.setHeader('Vary', 'Accept-Encoding');
 
@@ -208,7 +216,12 @@ async function startServer() {
           index: false,
           maxAge: '30d',
           setHeaders: (res, filePath) => {
-            if (/\.(woff2|webp|jpg|jpeg|png|svg|ico)$/i.test(filePath)) {
+            if (filePath.endsWith('sw.js') || filePath.endsWith('manifest.webmanifest')) {
+              res.setHeader(
+                'Cache-Control',
+                'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+              );
+            } else if (/\.(woff2|webp|jpg|jpeg|png|svg|ico)$/i.test(filePath)) {
               res.setHeader(
                 'Cache-Control',
                 'public, max-age=31536000, immutable'
@@ -218,10 +231,15 @@ async function startServer() {
         })
       );
 
-      // ۳. ارسال index.html با فشرده‌سازی کامل Brotli / Gzip برای رفع خطای Document request latency (No compression applied)
+      // ۳. ارسال index.html با فشرده‌سازی کامل Brotli / Gzip و جلوگیری کامل از کش شدن نسخه قدیمی HTML
       app.get('*', (req, res) => {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader(
+          'Cache-Control',
+          'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
+        );
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.setHeader('Vary', 'Accept-Encoding');
         try {
           const cachedHtml = getCompressedAsset(indexHtmlPath);

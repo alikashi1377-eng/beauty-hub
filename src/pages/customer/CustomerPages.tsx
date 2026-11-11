@@ -23,6 +23,11 @@ import {
   Heart,
   LogOut,
   Scissors,
+  Wallet,
+  CreditCard,
+  Lock,
+  Plus,
+  RotateCcw,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -1004,11 +1009,31 @@ export const BookingConfirmPage: React.FC = () => {
     updateBookingDraft,
     updateBusinessProfile,
     submitBooking,
+    customerWalletBalanceToman,
+    topUpCustomerWallet,
+    payFromCustomerWallet,
   } = usePrototypeData();
 
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [payDepositOnline, setPayDepositOnline] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState<'GATEWAY' | 'WALLET'>(
+    'GATEWAY'
+  );
+
+  // مودال درگاه پرداخت اینترنتی شاپرک / زرین‌پال برای رزرو نوبت
+  const [isGatewayModalOpen, setIsGatewayModalOpen] = useState(false);
+  const [gatewayCardNumber, setGatewayCardNumber] = useState('6037-9975-4412-8831');
+  const [gatewayCvv2, setGatewayCvv2] = useState('842');
+  const [gatewayExpMonth, setGatewayExpMonth] = useState('08');
+  const [gatewayExpYear, setGatewayExpYear] = useState('05');
+  const [gatewayOtp, setGatewayOtp] = useState('');
+  const [gatewayOtpSent, setGatewayOtpSent] = useState(false);
+  const [gatewayError, setGatewayError] = useState('');
+
+  // مودال شارژ سریع کیف پول در همان صفحه رزرو
+  const [isQuickTopUpOpen, setIsQuickTopUpOpen] = useState(false);
+  const [quickTopUpAmount, setQuickTopUpAmount] = useState(200000);
+  const [quickTopUpSuccess, setQuickTopUpSuccess] = useState('');
 
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
@@ -1026,9 +1051,24 @@ export const BookingConfirmPage: React.FC = () => {
   const service =
     selectedServicesSummary.services[0] ??
     (dataMode === 'mock' ? services[0] : undefined);
+  const bizSpecialists = business
+    ? specialists.filter((sp) => sp.businessId === business.id)
+    : [];
   const specialist =
-    specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
-    (dataMode === 'mock' ? specialists[0] : undefined);
+    bizSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+    bizSpecialists[0] ??
+    (business
+      ? {
+          id: `spec-ind-${business.id}`,
+          businessId: business.id,
+          fullName: business.ownerName || business.name,
+          roleTitle: 'متخصص ارشد مجموعه',
+          avatarUrl: business.avatarUrl || business.coverUrl,
+          rating: business.rating || 5,
+          experienceYears: 5,
+          isActive: true,
+        }
+      : undefined);
 
   if (!business || !service || !specialist) {
     return (
@@ -1041,52 +1081,136 @@ export const BookingConfirmPage: React.FC = () => {
     );
   }
 
-  const isDepositActive = Boolean(business.depositEnabled);
-  const depositPercent = business.depositPercent || 30;
-  const depositAmountToman = isDepositActive
-    ? Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100)
-    : 0;
+  // بیعانه آنلاین به صورت پیش‌فرض برای قطعی شدن نوبت فعال است (حداقل ۳۰٪ یا درصد تنظیمی کارفرما)
+  const depositPercent =
+    business.depositPercent && business.depositPercent > 0
+      ? business.depositPercent
+      : 30;
+  const depositAmountToman = Math.max(
+    50000,
+    Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100)
+  );
   const remainingInSalonToman = Math.max(
     0,
-    selectedServicesSummary.totalPriceToman -
-      (isDepositActive && payDepositOnline ? depositAmountToman : 0)
+    selectedServicesSummary.totalPriceToman - depositAmountToman
   );
+  const cancellationDeadlineHours = business.cancellationDeadlineHours ?? 12;
+  const latePenaltyPercent = business.lateCancellationPenaltyPercent ?? 50;
+  const hasEnoughWalletBalance = customerWalletBalanceToman >= depositAmountToman;
 
-  const handleConfirmBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const validateCustomerFields = (): boolean => {
     if (dataMode === 'real' && !authUser) {
       setFormError(
-        'برای ثبت نهایی نوبت، لطفاً ابتدا با شماره موبایل خود وارد شوید.'
+        'برای ثبت نهایی نوبت و پرداخت بیعانه، لطفاً ابتدا با شماره موبایل خود وارد شوید.'
       );
-      return;
+      return false;
     }
     if (
       !bookingDraft.customerName.trim() ||
       bookingDraft.customerName.trim().length < 2
     ) {
       setFormError('لطفاً نام و نام خانوادگی مراجع را کامل وارد کنید.');
-      return;
+      return false;
     }
     if (!/^09\d{9}$/.test(bookingDraft.customerPhone.trim())) {
       setFormError('شماره موبایل باید ۱۱ رقم و با ۰۹ شروع شود.');
-      return;
+      return false;
     }
     setFormError('');
-    setIsSubmitting(true);
-    try {
-      await submitBooking();
-      if (isDepositActive && payDepositOnline && depositAmountToman > 0) {
+    return true;
+  };
+
+  // مرحله ۱: کلیک روی دکمه پرداخت و ثبت نوبت
+  const handleInitiateCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateCustomerFields()) return;
+
+    if (paymentMethod === 'WALLET') {
+      if (!hasEnoughWalletBalance) {
+        setFormError(
+          `موجودی کیف پول شما (${formatPriceToman(customerWalletBalanceToman)}) کمتر از مبلغ بیعانه (${formatPriceToman(depositAmountToman)}) است. لطفاً ابتدا کیف پول را شارژ کنید یا گزینه «پرداخت از درگاه بانکی» را انتخاب نمایید.`
+        );
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const walletRes = payFromCustomerWallet(
+          depositAmountToman,
+          business.name,
+          selectedServicesSummary.combinedTitle || service.title
+        );
+        if (!walletRes.ok) {
+          setFormError('موجودی کیف پول برای پرداخت بیعانه کافی نیست.');
+          setIsSubmitting(false);
+          return;
+        }
+        await submitBooking({
+          depositPaidToman: depositAmountToman,
+          paymentMethod: 'WALLET',
+          paymentTrackingCode: walletRes.trackingCode,
+        });
         updateBusinessProfile(business.id, {
           walletBalanceToman:
             (business.walletBalanceToman ?? 0) + depositAmountToman,
         });
+        navigate('/booking/result');
+      } catch (err) {
+        setFormError(
+          err instanceof Error
+            ? err.message
+            : 'خطا در ثبت نوبت. لطفاً ساعت یا متخصص دیگری را انتخاب کنید.'
+        );
+      } finally {
+        setIsSubmitting(false);
       }
+      return;
+    }
+
+    // اگر روش پرداخت «درگاه بانکی شاپرک / زرین‌پال» است، ابتدا مودال درگاه باز شود
+    setGatewayError('');
+    setGatewayOtp('');
+    setGatewayOtpSent(false);
+    setIsGatewayModalOpen(true);
+  };
+
+  // مرحله ۲: تایید پرداخت در داخل درگاه شاپرک / زرین‌پال
+  const handleConfirmGatewayPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (gatewayCardNumber.replace(/\D/g, '').length < 16) {
+      setGatewayError('شماره کارت ۱۶ رقمی معتبر وارد کنید.');
+      return;
+    }
+    if (gatewayCvv2.trim().length < 3) {
+      setGatewayError('کد CVV2 کارت را وارد کنید.');
+      return;
+    }
+    if (gatewayOtp.trim().length < 4) {
+      setGatewayError(
+        'لطفاً ابتدا دکمه «دریافت رمز پویا» را بزنید یا رمز دوم اینترنتی را وارد کنید.'
+      );
+      return;
+    }
+
+    setGatewayError('');
+    setIsSubmitting(true);
+    try {
+      const trackingCode = `ZP-${Math.floor(10000000 + Math.random() * 90000000)}`;
+      await submitBooking({
+        depositPaidToman: depositAmountToman,
+        paymentMethod: 'GATEWAY',
+        paymentTrackingCode: trackingCode,
+      });
+      updateBusinessProfile(business.id, {
+        walletBalanceToman:
+          (business.walletBalanceToman ?? 0) + depositAmountToman,
+      });
+      setIsGatewayModalOpen(false);
       navigate('/booking/result');
     } catch (err) {
-      setFormError(
+      setGatewayError(
         err instanceof Error
           ? err.message
-          : 'خطا در ثبت نوبت. لطفاً ساعت یا متخصص دیگری را انتخاب کنید.'
+          : 'خطا در ثبت نوبت پس از پرداخت. وجه کسر نشده است.'
       );
     } finally {
       setIsSubmitting(false);
@@ -1097,10 +1221,10 @@ export const BookingConfirmPage: React.FC = () => {
     <div>
       <div className="mb-4">
         <h1 className="text-lg sm:text-2xl font-extrabold text-[#061138]">
-          بازبینی خلاصه نوبت و ثبت نهایی
+          بازبینی خلاصه نوبت و پرداخت بیعانه آنلاین
         </h1>
         <p className="text-xs text-[#475569] mt-1">
-          برای بازگشت به هر مرحله، روی آیکون همان مرحله در نوار بالا کلیک کنید.
+          برای قطعی شدن نوبت، پرداخت بیعانه از طریق درگاه بانکی شاپرک یا کیف پول شما الزامی است.
         </p>
       </div>
 
@@ -1117,7 +1241,7 @@ export const BookingConfirmPage: React.FC = () => {
         {dataMode === 'real' && !authUser ? (
           <div className="p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] flex flex-wrap items-center justify-between gap-3 text-xs text-[#92400E]">
             <span className="font-bold">
-              برای ثبت قطعی نوبت، ابتدا با شماره موبایل خود وارد شوید.
+              برای ثبت قطعی نوبت و پرداخت بیعانه، ابتدا با شماره موبایل خود وارد شوید.
             </span>
             <Link to={`/login?redirect=${encodeURIComponent('/booking/confirm')}`}>
               <Button variant="primary" size="sm">
@@ -1127,7 +1251,7 @@ export const BookingConfirmPage: React.FC = () => {
           </div>
         ) : null}
 
-        {/* کارت آبی‌رنگ خلاصه نوبت انتخابی در تب آخر (تایید نهایی) */}
+        {/* کارت آبی‌رنگ خلاصه نوبت انتخابی */}
         <Card
           variant="dark"
           className="rounded-3xl space-y-4 bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] border border-[#00E5FF]/30 shadow-[0_20px_48px_-16px_rgba(6,17,56,0.55)]"
@@ -1211,43 +1335,40 @@ export const BookingConfirmPage: React.FC = () => {
             </div>
           </div>
 
-          {isDepositActive ? (
-            <div className="p-3.5 rounded-2xl bg-white/10 border border-white/20 space-y-2.5 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-extrabold text-[#00E5FF]">
-                  پرداخت بیعانه آنلاین سالن ({toPersianDigits(depositPercent)}٪ مبلغ خدمت)
-                </span>
-                <span className="font-black text-white text-sm tabular-nums">
-                  {formatPriceToman(depositAmountToman)}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-200 leading-relaxed">
-                مبلغ بیعانه مستقیماً در کیف پول اختصاصی سالن «{business.name}» ثبت شده و از صورت‌حساب حضوری شما کسر می‌گردد. باقی‌مانده قابل پرداخت در سالن:{' '}
-                <strong className="tabular-nums text-white">
-                  {formatPriceToman(remainingInSalonToman)}
-                </strong>
-              </p>
-              <label className="inline-flex items-center gap-2 font-bold text-white cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={payDepositOnline}
-                  onChange={(e) => setPayDepositOnline(e.target.checked)}
-                  className="accent-[#00E5FF] w-4 h-4"
-                />
-                <span>پرداخت همزمان بیعانه و قطعی‌سازی آنی نوبت</span>
-              </label>
+          <div className="p-4 rounded-2xl bg-white/10 border border-white/25 space-y-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-extrabold text-[#00E5FF]">
+                مبلغ بیعانه قابل پرداخت الان ({toPersianDigits(depositPercent)}٪):
+              </span>
+              <span className="font-black text-white text-base tabular-nums">
+                {formatPriceToman(depositAmountToman)}
+              </span>
             </div>
-          ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-2 text-slate-200">
+              <span>مانده قابل تسویه حضوری در سالن:</span>
+              <strong className="tabular-nums text-white">
+                {formatPriceToman(remainingInSalonToman)}
+              </strong>
+            </div>
+            <p className="text-[11px] text-[#00E5FF]/95 pt-1 border-t border-white/15 leading-relaxed">
+              ⚖️ قانون کنسلی سالن «{business.name}»: در صورت لغو نوبت تا{' '}
+              <strong>{toPersianDigits(cancellationDeadlineHours)} ساعت قبل از زمان نوبت</strong>،{' '}
+              <strong>۱۰۰٪ مبلغ بیعانه</strong> به صورت خودکار به کیف پول شما بازگردانده می‌شود و قابل برداشت به کارت بانکی است.
+              {latePenaltyPercent > 0
+                ? ` (در صورت لغو دیرهنگام در کمتر از ${toPersianDigits(cancellationDeadlineHours)} ساعت مانده، ${toPersianDigits(latePenaltyPercent)}٪ جریمه کسر و مابقی به کیف پول شما واریز می‌گردد).`
+                : ''}
+            </p>
+          </div>
         </Card>
 
         <Card padding="lg" className="rounded-3xl">
           <form
-            onSubmit={handleConfirmBooking}
+            onSubmit={handleInitiateCheckout}
             className="space-y-5"
             noValidate
           >
             <h2 className="text-base font-extrabold text-[#061138] border-b border-[#CBD5E1] pb-3">
-              ۲. مشخصات مراجع
+              ۲. مشخصات مراجع و انتخاب روش پرداخت بیعانه
             </h2>
 
             {formError ? (
@@ -1306,16 +1427,115 @@ export const BookingConfirmPage: React.FC = () => {
               />
             </FormField>
 
+            {/* انتخاب روش پرداخت بیعانه: درگاه بانکی شاپرک یا کیف پول مشتری */}
+            <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
+              <label className="text-sm font-extrabold text-[#061138] block">
+                ۳. انتخاب روش پرداخت بیعانه ({formatPriceToman(depositAmountToman)})
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* گزینه ۱: درگاه بانکی شاپرک / زرین‌پال */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('GATEWAY')}
+                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                    paymentMethod === 'GATEWAY'
+                      ? 'border-[#0057FF] bg-[#EFF6FF] shadow-xs'
+                      : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
+                      <CreditCard className="w-4 h-4 text-[#0057FF]" />
+                      <span>درگاه پرداخت اینترنتی شاپرک</span>
+                    </span>
+                    <span
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        paymentMethod === 'GATEWAY'
+                          ? 'border-[#0057FF] bg-[#0057FF] text-white'
+                          : 'border-[#94A3B8]'
+                      }`}
+                    >
+                      {paymentMethod === 'GATEWAY' ? (
+                        <Check className="w-2.5 h-2.5" />
+                      ) : null}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#475569] leading-relaxed">
+                    پرداخت امن با کلیه کارت‌های عضو شبکه شتاب (زرین‌پال / شاپرک) و صدور کد رهگیری آنی
+                  </p>
+                </button>
+
+                {/* گزینه ۲: پرداخت آنی از موجودی کیف پول مشتری */}
+                <div
+                  onClick={() => setPaymentMethod('WALLET')}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setPaymentMethod('WALLET');
+                    }
+                  }}
+                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                    paymentMethod === 'WALLET'
+                      ? 'border-[#10B981] bg-[#ECFDF5] shadow-xs'
+                      : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
+                      <Wallet className="w-4 h-4 text-[#10B981]" />
+                      <span>پرداخت از کیف پول من</span>
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-lg text-[11px] font-black tabular-nums ${
+                        hasEnoughWalletBalance
+                          ? 'bg-[#D1FAE5] text-[#065F46]'
+                          : 'bg-[#FEE2E2] text-[#991B1B]'
+                      }`}
+                    >
+                      موجودی: {formatPriceToman(customerWalletBalanceToman)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] text-[#475569]">
+                      {hasEnoughWalletBalance
+                        ? 'کسر آنی بدون نیاز به رمز پویا'
+                        : `کسری موجودی: ${formatPriceToman(Math.max(0, depositAmountToman - customerWalletBalanceToman))}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQuickTopUpAmount(
+                          Math.max(
+                            100000,
+                            depositAmountToman - customerWalletBalanceToman
+                          )
+                        );
+                        setQuickTopUpSuccess('');
+                        setIsQuickTopUpOpen(true);
+                      }}
+                      className="px-2.5 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>شارژ کیف پول</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
               <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
               <span>
-                با ثبت نهایی، نوبت شما بلافاصله از طریق پیامک و اعلان پنل به اطلاع صاحب کسب‌وکار می‌رسد تا تایید شود. همچنین شماره تماس مستقیم سالن در رسید نهایی نمایش داده خواهد شد.
+                نوبت شما <strong>تنها پس از تکمیل پرداخت بیعانه</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه بلافاصله به کیف پول شما بازمی‌گردد.
               </span>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <Link to={`/booking/${business.slug}`}>
-                <Button variant="outline">
+                <Button variant="outline" type="button">
                   <ArrowRight className="w-4 h-4" />
                   <span>بازگشت به مرحله قبل</span>
                 </Button>
@@ -1326,24 +1546,243 @@ export const BookingConfirmPage: React.FC = () => {
                 size="lg"
                 isLoading={isSubmitting}
               >
-                <span>
-                  {isDepositActive && payDepositOnline
-                    ? `پرداخت بیعانه (${formatPriceToman(depositAmountToman)}) و ثبت نوبت`
-                    : 'ثبت نهایی نوبت'}
-                </span>
+                {paymentMethod === 'GATEWAY' ? (
+                  <>
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      ورود به درگاه پرداخت ({formatPriceToman(depositAmountToman)})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-4 h-4" />
+                    <span>
+                      پرداخت از کیف پول ({formatPriceToman(depositAmountToman)}) و ثبت قطعی
+                    </span>
+                  </>
+                )}
                 <ArrowLeft className="w-4 h-4" />
               </Button>
             </div>
           </form>
         </Card>
       </div>
+
+      {/* مودال شبیه‌ساز واقعی درگاه پرداخت اینترنتی شاپرک / زرین‌پال */}
+      <Modal
+        isOpen={isGatewayModalOpen}
+        onClose={() => {
+          if (!isSubmitting) setIsGatewayModalOpen(false);
+        }}
+        title="درگاه پرداخت اینترنتی شاپرک (زرین‌پال)"
+      >
+        <form onSubmit={handleConfirmGatewayPayment} className="space-y-4 text-xs">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-l from-[#061138] to-[#0057FF] text-white space-y-2">
+            <div className="flex items-center justify-between border-b border-white/15 pb-2">
+              <span className="font-bold text-[#00E5FF] flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" />
+                <span>پذیرنده: پلتفرم رزرواسیون تایم تو ({business.name})</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white/15 text-[10px] font-mono">
+                SHAPARAK.IR
+              </span>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-slate-200">مبلغ قابل پرداخت (بیعانه نوبت):</span>
+              <div className="text-left">
+                <span className="text-sm sm:text-base font-black text-[#00E5FF] tabular-nums block">
+                  {formatPriceToman(depositAmountToman)}
+                </span>
+                <span className="text-[10px] text-slate-300 tabular-nums">
+                  معادل {toPersianDigits((depositAmountToman * 10).toLocaleString('en-US'))} ریال
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {gatewayError ? (
+            <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] font-bold">
+              {gatewayError}
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            <FormField id="gw-card" label="شماره کارت ۱۶ رقمی (شتاب)" required>
+              <Input
+                id="gw-card"
+                dir="ltr"
+                value={gatewayCardNumber}
+                onChange={(e) => setGatewayCardNumber(e.target.value)}
+                placeholder="6037-9975-XXXX-XXXX"
+              />
+            </FormField>
+
+            <div className="grid grid-cols-3 gap-3">
+              <FormField id="gw-cvv2" label="کد CVV2" required>
+                <Input
+                  id="gw-cvv2"
+                  dir="ltr"
+                  value={gatewayCvv2}
+                  onChange={(e) => setGatewayCvv2(e.target.value)}
+                  placeholder="123"
+                />
+              </FormField>
+              <FormField id="gw-exp-m" label="ماه انقضا" required>
+                <Input
+                  id="gw-exp-m"
+                  dir="ltr"
+                  value={gatewayExpMonth}
+                  onChange={(e) => setGatewayExpMonth(e.target.value)}
+                  placeholder="08"
+                />
+              </FormField>
+              <FormField id="gw-exp-y" label="سال انقضا" required>
+                <Input
+                  id="gw-exp-y"
+                  dir="ltr"
+                  value={gatewayExpYear}
+                  onChange={(e) => setGatewayExpYear(e.target.value)}
+                  placeholder="05"
+                />
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+              <div className="sm:col-span-7">
+                <FormField id="gw-otp" label="رمز دوم (پویا)" required>
+                  <Input
+                    id="gw-otp"
+                    dir="ltr"
+                    value={gatewayOtp}
+                    onChange={(e) => setGatewayOtp(e.target.value)}
+                    placeholder="رمز ۶ رقمی پیامک‌شده"
+                  />
+                </FormField>
+              </div>
+              <div className="sm:col-span-5">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => {
+                    const generatedOtp = String(
+                      Math.floor(100000 + Math.random() * 900000)
+                    );
+                    setGatewayOtp(generatedOtp);
+                    setGatewayOtpSent(true);
+                    setGatewayError('');
+                  }}
+                >
+                  {gatewayOtpSent ? 'رمز پویا جایگذاری شد ✓' : 'دریافت رمز پویا'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#CBD5E1]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsGatewayModalOpen(false)}
+            >
+              انصراف از پرداخت (عدم ثبت نوبت)
+            </Button>
+            <Button type="submit" variant="primary" isLoading={isSubmitting}>
+              <Check className="w-4 h-4" />
+              <span>پرداخت و تکمیل قطعی رزرو</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* مودال شارژ سریع کیف پول در صفحه رزرو */}
+      <Modal
+        isOpen={isQuickTopUpOpen}
+        onClose={() => setIsQuickTopUpOpen(false)}
+        title="شارژ فوری کیف پول من (درگاه شاپرک)"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] flex items-center justify-between">
+            <span className="font-bold text-[#065F46]">موجودی فعلی کیف پول شما:</span>
+            <span className="font-black text-sm text-[#059669] tabular-nums">
+              {formatPriceToman(customerWalletBalanceToman)}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <label className="font-extrabold text-[#061138] block">
+              مبلغ افزایش موجودی (تومان):
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[100000, 200000, 500000, 1000000].map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setQuickTopUpAmount(amt)}
+                  className={`py-2 px-2.5 rounded-xl font-bold border transition-all tabular-nums ${
+                    quickTopUpAmount === amt
+                      ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                      : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1]'
+                  }`}
+                >
+                  {formatPriceToman(amt)}
+                </button>
+              ))}
+            </div>
+            <Input
+              dir="ltr"
+              type="number"
+              value={String(quickTopUpAmount)}
+              onChange={(e) =>
+                setQuickTopUpAmount(Math.max(10000, Number(e.target.value) || 0))
+              }
+            />
+          </div>
+
+          {quickTopUpSuccess ? (
+            <div className="p-3 rounded-xl bg-[#ECFDF5] border border-[#6EE7B7] text-[#065F46] font-bold">
+              {quickTopUpSuccess}
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsQuickTopUpOpen(false)}
+            >
+              بستن
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                topUpCustomerWallet(
+                  quickTopUpAmount,
+                  'شارژ آنلاین کیف پول از طریق درگاه بانکی شاپرک'
+                );
+                setPaymentMethod('WALLET');
+                setQuickTopUpSuccess(
+                  `مبلغ ${formatPriceToman(quickTopUpAmount)} با موفقیت به کیف پول شما اضافه شد.`
+                );
+                setTimeout(() => {
+                  setIsQuickTopUpOpen(false);
+                }, 900);
+              }}
+            >
+              <Plus className="w-4 h-4" />
+              <span>پرداخت شاپرک و شارژ آنی ({formatPriceToman(quickTopUpAmount)})</span>
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
 
 /** ۴. نتیجه رزرو (/booking/result) */
 export const BookingResultPage: React.FC = () => {
-  const { bookingDraft, businesses, services, specialists } =
+  const { bookingDraft, businesses, services, specialists, appointments } =
     usePrototypeData();
   const business =
     businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
@@ -1356,9 +1795,33 @@ export const BookingResultPage: React.FC = () => {
     bookingDraft.serviceIds,
     bookingDraft.serviceId
   );
+  const bizSpecialists = business
+    ? specialists.filter((sp) => sp.businessId === business.id)
+    : [];
   const specialist =
-    specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
-    specialists[0];
+    bizSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+    bizSpecialists[0];
+
+  const latestAppointment = appointments[0];
+  const resolvedSpecialistName =
+    (latestAppointment &&
+    (!business || latestAppointment.businessId === business.id)
+      ? latestAppointment.specialistName
+      : undefined) ||
+    specialist?.fullName ||
+    business?.ownerName ||
+    business?.name ||
+    '—';
+  const depositPercent = business?.depositPercent || 30;
+  const paidDepositToman =
+    latestAppointment?.depositPaidToman ??
+    Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100);
+  const trackingCode =
+    latestAppointment?.paymentTrackingCode || 'ZP-84920144';
+  const paymentMethodLabel =
+    latestAppointment?.paymentMethod === 'WALLET'
+      ? 'کیف پول تایم تو'
+      : 'درگاه اینترنتی شاپرک';
 
   const cleanSalonPhone = (business?.phoneDisplay || business?.ownerPhone || '09131234567')
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -1367,9 +1830,9 @@ export const BookingResultPage: React.FC = () => {
   return (
     <div>
       <PageHeader
-        kicker="رزرو آنلاین نوبت · رسید نوبت"
-        title="نوبت شما با موفقیت ثبت شد"
-        subtitle="درخواست نوبت شما بلافاصله برای صاحب کسب‌وکار ارسال شد و از طریق بخش «نوبت‌های من» قابل مشاهده است."
+        kicker="رزرو آنلاین نوبت · رسید پرداخت و نوبت"
+        title="پرداخت بیعانه و ثبت نوبت با موفقیت انجام شد"
+        subtitle="درخواست نوبت شما به همراه رسید بیعانه بلافاصله برای صاحب کسب‌وکار ارسال شد و از طریق بخش «نوبت‌های من» قابل پیگیری است."
         breadcrumbs={[
           { label: 'تایید نوبت', href: '/booking/confirm' },
           { label: 'رسید رزرو' },
@@ -1383,7 +1846,7 @@ export const BookingResultPage: React.FC = () => {
           </div>
           <div>
             <StatusBadge
-              label="ثبت شد · ارسال‌شده برای تایید سالن"
+              label="پرداخت موفق · ثبت‌شده در تقویم سالن"
               tone="success"
             />
           </div>
@@ -1391,7 +1854,7 @@ export const BookingResultPage: React.FC = () => {
             نوبت شما در تقویم «{business?.name ?? 'سالن'}» ثبت گردید
           </h2>
           <p className="text-xs text-[#475569] max-w-md mx-auto leading-relaxed">
-            پیامک و اعلان فوری نوبت برای صاحب کسب‌وکار ارسال شد تا نوبت شما را تایید کند.
+            پیامک تایید نوبت و رسید بیعانه برای شما و صاحب کسب‌وکار ارسال شد.
           </p>
         </div>
 
@@ -1408,7 +1871,7 @@ export const BookingResultPage: React.FC = () => {
             <span className="text-[#475569] shrink-0">خدمات و متخصص:</span>
             <span className="font-bold text-[#061138] text-left">
               {selectedServicesSummary.combinedTitle || '—'} ·{' '}
-              {specialist?.fullName ?? '—'}
+              {resolvedSpecialistName}
             </span>
           </div>
           <div className="flex justify-between py-1.5 border-b border-[#CBD5E1]">
@@ -1423,15 +1886,28 @@ export const BookingResultPage: React.FC = () => {
               {bookingDraft.customerName}
             </span>
           </div>
-          <div className="flex justify-between pt-1">
-            <span className="text-[#475569]">جمع مبلغ خدمات:</span>
-            <span className="font-bold text-[#0057FF] tabular-nums">
+          <div className="flex justify-between py-1.5 border-b border-[#CBD5E1]">
+            <span className="text-[#475569]">جمع کل خدمات:</span>
+            <span className="font-bold text-[#061138] tabular-nums">
               {formatPriceToman(selectedServicesSummary.totalPriceToman)}
+            </span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-[#CBD5E1]">
+            <span className="text-[#059669] font-bold">
+              بیعانه پرداخت‌شده ({paymentMethodLabel}):
+            </span>
+            <span className="font-black text-[#059669] tabular-nums">
+              {formatPriceToman(paidDepositToman)}
+            </span>
+          </div>
+          <div className="flex justify-between pt-1">
+            <span className="text-[#475569]">کد رهگیری تراکنش:</span>
+            <span dir="ltr" className="font-mono font-bold text-[#0057FF]">
+              {trackingCode}
             </span>
           </div>
         </div>
 
-        {/* نمایش شماره تماس مستقیم سالن فقط پس از ثبت نوبت (اختیاری جهت اطمینان مشتری) */}
         {business ? (
           <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
             <div className="space-y-1">
@@ -1472,7 +1948,7 @@ export const BookingResultPage: React.FC = () => {
   );
 };
 
-/** ۵. خلاصه حساب مشتری (/me) */
+/** ۵. خلاصه حساب مشتری و کیف پول (/me) */
 export const CustomerOverviewPage: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -1486,7 +1962,21 @@ export const CustomerOverviewPage: React.FC = () => {
     favoriteSpecialistIds,
     toggleFavoriteBusiness,
     toggleFavoriteSpecialist,
+    customerWalletBalanceToman,
+    customerWalletTransactions,
+    topUpCustomerWallet,
+    requestCustomerWalletWithdrawal,
   } = usePrototypeData();
+
+  const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState(200000);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState(100000);
+  const [withdrawDestination, setWithdrawDestination] = useState(
+    'IR820540102680020817909002'
+  );
+  const [walletNotice, setWalletNotice] = useState('');
+  const [walletError, setWalletError] = useState('');
 
   const myAppointments = appointments.filter((a) => {
     if (!authUser) return a.id.startsWith('apt-live-');
@@ -1592,6 +2082,90 @@ export const CustomerOverviewPage: React.FC = () => {
             </div>
           </div>
         </div>
+      </Card>
+
+      {/* بخش کیف پول اختصاصی مشتری (شارژ، پرداخت رزرو، بازگشت بیعانه کنسلی و برداشت به شبا/کارت) */}
+      <Card className="rounded-[28px] p-5 sm:p-6 border border-[#CBD5E1] bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white space-y-5">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+              <Wallet className="w-4 h-4" />
+              <span>کیف پول اختصاصی شما در تایم تو</span>
+            </span>
+            <p className="text-2xl sm:text-3xl font-black text-white tabular-nums">
+              {formatPriceToman(customerWalletBalanceToman)}
+            </p>
+            <p className="text-xs text-slate-200 leading-relaxed">
+              قابل استفاده برای پرداخت آنی بیعانه رزرو نوبت‌ها · در صورت لغو نوبت در مهلت مجاز، بیعانه به این کیف پول واریز شده و قابل برداشت به حساب بانکی است.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setWalletError('');
+                setIsTopUpModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-2xl bg-[#00E5FF] hover:bg-[#33ECFF] text-[#061138] font-black text-xs inline-flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>شارژ کیف پول (شاپرک)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setWalletError('');
+                setWithdrawAmount(Math.min(customerWalletBalanceToman, 200000) || 100000);
+                setIsWithdrawModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>برداشت به کارت / شبا</span>
+            </button>
+          </div>
+        </div>
+
+        {walletNotice ? (
+          <div className="p-3 rounded-2xl bg-white/15 border border-[#00E5FF]/50 text-xs font-bold text-[#00E5FF]">
+            {walletNotice}
+          </div>
+        ) : null}
+
+        {customerWalletTransactions.length > 0 ? (
+          <div className="pt-3 border-t border-white/15 space-y-2">
+            <span className="text-xs font-extrabold text-[#00E5FF] block">
+              گردش حساب و تراکنش‌های اخیر کیف پول:
+            </span>
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {customerWalletTransactions.slice(0, 6).map((tx) => (
+                <div
+                  key={tx.id}
+                  className="p-3 rounded-2xl bg-white/10 border border-white/15 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-white">{tx.description}</p>
+                    <p className="text-[11px] text-slate-300 tabular-nums">
+                      {tx.createdAtJalali}
+                      {tx.trackingCode ? ` · کد پیگیری: ${tx.trackingCode}` : ''}
+                    </p>
+                  </div>
+                  <span
+                    className={`font-black tabular-nums px-2.5 py-1 rounded-xl ${
+                      tx.amountToman >= 0
+                        ? 'bg-[#10B981]/25 text-[#6EE7B7]'
+                        : 'bg-white/15 text-amber-200'
+                    }`}
+                  >
+                    {tx.amountToman >= 0 ? '+' : ''}
+                    {formatPriceToman(Math.abs(tx.amountToman))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {/* آیتم کوچک نصب اپ در پروفایل (اگر قبلاً نصب شده باشد خودکار مخفی است) */}
@@ -1750,19 +2324,165 @@ export const CustomerOverviewPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* مودال شارژ کیف پول در پروفایل */}
+      <Modal
+        isOpen={isTopUpModalOpen}
+        onClose={() => setIsTopUpModalOpen(false)}
+        title="افزایش موجودی کیف پول (درگاه شاپرک)"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[100000, 200000, 500000, 1000000].map((amt) => (
+              <button
+                key={amt}
+                type="button"
+                onClick={() => setTopUpAmount(amt)}
+                className={`py-2 px-3 rounded-xl font-bold border tabular-nums transition-all ${
+                  topUpAmount === amt
+                    ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                    : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1]'
+                }`}
+              >
+                {formatPriceToman(amt)}
+              </button>
+            ))}
+          </div>
+          <FormField id="wallet-topup-input" label="یا مبلغ دلخواه (تومان)">
+            <Input
+              id="wallet-topup-input"
+              dir="ltr"
+              type="number"
+              value={String(topUpAmount)}
+              onChange={(e) =>
+                setTopUpAmount(Math.max(10000, Number(e.target.value) || 0))
+              }
+            />
+          </FormField>
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsTopUpModalOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                topUpCustomerWallet(topUpAmount);
+                setWalletNotice(
+                  `کیف پول شما به مبلغ ${formatPriceToman(topUpAmount)} با موفقیت شارژ شد.`
+                );
+                setIsTopUpModalOpen(false);
+              }}
+            >
+              پرداخت شاپرک و شارژ ({formatPriceToman(topUpAmount)})
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* مودال برداشت وجه از کیف پول به کارت یا شبا */}
+      <Modal
+        isOpen={isWithdrawModalOpen}
+        onClose={() => setIsWithdrawModalOpen(false)}
+        title="درخواست تسویه و برداشت موجودی کیف پول به کارت / شبا"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-center justify-between">
+            <span className="font-bold text-[#061138]">موجودی قابل برداشت:</span>
+            <span className="font-black text-sm text-[#0057FF] tabular-nums">
+              {formatPriceToman(customerWalletBalanceToman)}
+            </span>
+          </div>
+
+          {walletError ? (
+            <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] font-bold">
+              {walletError}
+            </div>
+          ) : null}
+
+          <FormField id="withdraw-amt" label="مبلغ برداشت (تومان)" required>
+            <Input
+              id="withdraw-amt"
+              dir="ltr"
+              type="number"
+              value={String(withdrawAmount)}
+              onChange={(e) =>
+                setWithdrawAmount(Math.max(0, Number(e.target.value) || 0))
+              }
+            />
+          </FormField>
+
+          <FormField
+            id="withdraw-dest"
+            label="شماره شبا (IR) یا شماره کارت ۱۶ رقمی مقصد"
+            required
+          >
+            <Input
+              id="withdraw-dest"
+              dir="ltr"
+              value={withdrawDestination}
+              onChange={(e) => setWithdrawDestination(e.target.value)}
+              placeholder="IR820540102680020817909002"
+            />
+          </FormField>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsWithdrawModalOpen(false)}
+            >
+              انصراف
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => {
+                const res = requestCustomerWalletWithdrawal(
+                  withdrawAmount,
+                  withdrawDestination
+                );
+                if (!res) {
+                  setWalletError(
+                    'مبلغ واردشده معتبر نیست یا از موجودی کیف پول بیشتر است، و یا شماره شبا/کارت کامل وارد نشده است.'
+                  );
+                  return;
+                }
+                setWalletNotice(
+                  `درخواست واریز مبلغ ${formatPriceToman(withdrawAmount)} به حساب «${withdrawDestination}» ثبت شد و طی چرخه پایا به حساب شما واریز می‌گردد.`
+                );
+                setIsWithdrawModalOpen(false);
+              }}
+            >
+              ثبت درخواست واریز به حساب بانکی
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
 
 /** ۶. نوبت‌های من (/me/appointments) */
 export const CustomerAppointmentsPage: React.FC = () => {
-  const { authUser, appointments, businesses, updateAppointmentStatus } =
-    usePrototypeData();
+  const {
+    authUser,
+    appointments,
+    businesses,
+    updateAppointmentStatus,
+    customerWalletBalanceToman,
+  } = usePrototypeData();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AppointmentItem | null>(
     null
   );
+  const [simulateLateCancel, setSimulateLateCancel] = useState(false);
+  const [cancelRefundNotice, setCancelRefundNotice] = useState('');
 
   const myAppointments = appointments.filter((a) => {
     if (!authUser) return a.id.startsWith('apt-live-');
@@ -1789,14 +2509,33 @@ export const CustomerAppointmentsPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <PageHeader
-        kicker="حساب کاربری · مدیریت نوبت‌ها"
+        kicker="حساب کاربری · مدیریت نوبت‌ها و استرداد بیعانه"
         title="نوبت‌های من"
-        subtitle="مشاهده جزئیات نوبت‌های پیش‌رو و سوابق مراجعات گذشته"
+        subtitle="مشاهده جزئیات نوبت‌های پیش‌رو، قوانین کنسلی سالن و بازگشت خودکار بیعانه به کیف پول"
         breadcrumbs={[
           { label: 'حساب کاربری من', href: '/me' },
           { label: 'نوبت‌های من' },
         ]}
       />
+
+      {cancelRefundNotice ? (
+        <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#6EE7B7] flex flex-wrap items-center justify-between gap-3 text-xs text-[#065F46]">
+          <div className="space-y-0.5">
+            <p className="font-extrabold">{cancelRefundNotice}</p>
+            <p className="text-[11px]">
+              موجودی فعلی کیف پول شما:{' '}
+              <strong className="tabular-nums">
+                {formatPriceToman(customerWalletBalanceToman)}
+              </strong>
+            </p>
+          </div>
+          <Link to="/me">
+            <Button variant="primary" size="sm">
+              مشاهده کیف پول و برداشت وجه
+            </Button>
+          </Link>
+        </div>
+      ) : null}
 
       <Tabs
         activeTab={activeTab}
@@ -1829,7 +2568,10 @@ export const CustomerAppointmentsPage: React.FC = () => {
               onViewDetails={(item) => setSelectedApt(item)}
               onCancelDemo={
                 activeTab === 'upcoming'
-                  ? (item) => setCancelTarget(item)
+                  ? (item) => {
+                      setSimulateLateCancel(false);
+                      setCancelTarget(item);
+                    }
                   : undefined
               }
             />
@@ -1867,11 +2609,30 @@ export const CustomerAppointmentsPage: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
-              <span className="text-[#6B6480]">مبلغ خدمت:</span>
+              <span className="text-[#6B6480]">مبلغ کل خدمت:</span>
               <span className="font-bold text-[#8B5CF6] tabular-nums">
                 {formatPriceToman(selectedApt.priceToman)}
               </span>
             </div>
+            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#059669] font-bold">بیعانه پرداخت‌شده:</span>
+              <span className="font-extrabold text-[#059669] tabular-nums">
+                {formatPriceToman(
+                  selectedApt.depositPaidToman ??
+                    Math.round((selectedApt.priceToman * 30) / 100)
+                )}
+              </span>
+            </div>
+            {selectedApt.refundedToWalletToman ? (
+              <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+                <span className="text-[#0057FF] font-bold">
+                  مبلغ مستردشده به کیف پول:
+                </span>
+                <span className="font-extrabold text-[#0057FF] tabular-nums">
+                  {formatPriceToman(selectedApt.refundedToWalletToman)}
+                </span>
+              </div>
+            ) : null}
             {(() => {
               const matchedBiz = businesses.find(
                 (b) =>
@@ -1906,21 +2667,137 @@ export const CustomerAppointmentsPage: React.FC = () => {
         ) : null}
       </Modal>
 
-      <ConfirmationDialog
+      {/* مودال هوشمند لغو نوبت با محاسبه قانون کنسلی کارفرما و بازگشت خودکار بیعانه به کیف پول */}
+      <Modal
         isOpen={Boolean(cancelTarget)}
         onClose={() => setCancelTarget(null)}
-        onConfirm={() => {
-          if (cancelTarget) {
-            updateAppointmentStatus(
-              cancelTarget.id,
-              AppointmentStatus.Cancelled
-            );
-          }
-        }}
-        title="تایید لغو نوبت"
-        confirmLabel="بله، نوبت لغو شود"
-        message={`آیا مطمئن هستید که می‌خواهید نوبت خدمت «${cancelTarget?.serviceTitle ?? ''}» در ${cancelTarget?.businessName ?? ''} را لغو کنید؟`}
-      />
+        title="لغو نوبت و بازگشت بیعانه به کیف پول"
+      >
+        {cancelTarget
+          ? (() => {
+              const matchedBiz = businesses.find(
+                (b) =>
+                  b.id === cancelTarget.businessId ||
+                  b.slug === cancelTarget.businessSlug ||
+                  b.name === cancelTarget.businessName
+              );
+              const deadlineHours =
+                matchedBiz?.cancellationDeadlineHours ?? 12;
+              const penaltyPercent =
+                matchedBiz?.lateCancellationPenaltyPercent ?? 50;
+              const depositPercent = matchedBiz?.depositPercent || 30;
+              const paidDeposit =
+                cancelTarget.depositPaidToman &&
+                cancelTarget.depositPaidToman > 0
+                  ? cancelTarget.depositPaidToman
+                  : Math.round(
+                      (cancelTarget.priceToman * depositPercent) / 100
+                    );
+              const calculatedRefund = simulateLateCancel
+                ? Math.max(
+                    0,
+                    Math.round((paidDeposit * (100 - penaltyPercent)) / 100)
+                  )
+                : paidDeposit;
+
+              return (
+                <div className="space-y-4 text-xs">
+                  <p className="text-[#061138] font-bold leading-relaxed">
+                    آیا از لغو نوبت خدمت «{cancelTarget.serviceTitle}» در «
+                    {cancelTarget.businessName}» ({cancelTarget.dateJalali}{' '}
+                    ساعت {cancelTarget.timeSlot}) اطمینان دارید؟
+                  </p>
+
+                  <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#475569]">
+                        مهلت لغو مجاز تعیین‌شده توسط کارفرما:
+                      </span>
+                      <span className="font-extrabold text-[#061138]">
+                        تا {toPersianDigits(deadlineHours)} ساعت قبل از نوبت
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[#475569]">
+                        بیعانه پرداخت‌شده شما:
+                      </span>
+                      <span className="font-extrabold text-[#061138] tabular-nums">
+                        {formatPriceToman(paidDeposit)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-[#CBD5E1]">
+                      <span className="font-extrabold text-[#059669]">
+                        مبلغ بازگشتی به کیف پول شما:
+                      </span>
+                      <span className="text-sm font-black text-[#059669] tabular-nums">
+                        {formatPriceToman(calculatedRefund)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* سوییچ تست حالت لغو در مهلت مجاز یا لغو دیرهنگام */}
+                  <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-2">
+                    <span className="font-extrabold text-[#061138] block">
+                      شبیه‌سازی زمان لغو نسبت به نوبت:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSimulateLateCancel(false)}
+                        className={`p-2.5 rounded-xl border font-bold text-right transition-all ${
+                          !simulateLateCancel
+                            ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                            : 'bg-white text-[#061138] border-[#CBD5E1]'
+                        }`}
+                      >
+                        ✅ لغو در مهلت مجاز (بیش از {toPersianDigits(deadlineHours)} ساعت مانده · بازگشت ۱۰۰٪)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSimulateLateCancel(true)}
+                        className={`p-2.5 rounded-xl border font-bold text-right transition-all ${
+                          simulateLateCancel
+                            ? 'bg-[#F59E0B] text-white border-[#F59E0B]'
+                            : 'bg-white text-[#061138] border-[#CBD5E1]'
+                        }`}
+                      >
+                        ⏰ لغو دیرهنگام (کمتر از {toPersianDigits(deadlineHours)} ساعت · کسر {toPersianDigits(penaltyPercent)}٪ جریمه)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setCancelTarget(null)}
+                    >
+                      انصراف
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => {
+                        updateAppointmentStatus(
+                          cancelTarget.id,
+                          AppointmentStatus.Cancelled,
+                          'CUSTOMER',
+                          calculatedRefund
+                        );
+                        setCancelRefundNotice(
+                          `نوبت شما لغو شد و مبلغ ${formatPriceToman(calculatedRefund)} بابت استرداد بیعانه به کیف پول شما واریز گردید.`
+                        );
+                        setCancelTarget(null);
+                      }}
+                    >
+                      تایید لغو نوبت و واریز به کیف پول
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()
+          : null}
+      </Modal>
     </div>
   );
 };

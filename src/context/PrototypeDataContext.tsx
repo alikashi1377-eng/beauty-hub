@@ -33,6 +33,7 @@ import {
   BusinessType,
   CategoryItem,
   CustomerRecord,
+  CustomerWalletTransactionItem,
   DailyIncomeLogItem,
   GalleryItem,
   MarketingCampaignItem,
@@ -54,6 +55,7 @@ import {
 import { getBeautyPhotoUrl } from '../components/ui/VisualMediaIllustration';
 import {
   computeSelectedServicesSummary,
+  formatPriceToman,
   getUpcomingJalaliDays,
   toPersianDigits,
 } from '../utils/formatters';
@@ -194,7 +196,27 @@ interface PrototypeDataContextValue {
   addSpecialist: (item: Omit<SpecialistItem, 'id'>) => void;
   updateSpecialist: (id: string, patch: Partial<SpecialistItem>) => void;
   appointments: AppointmentItem[];
-  updateAppointmentStatus: (id: string, status: AppointmentStatus) => void;
+  updateAppointmentStatus: (
+    id: string,
+    status: AppointmentStatus,
+    cancelledByRole?: 'CUSTOMER' | 'BUSINESS_OWNER',
+    customRefundAmountToman?: number
+  ) => void;
+  customerWalletBalanceToman: number;
+  customerWalletTransactions: CustomerWalletTransactionItem[];
+  topUpCustomerWallet: (
+    amountToman: number,
+    trackingCode?: string
+  ) => CustomerWalletTransactionItem;
+  payFromCustomerWallet: (
+    amountToman: number,
+    title: string,
+    description: string
+  ) => { ok: boolean; trackingCode: string };
+  requestCustomerWalletWithdrawal: (
+    amountToman: number,
+    bankCardOrSheba: string
+  ) => CustomerWalletTransactionItem | null;
   settleAppointmentInPerson: (
     appointmentId: string,
     customAmountToman?: number
@@ -314,8 +336,16 @@ interface PrototypeDataContextValue {
   submitBusinessOnboarding: () => Promise<boolean>;
   bookingDraft: BookingDraft;
   updateBookingDraft: (patch: Partial<BookingDraft>) => void;
-  completeSimulatedBooking: () => AppointmentItem;
-  submitBooking: () => Promise<AppointmentItem>;
+  completeSimulatedBooking: (paymentMeta?: {
+    depositPaidToman: number;
+    paymentMethod: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode: string;
+  }) => AppointmentItem;
+  submitBooking: (paymentMeta?: {
+    depositPaidToman: number;
+    paymentMethod: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode: string;
+  }) => Promise<AppointmentItem>;
   toast: ToastNotice | null;
   showToast: (
     message: string,
@@ -326,20 +356,19 @@ interface PrototypeDataContextValue {
 
 const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   businessType: BusinessType.WomenSalon,
-  businessName: 'سالن زیبایی ارکیده نقره‌ای',
+  businessName: '',
   categorySlug: 'hair-color',
-  slug: 'orkideh-salon',
-  ownerName: 'مریم فرهادی',
-  phone: '09131234567',
-  instagramHandle: '@orkideh.beauty',
-  avatarUrl: getBeautyPhotoUrl('سالن زیبایی ارکیده نقره‌ای', 'مو و رنگ'),
+  slug: '',
+  ownerName: '',
+  phone: '',
+  instagramHandle: '',
+  avatarUrl: '',
   city: 'اصفهان',
   neighborhood: 'چهارباغ بالا',
-  address: 'اصفهان، چهارباغ بالا، روبه‌روی مجتمع پارک، ساختمان ارکیده، طبقه دوم',
+  address: 'اصفهان، چهارباغ بالا',
   mapLat: 32.6288,
   mapLng: 51.6621,
-  shortDescription:
-    'مرکز تخصصی رنگ و مش، احیای مو و طراحی ناخن با کادر مجرب و نوبت‌دهی آنلاین در اصفهان.',
+  shortDescription: '',
   services: [],
   staff: [],
   workingHours: [
@@ -357,10 +386,10 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
 };
 
 const INITIAL_BOOKING_DRAFT: BookingDraft = {
-  businessSlug: 'royal-golzar',
-  serviceId: 'srv-101',
-  serviceIds: ['srv-101'],
-  specialistId: 'spc-1',
+  businessSlug: '',
+  serviceId: '',
+  serviceIds: [],
+  specialistId: '',
   dateJalali: '۱۴۰۵/۰۸/۰۵',
   timeSlot: '۱۱:۰۰',
   customerName: '',
@@ -800,8 +829,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return [];
   });
-  const [specialists, setSpecialists] =
-    useState<SpecialistItem[]>(SAMPLE_SPECIALISTS);
+  const [specialists, setSpecialists] = useState<SpecialistItem[]>(() => {
+    try {
+      const saved = window.localStorage.getItem('timeto_local_specialists_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            (sp: SpecialistItem) =>
+              sp &&
+              sp.id &&
+              !/^spc-[1-8]$/.test(sp.id) &&
+              sp.fullName?.trim() !== 'مریم فرهادی'
+          );
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return SAMPLE_SPECIALISTS;
+  });
   const mergeSavedAppointments = (
     incoming: AppointmentItem[]
   ): AppointmentItem[] => {
@@ -815,15 +862,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         /^biz-[1-8]$/.test(item.businessId) ||
         /^apt-100[1-9]$/.test(item.id) ||
         item.businessSlug === 'royal-golzar';
+      const fixSpecialistName = (item: AppointmentItem): AppointmentItem => {
+        if (
+          item.specialistName === 'مریم فرهادی' ||
+          item.specialistId === 'spc-1'
+        ) {
+          const matchedBiz = businesses.find(
+            (b) =>
+              b.id === item.businessId ||
+              b.slug === item.businessSlug ||
+              b.name === item.businessName
+          );
+          const cleanOwner =
+            matchedBiz?.ownerName &&
+            matchedBiz.ownerName.trim() !== 'مریم فرهادی'
+              ? matchedBiz.ownerName.trim()
+              : matchedBiz?.name || item.businessName || 'متخصص مرکز';
+          return {
+            ...item,
+            specialistName: cleanOwner,
+          };
+        }
+        return item;
+      };
       for (const item of incoming) {
         if (!isSampleApt(item)) {
-          map.set(item.id, item);
+          map.set(item.id, fixSpecialistName(item));
         }
       }
       for (const item of savedList) {
         if (!isSampleApt(item)) {
           const existing = map.get(item.id);
-          map.set(item.id, existing ? { ...item, ...existing } : item);
+          const merged = existing ? { ...item, ...existing } : item;
+          map.set(item.id, fixSpecialistName(merged));
         }
       }
       return Array.from(map.values());
@@ -1407,12 +1478,34 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         });
         setSpecialists(() => {
           const map = new Map<string, SpecialistItem>();
+          try {
+            const localSpcRaw = window.localStorage.getItem(
+              'timeto_local_specialists_v1'
+            );
+            const localSpcs: SpecialistItem[] = localSpcRaw
+              ? JSON.parse(localSpcRaw)
+              : [];
+            for (const sp of localSpcs) {
+              if (
+                sp &&
+                sp.id &&
+                !/^biz-[1-8]$/.test(sp.businessId) &&
+                !/^spc-[1-8]$/.test(sp.id) &&
+                sp.fullName?.trim() !== 'مریم فرهادی'
+              ) {
+                map.set(sp.id, sp);
+              }
+            }
+          } catch {
+            // ignore
+          }
           for (const sp of response.data!.specialists) {
             if (
               sp &&
               sp.id &&
               !/^biz-[1-8]$/.test(sp.businessId) &&
-              !/^spc-[1-8]$/.test(sp.id)
+              !/^spc-[1-8]$/.test(sp.id) &&
+              sp.fullName?.trim() !== 'مریم فرهادی'
             ) {
               map.set(sp.id, sp);
             }
@@ -3304,30 +3397,49 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
   };
 
+  const persistLocalSpecialists = (list: SpecialistItem[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_local_specialists_v1',
+        JSON.stringify(list)
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const addSpecialist = (item: Omit<SpecialistItem, 'id'>) => {
+    const fallbackItem: SpecialistItem = {
+      ...item,
+      id: makeUniqueId('spc'),
+    };
     if (dataMode === 'real') {
       void realApiClient
         .createSpecialist(item)
         .then((res) => {
-          setSpecialists((prev) => [res.item, ...prev]);
+          setSpecialists((prev) => {
+            const next = [res.item, ...prev];
+            persistLocalSpecialists(next);
+            return next;
+          });
           showToast(`متخصص «${res.item.fullName}» در پایگاه داده ثبت شد.`);
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در ثبت متخصص در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          setSpecialists((prev) => {
+            const next = [fallbackItem, ...prev];
+            persistLocalSpecialists(next);
+            return next;
+          });
+          showToast(`متخصص «${item.fullName}» به تیم اضافه شد.`);
         });
       return;
     }
 
-    const newItem: SpecialistItem = {
-      ...item,
-      id: makeUniqueId('spc'),
-    };
-    setSpecialists((prev) => [newItem, ...prev]);
+    setSpecialists((prev) => {
+      const next = [fallbackItem, ...prev];
+      persistLocalSpecialists(next);
+      return next;
+    });
     showToast(`متخصص «${item.fullName}» به تیم اضافه شد.`);
   };
 
@@ -3336,42 +3448,290 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       void realApiClient
         .updateSpecialist(id, patch)
         .then((res) => {
-          setSpecialists((prev) =>
-            prev.map((sp) => (sp.id === id ? res.item : sp))
-          );
+          setSpecialists((prev) => {
+            const next = prev.map((sp) => (sp.id === id ? res.item : sp));
+            persistLocalSpecialists(next);
+            return next;
+          });
           showToast('اطلاعات متخصص در پایگاه داده بروزرسانی شد.');
         })
-        .catch((err: unknown) => {
-          showToast(
-            err instanceof Error
-              ? err.message
-              : 'خطا در بروزرسانی متخصص در دیتابیس',
-            'danger'
-          );
+        .catch(() => {
+          setSpecialists((prev) => {
+            const next = prev.map((sp) =>
+              sp.id === id ? { ...sp, ...patch } : sp
+            );
+            persistLocalSpecialists(next);
+            return next;
+          });
+          showToast('اطلاعات متخصص بروزرسانی شد.');
         });
       return;
     }
 
-    setSpecialists((prev) =>
-      prev.map((sp) => (sp.id === id ? { ...sp, ...patch } : sp))
-    );
+    setSpecialists((prev) => {
+      const next = prev.map((sp) => (sp.id === id ? { ...sp, ...patch } : sp));
+      persistLocalSpecialists(next);
+      return next;
+    });
     showToast('اطلاعات متخصص بروزرسانی شد.');
   };
 
-  const updateAppointmentStatus = (id: string, status: AppointmentStatus) => {
+  // کیف پول مشتریان (شارژ، پرداخت رزرو، بازگشت خودکار بیعانه لغو نوبت و برداشت به کارت/شبا)
+  const [allCustomerWalletTxs, setAllCustomerWalletTxs] = useState<
+    CustomerWalletTransactionItem[]
+  >(() => {
+    try {
+      const raw = window.localStorage.getItem('timeto_customer_wallet_txs_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  const persistCustomerWalletTxs = (next: CustomerWalletTransactionItem[]) => {
+    try {
+      window.localStorage.setItem(
+        'timeto_customer_wallet_txs_v1',
+        JSON.stringify(next)
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const activeCustomerPhone =
+    (authUser?.phone || bookingDraft.customerPhone || 'guest')
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/\D/g, '') || 'guest';
+
+  const customerWalletTransactions = React.useMemo(() => {
+    return allCustomerWalletTxs.filter(
+      (tx) =>
+        tx.customerPhone === activeCustomerPhone ||
+        (authUser?.fullName && tx.customerName === authUser.fullName)
+    );
+  }, [allCustomerWalletTxs, activeCustomerPhone, authUser?.fullName]);
+
+  const customerWalletBalanceToman = React.useMemo(() => {
+    let bal = 0;
+    for (const tx of customerWalletTransactions) {
+      if (tx.type === 'TOPUP' || tx.type === 'REFUND_CANCEL') {
+        bal += tx.amountToman;
+      } else if (
+        tx.type === 'BOOKING_PAYMENT' ||
+        tx.type === 'WITHDRAWAL_REQUEST'
+      ) {
+        bal -= tx.amountToman;
+      }
+    }
+    return Math.max(0, bal);
+  }, [customerWalletTransactions]);
+
+  const topUpCustomerWallet = (
+    amountToman: number,
+    trackingCode?: string
+  ): CustomerWalletTransactionItem => {
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const tx: CustomerWalletTransactionItem = {
+      id: makeUniqueId('cwtx'),
+      customerPhone: activeCustomerPhone,
+      customerName:
+        authUser?.fullName || bookingDraft.customerName || 'کاربر تایم تو',
+      type: 'TOPUP',
+      amountToman: Math.max(0, Math.round(amountToman)),
+      title: 'شارژ کیف پول از درگاه شاپرک',
+      description: `افزایش موجودی کیف پول از طریق درگاه بانکی`,
+      trackingCode:
+        trackingCode ||
+        `ZP-${Math.floor(10000000 + Math.random() * 90000000)}`,
+      createdAtJalali: todayJalali,
+      createdAtMs: Date.now(),
+    };
+    setAllCustomerWalletTxs((prev) => {
+      const next = [tx, ...prev];
+      persistCustomerWalletTxs(next);
+      return next;
+    });
+    showToast(
+      `کیف پول شما به مبلغ ${formatPriceToman(amountToman)} با موفقیت شارژ شد ✓`
+    );
+    return tx;
+  };
+
+  const payFromCustomerWallet = (
+    amountToman: number,
+    title: string,
+    description: string
+  ): { ok: boolean; trackingCode: string } => {
+    const cleanAmt = Math.max(0, Math.round(amountToman));
+    if (customerWalletBalanceToman < cleanAmt) {
+      showToast(
+        'موجودی کیف پول شما برای این پرداخت کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.',
+        'warning'
+      );
+      return { ok: false, trackingCode: '' };
+    }
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const code = `WL-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const tx: CustomerWalletTransactionItem = {
+      id: makeUniqueId('cwtx'),
+      customerPhone: activeCustomerPhone,
+      customerName:
+        authUser?.fullName || bookingDraft.customerName || 'کاربر تایم تو',
+      type: 'BOOKING_PAYMENT',
+      amountToman: cleanAmt,
+      title,
+      description,
+      trackingCode: code,
+      createdAtJalali: todayJalali,
+      createdAtMs: Date.now(),
+    };
+    setAllCustomerWalletTxs((prev) => {
+      const next = [tx, ...prev];
+      persistCustomerWalletTxs(next);
+      return next;
+    });
+    return { ok: true, trackingCode: code };
+  };
+
+  const requestCustomerWalletWithdrawal = (
+    amountToman: number,
+    bankCardOrSheba: string
+  ): CustomerWalletTransactionItem | null => {
+    const cleanAmt = Math.max(0, Math.round(amountToman));
+    if (cleanAmt <= 0 || cleanAmt > customerWalletBalanceToman) {
+      showToast('مبلغ درخواستی معتبر نیست یا بیش از موجودی کیف پول است.', 'warning');
+      return null;
+    }
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const tx: CustomerWalletTransactionItem = {
+      id: makeUniqueId('cwtx'),
+      customerPhone: activeCustomerPhone,
+      customerName:
+        authUser?.fullName || bookingDraft.customerName || 'کاربر تایم تو',
+      type: 'WITHDRAWAL_REQUEST',
+      amountToman: cleanAmt,
+      title: 'درخواست تسویه و واریز به کارت / شبا',
+      description: `واریز به حساب مقصد: ${bankCardOrSheba}`,
+      trackingCode: `WD-${Math.floor(10000000 + Math.random() * 90000000)}`,
+      bankCardOrSheba,
+      withdrawalStatus: 'PENDING',
+      createdAtJalali: todayJalali,
+      createdAtMs: Date.now(),
+    };
+    setAllCustomerWalletTxs((prev) => {
+      const next = [tx, ...prev];
+      persistCustomerWalletTxs(next);
+      return next;
+    });
+    showToast(
+      `درخواست برداشت ${formatPriceToman(cleanAmt)} به حساب بانکی شما ثبت شد و در سیکل پایا واریز می‌گردد ✓`
+    );
+    return tx;
+  };
+
+  const updateAppointmentStatus = (
+    id: string,
+    status: AppointmentStatus,
+    cancelledByRole?: 'CUSTOMER' | 'BUSINESS_OWNER',
+    customRefundAmountToman?: number
+  ) => {
     const targetApt = appointments.find((a) => a.id === id);
 
+    // محاسبه مبلغ بازگشت بیعانه به کیف پول مشتری در صورت لغو نوبت
+    let refundedAmount = 0;
+    if (
+      status === AppointmentStatus.Cancelled &&
+      targetApt &&
+      targetApt.status !== AppointmentStatus.Cancelled &&
+      !targetApt.refundedToWalletToman
+    ) {
+      const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
+      const depositPct =
+        targetBiz?.depositPercent && targetBiz.depositPercent > 0
+          ? targetBiz.depositPercent
+          : 30;
+      const baseDepositPaid =
+        targetApt.depositPaidToman && targetApt.depositPaidToman > 0
+          ? targetApt.depositPaidToman
+          : Math.round((targetApt.priceToman || 300000) * (depositPct / 100));
+
+      if (typeof customRefundAmountToman === 'number') {
+        refundedAmount = Math.max(0, Math.round(customRefundAmountToman));
+      } else if (cancelledByRole === 'BUSINESS_OWNER') {
+        // اگر خودِ صاحب کسب‌وکار نوبت را لغو کند، ۱۰۰٪ بیعانه بدون هیچ کسری به کیف پول مشتری برمی‌گردد
+        refundedAmount = baseDepositPaid;
+      } else {
+        refundedAmount = baseDepositPaid;
+      }
+
+      if (refundedAmount > 0) {
+        const rawAptPhone = (
+          targetApt.customerPhoneMasked ||
+          authUser?.phone ||
+          'guest'
+        )
+          .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+          .replace(/\D/g, '');
+        const resolvedPhone =
+          rawAptPhone.length === 11 ? rawAptPhone : activeCustomerPhone;
+        const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+        const refundTx: CustomerWalletTransactionItem = {
+          id: makeUniqueId('cwtx'),
+          customerPhone: resolvedPhone,
+          customerName:
+            targetApt.customerName || authUser?.fullName || 'کاربر تایم تو',
+          type: 'REFUND_CANCEL',
+          amountToman: refundedAmount,
+          title: `بازگشت بیعانه لغو نوبت (${targetApt.businessName})`,
+          description: `استرداد آنی بیعانه خدمت «${targetApt.serviceTitle}» کد پیگیری ${targetApt.referenceCode}`,
+          trackingCode: `RF-${Math.floor(10000000 + Math.random() * 90000000)}`,
+          createdAtJalali: todayJalali,
+          createdAtMs: Date.now(),
+        };
+        setAllCustomerWalletTxs((prev) => {
+          const next = [refundTx, ...prev];
+          persistCustomerWalletTxs(next);
+          return next;
+        });
+
+        // کسر مبلغ بیعانه برگشتی از کیف پول سالن
+        if (targetBiz && (targetBiz.walletBalanceToman ?? 0) > 0) {
+          updateBusinessProfile(targetBiz.id, {
+            walletBalanceToman: Math.max(
+              0,
+              (targetBiz.walletBalanceToman ?? 0) - refundedAmount
+            ),
+          });
+        }
+      }
+    }
+
     setAppointments((prev) => {
-      const next = prev.map((a) => (a.id === id ? { ...a, status } : a));
+      const next = prev.map((a) =>
+        a.id === id
+          ? {
+              ...a,
+              status,
+              refundedToWalletToman:
+                refundedAmount > 0 ? refundedAmount : a.refundedToWalletToman,
+            }
+          : a
+      );
       persistSavedAppointments(next);
       return next;
     });
 
-    // در صورت تایید نوبت آنلاین، اگر بیعانه آنلاین روی سالن فعال باشد، مبلغ بیعانه به صورت خودکار به کیف پول سالن اضافه می‌شود
+    // در صورت تایید نوبت آنلاین، اگر قبلاً در لحظه پرداخت اضافه نشده بود
     if (
       status === AppointmentStatus.Confirmed &&
       targetApt &&
-      targetApt.status !== AppointmentStatus.Confirmed
+      targetApt.status !== AppointmentStatus.Confirmed &&
+      !targetApt.depositPaidToman
     ) {
       const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
       if (targetBiz) {
@@ -3379,9 +3739,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           targetBiz.depositPercent && targetBiz.depositPercent > 0
             ? targetBiz.depositPercent
             : 30;
-        const depositAmount = targetBiz.depositEnabled
-          ? Math.round((targetApt.priceToman || 300000) * (depositPct / 100))
-          : Math.round((targetApt.priceToman || 300000) * 0.3);
+        const depositAmount = Math.round(
+          (targetApt.priceToman || 300000) * (depositPct / 100)
+        );
         updateBusinessProfile(targetBiz.id, {
           walletBalanceToman:
             (targetBiz.walletBalanceToman ?? 0) + depositAmount,
@@ -3394,15 +3754,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .updateAppointmentStatus(id, status)
         .then(() => {
           showToast(
-            status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد، بیعانه در کیف پول سالن منظور گردید و پیامک تایید برای مشتری ارسال شد.'
+            status === AppointmentStatus.Cancelled && refundedAmount > 0
+              ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+              : status === AppointmentStatus.Confirmed
+              ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید.'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         })
         .catch(() => {
           showToast(
-            status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد و بیعانه در کیف پول سالن ثبت گردید.'
+            status === AppointmentStatus.Cancelled && refundedAmount > 0
+              ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+              : status === AppointmentStatus.Confirmed
+              ? 'نوبت با موفقیت تایید شد.'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         });
@@ -3410,8 +3774,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     showToast(
-      status === AppointmentStatus.Confirmed
-        ? 'نوبت با موفقیت تایید شد و مبلغ بیعانه به کیف پول سالن شما اضافه گردید.'
+      status === AppointmentStatus.Cancelled && refundedAmount > 0
+        ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+        : status === AppointmentStatus.Confirmed
+        ? 'نوبت با موفقیت تایید شد.'
         : 'وضعیت نوبت بروزرسانی شد.'
     );
   };
@@ -5105,7 +5471,72 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     setBookingDraft((prev) => ({ ...prev, ...patch }));
   };
 
-  const completeSimulatedBooking = (): AppointmentItem => {
+  const mergedSpecialists: SpecialistItem[] = React.useMemo(() => {
+    const map = new Map<string, SpecialistItem>();
+    for (const sp of specialists) {
+      if (
+        sp &&
+        sp.id &&
+        !/^spc-[1-8]$/.test(sp.id) &&
+        sp.fullName?.trim() !== 'مریم فرهادی'
+      ) {
+        map.set(sp.id, sp);
+      }
+    }
+    for (const biz of businesses) {
+      if (biz.approvalStatus === 'REJECTED' || biz.isSampleShowcase) {
+        continue;
+      }
+      const alreadyHasSpecialist = Array.from(map.values()).some(
+        (sp) => sp.businessId === biz.id || sp.slug === biz.slug
+      );
+      if (!alreadyHasSpecialist) {
+        const synthSpecId = `spec-ind-${biz.id}`;
+        const roleLbl =
+          biz.type === BusinessType.IndependentSpecialist
+            ? biz.typeLabel || 'متخصص مستقل زیبایی'
+            : biz.typeLabel || 'متخصص و مدیر مرکز';
+        const cleanOwner =
+          biz.ownerName &&
+          biz.ownerName.trim() &&
+          biz.ownerName.trim() !== 'مریم فرهادی'
+            ? biz.ownerName.trim()
+            : biz.name || 'متخصص زیبایی';
+        map.set(synthSpecId, {
+          id: synthSpecId,
+          businessId: biz.id,
+          slug: biz.slug,
+          fullName:
+            biz.type === BusinessType.IndependentSpecialist
+              ? biz.name || cleanOwner
+              : cleanOwner,
+          roleTitle: roleLbl,
+          experienceYears: 5,
+          rating: biz.rating || 5.0,
+          reviewCount: biz.reviewCount || 0,
+          city: biz.city || 'اصفهان',
+          specialties: [
+            roleLbl,
+            biz.neighborhood ? `محدوده ${biz.neighborhood}` : 'اصفهان',
+          ],
+          bio:
+            biz.shortDescription ||
+            biz.aboutText ||
+            `ارائه خدمات تخصصی ${roleLbl} با تعیین وقت آنلاین در ${biz.city || 'اصفهان'}`,
+          isActive: true,
+          isIndependent: biz.type === BusinessType.IndependentSpecialist,
+          avatarUrl: biz.avatarUrl,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [specialists, businesses]);
+
+  const completeSimulatedBooking = (paymentMeta?: {
+    depositPaidToman: number;
+    paymentMethod: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode: string;
+  }): AppointmentItem => {
     const biz =
       businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
       businesses[0];
@@ -5126,9 +5557,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       bookingDraft.serviceId
     );
     const primarySrv = summary.selectedServices[0] ?? services[0];
+    const bizSpecs = biz
+      ? mergedSpecialists.filter((sp) => sp.businessId === biz.id)
+      : mergedSpecialists;
     const spc =
-      specialists.find((sp) => sp.id === bookingDraft.specialistId) ??
-      specialists[0];
+      bizSpecs.find((sp) => sp.id === bookingDraft.specialistId) ??
+      mergedSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+      bizSpecs[0];
+    const resolvedSpecialistName =
+      spc?.fullName && spc.fullName.trim() !== 'مریم فرهادی'
+        ? spc.fullName.trim()
+        : biz?.ownerName && biz.ownerName.trim() !== 'مریم فرهادی'
+          ? biz.ownerName.trim()
+          : biz?.name || 'متخصص مرکز';
     const refCode = `TM-${Math.floor(404000 + Math.random() * 9000)}`;
 
     const optimisticApt: AppointmentItem = {
@@ -5143,11 +5584,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       serviceId: primarySrv?.id ?? bookingDraft.serviceId,
       serviceTitle: summary.combinedTitle,
       specialistId: spc?.id ?? bookingDraft.specialistId,
-      specialistName: spc?.fullName ?? 'متخصص سالن',
+      specialistName: resolvedSpecialistName,
       dateJalali: bookingDraft.dateJalali,
       timeSlot: bookingDraft.timeSlot,
       durationMinutes: summary.totalDurationMinutes,
       priceToman: summary.totalPriceToman || 450000,
+      depositPaidToman: paymentMeta?.depositPaidToman,
+      paymentMethod: paymentMeta?.paymentMethod,
+      paymentTrackingCode: paymentMeta?.paymentTrackingCode,
+      createdAtMs: Date.now(),
       status: AppointmentStatus.Pending,
       notes: bookingDraft.customerNotes || undefined,
     };
@@ -5157,7 +5602,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .createAppointment({
           businessSlug: bookingDraft.businessSlug,
           serviceId: bookingDraft.serviceId,
-          specialistId: bookingDraft.specialistId,
+          specialistId: spc?.id ?? bookingDraft.specialistId,
           dateJalali: bookingDraft.dateJalali,
           timeSlot: bookingDraft.timeSlot,
           customerName: bookingDraft.customerName,
@@ -5167,6 +5612,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .then((res) => {
           const pendingItem: AppointmentItem = {
             ...res.item,
+            specialistName:
+              res.item.specialistName &&
+              res.item.specialistName.trim() !== 'مریم فرهادی'
+                ? res.item.specialistName
+                : resolvedSpecialistName,
+            depositPaidToman: paymentMeta?.depositPaidToman,
+            paymentMethod: paymentMeta?.paymentMethod,
+            paymentTrackingCode: paymentMeta?.paymentTrackingCode,
+            createdAtMs: Date.now(),
             status: AppointmentStatus.Pending,
           };
           setAppointments((prev) => {
@@ -5179,7 +5633,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             lastReferenceCode: res.item.referenceCode,
           }));
           showToast(
-            'نوبت شما ثبت شد و پیامک اطلاع‌رسانی فوری برای تایید به مدیر سالن ارسال گردید.'
+            'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای مدیر سالن ارسال شد ✓'
           );
         })
         .catch(() => {
@@ -5189,7 +5643,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             return next;
           });
           showToast(
-            'نوبت شما ثبت شد و در پنل سالن جهت تایید قرار گرفت.'
+            'پرداخت بیعانه تایید شد و نوبت شما در پنل سالن ثبت گردید ✓'
           );
         });
       return optimisticApt;
@@ -5201,11 +5655,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
     setBookingDraft((prev) => ({ ...prev, lastReferenceCode: refCode }));
-    showToast('نوبت شما ثبت شد و برای تایید فوری به پنل صاحب سالن ارسال گردید.');
+    showToast('پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓');
     return optimisticApt;
   };
 
-  const submitBooking = async (): Promise<AppointmentItem> => {
+  const submitBooking = async (paymentMeta?: {
+    depositPaidToman: number;
+    paymentMethod: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode: string;
+  }): Promise<AppointmentItem> => {
     const biz = businesses.find((b) => b.slug === bookingDraft.businessSlug);
     if (biz?.isSampleShowcase || /^biz-[1-8]$/.test(biz?.id || '')) {
       const msg =
@@ -5214,12 +5672,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       throw new Error(msg);
     }
 
+    const bizSpecs = biz
+      ? mergedSpecialists.filter((sp) => sp.businessId === biz.id)
+      : mergedSpecialists;
+    const spc =
+      bizSpecs.find((sp) => sp.id === bookingDraft.specialistId) ??
+      mergedSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+      bizSpecs[0];
+    const resolvedSpecialistName =
+      spc?.fullName && spc.fullName.trim() !== 'مریم فرهادی'
+        ? spc.fullName.trim()
+        : biz?.ownerName && biz.ownerName.trim() !== 'مریم فرهادی'
+          ? biz.ownerName.trim()
+          : biz?.name || 'متخصص مرکز';
+
     if (dataMode === 'real') {
       try {
         const res = await realApiClient.createAppointment({
           businessSlug: bookingDraft.businessSlug,
           serviceId: bookingDraft.serviceId,
-          specialistId: bookingDraft.specialistId,
+          specialistId: spc?.id ?? bookingDraft.specialistId,
           dateJalali: bookingDraft.dateJalali,
           timeSlot: bookingDraft.timeSlot,
           customerName: bookingDraft.customerName,
@@ -5228,6 +5700,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         });
         const pendingItem: AppointmentItem = {
           ...res.item,
+          specialistName:
+            res.item.specialistName &&
+            res.item.specialistName.trim() !== 'مریم فرهادی'
+              ? res.item.specialistName
+              : resolvedSpecialistName,
+          depositPaidToman: paymentMeta?.depositPaidToman,
+          paymentMethod: paymentMeta?.paymentMethod,
+          paymentTrackingCode: paymentMeta?.paymentTrackingCode,
+          createdAtMs: Date.now(),
           status: AppointmentStatus.Pending,
         };
         setAppointments((prev) => {
@@ -5240,16 +5721,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           lastReferenceCode: res.item.referenceCode,
         }));
         showToast(
-          'نوبت شما ثبت شد و پیامک اطلاع‌رسانی فوری برای تایید به مدیر سالن ارسال گردید.'
+          'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای تایید به مدیر سالن ارسال شد ✓'
         );
         return pendingItem;
       } catch {
         // اگر سالن تازه ثبت شده و در حافظه محلی است، نوبت به صورت محلی ثبت و برای سالن‌دار ارسال شود
-        return completeSimulatedBooking();
+        return completeSimulatedBooking(paymentMeta);
       }
     }
 
-    return completeSimulatedBooking();
+    return completeSimulatedBooking(paymentMeta);
   };
 
   const adminUsers: AdminUserRecord[] = React.useMemo(() => {
@@ -5670,51 +6151,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       showToast('حساب کاربری انتخاب‌شده از فهرست کاربران حذف شد.', 'info');
     };
 
-    const mergedSpecialists: SpecialistItem[] = React.useMemo(() => {
-      const map = new Map<string, SpecialistItem>();
-      for (const sp of specialists) {
-        map.set(sp.id, sp);
-      }
-      for (const biz of businesses) {
-        if (
-          biz.approvalStatus === 'REJECTED' ||
-          biz.type !== BusinessType.IndependentSpecialist
-        ) {
-          continue;
-        }
-        const alreadyHasSpecialist = Array.from(map.values()).some(
-          (sp) => sp.businessId === biz.id || sp.slug === biz.slug
-        );
-        if (!alreadyHasSpecialist) {
-          const synthSpecId = `spec-ind-${biz.id}`;
-          const roleLbl = biz.typeLabel || 'متخصص مستقل زیبایی';
-          map.set(synthSpecId, {
-            id: synthSpecId,
-            businessId: biz.id,
-            slug: biz.slug,
-            fullName: biz.name || biz.ownerName || 'متخصص زیبایی',
-            roleTitle: roleLbl,
-            experienceYears: 5,
-            rating: biz.rating || 5.0,
-            reviewCount: biz.reviewCount || 0,
-            city: biz.city || 'اصفهان',
-            specialties: [
-              roleLbl,
-              biz.neighborhood ? `محدوده ${biz.neighborhood}` : 'اصفهان',
-            ],
-            bio:
-              biz.shortDescription ||
-              biz.aboutText ||
-              `ارائه خدمات تخصصی ${roleLbl} با تعیین وقت آنلاین در ${biz.city || 'اصفهان'}`,
-            isActive: true,
-            isIndependent: true,
-            avatarUrl: biz.avatarUrl,
-          });
-        }
-      }
-      return Array.from(map.values());
-    }, [specialists, businesses]);
-
     const computedCategories: CategoryItem[] = React.useMemo(() => {
       return categories.map((cat) => {
         const matchingServicesCount = services.filter(
@@ -5784,6 +6220,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           updateSpecialist,
           appointments,
           updateAppointmentStatus,
+          customerWalletBalanceToman,
+          customerWalletTransactions,
+          topUpCustomerWallet,
+          payFromCustomerWallet,
+          requestCustomerWalletWithdrawal,
           settleAppointmentInPerson,
           dailyIncomeLogs,
           addDailyIncomeLog,

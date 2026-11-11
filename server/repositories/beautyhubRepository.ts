@@ -1462,6 +1462,7 @@ export async function getBootstrapPayload(
     }));
 
     const hiddenSampleBizIds = new Set([
+      'biz-1',
       'biz-2',
       'biz-3',
       'biz-4',
@@ -1471,11 +1472,14 @@ export async function getBootstrapPayload(
       'biz-8',
     ]);
     const hiddenSampleSpcIds = new Set([
+      'spc-1',
       'spc-2',
       'spc-3',
       'spc-4',
       'spc-5',
       'spc-6',
+      'spc-7',
+      'spc-8',
     ]);
 
     const businesses: BusinessItem[] = bizRes.rows
@@ -1535,7 +1539,8 @@ export async function getBootstrapPayload(
       .filter(
         (r) =>
           !hiddenSampleSpcIds.has(String(r.external_id)) &&
-          !hiddenSampleBizIds.has(String(r.business_external_id))
+          !hiddenSampleBizIds.has(String(r.business_external_id)) &&
+          String(r.full_name || '').trim() !== 'مریم فرهادی'
       )
       .map((r) => ({
         id: String(r.external_id),

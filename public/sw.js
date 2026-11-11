@@ -1,4 +1,4 @@
-const CACHE_NAME = 'timeto-pwa-v3';
+const CACHE_NAME = 'timeto-pwa-v6-live';
 const PRECACHE_ASSETS = [
   '/manifest.webmanifest',
   '/icon.svg',
@@ -24,7 +24,20 @@ self.addEventListener('activate', (event) => {
         )
       )
       .then(() => self.clients.claim())
+      .then(() =>
+        self.clients.matchAll({ type: 'window' }).then((windowClients) => {
+          windowClients.forEach((client) => {
+            client.postMessage({ type: 'TIMETO_SW_UPDATED', version: CACHE_NAME });
+          });
+        })
+      )
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -36,12 +49,37 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/src/') ||
     url.pathname.startsWith('/node_modules/') ||
-    url.pathname.startsWith('/@')
+    url.pathname.startsWith('/@') ||
+    url.pathname === '/sw.js'
   ) {
     return;
   }
 
-  // استراتژی Network-First برای تضمین دریافت آخرین نسخه در حالت آنلاین و پشتیبانی آفلاین
+  // برای صفحات HTML و فایل‌های JS/CSS همیشه ابتدا از شبکه بدون کش قدیمی (no-cache) دریافت شود تا هر آپدیت بلافاصله اعمال گردد
+  const isHtmlOrScript =
+    request.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css');
+
+  if (isHtmlOrScript) {
+    event.respondWith(
+      fetch(request, { cache: 'no-cache' })
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const cloned = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, cloned));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((cached) => cached || caches.match('/index.html'))
+        )
+    );
+    return;
+  }
+
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -51,8 +89,6 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() =>
-        caches.match(request).then((cached) => cached || caches.match('/index.html'))
-      )
+      .catch(() => caches.match(request))
   );
 });

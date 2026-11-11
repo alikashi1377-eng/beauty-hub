@@ -165,6 +165,8 @@ export interface BusinessItem {
   bankAccountHolder?: string;
   depositEnabled?: boolean;
   depositPercent?: number;
+  cancellationDeadlineHours?: number;
+  lateCancellationPenaltyPercent?: number;
   walletBalanceToman?: number;
   autoNightlySettlement?: boolean;
   ownerName?: string;
@@ -172,6 +174,21 @@ export interface BusinessItem {
   createdAtJalali?: string;
   targetGender?: 'FEMALE' | 'MALE' | 'BOTH';
   laserDeviceModel?: string;
+}
+
+export interface CustomerWalletTransactionItem {
+  id: string;
+  customerPhone: string;
+  customerName: string;
+  type: 'TOPUP' | 'BOOKING_PAYMENT' | 'REFUND_CANCEL' | 'WITHDRAWAL_REQUEST';
+  amountToman: number;
+  title: string;
+  description: string;
+  trackingCode: string;
+  bankCardOrSheba?: string;
+  withdrawalStatus?: 'PENDING' | 'PAID';
+  createdAtJalali: string;
+  createdAtMs: number;
 }
 
 export interface SmsMessageLogItem {
@@ -319,6 +336,11 @@ export interface AppointmentItem {
   timeSlot: string;
   durationMinutes: number;
   priceToman: number;
+  depositPaidToman?: number;
+  paymentMethod?: 'GATEWAY' | 'WALLET';
+  paymentTrackingCode?: string;
+  refundedToWalletToman?: number;
+  createdAtMs?: number;
   status: AppointmentStatus;
   notes?: string;
   inPersonSettled?: boolean;

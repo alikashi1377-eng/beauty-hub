@@ -221,9 +221,9 @@ export const HomePage: React.FC = () => {
           <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-[#04123B]/80 via-[#04123B]/25 to-transparent" />
         </div>
 
-        {/* محتوای اصلی راست‌چین شده: در موبایل تیتر و توضیح بالاتر و دکمه مشاهده پایین‌تر */}
+        {/* محتوای اصلی راست‌چین شده: در موبایل تیتر و توضیح در بالا و دکمه مشاهده سالن‌ها دقیقاً در پایین قاب (بالای نوار شیشه‌ای) در تمام ابعاد گوشی‌ها */}
         <div className="relative z-20 px-4 pt-6 pb-16 sm:px-10 sm:pt-16 sm:pb-6 flex flex-col justify-between flex-1 gap-4">
-          <div className="max-w-md mr-0 ml-auto text-right mt-1 sm:mt-4">
+          <div className="max-w-md w-full mr-0 ml-auto text-right mt-1 sm:mt-4 flex-1 sm:flex-initial flex flex-col justify-between sm:block">
             <div className="space-y-2">
               <h1 className="text-2xl sm:text-4xl lg:text-[42px] font-black text-white leading-[1.3] tracking-tight drop-shadow-xs">
                 <span className="block">وقت زیبایی تو،</span>
@@ -266,7 +266,7 @@ export const HomePage: React.FC = () => {
               </p>
             </div>
 
-            <div className="mt-[220px] sm:mt-6 flex flex-wrap items-center gap-2.5">
+            <div className="mt-auto pt-[220px] pb-2 sm:pt-0 sm:pb-0 sm:mt-6 flex flex-wrap items-center gap-2.5">
               <Link
                 to="/search"
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 sm:px-6 sm:py-3 rounded-full bg-gradient-to-l from-[#0077FF] via-[#0062FF] to-[#0047FF] hover:from-[#0088FF] hover:to-[#0055FF] text-white text-xs sm:text-sm font-extrabold shadow-[0_10px_24px_-6px_rgba(0,102,255,0.65)] border border-[#60A5FA]/35 transition-all active:scale-95"
