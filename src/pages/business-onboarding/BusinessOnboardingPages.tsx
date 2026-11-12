@@ -211,8 +211,14 @@ const OnboardingDraftSummarySidebar: React.FC<{ stepHint: string }> = ({
 /** ۱. ثبت‌نام اولیه کسب‌وکار (/business/register) */
 export const BusinessRegisterPage: React.FC = () => {
   const navigate = useNavigate();
-  const { onboardingDraft, updateOnboardingDraft, categories, showToast } =
-    usePrototypeData();
+  const {
+    authUser,
+    currentBusiness,
+    onboardingDraft,
+    updateOnboardingDraft,
+    categories,
+    showToast,
+  } = usePrototypeData();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [registrationMode, setRegistrationMode] = useState<'fast' | 'wizard'>(
     'fast'
@@ -250,14 +256,48 @@ export const BusinessRegisterPage: React.FC = () => {
   };
 
   if (registrationMode === 'fast') {
+    const isAlreadyBusinessOwner =
+      Boolean(authUser?.roles.includes('BUSINESS_OWNER')) ||
+      Boolean(currentBusiness && !currentBusiness.isSampleShowcase);
+
     return (
       <div className="max-w-lg mx-auto my-4 sm:my-8 space-y-4">
+        {isAlreadyBusinessOwner ? (
+          <div className="rounded-3xl border-2 border-[#0057FF] bg-[#EFF6FF] p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="space-y-1 text-center sm:text-right">
+              <p className="text-sm font-black text-[#061138]">
+                پیشخوان کسب‌وکار شما فعال است
+              </p>
+              <p className="text-xs font-semibold text-[#334155]">
+                بدون نیاز به ثبت‌نام مجدد، همین حالا وارد پنل مدیریت سالن یا پروفایل تخصصی خود شوید.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/app')}
+              className="shrink-0 w-full sm:w-auto rounded-2xl bg-[#0057FF] px-5 py-3 text-xs font-black text-white shadow-sm hover:bg-[#0046CC] cursor-pointer"
+            >
+              ورود به پیشخوان من ←
+            </button>
+          </div>
+        ) : authUser ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs font-bold text-emerald-900 leading-relaxed">
+            شما با شماره <span dir="ltr" className="font-mono font-black">{authUser.phone}</span> وارد شده‌اید؛ نیازی به ثبت‌نام مجدد شماره موبایل نیست. فقط مشخصات سالن یا تخصص خود را در فرم زیر ثبت کنید تا پیشخوان مدیریت شما بلافاصله فعال شود.
+          </div>
+        ) : null}
+
         <div className="rounded-[32px] border border-[#CBD5E1] bg-gradient-to-b from-[#EFF6FF] via-[#F8FAFC] to-white p-5 sm:p-8 shadow-[0_20px_50px_-20px_rgba(6,17,56,0.18)]">
           <TimetoUnifiedAuthCard
-            initialScreen="REGISTER_STEP_1_PHONE"
+            initialScreen={
+              authUser ? 'REGISTER_STEP_4_SALON' : 'REGISTER_STEP_1_PHONE'
+            }
             defaultRole="BUSINESS_OWNER"
             redirectTo="/app"
-            promptReason="ثبت سریع سالن در ۴ گام کوتاه (شماره · تأیید · پروفایل · سالن) و ورود مستقیم به پنل مدیریت؛ تکمیل خدمات، ساعات کاری و شماره شبا در پنل سالن با نوار پیشرفت انجام می‌شود."
+            promptReason={
+              authUser
+                ? 'تکمیل مشخصات سالن زیبایی یا پروفایل متخصص مستقل در ۱ گام و ورود مستقیم به پیشخوان مدیریت'
+                : 'ثبت یکپارچه سالن یا متخصص در ۴ گام کوتاه و ورود مستقیم به پیشخوان مدیریت کسب‌وکار'
+            }
           />
         </div>
         <div className="text-center">
@@ -704,8 +744,16 @@ export const BusinessOnboardingStepPage: React.FC = () => {
   const effectiveCategories =
     categories.length > 0 ? categories : SAMPLE_CATEGORIES;
 
+  const matchedDraftCat = effectiveCategories.find(
+    (c) => c.slug === onboardingDraft.categorySlug
+  );
+  const initialSrvCategory =
+    onboardingDraft.businessType === BusinessType.MenBarbershop
+      ? 'پیرایش و استایل مردانه'
+      : matchedDraftCat?.title || 'مو و رنگ';
+
   const [srvTitle, setSrvTitle] = useState('');
-  const [srvCategory, setSrvCategory] = useState('مو و رنگ');
+  const [srvCategory, setSrvCategory] = useState(initialSrvCategory);
   const [srvDuration, setSrvDuration] = useState('60');
   const [srvPrice, setSrvPrice] = useState('550000');
   const [srvError, setSrvError] = useState('');

@@ -205,7 +205,7 @@ export async function buildMergedRegisteredUsersList(
                 city: String(item.city || 'اصفهان'),
                 businessId: item.businessId ? String(item.businessId) : undefined,
                 businessName: item.businessName ? String(item.businessName) : undefined,
-                joinedJalali: String(item.joinedJalali || 'امروز'),
+                joinedJalali: String(item.joinedJalali || ''),
               };
             }
           }
@@ -246,21 +246,22 @@ export async function buildMergedRegisteredUsersList(
         u.phone,
         COALESCE(u.default_city, 'اصفهان') AS city,
         u.is_active,
-        to_char(u.created_at, 'YYYY/MM/DD') AS created_date,
+        u.created_at,
         EXISTS (
           SELECT 1 FROM platform_admins pa
           WHERE pa.user_id = u.id AND pa.is_active = TRUE
         ) AS is_admin,
         EXISTS (
           SELECT 1 FROM business_members bm
-          WHERE bm.user_id = u.id AND bm.is_active = TRUE
+          JOIN businesses b_bm ON b_bm.id = bm.business_id
+          WHERE bm.user_id = u.id AND bm.is_active = TRUE AND b_bm.approval_status != 'REJECTED'
         ) OR EXISTS (
           SELECT 1 FROM businesses b2
-          WHERE b2.owner_user_id = u.id
+          WHERE b2.owner_user_id = u.id AND b2.approval_status != 'REJECTED'
         ) AS is_business_member,
         (
           SELECT b3.name FROM businesses b3
-          WHERE b3.owner_user_id = u.id
+          WHERE b3.owner_user_id = u.id AND b3.approval_status != 'REJECTED'
           ORDER BY b3.created_at DESC LIMIT 1
         ) AS owned_business_name
       FROM users u
@@ -276,7 +277,6 @@ export async function buildMergedRegisteredUsersList(
       if (!/^09\d{9}$/.test(cleanPhone) || deletedPhones.has(cleanPhone)) {
         continue;
       }
-      // حذف شماره‌های آزمایشی اولیه سید دیتابیس مگر اینکه واقعاً در رجیستری ثبت‌نام کرده باشند
       if (SEED_DUMMY_PHONES.has(cleanPhone) && !registryMap[cleanPhone]) {
         continue;
       }
@@ -285,11 +285,22 @@ export async function buildMergedRegisteredUsersList(
       const reg = registryMap[cleanPhone];
       const fullPhonePersian = toPersianDigitsServer(cleanPhone);
       const isAdmin = Boolean(r.is_admin) || cleanPhone === '09138201042';
-      const isBiz =
-        Boolean(r.is_business_member) || reg?.role === 'BUSINESS_OWNER';
-      const bizTitle = r.owned_business_name
+      const rawBizTitle = r.owned_business_name
         ? String(r.owned_business_name)
         : reg?.businessName;
+      const bizTitle =
+        rawBizTitle && !isBlockedSampleOrDeletedBusinessName(rawBizTitle)
+          ? rawBizTitle
+          : undefined;
+      const isBiz =
+        Boolean(r.is_business_member) ||
+        (reg?.role === 'BUSINESS_OWNER' && Boolean(bizTitle));
+
+      const rawRoleOverride = ov?.roleLabel;
+      const safeRoleOverride =
+        rawRoleOverride && !isBlockedSampleOrDeletedBusinessName(rawRoleOverride)
+          ? rawRoleOverride
+          : undefined;
 
       byPhone.set(cleanPhone, {
         id: String(r.id),
@@ -304,7 +315,7 @@ export async function buildMergedRegisteredUsersList(
         phone: fullPhonePersian,
         phoneMasked: fullPhonePersian,
         roleLabel:
-          ov?.roleLabel ||
+          safeRoleOverride ||
           (isAdmin
             ? 'مدیر کل پلتفرم'
             : isBiz
@@ -313,9 +324,10 @@ export async function buildMergedRegisteredUsersList(
                 : 'صاحب کسب‌وکار (سالن‌دار)'
               : 'مشتری عادی'),
         city: String(ov?.city || reg?.city || r.city || 'اصفهان'),
-        joinedJalali:
-          reg?.joinedJalali ||
-          toPersianDigitsServer(String(r.created_date || '1405/08/01')),
+        joinedJalali: resolveValidJoinedJalaliServer(
+          reg?.joinedJalali,
+          r.created_at
+        ),
         isActive: r.is_active !== false,
       });
     }
@@ -332,19 +344,24 @@ export async function buildMergedRegisteredUsersList(
         b.name AS biz_name,
         b.city,
         b.phone_display,
-        to_char(b.created_at, 'YYYY/MM/DD') AS created_date,
+        b.created_at,
+        b.approval_status,
         u.phone AS owner_phone,
         u.full_name AS owner_full_name,
         bme.extra_json
       FROM businesses b
       LEFT JOIN users u ON u.id = b.owner_user_id
       LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-      WHERE b.legacy_demo_id IS NULL
-         OR b.legacy_demo_id NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+      WHERE (b.legacy_demo_id IS NULL
+         OR b.legacy_demo_id NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8'))
+        AND b.approval_status != 'REJECTED'
       ORDER BY b.created_at DESC
     `);
 
     for (const b of bizOwnersRes.rows) {
+      if (isBlockedSampleOrDeletedBusinessName(b.biz_name, undefined, b.legacy_demo_id || b.biz_id)) {
+        continue;
+      }
       const extra =
         b.extra_json && typeof b.extra_json === 'object'
           ? (b.extra_json as Record<string, unknown>)
@@ -379,11 +396,14 @@ export async function buildMergedRegisteredUsersList(
         phone: fullPhonePersian,
         phoneMasked: fullPhonePersian,
         roleLabel:
-          ov?.roleLabel || `صاحب سالن (${String(b.biz_name || 'سالن زیبایی')})`,
+          (ov?.roleLabel && !isBlockedSampleOrDeletedBusinessName(ov.roleLabel)
+            ? ov.roleLabel
+            : undefined) || `صاحب سالن (${String(b.biz_name || 'سالن زیبایی')})`,
         city: String(ov?.city || b.city || existing?.city || 'اصفهان'),
-        joinedJalali:
-          existing?.joinedJalali ||
-          toPersianDigitsServer(String(b.created_date || 'امروز')),
+        joinedJalali: resolveValidJoinedJalaliServer(
+          existing?.joinedJalali,
+          b.created_at
+        ),
         isActive: true,
       });
     }
@@ -404,11 +424,17 @@ export async function buildMergedRegisteredUsersList(
     const ov = overridesMap[cleanPhone];
     const fullPhonePersian = toPersianDigitsServer(cleanPhone);
     const isSuper = cleanPhone === '09138201042';
+    const safeBizTitle =
+      acc?.businessName && !isBlockedSampleOrDeletedBusinessName(acc.businessName)
+        ? acc.businessName
+        : undefined;
     const isBiz =
-      acc?.role === 'BUSINESS_OWNER' ||
-      Boolean(acc?.businessName) ||
-      Boolean(existing?.roleLabel?.includes('سالن'));
-    const bizTitle = acc?.businessName;
+      (acc?.role === 'BUSINESS_OWNER' && Boolean(safeBizTitle)) ||
+      Boolean(safeBizTitle) ||
+      Boolean(
+        existing?.roleLabel?.includes('سالن') &&
+          !isBlockedSampleOrDeletedBusinessName(existing.roleLabel)
+      );
 
     byPhone.set(cleanPhone, {
       id: existing?.id || `usr-reg-${cleanPhone}`,
@@ -420,18 +446,24 @@ export async function buildMergedRegisteredUsersList(
       phone: fullPhonePersian,
       phoneMasked: fullPhonePersian,
       roleLabel:
-        ov?.roleLabel ||
+        (ov?.roleLabel && !isBlockedSampleOrDeletedBusinessName(ov.roleLabel)
+          ? ov.roleLabel
+          : undefined) ||
         (isSuper
           ? 'مدیر کل پلتفرم'
           : isBiz
-            ? bizTitle
-              ? `صاحب سالن (${bizTitle})`
-              : existing?.roleLabel?.includes('سالن')
+            ? safeBizTitle
+              ? `صاحب سالن (${safeBizTitle})`
+              : existing?.roleLabel?.includes('سالن') &&
+                  !isBlockedSampleOrDeletedBusinessName(existing.roleLabel)
                 ? existing.roleLabel
                 : 'صاحب کسب‌وکار (سالن‌دار)'
             : 'مشتری عادی'),
       city: ov?.city || acc?.city || existing?.city || 'اصفهان',
-      joinedJalali: acc?.joinedJalali || existing?.joinedJalali || 'امروز',
+      joinedJalali: resolveValidJoinedJalaliServer(
+        acc?.joinedJalali || existing?.joinedJalali,
+        null
+      ),
       isActive: true,
     });
   }
@@ -448,11 +480,20 @@ async function ensureRegisteredOwnerBusinessesInDb(
 ): Promise<void> {
   try {
     await ensureExtendedMetaTables(client);
-    // ۱. هر کسب‌وکاری که در وضعیت PENDING_REVIEW مانده را به APPROVED ارتقا بده تا در نتایج عمومی نمایش داده شود
+
+    // پاکسازی قطعی سالن‌های تستی و نمونه (سالن شیر، سالن ارکیده، رویال گلزار، مریم فرهادی و biz-1..8) از دیتابیس
     await client.query(`
-      UPDATE businesses
-      SET approval_status = 'APPROVED', updated_at = NOW()
-      WHERE approval_status = 'PENDING_REVIEW'
+      DELETE FROM businesses
+      WHERE legacy_demo_id IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+         OR name ILIKE '%سالن شیر%'
+         OR name ILIKE '%سالن ارکیده%'
+         OR name ILIKE '%رویال گلزار%'
+         OR TRIM(name) IN ('شیر', 'ارکیده', 'سالن زیبایی شیر', 'سالن زیبایی ارکیده')
+    `);
+    await client.query(`
+      DELETE FROM specialists
+      WHERE legacy_demo_id IN ('spc-1','spc-2','spc-3','spc-4','spc-5','spc-6','spc-7','spc-8')
+         OR full_name ILIKE '%مریم فرهادی%'
     `);
 
     const kvRes = await client.query(`
@@ -461,13 +502,15 @@ async function ensureRegisteredOwnerBusinessesInDb(
       WHERE key IN (
         'registered_accounts_registry',
         'admin_user_overrides_registry',
-        'deleted_admin_phones_registry'
+        'deleted_admin_phones_registry',
+        'deleted_business_ids_registry'
       )
     `);
 
     let registryItems: Array<Record<string, unknown>> = [];
     let overridesMap: Record<string, Record<string, unknown>> = {};
     let deletedPhones = new Set<string>();
+    let deletedBizTokens = new Set<string>();
 
     for (const row of kvRes.rows) {
       if (row.key === 'registered_accounts_registry' && row.value_json) {
@@ -496,7 +539,28 @@ async function ensureRegisteredOwnerBusinessesInDb(
               .replace(/\D/g, '')
           )
         );
+      } else if (
+        row.key === 'deleted_business_ids_registry' &&
+        Array.isArray(row.value_json)
+      ) {
+        deletedBizTokens = new Set(
+          row.value_json.map((x: unknown) => String(x || '').trim()).filter(Boolean)
+        );
       }
+    }
+
+    if (deletedBizTokens.size > 0) {
+      const tokenArray = Array.from(deletedBizTokens);
+      await client.query(
+        `
+        DELETE FROM businesses
+        WHERE id::text = ANY($1::text[])
+           OR legacy_demo_id = ANY($1::text[])
+           OR slug = ANY($1::text[])
+           OR name = ANY($1::text[])
+        `,
+        [tokenArray]
+      );
     }
 
     // بررسی دسته‌بندی پیش‌فرض
@@ -532,17 +596,26 @@ async function ensureRegisteredOwnerBusinessesInDb(
     }
 
     for (const [cleanPhone, item] of candidateByPhone.entries()) {
-      const roleStr = String(item.role || '');
-      const roleLabelStr = String(item.roleLabel || '');
-      const isBusinessOwner =
-        roleStr === 'owner' ||
-        roleStr === 'BUSINESS_OWNER' ||
-        roleLabelStr.includes('صاحب') ||
-        roleLabelStr.includes('سالن') ||
-        roleLabelStr.includes('کسب') ||
-        Boolean(item.businessName);
-
-      if (!isBusinessOwner) continue;
+      // فقط در صورتی که صراحتاً نام سالن معتبر داشته باشد و حذف نشده باشد
+      const explicitSalonName = item.businessName
+        ? String(item.businessName).trim()
+        : '';
+      if (!explicitSalonName) continue;
+      if (
+        isBlockedSampleOrDeletedBusinessName(
+          explicitSalonName,
+          undefined,
+          item.businessId ? String(item.businessId) : undefined
+        )
+      ) {
+        continue;
+      }
+      if (
+        deletedBizTokens.has(explicitSalonName) ||
+        (item.businessId && deletedBizTokens.has(String(item.businessId).trim()))
+      ) {
+        continue;
+      }
 
       const fullName = String(item.fullName || 'مدیر سالن').trim();
       const city = String(item.city || 'اصفهان').trim();
@@ -563,7 +636,7 @@ async function ensureRegisteredOwnerBusinessesInDb(
       const persianPhone = toPersianDigitsServer(cleanPhone);
       const existingBizRes = await client.query(
         `
-        SELECT id
+        SELECT id, approval_status
         FROM businesses
         WHERE (
           owner_user_id = $1
@@ -595,25 +668,7 @@ async function ensureRegisteredOwnerBusinessesInDb(
         continue;
       }
 
-      // استخراج نام سالن از فیلد businessName یا از داخل پرانتز roleLabel یا ساخت نام پیش‌فرض
-      let resolvedSalonName = item.businessName
-        ? String(item.businessName).trim()
-        : '';
-      if (!resolvedSalonName) {
-        const parenMatch = roleLabelStr.match(/\(([^)]+)\)/);
-        if (
-          parenMatch &&
-          parenMatch[1] &&
-          !parenMatch[1].includes('سالن‌دار')
-        ) {
-          resolvedSalonName = parenMatch[1].trim();
-        }
-      }
-      if (!resolvedSalonName) {
-        resolvedSalonName = fullName.startsWith('سالن')
-          ? fullName
-          : `سالن زیبایی ${fullName}`;
-      }
+      const resolvedSalonName = explicitSalonName;
 
       const neighborhood = String(item.neighborhood || 'چهارباغ بالا').trim();
       const address = String(
@@ -880,6 +935,103 @@ export function toEnglishDigits(input: string): string {
  */
 export function toPersianDigitsServer(input: string | number): string {
   return String(input).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+}
+
+/**
+ * تبدیل تاریخ میلادی (Date یا رشته) به تاریخ شمسی دقیق (فرمت ۱۴۰۳/۰۸/۲۱)
+ */
+export function formatDateToJalaliServer(
+  dateInput?: Date | string | number | null
+): string {
+  try {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    const validDate = Number.isNaN(d.getTime()) ? new Date() : d;
+    const parts = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+      timeZone: 'Asia/Tehran',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(validDate);
+    const y = parts.find((p) => p.type === 'year')?.value || '';
+    const m = parts.find((p) => p.type === 'month')?.value || '';
+    const day = parts.find((p) => p.type === 'day')?.value || '';
+    if (y && m && day) {
+      return `${y}/${m}/${day}`;
+    }
+  } catch {
+    // fallback below
+  }
+  return toPersianDigitsServer('1403/08/21');
+}
+
+/**
+ * بررسی و اصلاح تاریخ عضویت/ثبت شمسی (حذف تاریخ‌های فیک ۱۴۰۵/۰۸/۰۵ و تبدیل تاریخ‌های میلادی به شمسی واقعی)
+ */
+export function resolveValidJoinedJalaliServer(
+  candidateJalali?: unknown,
+  createdAtFallback?: Date | string | number | null
+): string {
+  const raw = String(candidateJalali || '').trim();
+  const eng = toEnglishDigits(raw);
+  const isFakePlaceholder =
+    !eng ||
+    eng === 'امروز' ||
+    eng.startsWith('1405/08/05') ||
+    eng.startsWith('1405/08/01') ||
+    eng.startsWith('1405/07/') ||
+    eng.startsWith('1405/');
+
+  if (!isFakePlaceholder && /^(13|14)\d{2}\/\d{1,2}\/\d{1,2}$/.test(eng)) {
+    const [jy, jm, jd] = eng.split('/');
+    return toPersianDigitsServer(
+      `${jy}/${jm.padStart(2, '0')}/${jd.padStart(2, '0')}`
+    );
+  }
+
+  if (createdAtFallback) {
+    return formatDateToJalaliServer(createdAtFallback);
+  }
+
+  if (!isFakePlaceholder && /^\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(eng)) {
+    return formatDateToJalaliServer(eng.replace(/\//g, '-'));
+  }
+
+  return formatDateToJalaliServer(new Date());
+}
+
+/**
+ * تشخیص سالن‌ها و متخصص‌های تستی یا حذف‌شده (سالن شیر، سالن ارکیده، رویال گلزار، مریم فرهادی و biz-1..8)
+ */
+export function isBlockedSampleOrDeletedBusinessName(
+  nameRaw?: unknown,
+  slugRaw?: unknown,
+  idRaw?: unknown
+): boolean {
+  const idStr = String(idRaw || '').trim();
+  if (/^(biz|spc)-[1-8]$/.test(idStr)) return true;
+  const slugStr = String(slugRaw || '').trim().toLowerCase();
+  if (
+    slugStr === 'royal-golzar-isfahan' ||
+    slugStr === 'atelier-soren-tehran' ||
+    slugStr === 'maryam-farhadi'
+  ) {
+    return true;
+  }
+  const nameStr = String(nameRaw || '').trim();
+  if (!nameStr) return false;
+  if (
+    nameStr.includes('سالن شیر') ||
+    nameStr.includes('سالن زیبایی شیر') ||
+    nameStr.includes('سالن ارکیده') ||
+    nameStr.includes('سالن زیبایی ارکیده') ||
+    nameStr.includes('رویال گلزار') ||
+    nameStr.includes('مریم فرهادی') ||
+    nameStr === 'شیر' ||
+    nameStr === 'ارکیده'
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -1483,7 +1635,15 @@ export async function getBootstrapPayload(
     ]);
 
     const businesses: BusinessItem[] = bizRes.rows
-      .filter((r) => !hiddenSampleBizIds.has(String(r.external_id)))
+      .filter(
+        (r) =>
+          !hiddenSampleBizIds.has(String(r.external_id)) &&
+          !isBlockedSampleOrDeletedBusinessName(
+            r.name,
+            r.slug,
+            r.external_id
+          )
+      )
       .map((r) =>
         mergeBusinessRowWithExtra(
           {
@@ -2613,6 +2773,115 @@ export async function updateBusinessApprovalInDb(
   );
   if (!res.rowCount) {
     throw new Error('BUSINESS_NOT_FOUND');
+  }
+}
+
+/**
+ * حذف دائمی کسب‌وکار توسط مدیر کل پلتفرم در PostgreSQL و ثبت در لیست سیاه دائمی
+ */
+export async function deleteBusinessPermanentlyInDb(
+  pool: Pool,
+  businessIdOrLegacy: string
+): Promise<void> {
+  const cleaned = (businessIdOrLegacy || '').trim();
+  if (!cleaned) {
+    throw new Error('INVALID_INPUT_PAYLOAD');
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
+
+    const targetRes = await client.query(
+      `
+      SELECT id::text AS id, legacy_demo_id, slug, name, phone_display
+      FROM businesses
+      WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
+      LIMIT 1
+      `,
+      [cleaned]
+    );
+
+    const tokensToBlock = new Set<string>([cleaned]);
+    let targetName = '';
+    if (targetRes.rowCount && targetRes.rows[0]) {
+      const row = targetRes.rows[0];
+      if (row.id) tokensToBlock.add(String(row.id));
+      if (row.legacy_demo_id) tokensToBlock.add(String(row.legacy_demo_id));
+      if (row.slug) tokensToBlock.add(String(row.slug));
+      if (row.name) {
+        targetName = String(row.name).trim();
+        tokensToBlock.add(targetName);
+      }
+    }
+
+    const delRegRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'deleted_business_ids_registry' LIMIT 1`
+    );
+    const existingBlocked: string[] = Array.isArray(delRegRes.rows[0]?.value_json)
+      ? (delRegRes.rows[0].value_json as unknown[]).map((x) => String(x || '').trim()).filter(Boolean)
+      : [];
+    for (const t of existingBlocked) {
+      tokensToBlock.add(t);
+    }
+
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('deleted_business_ids_registry', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [JSON.stringify(Array.from(tokensToBlock))]
+    );
+
+    // پاک کردن ردپای سالن حذف‌شده از registered_accounts_registry تا دوباره ساخته نشود
+    const regRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'registered_accounts_registry' LIMIT 1`
+    );
+    if (Array.isArray(regRes.rows[0]?.value_json)) {
+      const cleanedReg = (regRes.rows[0].value_json as Array<Record<string, unknown>>).map((acc) => {
+        const bId = String(acc.businessId || '').trim();
+        const bName = String(acc.businessName || '').trim();
+        if (
+          (bId && tokensToBlock.has(bId)) ||
+          (bName && (tokensToBlock.has(bName) || bName === targetName))
+        ) {
+          const nextAcc = { ...acc };
+          delete nextAcc.businessId;
+          delete nextAcc.businessName;
+          if (nextAcc.role === 'owner' || nextAcc.role === 'BUSINESS_OWNER') {
+            nextAcc.role = 'customer';
+            nextAcc.roleLabel = 'مشتری عادی';
+          }
+          return nextAcc;
+        }
+        return acc;
+      });
+      await client.query(
+        `
+        INSERT INTO platform_kv_store (key, value_json, updated_at)
+        VALUES ('registered_accounts_registry', $1::jsonb, NOW())
+        ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+        `,
+        [JSON.stringify(cleanedReg)]
+      );
+    }
+
+    await client.query(
+      `
+      DELETE FROM businesses
+      WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
+      `,
+      [cleaned]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -4338,7 +4607,7 @@ export async function getAdminOverviewPayloadInDb(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
-          to_char(b.created_at, 'YYYY/MM/DD') AS created_date,
+          b.created_at,
           COALESCE(c.slug, 'hair-color') AS primary_category_slug,
           u.full_name AS owner_full_name,
           u.phone AS owner_phone,
@@ -4381,7 +4650,7 @@ export async function getAdminOverviewPayloadInDb(
           u.phone,
           COALESCE(u.default_city, 'اصفهان') AS city,
           u.is_active,
-          to_char(u.created_at, 'YYYY/MM/DD') AS created_date,
+          u.created_at,
           EXISTS (
             SELECT 1 FROM platform_admins pa
             WHERE pa.user_id = u.id AND pa.is_active = TRUE
@@ -4450,6 +4719,7 @@ export async function getAdminOverviewPayloadInDb(
     }));
 
     const excludedLegacyBizIds = new Set([
+      'biz-1',
       'biz-2',
       'biz-3',
       'biz-4',
@@ -4460,7 +4730,11 @@ export async function getAdminOverviewPayloadInDb(
     ]);
 
     const businesses: BusinessItem[] = bizRes.rows
-      .filter((r) => !excludedLegacyBizIds.has(String(r.external_id)))
+      .filter(
+        (r) =>
+          !excludedLegacyBizIds.has(String(r.external_id)) &&
+          !isBlockedSampleOrDeletedBusinessName(r.name, r.slug, r.external_id)
+      )
       .map((r) =>
         mergeBusinessRowWithExtra(
           {
@@ -4486,9 +4760,7 @@ export async function getAdminOverviewPayloadInDb(
             ownerPhone: r.owner_phone
               ? toPersianDigitsServer(String(r.owner_phone))
               : String(r.phone_display),
-            createdAtJalali: toPersianDigitsServer(
-              String(r.created_date || '1405/08/01')
-            ),
+            createdAtJalali: formatDateToJalaliServer(r.created_at),
             instagramHandle: r.instagram_handle
               ? String(r.instagram_handle)
               : undefined,
@@ -4540,7 +4812,7 @@ export async function getAdminOverviewPayloadInDb(
             ? 'صاحب کسب‌وکار'
             : 'مشتری عادی',
         city: String(r.city || 'اصفهان'),
-        joinedJalali: toPersianDigitsServer(String(r.created_date || '1405/08/01')),
+        joinedJalali: formatDateToJalaliServer(r.created_at),
         isActive: Boolean(r.is_active),
       };
     });
@@ -5776,9 +6048,10 @@ export async function syncRegisteredAccountsInDb(
         role: acc.role || existingRec.role,
         roleLabel,
         city,
-        joinedJalali:
-          acc.joinedJalali ||
-          (existingIdx >= 0 ? String(existingRec.joinedJalali || '۱۴۰۵/۰۸/۰۵') : '۱۴۰۵/۰۸/۰۵'),
+        joinedJalali: resolveValidJoinedJalaliServer(
+          acc.joinedJalali || (existingIdx >= 0 ? existingRec.joinedJalali : undefined),
+          new Date()
+        ),
         isActive: true,
         ...(acc.businessId ? { businessId: acc.businessId } : {}),
         ...(acc.businessName ? { businessName: acc.businessName } : {}),

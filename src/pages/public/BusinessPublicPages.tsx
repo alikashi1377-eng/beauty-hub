@@ -28,6 +28,7 @@ import { usePrototypeData } from '../../context/PrototypeDataContext';
 import {
   formatPriceToman,
   formatWorkingHourDisplay,
+  normalizeIranMobileInput,
   toPersianDigits,
 } from '../../utils/formatters';
 import { validateReviewContent } from '../../utils/reviewModeration';
@@ -64,6 +65,8 @@ export const BusinessPublicProfileView: React.FC<{
     businesses,
     services,
     specialists,
+    appointments,
+    customers,
     reviews,
     addReview,
     replyToReview,
@@ -85,7 +88,9 @@ export const BusinessPublicProfileView: React.FC<{
   const [publicServiceQuery, setPublicServiceQuery] = useState<string>('');
   const [showAllPublicServices, setShowAllPublicServices] =
     useState<boolean>(false);
-  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewRating, setReviewRating] = useState<number>(0);
+  const [reviewHoverRating, setReviewHoverRating] = useState<number>(0);
+  const [visibleReviewsCount, setVisibleReviewsCount] = useState<number>(5);
   const [reviewServiceTitle, setReviewServiceTitle] = useState<string>('');
   const [reviewComment, setReviewComment] = useState<string>('');
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
@@ -147,6 +152,67 @@ export const BusinessPublicProfileView: React.FC<{
     (sp) => sp.businessId === business.id && sp.isActive !== false
   );
   const bizReviews = reviews.filter((r) => r.businessId === business.id);
+  const visibleBizReviews = bizReviews.slice(0, visibleReviewsCount);
+  const remainingReviewsCount = Math.max(
+    0,
+    bizReviews.length - visibleReviewsCount
+  );
+
+  // بررسی اینکه آیا کاربر لاگین‌شده واقعاً مشتری همین کسب‌وکار است (دارای نوبت ثبت‌شده یا پرونده مشتری در این سالن)
+  const isVerifiedCustomerOfBusiness = React.useMemo(() => {
+    if (!authUser) return false;
+    if (
+      authUser.isPlatformAdmin ||
+      authUser.roles?.includes('PLATFORM_ADMIN')
+    ) {
+      return true;
+    }
+    const cleanUserPhone = normalizeIranMobileInput(authUser.phone || '');
+    const cleanUserName = (authUser.fullName || '').trim();
+
+    const hasAppointmentWithBiz = appointments.some((apt) => {
+      if (apt.status === 'CANCELLED') return false;
+      const matchesBiz =
+        apt.businessId === business.id || apt.businessSlug === business.slug;
+      if (!matchesBiz) return false;
+      const aptPhone = normalizeIranMobileInput(apt.customerPhoneMasked || '');
+      if (cleanUserPhone && aptPhone && cleanUserPhone === aptPhone) {
+        return true;
+      }
+      if (
+        cleanUserPhone &&
+        apt.customerPhoneMasked &&
+        cleanUserPhone.length === 11 &&
+        apt.customerPhoneMasked.includes('***')
+      ) {
+        const prefix = cleanUserPhone.slice(0, 4);
+        const suffix = cleanUserPhone.slice(7);
+        const rawMasked = apt.customerPhoneMasked.replace(
+          /[۰-۹]/g,
+          (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+        );
+        if (rawMasked.startsWith(prefix) && rawMasked.endsWith(suffix)) {
+          return true;
+        }
+      }
+      return (
+        Boolean(cleanUserName) &&
+        cleanUserName !== 'کاربر تایم تو' &&
+        apt.customerName.trim() === cleanUserName
+      );
+    });
+
+    if (hasAppointmentWithBiz) return true;
+
+    const hasCustomerRecordInBiz = customers.some((c) => {
+      if (c.businessId && c.businessId !== business.id) return false;
+      const cPhone = normalizeIranMobileInput(c.phone || c.phoneMasked || '');
+      return Boolean(cleanUserPhone && cPhone && cleanUserPhone === cPhone);
+    });
+
+    return hasCustomerRecordInBiz;
+  }, [authUser, appointments, customers, business.id, business.slug]);
+
   const bizGallery = gallery.filter((g) => g.businessId === business.id);
   const isFavorite =
     mode === 'pro' && matchedSpecialist
@@ -1004,7 +1070,7 @@ export const BusinessPublicProfileView: React.FC<{
                 {!authUser ? (
                   <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3 text-xs text-[#6B6480]">
                     <span>
-                      برای ثبت امتیاز و دیدگاه درباره «{business.name}»، ابتدا وارد حساب کاربری خود شوید.
+                      برای ثبت امتیاز و دیدگاه درباره «{business.name}»، ابتدا با شماره موبایل خود وارد شوید (ویژه مشتریان این مجموعه).
                     </span>
                     <Button
                       variant="primary"
@@ -1013,18 +1079,44 @@ export const BusinessPublicProfileView: React.FC<{
                         openAuthModal({
                           initialScreen: 'LOGIN',
                           defaultRole: 'CUSTOMER',
-                          promptReason: `برای ثبت دیدگاه و امتیاز درباره «${business.name}»، وارد شوید یا ثبت‌نام کنید`,
+                          promptReason: `برای ثبت دیدگاه و امتیاز درباره «${business.name}»، وارد شوید`,
                         })
                       }
                     >
-                      ورود / ثبت‌نام سریع و ثبت نظر
+                      ورود به حساب و بررسی عضویت مشتری
                     </Button>
+                  </div>
+                ) : !isVerifiedCustomerOfBusiness ? (
+                  <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900">
+                    <div className="space-y-1">
+                      <p className="font-extrabold text-amber-950">
+                        ثبت امتیاز و نظر فقط مخصوص مشتریان «{business.name}» است
+                      </p>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        سیستم به صورت هوشمند بررسی می‌کند که فقط مراجعان واقعی این کسب‌وکار (کسانی که نوبت ثبت‌شده یا پرونده مشتری در این مجموعه دارند) بتوانند نظر و امتیاز ثبت کنند. پس از دریافت نوبت از این مرکز، فرم امتیازدهی برای شما فعال خواهد شد.
+                      </p>
+                    </div>
+                    <Link
+                      to={`/booking/${business.slug}`}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-[#0057FF] px-3.5 py-2 text-xs font-black text-white shadow-2xs hover:bg-[#0046CC] transition"
+                    >
+                      <span>رزرو نوبت از این مرکز ←</span>
+                    </Link>
                   </div>
                 ) : (
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault();
-                      if (!reviewComment.trim()) return;
+                      if (reviewRating < 1 || reviewRating > 5) {
+                        showToast(
+                          'لطفاً ابتدا روی ستاره‌ها کلیک کنید و از ۱ تا ۵ ستاره امتیاز بدهید.',
+                          'warning'
+                        );
+                        return;
+                      }
+                      const finalComment =
+                        reviewComment.trim() ||
+                        `ثبت امتیاز ${toPersianDigits(reviewRating)} ستاره توسط مشتری مجموعه`;
                       setIsSubmittingReview(true);
                       try {
                         const ok = await addReview({
@@ -1035,11 +1127,11 @@ export const BusinessPublicProfileView: React.FC<{
                             bizServices[0]?.title ||
                             'خدمات زیبایی',
                           rating: reviewRating,
-                          comment: reviewComment.trim(),
+                          comment: finalComment,
                         });
                         if (ok) {
                           setReviewComment('');
-                          setReviewRating(5);
+                          setReviewRating(0);
                         }
                       } finally {
                         setIsSubmittingReview(false);
@@ -1077,64 +1169,85 @@ export const BusinessPublicProfileView: React.FC<{
 
                       <div className="space-y-1.5">
                         <span className="block text-xs font-extrabold text-[#1E1B2E]">
-                          امتیاز شما به این مرکز (۱ تا ۵ ستاره):
+                          امتیاز ستاره‌ای شما (از ۱ تا ۵ ستاره انتخاب کنید):
                         </span>
-                        <div className="flex items-center justify-between gap-2 p-2 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5]">
-                          <div className="flex items-center gap-1">
-                            {[1, 2, 3, 4, 5].map((starVal) => (
-                              <button
-                                key={starVal}
-                                type="button"
-                                onClick={() => setReviewRating(starVal)}
-                                className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
-                                  starVal <= reviewRating
-                                    ? 'bg-amber-400/20 text-amber-500 scale-105'
-                                    : 'bg-white text-slate-300 hover:text-amber-300'
-                                }`}
-                                title={`${toPersianDigits(starVal)} ستاره`}
-                              >
-                                <Star
-                                  className={`w-4 h-4 ${
-                                    starVal <= reviewRating ? 'fill-amber-400' : ''
+                        <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5]">
+                          <div
+                            className="flex items-center gap-1.5"
+                            onMouseLeave={() => setReviewHoverRating(0)}
+                          >
+                            {[1, 2, 3, 4, 5].map((starVal) => {
+                              const activeStars =
+                                reviewHoverRating || reviewRating;
+                              const isFilled = starVal <= activeStars;
+                              return (
+                                <button
+                                  key={starVal}
+                                  type="button"
+                                  onMouseEnter={() =>
+                                    setReviewHoverRating(starVal)
+                                  }
+                                  onClick={() => setReviewRating(starVal)}
+                                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer border ${
+                                    isFilled
+                                      ? 'bg-amber-400/20 border-amber-400 text-amber-500 scale-105 shadow-2xs'
+                                      : 'bg-white border-slate-200 text-slate-300 hover:border-amber-300 hover:text-amber-400'
                                   }`}
-                                />
-                              </button>
-                            ))}
+                                  title={`ثبت ${toPersianDigits(starVal)} ستاره`}
+                                  aria-label={`ثبت ${toPersianDigits(starVal)} ستاره`}
+                                >
+                                  <Star
+                                    className={`w-5 h-5 transition-transform ${
+                                      isFilled
+                                        ? 'fill-amber-400 text-amber-500'
+                                        : 'fill-transparent text-slate-400'
+                                    }`}
+                                  />
+                                </button>
+                              );
+                            })}
                           </div>
                           <span
                             className={`text-xs font-extrabold px-2.5 py-1 rounded-xl ${
-                              reviewRating >= 4
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : reviewRating === 3
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : 'bg-rose-50 text-rose-700'
+                              reviewRating === 0
+                                ? 'bg-slate-100 text-slate-600'
+                                : reviewRating >= 4
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : reviewRating === 3
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-rose-50 text-rose-700'
                             }`}
                           >
-                            {reviewRating === 5
-                              ? '۵ ستاره (عالی)'
-                              : reviewRating === 4
-                                ? '۴ ستاره (خوب)'
-                                : reviewRating === 3
-                                  ? '۳ ستاره (متوسط)'
-                                  : reviewRating === 2
-                                    ? '۲ ستاره (انتقادی / ضعیف)'
-                                    : '۱ ستاره (ناراضی / بسیار ضعیف)'}
+                            {reviewRating === 0
+                              ? '☆ ستاره‌ای انتخاب نشده'
+                              : reviewRating === 5
+                                ? '۵ ستاره (عالی)'
+                                : reviewRating === 4
+                                  ? '۴ ستاره (خوب)'
+                                  : reviewRating === 3
+                                    ? '۳ ستاره (متوسط)'
+                                    : reviewRating === 2
+                                      ? '۲ ستاره (ضعیف)'
+                                      : '۱ ستاره (بسیار ضعیف)'}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    <FormField id="rev-comment" label="متن دیدگاه یا انتقاد شما" required>
+                    <FormField
+                      id="rev-comment"
+                      label="متن دیدگاه یا انتقاد شما (اختیاری — می‌توانید فقط ستاره بدهید یا نظر بنویسید)"
+                    >
                       <Textarea
                         id="rev-comment"
                         rows={3}
                         value={reviewComment}
                         onChange={(e) => setReviewComment(e.target.value)}
-                        placeholder="تجربه واقعی خود از کیفیت کار، برخورد پرسنل، قیمت یا نظم نوبت‌دهی را بنویسید (نظرات مثبت و انتقادهای منصفانه هر دو منتشر می‌شوند)..."
+                        placeholder="تجربه واقعی خود از کیفیت کار، برخورد پرسنل، قیمت یا نظم نوبت‌دهی را بنویسید (یا در صورت تمایل فقط ستاره بالا را انتخاب و ثبت کنید)..."
                       />
                     </FormField>
 
-                    {reviewComment.trim().length >= 3 &&
+                    {reviewComment.trim().length > 0 &&
                       !validateReviewContent(reviewComment).valid && (
                         <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-700 font-bold">
                           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
@@ -1143,8 +1256,8 @@ export const BusinessPublicProfileView: React.FC<{
                       )}
 
                     <div className="flex items-center justify-between gap-3 pt-1">
-                      <span className="text-[11px] text-[#6B6480]">
-                        ثبت به نام: <strong className="text-[#1E1B2E]">{authUser.fullName}</strong>
+                      <span className="text-[11px] text-emerald-700 font-bold">
+                        ✓ مشتری تاییدشده مجموعه: <strong className="text-[#1E1B2E]">{authUser.fullName}</strong>
                       </span>
                       <Button
                         type="submit"
@@ -1152,11 +1265,16 @@ export const BusinessPublicProfileView: React.FC<{
                         size="sm"
                         disabled={
                           isSubmittingReview ||
-                          reviewComment.trim().length < 3 ||
-                          !validateReviewContent(reviewComment).valid
+                          reviewRating < 1 ||
+                          (reviewComment.trim().length > 0 &&
+                            !validateReviewContent(reviewComment).valid)
                         }
                       >
-                        {isSubmittingReview ? 'در حال ثبت...' : 'ثبت و انتشار دیدگاه'}
+                        {isSubmittingReview
+                          ? 'در حال ثبت...'
+                          : reviewComment.trim().length === 0
+                            ? `ثبت امتیاز ${reviewRating > 0 ? toPersianDigits(reviewRating) + ' ستاره' : ''}`
+                            : 'ثبت امتیاز و انتشار دیدگاه'}
                       </Button>
                     </div>
                   </form>
@@ -1166,7 +1284,8 @@ export const BusinessPublicProfileView: React.FC<{
               {bizReviews.length === 0 ? (
                 <EmptyState title="هنوز دیدگاهی برای این مرکز ثبت نشده است" />
               ) : (
-                bizReviews.map((rev) => {
+                <>
+                  {visibleBizReviews.map((rev) => {
                   const isSuperAdmin =
                     Boolean(authUser?.isPlatformAdmin) ||
                     Boolean(authUser?.roles?.includes('PLATFORM_ADMIN'));
@@ -1342,7 +1461,37 @@ export const BusinessPublicProfileView: React.FC<{
                       )}
                     </Card>
                   );
-                })
+                })}
+
+                {remainingReviewsCount > 0 ? (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisibleReviewsCount((prev) => prev + 5)
+                      }
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0057FF]/30 bg-[#EFF6FF] px-5 py-3 text-xs sm:text-sm font-black text-[#0057FF] hover:bg-[#0057FF] hover:text-white transition-all cursor-pointer shadow-2xs"
+                    >
+                      <span>
+                        مشاهده نظرات بیشتر (نمایش{' '}
+                        {toPersianDigits(Math.min(5, remainingReviewsCount))}{' '}
+                        دیدگاه بعدی از {toPersianDigits(remainingReviewsCount)}{' '}
+                        دیدگاه باقی‌مانده)
+                      </span>
+                    </button>
+                  </div>
+                ) : bizReviews.length > 5 ? (
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleReviewsCount(5)}
+                      className="text-xs font-bold text-slate-500 hover:text-[#061138] underline cursor-pointer"
+                    >
+                      بستن نظرات اضافی و نمایش ۵ نظر اول
+                    </button>
+                  </div>
+                ) : null}
+                </>
               )}
             </div>
           ) : (

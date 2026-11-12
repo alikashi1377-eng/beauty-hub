@@ -3744,6 +3744,17 @@ export const AdminPaymentsPage: React.FC = () => {
   );
   const [sendingReminders, setSendingReminders] = useState(false);
 
+  const [detectedServerIp, setDetectedServerIp] = useState<string>('');
+
+  useEffect(() => {
+    fetch('/api/v1/payments/zibal/server-ip')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { outgoingIp?: string } | null) => {
+        if (d?.outgoingIp) setDetectedServerIp(d.outgoingIp);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleSaveGateway = (e: React.FormEvent) => {
     e.preventDefault();
     updatePaymentConfig({
@@ -3795,6 +3806,45 @@ export const AdminPaymentsPage: React.FC = () => {
             label="درگاه زیبال (Zibal) فعال"
             tone="success"
           />
+        </div>
+
+        {/* راهنمای رفع خطای 115 زیبال و نمایش خودکار IP سرور */}
+        <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] space-y-2.5 text-xs">
+          <p className="font-extrabold text-[#1E3A8A]">
+            🌐 آدرس‌های IP سرور جهت ثبت در پنل زیبال (رفع خطای ۱۱۵ زیبال):
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 rounded-xl bg-white border border-[#BFDBFE] flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[11px] text-[#64748B] block">
+                  IP دامنه اصلی سایت (timeto24.ir در لیارا):
+                </span>
+                <code dir="ltr" className="text-sm font-black text-[#061138] font-mono">
+                  185.208.181.150
+                </code>
+              </div>
+              <span className="px-2 py-1 rounded-lg bg-[#DBEAFE] text-[#1D4ED8] text-[10px] font-extrabold">
+                سرور لیارا
+              </span>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white border border-[#BFDBFE] flex items-center justify-between gap-2">
+              <div>
+                <span className="text-[11px] text-[#64748B] block">
+                  IP خروجی فعلی همین سرور (تشخیص خودکار):
+                </span>
+                <code dir="ltr" className="text-sm font-black text-[#0057FF] font-mono">
+                  {detectedServerIp || '34.34.229.54'}
+                </code>
+              </div>
+              <span className="px-2 py-1 rounded-lg bg-[#DCFCE7] text-[#15803D] text-[10px] font-extrabold">
+                IP خروجی فعال
+              </span>
+            </div>
+          </div>
+          <p className="text-[11px] text-[#1E40AF] leading-relaxed">
+            💡 در پنل زیبال (<strong>panel.zibal.ir ← درگاه‌های پرداخت ← ویرایش درگاه</strong>) اگر گزینه «حساسیت به IP / محدودیت IP» فعال باشد، یا تیک محدودیت IP را بردارید تا از هر سروری کار کند، و یا آی‌پی‌های بالا را در بخش IP مجاز درگاه وارد نمایید.
+          </p>
         </div>
 
         <form onSubmit={handleSaveGateway} className="space-y-4">

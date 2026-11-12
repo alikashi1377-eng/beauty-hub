@@ -57,6 +57,7 @@ import {
   computeSelectedServicesSummary,
   formatPriceToman,
   getUpcomingJalaliDays,
+  toEnglishDigitsClient,
   toPersianDigits,
 } from '../utils/formatters';
 import { validateReviewContent } from '../utils/reviewModeration';
@@ -390,7 +391,7 @@ const INITIAL_BOOKING_DRAFT: BookingDraft = {
   serviceId: '',
   serviceIds: [],
   specialistId: '',
-  dateJalali: '۱۴۰۵/۰۸/۰۵',
+  dateJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۳/۰۸/۲۱',
   timeSlot: '۱۱:۰۰',
   customerName: '',
   customerPhone: '',
@@ -609,15 +610,52 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         return next;
       };
 
+      const isBlockedTestOrDeletedSalon = (
+        nameRaw?: string,
+        slugRaw?: string,
+        idRaw?: string
+      ): boolean => {
+        const idStr = String(idRaw || '').trim();
+        if (
+          excludedSampleIds.has(idStr) ||
+          permDeletedIds.has(idStr) ||
+          /^biz-[1-8]$/.test(idStr)
+        ) {
+          return true;
+        }
+        const slugStr = String(slugRaw || '').trim().toLowerCase();
+        if (
+          slugStr === 'royal-golzar' ||
+          slugStr === 'royal-golzar-isfahan' ||
+          slugStr === 'atelier-soren-tehran' ||
+          permDeletedIds.has(slugStr)
+        ) {
+          return true;
+        }
+        const nameStr = String(nameRaw || '').trim();
+        if (!nameStr) return true;
+        if (
+          permDeletedIds.has(nameStr) ||
+          nameStr.includes('سالن شیر') ||
+          nameStr.includes('سالن زیبایی شیر') ||
+          nameStr.includes('سالن ارکیده') ||
+          nameStr.includes('سالن زیبایی ارکیده') ||
+          nameStr.includes('رویال گلزار') ||
+          nameStr.includes('مریم فرهادی') ||
+          nameStr === 'شیر' ||
+          nameStr === 'ارکیده'
+        ) {
+          return true;
+        }
+        return false;
+      };
+
       const byIdOrSlug = new Map<string, BusinessItem>();
       for (const b of list) {
         if (
           !b ||
-          excludedSampleIds.has(b.id) ||
-          permDeletedIds.has(b.id) ||
           b.isSampleShowcase ||
-          /^biz-[1-8]$/.test(b.id) ||
-          b.slug === 'royal-golzar'
+          isBlockedTestOrDeletedSalon(b.name, b.slug, b.id)
         ) {
           continue;
         }
@@ -627,28 +665,47 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ...overrideData,
           isSampleShowcase: false,
         };
+        if (
+          isBlockedTestOrDeletedSalon(
+            rawMerged.name,
+            rawMerged.slug,
+            rawMerged.id
+          )
+        ) {
+          continue;
+        }
+        const rawCreatedEng = toEnglishDigitsClient(String(rawMerged.createdAtJalali || ''));
+        const fixedCreatedJalali =
+          !rawCreatedEng ||
+          rawCreatedEng.startsWith('1405/') ||
+          rawCreatedEng.startsWith('202')
+            ? getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۳/۰۸/۲۱'
+            : rawMerged.createdAtJalali;
+
         const merged: BusinessItem = applyLiveDayCounters({
           ...rawMerged,
+          createdAtJalali: fixedCreatedJalali,
           slug: ensureUniqueSlug(rawMerged.slug, b.id),
           approvalStatus:
-            rawMerged.approvalStatus === 'REJECTED'
-              ? 'REJECTED'
-              : rawMerged.approvalStatus === 'PENDING_REVIEW'
-                ? 'PENDING_REVIEW'
-                : 'APPROVED',
+            b.approvalStatus === 'APPROVED'
+              ? 'APPROVED'
+              : b.approvalStatus === 'REJECTED'
+                ? 'REJECTED'
+                : rawMerged.approvalStatus === 'REJECTED'
+                  ? 'REJECTED'
+                  : rawMerged.approvalStatus === 'PENDING_REVIEW'
+                    ? 'PENDING_REVIEW'
+                    : 'APPROVED',
         });
         byIdOrSlug.set(b.id, merged);
       }
 
-      // اضافه کردن سالن‌های ثبت‌شده در مرورگر در صورتی که هنوز در لیست نباشند
+      // اضافه کردن سالن‌های ثبت‌شده در همین مرورگر فقط در صورتی که حذف یا مسدود نشده باشند
       for (const lb of localOnbList) {
         if (
           !lb ||
-          excludedSampleIds.has(lb.id) ||
-          permDeletedIds.has(lb.id) ||
           lb.isSampleShowcase ||
-          /^biz-[1-8]$/.test(lb.id) ||
-          lb.slug === 'royal-golzar'
+          isBlockedTestOrDeletedSalon(lb.name, lb.slug, lb.id)
         ) {
           continue;
         }
@@ -662,6 +719,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const rawMergedLb = overrides[lb.id]
             ? { ...lb, ...overrides[lb.id] }
             : lb;
+          if (
+            isBlockedTestOrDeletedSalon(
+              rawMergedLb.name,
+              rawMergedLb.slug,
+              rawMergedLb.id
+            )
+          ) {
+            continue;
+          }
           const mergedLb: BusinessItem = applyLiveDayCounters({
             ...rawMergedLb,
             city: rawMergedLb.city || 'اصفهان',
@@ -679,137 +745,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // اطمینان از اینکه تمام حساب‌های سالن‌دار ذخیره‌شده در حافظه نیز دارای کارت سالن فعال در لیست هستند
-      const memoryAccs = Object.values(getSavedMemoryAccounts());
-      for (const acc of memoryAccs) {
-        if (acc.role !== 'BUSINESS_OWNER' && !acc.businessName) continue;
-        const accBizName = (
-          acc.businessName || `سالن زیبایی ${acc.fullName || 'تایم تو'}`
-        ).trim();
-        const existsForAcc = Array.from(byIdOrSlug.values()).some(
-          (x) =>
-            (acc.businessId && x.id === acc.businessId) ||
-            (!x.isSampleShowcase && x.name.trim() === accBizName)
-        );
-        if (!existsForAcc) {
-          const synthId = acc.businessId || `biz-mem-${acc.phone}`;
-          if (permDeletedIds.has(synthId)) continue;
-          const isLaser = accBizName.includes('لیزر');
-          const ovSynth = overrides[synthId] || {};
-          const synthBiz: BusinessItem = applyLiveDayCounters({
-            id: synthId,
-            slug: `salon-${acc.phone.slice(-4)}`,
-            name: accBizName,
-            type: acc.businessType ?? BusinessType.WomenSalon,
-            typeLabel: isLaser
-              ? 'مرکز لیزر موهای زائد'
-              : acc.businessType === BusinessType.MenBarbershop
-                ? 'آرایشگاه مردانه'
-                : acc.businessType === BusinessType.IndependentSpecialist
-                  ? 'متخصص مستقل زیبایی'
-                  : 'سالن زیبایی زنانه',
-            categorySlug: isLaser ? 'laser-hair-removal' : 'hair-color',
-            city: acc.city || 'اصفهان',
-            neighborhood: acc.neighborhood || 'چهارباغ بالا',
-            address: `${acc.city || 'اصفهان'}، ${acc.neighborhood || 'چهارباغ بالا'}`,
-            phoneDisplay: acc.phone,
-            ownerName: acc.fullName,
-            ownerPhone: acc.phone,
-            createdAtJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
-            rating: 5.0,
-            reviewCount: 0,
-            startingPriceToman: 0,
-            shortDescription: `مرکز تخصصی زیبایی ${accBizName} در اصفهان`,
-            aboutText: '',
-            verifiedBadge: true,
-            approvalStatus: ovSynth.approvalStatus || 'APPROVED',
-            subscriptionPlan: 'شروع رایگان (پایه)',
-            subscriptionStatus: SubscriptionStatus.Trial,
-            trialDaysRemaining: 30,
-            workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
-            visualTheme: 'violet',
-            featured: false,
-            isSampleShowcase: false,
-            avatarUrl: acc.avatarUrl,
-            ...ovSynth,
-          });
-          byIdOrSlug.set(synthId, synthBiz);
-        }
-      }
-
-      // اطمینان از اینکه تمام کاربران ثبت‌شده با نقش «صاحب سالن» در دیتابیس نیز کارت فعال در لیست کسب‌وکارها دارند
-      if (Array.isArray(resolvedRegisteredUsers)) {
-        for (const u of resolvedRegisteredUsers) {
-          const roleLbl = String(u.roleLabel || '');
-          if (!roleLbl.includes('صاحب سالن') && !roleLbl.includes('صاحب کسب')) {
-            continue;
-          }
-          const cleanPhone = String(u.phone || '')
-            .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-            .replace(/\D/g, '');
-          const parenMatch = roleLbl.match(/\(([^)]+)\)/);
-          const extractedSalonName =
-            parenMatch && parenMatch[1] && !parenMatch[1].includes('سالن‌دار')
-              ? parenMatch[1].trim()
-              : `سالن زیبایی ${u.fullName}`;
-          const existsInList = Array.from(byIdOrSlug.values()).some((x) => {
-            if (x.isSampleShowcase) return false;
-            const xCleanPhone = String(x.ownerPhone || x.phoneDisplay || '')
-              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-              .replace(/\D/g, '');
-            return (
-              x.name.trim() === extractedSalonName ||
-              (cleanPhone.length >= 10 && xCleanPhone === cleanPhone)
-            );
-          });
-          if (!existsInList) {
-            const synthId = `biz-usr-${cleanPhone || u.id}`;
-            if (permDeletedIds.has(synthId)) continue;
-            const isLaser = extractedSalonName.includes('لیزر');
-            const synthSlug = ensureUniqueSlug(
-              `salon-${(cleanPhone || u.id).slice(-4)}`,
-              synthId
-            );
-            const ovUsr = overrides[synthId] || {};
-            const synthBiz: BusinessItem = applyLiveDayCounters({
-              id: synthId,
-              slug: synthSlug,
-              name: extractedSalonName,
-              type: BusinessType.WomenSalon,
-              typeLabel: isLaser ? 'مرکز لیزر موهای زائد' : 'سالن زیبایی زنانه',
-              categorySlug: isLaser ? 'laser-hair-removal' : 'hair-color',
-              city: u.city || 'اصفهان',
-              neighborhood: 'چهارباغ بالا',
-              address: `${u.city || 'اصفهان'}، چهارباغ بالا`,
-              phoneDisplay: u.phone,
-              ownerName: u.fullName,
-              ownerPhone: u.phone,
-              createdAtJalali: u.joinedJalali || getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز',
-              rating: 5.0,
-              reviewCount: 0,
-              startingPriceToman: 0,
-              shortDescription: `مرکز تخصصی زیبایی ${extractedSalonName} در اصفهان`,
-              aboutText: '',
-              verifiedBadge: true,
-              approvalStatus: ovUsr.approvalStatus || 'APPROVED',
-              subscriptionPlan: 'شروع رایگان (پایه)',
-              subscriptionStatus: SubscriptionStatus.Trial,
-              trialDaysRemaining: 30,
-              workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
-              visualTheme: 'violet',
-              featured: false,
-              isSampleShowcase: false,
-              ...ovUsr,
-            });
-            byIdOrSlug.set(synthId, synthBiz);
-          }
-        }
-      }
-
+      void resolvedRegisteredUsers;
       return Array.from(byIdOrSlug.values());
     } catch {
       return list.filter(
-        (b) => b && !b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id)
+        (b) =>
+          b &&
+          !b.isSampleShowcase &&
+          !/^biz-[1-8]$/.test(b.id) &&
+          !String(b.name || '').includes('سالن شیر') &&
+          !String(b.name || '').includes('سالن ارکیده')
       );
     }
   };
@@ -2796,8 +2741,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   ): PaymentOrderItem => {
     const newOrder: PaymentOrderItem = {
       ...input,
-      id: `ORD-1405-${Math.floor(100 + Math.random() * 899)}`,
-      createdAtJalali: '۱۴۰۵/۰۸/۰۵',
+      id: `ORD-1403-${Math.floor(100 + Math.random() * 899)}`,
+      createdAtJalali: getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۳/۰۸/۲۱',
       status: autoApprove ? 'APPROVED' : 'PENDING',
     };
     setPaymentOrders((prev) => {
@@ -3229,7 +3174,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const permanentlyDeleteBusiness = (businessId: string) => {
     const targetBiz = businesses.find((b) => b.id === businessId);
-    setBusinesses((prev) => prev.filter((b) => b.id !== businessId));
+    setBusinesses((prev) =>
+      prev.filter(
+        (b) =>
+          b.id !== businessId &&
+          (!targetBiz?.name || b.name.trim() !== targetBiz.name.trim())
+      )
+    );
     setServices((prev) => prev.filter((s) => s.businessId !== businessId));
     setSpecialists((prev) => prev.filter((sp) => sp.businessId !== businessId));
 
@@ -3238,13 +3189,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         window.localStorage.getItem('timeto_permanently_deleted_biz_ids_v1') ||
         '[]';
       const permList: string[] = JSON.parse(permRaw);
-      if (!permList.includes(businessId)) {
-        permList.push(businessId);
-        window.localStorage.setItem(
-          'timeto_permanently_deleted_biz_ids_v1',
-          JSON.stringify(permList)
-        );
+      const tokensToSave = [
+        businessId,
+        targetBiz?.slug,
+        targetBiz?.name?.trim(),
+      ].filter(Boolean) as string[];
+      for (const tok of tokensToSave) {
+        if (!permList.includes(tok)) {
+          permList.push(tok);
+        }
       }
+      window.localStorage.setItem(
+        'timeto_permanently_deleted_biz_ids_v1',
+        JSON.stringify(permList)
+      );
 
       const ovRaw =
         window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
@@ -3261,18 +3219,35 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         window.localStorage.getItem('timeto_local_onboarded_businesses_v1') ||
         '[]';
       const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
-      if (localOnbList.some((lb) => lb.id === businessId)) {
-        window.localStorage.setItem(
-          'timeto_local_onboarded_businesses_v1',
-          JSON.stringify(localOnbList.filter((lb) => lb.id !== businessId))
-        );
-      }
+      const filteredOnb = localOnbList.filter(
+        (lb) =>
+          lb.id !== businessId &&
+          (!targetBiz?.name || lb.name.trim() !== targetBiz.name.trim())
+      );
+      window.localStorage.setItem(
+        'timeto_local_onboarded_businesses_v1',
+        JSON.stringify(filteredOnb)
+      );
     } catch {
       // ignore
     }
 
+    if (dataMode === 'real') {
+      const token =
+        typeof window !== 'undefined'
+          ? window.localStorage.getItem('beautyhub_session_token')
+          : null;
+      void fetch(`/api/v1/admin/businesses/${encodeURIComponent(businessId)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }).catch(() => {});
+    }
+
     showToast(
-      `کسب‌وکار «${targetBiz?.name || businessId}» برای همیشه از زباله‌دان و سامانه حذف شد.`,
+      `کسب‌وکار «${targetBiz?.name || businessId}» برای همیشه از زباله‌دان و تمام دستگاه‌ها حذف شد.`,
       'danger'
     );
   };
@@ -4861,6 +4836,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۳/۰۸/۲۱';
     const newReview: ReviewItem = {
       id: `rev-${Date.now()}`,
       businessId: input.businessId,
@@ -4869,7 +4845,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       authorPhone,
       serviceTitle: input.serviceTitle,
       rating: input.rating,
-      dateJalali: '۱۴۰۵/۰۸/۰۵',
+      dateJalali: todayJalali,
       comment: input.comment.trim(),
     };
     setReviews((prev) => {
@@ -4915,7 +4891,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
-    const replyDate = '۱۴۰۵/۰۸/۰۵';
+    const replyDate = getUpcomingJalaliDays(1)[0]?.dateJalali || '۱۴۰۳/۰۸/۲۱';
     if (dataMode === 'real') {
       try {
         await realApiClient.replyReview(reviewId, cleanReply, replyDate);
@@ -5855,26 +5831,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     let joinDatesChanged = false;
+    const isFakeOrInvalidJalali = (val?: string): boolean => {
+      if (!val) return true;
+      const eng = toEnglishDigitsClient(String(val)).trim();
+      if (
+        !eng.includes('/') ||
+        eng === 'امروز' ||
+        eng === 'ثبت‌شده' ||
+        eng === 'فعال' ||
+        eng.startsWith('1405/08/05') ||
+        eng.startsWith('1405/08/01') ||
+        eng.startsWith('1405/07/') ||
+        eng.startsWith('1405/') ||
+        eng.startsWith('202')
+      ) {
+        return true;
+      }
+      return false;
+    };
+
     const resolveUserJoinedJalali = (
       cleanPhone: string,
       rawCandidate?: string,
       timestampMs?: number,
       indexSeed = 0
     ): string => {
-      if (
-        rawCandidate &&
-        rawCandidate.includes('/') &&
-        rawCandidate !== 'امروز' &&
-        rawCandidate !== 'ثبت‌شده' &&
-        rawCandidate !== 'فعال'
-      ) {
-        if (savedJoinDates[cleanPhone] !== rawCandidate) {
-          savedJoinDates[cleanPhone] = rawCandidate;
+      void indexSeed;
+      if (rawCandidate && !isFakeOrInvalidJalali(rawCandidate)) {
+        const normalized = toPersianDigits(rawCandidate.trim());
+        if (savedJoinDates[cleanPhone] !== normalized) {
+          savedJoinDates[cleanPhone] = normalized;
           joinDatesChanged = true;
         }
-        return rawCandidate;
+        return normalized;
       }
-      if (savedJoinDates[cleanPhone] && savedJoinDates[cleanPhone].includes('/')) {
+      if (
+        savedJoinDates[cleanPhone] &&
+        !isFakeOrInvalidJalali(savedJoinDates[cleanPhone])
+      ) {
         return savedJoinDates[cleanPhone];
       }
       if (timestampMs && timestampMs > 1700000000000) {
@@ -5883,18 +5877,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         joinDatesChanged = true;
         return formatted;
       }
-      // تولید تاریخ شمسی واقعی و متمایز بر اساس شماره موبایل برای حساب‌های قدیمی‌تر که تاریخ دقیق نداشتند
-      let phoneHash = indexSeed;
-      for (let i = 0; i < cleanPhone.length; i++) {
-        phoneHash = (phoneHash * 31 + cleanPhone.charCodeAt(i)) % 24;
-      }
-      const daysAgo = phoneHash % 19;
-      const derivedDate = formatTimestampToJalali(
-        Date.now() - daysAgo * 24 * 60 * 60 * 1000
-      );
-      savedJoinDates[cleanPhone] = derivedDate;
+      const todayFormatted = formatTimestampToJalali(Date.now());
+      savedJoinDates[cleanPhone] = todayFormatted;
       joinDatesChanged = true;
-      return derivedDate;
+      return todayFormatted;
     };
 
     // ۱. کاربران دریافت‌شده از سرور

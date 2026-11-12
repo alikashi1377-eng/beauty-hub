@@ -23,6 +23,8 @@ import {
   CreditCard,
   MessageSquare,
   Send,
+  Download,
+  Copy,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -1469,62 +1471,72 @@ export const BusinessServicesPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
-  // تشخیص هوشمند حوزه تخصصی کسب‌وکار تا فقط کیت مربوط به همان حوزه نمایش داده شود
+  // تشخیص دقیق حوزه تخصصی کسب‌وکار تا فقط کیت مربوط به همان حوزه نمایش داده شود
   const detectedPrimaryCategory = React.useMemo(() => {
     const slug = (currentBiz?.categorySlug || '').toLowerCase();
     const label = `${currentBiz?.typeLabel || ''} ${currentBiz?.name || ''} ${currentBiz?.shortDescription || ''}`;
     if (
-      slug === 'laser-hair-removal' ||
+      slug.includes('laser') ||
       label.includes('لیزر') ||
       currentBiz?.targetGender === 'BOTH'
     ) {
       return 'لیزر موهای زائد';
     }
     if (
-      slug === 'skincare-facial' ||
-      slug === 'skin-facial' ||
+      slug.includes('skin') ||
+      slug.includes('facial') ||
       label.includes('پوست') ||
       label.includes('فیشیال') ||
-      label.includes('اسکین')
+      label.includes('فیشال') ||
+      label.includes('اسکین') ||
+      label.includes('پاکسازی')
     ) {
       return 'پوست و فیشیال';
     }
     if (
-      slug === 'men-barber' ||
+      slug.includes('barber') ||
+      slug.includes('men') ||
       currentBiz?.type === 'MEN_BARBERSHOP' ||
       label.includes('مردانه') ||
       label.includes('پیرایش')
     ) {
       return 'پیرایش و استایل مردانه';
     }
-    if (slug === 'nail-design' || label.includes('ناخن')) {
+    if (
+      slug.includes('nail') ||
+      label.includes('ناخن') ||
+      label.includes('مانیکور') ||
+      label.includes('پدیکور')
+    ) {
       return 'کاشت و طراحی ناخن';
     }
     if (
-      slug === 'makeup-bridal' ||
+      slug.includes('makeup') ||
+      slug.includes('bridal') ||
       label.includes('میکاپ') ||
-      label.includes('عروس')
+      label.includes('عروس') ||
+      label.includes('گریم')
     ) {
       return 'میکاپ و عروس';
     }
     if (
-      slug === 'eyelash-brow' ||
+      slug.includes('lash') ||
+      slug.includes('brow') ||
       label.includes('مژه') ||
-      label.includes('ابرو')
+      label.includes('ابرو') ||
+      label.includes('فیبروز') ||
+      label.includes('لیفت')
     ) {
       return 'مژه و ابرو';
     }
     return 'مو و رنگ';
   }, [currentBiz]);
 
-  const [activeKitCategory, setActiveKitCategory] = useState<string>(
-    detectedPrimaryCategory
-  );
-  useEffect(() => {
-    setActiveKitCategory(detectedPrimaryCategory);
-  }, [detectedPrimaryCategory]);
+  // کیت فقط مربوط به حوزه تخصصی خودِ کسب‌وکار نمایش داده می‌شود
+  const activeKitCategory = detectedPrimaryCategory;
 
-  const [kitPanelOpen, setKitPanelOpen] = useState<boolean>(true);
+  // صفحه در ابتدا تمیز و بسته باشد؛ کیت فقط با کلیک کاربر باز شود
+  const [kitPanelOpen, setKitPanelOpen] = useState<boolean>(false);
   const [selectedCat, setSelectedCat] = useState<string>('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<ServiceItem | null>(
@@ -2069,22 +2081,13 @@ export const BusinessServicesPage: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <label className="text-[11px] font-bold text-[#475569]">
-                تغییر لاین کیت (ویژه سالن‌های چندلاینی):
-              </label>
-              <select
-                value={activeKitCategory}
-                onChange={(e) => setActiveKitCategory(e.target.value)}
-                aria-label="انتخاب حوزه تخصصی کیت آماده"
-                className="rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-xs font-extrabold text-[#061138] cursor-pointer focus:border-[#0057FF] focus:outline-none"
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setKitPanelOpen(false)}
               >
-                {allKitDomains.map((dom) => (
-                  <option key={dom} value={dom}>
-                    {dom}
-                    {dom === detectedPrimaryCategory ? ' (حوزه اصلی شما)' : ''}
-                  </option>
-                ))}
-              </select>
+                <span>بستن کیت آماده</span>
+              </Button>
             </div>
           </div>
 
@@ -2494,39 +2497,83 @@ export const BusinessServicesPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* فیلتر دسته‌بندی خدمات */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setSelectedCat('ALL')}
-          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-            selectedCat === 'ALL'
-              ? 'bg-[#8B5CF6] text-white'
-              : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
-          }`}
-        >
-          همه خدمات ({toPersianDigits(bizServices.length)})
-        </button>
-        {uniqueCats.map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => setSelectedCat(cat)}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
-              selectedCat === cat
-                ? 'bg-[#8B5CF6] text-white'
-                : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
+      {bizServices.length === 0 && !kitPanelOpen ? (
+        <Card className="p-6 sm:p-8 text-center space-y-4 border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC]/60">
+          <div className="space-y-1.5 max-w-xl mx-auto">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] text-xs font-extrabold">
+              حوزه تخصصی شما: {activeKitCategory}
+            </span>
+            <h2 className="text-base sm:text-lg font-black text-[#061138]">
+              هنوز خدمتی در منوی رزرو شما ثبت نشده است
+            </h2>
+            <p className="text-xs sm:text-sm text-[#475569] leading-relaxed">
+              برای شروع، یکی از ۳ روش زیر را انتخاب کنید تا آیتم‌های مربوط به حوزه تخصصی «{activeKitCategory}» نمایش داده شوند:
+            </p>
+          </div>
 
-      <ResponsiveTable<ServiceItem>
-        keyExtractor={(s) => s.id}
-        data={visibleServices}
-        columns={[
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setKitPanelOpen(true)}
+            >
+              <span>✨ مشاهده کیت آماده «{activeKitCategory}»</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => openAddModal('SINGLE')}
+            >
+              <Plus className="w-4 h-4" />
+              <span>تعریف خدمت تکی</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => openAddModal('PACKAGE')}
+            >
+              <Plus className="w-4 h-4" />
+              <span>ساخت پکیج سفارشی / چندمرحله‌ای</span>
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {bizServices.length > 0 ? (
+        <>
+          {/* فیلتر دسته‌بندی خدمات */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCat('ALL')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                selectedCat === 'ALL'
+                  ? 'bg-[#8B5CF6] text-white'
+                  : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
+              }`}
+            >
+              همه خدمات ({toPersianDigits(bizServices.length)})
+            </button>
+            {uniqueCats.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setSelectedCat(cat)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
+                  selectedCat === cat
+                    ? 'bg-[#8B5CF6] text-white'
+                    : 'bg-white border border-[#E6E0F5] text-[#6B6480] hover:text-[#1E1B2E]'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <ResponsiveTable<ServiceItem>
+            keyExtractor={(s) => s.id}
+            data={visibleServices}
+            columns={[
           {
             key: 'title',
             header: 'عنوان، مراحل پکیج و شرح خدمت',
@@ -2666,6 +2713,8 @@ export const BusinessServicesPage: React.FC = () => {
           },
         ]}
       />
+        </>
+      ) : null}
 
       {/* مودال جامع ساخت پکیج و شخصی‌سازی کامل خدمت (با چک‌لیست مراحل و مواد مصرفی تا هیچ موردی از قلم نیفتد) */}
       <Modal
@@ -2717,11 +2766,7 @@ export const BusinessServicesPage: React.FC = () => {
                 onChange={(e) => setCategory(e.target.value)}
                 options={Array.from(
                   new Set([
-                    ...allKitDomains,
-                    ...(categories.length > 0
-                      ? categories
-                      : SAMPLE_CATEGORIES
-                    ).map((c) => c.title),
+                    activeKitCategory,
                     ...(category ? [category] : []),
                   ])
                 ).map((titleItem) => ({
@@ -3327,6 +3372,7 @@ export const BusinessCustomersPage: React.FC = () => {
     updateCustomer,
     deleteCustomer,
     sendBusinessCustomerSms,
+    showToast,
   } = usePrototypeData();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -3343,6 +3389,58 @@ export const BusinessCustomersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerRecord | null>(null);
+
+  // تجمیع خودکار مشتریان ثبت‌شده دستی + مشتریانی که آنلاین نوبت گرفته‌اند تا هیچ شماره‌ای از قلم نیفتد
+  const mergedBusinessCustomers = React.useMemo(() => {
+    const byKey = new Map<string, CustomerRecord>();
+
+    for (const c of customers) {
+      const cleanPhone = normalizeIranMobileInput(c.phone || c.phoneMasked || '');
+      const key = cleanPhone || c.id;
+      byKey.set(key, {
+        ...c,
+        phone: cleanPhone || c.phone,
+      });
+    }
+
+    const bizAppointments = currentBiz
+      ? appointments.filter(
+          (a) =>
+            a.businessId === currentBiz.id || a.businessSlug === currentBiz.slug
+        )
+      : appointments;
+
+    for (const apt of bizAppointments) {
+      const cleanPhone = normalizeIranMobileInput(apt.customerPhoneMasked || '');
+      const key = cleanPhone || `apt-cust-${apt.customerName}-${apt.id}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        byKey.set(key, {
+          ...existing,
+          phone: existing.phone || cleanPhone || undefined,
+          lastVisitJalali: existing.lastVisitJalali || apt.dateJalali,
+          favoriteService: existing.favoriteService || apt.serviceTitle,
+        });
+      } else {
+        byKey.set(key, {
+          id: `cust-apt-${apt.id}`,
+          fullName: apt.customerName || 'مشتری نوبت آنلاین',
+          phone: cleanPhone || undefined,
+          phoneMasked: cleanPhone
+            ? toPersianDigits(cleanPhone)
+            : apt.customerPhoneMasked,
+          city: currentBiz?.city || 'اصفهان',
+          totalVisits: 1,
+          lastVisitJalali: apt.dateJalali,
+          totalSpentToman: apt.priceToman || 0,
+          favoriteService: apt.serviceTitle || 'خدمات سالن',
+          notes: apt.notes || 'ثبت‌شده از طریق رزرو آنلاین نوبت',
+        });
+      }
+    }
+
+    return Array.from(byKey.values());
+  }, [customers, appointments, currentBiz]);
 
   // مودال افزودن / ویرایش تکی مشتری
   const [isSingleModalOpen, setIsSingleModalOpen] = useState(false);
@@ -3529,7 +3627,7 @@ export const BusinessCustomersPage: React.FC = () => {
     }
   };
 
-  const filtered = customers.filter((c) => {
+  const filtered = mergedBusinessCustomers.filter((c) => {
     const q = searchQuery.trim();
     if (!q) return true;
     const qEn = toEnglishDigitsClient(q);
@@ -3542,12 +3640,102 @@ export const BusinessCustomersPage: React.FC = () => {
     );
   });
 
+  const handleExportCustomersCsv = () => {
+    const targetList = filtered.length > 0 ? filtered : mergedBusinessCustomers;
+    if (targetList.length === 0) {
+      showToast('هنوز مشتری در لیست شما ثبت نشده است.', 'warning');
+      return;
+    }
+
+    const escapeCsvCell = (val: unknown): string => {
+      const str = String(val ?? '').replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      'ردیف',
+      'نام و نام خانوادگی',
+      'شماره موبایل',
+      'شهر',
+      'تعداد مراجعات',
+      'آخرین مراجعه',
+      'مجموع پرداختی (تومان)',
+      'خدمت دریافتی / مورد علاقه',
+      'یادداشت پرونده',
+    ];
+
+    const rows = targetList.map((c, idx) => {
+      const cleanPhone =
+        normalizeIranMobileInput(c.phone || c.phoneMasked || '') ||
+        toEnglishDigitsClient(c.phone || c.phoneMasked || '');
+      return [
+        idx + 1,
+        c.fullName,
+        cleanPhone,
+        c.city || currentBiz?.city || 'اصفهان',
+        c.totalVisits ?? 1,
+        c.lastVisitJalali || '',
+        c.totalSpentToman ?? 0,
+        c.favoriteService || '',
+        c.notes || '',
+      ]
+        .map(escapeCsvCell)
+        .join(',');
+    });
+
+    // افزودن UTF-8 BOM (\uFEFF) برای نمایش صحیح حروف فارسی در Microsoft Excel
+    const csvContent = '\uFEFF' + [headers.map(escapeCsvCell).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeBizSlug = (currentBiz?.slug || 'customers').replace(/[^a-zA-Z0-9-_]/g, '-');
+    link.href = url;
+    link.setAttribute('download', `timeto-customers-${safeBizSlug}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast(
+      `فایل اکسل (CSV) شامل اطلاعات و شماره موبایل ${toPersianDigits(targetList.length)} مشتری با موفقیت دانلود شد.`
+    );
+  };
+
+  const handleCopyAllCustomerPhones = async () => {
+    const targetList = filtered.length > 0 ? filtered : mergedBusinessCustomers;
+    const phones = Array.from(
+      new Set(
+        targetList
+          .map(
+            (c) =>
+              normalizeIranMobileInput(c.phone || c.phoneMasked || '') ||
+              toEnglishDigitsClient(c.phone || c.phoneMasked || '').trim()
+          )
+          .filter(Boolean)
+      )
+    );
+
+    if (phones.length === 0) {
+      showToast('شماره موبایلی برای کپی یافت نشد.', 'warning');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(phones.join('\n'));
+      showToast(
+        `شماره موبایل ${toPersianDigits(phones.length)} مشتری به صورت یکجا کپی شد.`
+      );
+    } catch {
+      showToast('امکان کپی خودکار در این مرورگر نبود؛ از دکمه دانلود اکسل استفاده کنید.', 'warning');
+    }
+  };
+
   return (
     <div className="space-y-5">
       <PageHeader
         kicker="مشتریان · باشگاه و پرونده مراجعان سالن"
-        title="مدیریت و ثبت دستی مشتریان سالن"
-        subtitle="مشتریان حضوری و قبلی سالن خود را به صورت تکی یا گروهی (چندتایی) وارد کنید، سوابق رنگ و خدماتشان را نگه دارید و پیامک بفرستید"
+        title="مدیریت و خروجی اطلاعات مشتریان"
+        subtitle="مشتریان حضوری و آنلاین خود را مدیریت کنید، به صورت تکی یا گروهی وارد نمایید و هر زمان خواستید از شماره‌ها و اطلاعات آن‌ها خروجی اکسل بگیرید"
         routePattern="/app/customers"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -3558,10 +3746,26 @@ export const BusinessCustomersPage: React.FC = () => {
             <Button
               variant="outline"
               size="sm"
+              onClick={handleExportCustomersCsv}
+            >
+              <Download className="w-4 h-4 text-[#0057FF]" />
+              <span>خروجی اکسل (CSV) مشتریان</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCopyAllCustomerPhones()}
+            >
+              <Copy className="w-4 h-4 text-[#0057FF]" />
+              <span>کپی یکجای شماره‌ها</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setIsBulkModalOpen(true)}
             >
               <Users className="w-4 h-4" />
-              <span>افزودن سریع گروهی (مشتریان قبلی)</span>
+              <span>افزودن سریع گروهی</span>
             </Button>
             <Button
               variant="primary"
@@ -3574,6 +3778,36 @@ export const BusinessCustomersPage: React.FC = () => {
           </div>
         }
       />
+
+      {/* نوار ابزار خروجی سریع شماره‌ها و اطلاعات مشتریان */}
+      <div className="rounded-2xl border border-[#BFDBFE] bg-gradient-to-r from-[#EFF6FF] to-[#F8FAFC] p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-xs sm:text-sm font-black text-[#061138]">
+            پشتیبان‌گیری و خروجی گرفتن از لیست مشتریان ({toPersianDigits(mergedBusinessCustomers.length)} نفر)
+          </p>
+          <p className="text-[11px] font-semibold text-[#475569]">
+            شامل تمام مشتریان نوبت آنلاین و مشتریان حضوری ثبت‌شده به همراه نام، شماره موبایل، تعداد مراجعات و خدمات دریافتی
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={handleExportCustomersCsv}
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0057FF] px-3.5 py-2 text-xs font-black text-white shadow-xs hover:bg-[#0046CC] transition cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>دانلود فایل اکسل / CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleCopyAllCustomerPhones()}
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-extrabold text-[#061138] hover:border-[#0057FF] hover:text-[#0057FF] transition cursor-pointer"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>کپی همه شماره‌ها</span>
+          </button>
+        </div>
+      </div>
 
       {/* کارت راهنمای ثبت سریع مشتریان حضوری + آمار مشتریان */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -3596,7 +3830,7 @@ export const BusinessCustomersPage: React.FC = () => {
             کل پرونده‌های ثبت‌شده سالن
           </p>
           <p className="text-2xl font-extrabold text-[#061138] tabular-nums">
-            {toPersianDigits(customers.length)} نفر
+            {toPersianDigits(mergedBusinessCustomers.length)} نفر
           </p>
           <p className="text-[11px] text-[#6B6480]">
             شامل مشتریان آنلاین و حضوری
@@ -3609,7 +3843,7 @@ export const BusinessCustomersPage: React.FC = () => {
           </p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {toPersianDigits(
-              customers.filter((c) => c.totalVisits >= 3).length
+              mergedBusinessCustomers.filter((c) => c.totalVisits >= 3).length
             )}{' '}
             نفر
           </p>

@@ -27,6 +27,7 @@ import {
   createServiceInDb,
   createSpecialistInDb,
   deleteAdminUserInDb,
+  deleteBusinessPermanentlyInDb,
   deleteGalleryItemInDb,
   deleteReviewInDb,
   getAdminOverviewPayloadInDb,
@@ -1497,10 +1498,39 @@ export function createApiV1Router(
             throw innerErr;
           }
         }
+        const data = await getBootstrapPayload(pool);
         res.status(200).json({
           ok: true,
           mode: 'real',
           status,
+          data,
+        });
+      } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  router.delete(
+    '/admin/businesses/:id',
+    requireAuth,
+    requireRole('PLATFORM_ADMIN'),
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(200).json({ ok: true, mode: 'mock' });
+        return;
+      }
+      if (!pool) return;
+
+      try {
+        await deleteBusinessPermanentlyInDb(pool, req.params.id);
+        const data = await getBootstrapPayload(pool);
+        res.status(200).json({
+          ok: true,
+          mode: 'real',
+          data,
+          message: 'کسب‌وکار به طور کامل و دائمی از سامانه حذف شد.',
         });
       } catch (err) {
         handleRealModeRouteError(res, err);
@@ -2403,6 +2433,32 @@ export function createApiV1Router(
         runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
       ),
     });
+  });
+
+  router.get('/payments/zibal/server-ip', async (_req: Request, res: Response) => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const ipRes = await fetch('https://api.ipify.org?format=json', {
+          signal: controller.signal,
+        });
+        const data = (await ipRes.json()) as { ip?: string };
+        res.status(200).json({
+          ok: true,
+          outgoingIp: data?.ip || '',
+          domainIp: '185.208.181.150',
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch {
+      res.status(200).json({
+        ok: true,
+        outgoingIp: '',
+        domainIp: '185.208.181.150',
+      });
+    }
   });
 
   router.post('/payments/zibal/config', (req: Request, res: Response) => {

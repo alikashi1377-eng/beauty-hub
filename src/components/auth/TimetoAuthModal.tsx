@@ -59,6 +59,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const {
+    authUser,
     adminUsers,
     businesses,
     requestOtpLogin,
@@ -71,11 +72,22 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
   const savedMemory = getLastSavedCredential();
 
-  const [screen, setScreen] = useState<AuthFlowScreen>(initialScreen);
+  const resolvedInitialScreen: AuthFlowScreen =
+    authUser &&
+    defaultRole === 'BUSINESS_OWNER' &&
+    (initialScreen === 'REGISTER_STEP_1_PHONE' ||
+      initialScreen === 'ROLE_PICKER' ||
+      initialScreen === 'REGISTER_STEP_4_SALON')
+      ? 'REGISTER_STEP_4_SALON'
+      : initialScreen;
+
+  const [screen, setScreen] = useState<AuthFlowScreen>(resolvedInitialScreen);
   const [roleChoice, setRoleChoice] = useState<AccountRoleChoice>(defaultRole);
 
   // فیلدهای شماره و رمز عبور
-  const [phone, setPhone] = useState<string>(savedMemory?.phone || '');
+  const [phone, setPhone] = useState<string>(
+    authUser?.phone || savedMemory?.phone || ''
+  );
   const [loginPassword, setLoginPassword] = useState<string>(
     savedMemory?.password || ''
   );
@@ -101,7 +113,13 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
   // فیلدهای گام ۳ (پروفایل: عکس اختیاری + نام + نام خانوادگی)
   const [avatarUrl, setAvatarUrl] = useState<string>('');
-  const [firstName, setFirstName] = useState<string>('');
+  const [firstName, setFirstName] = useState<string>(
+    authUser?.fullName &&
+      authUser.fullName !== 'کاربر تایم تو' &&
+      authUser.fullName !== 'کاربر BeautyHub'
+      ? authUser.fullName
+      : ''
+  );
   const [lastName, setLastName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -131,8 +149,26 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
+    if (
+      authUser &&
+      defaultRole === 'BUSINESS_OWNER' &&
+      (initialScreen === 'REGISTER_STEP_1_PHONE' ||
+        initialScreen === 'ROLE_PICKER' ||
+        initialScreen === 'REGISTER_STEP_4_SALON')
+    ) {
+      setPhone(authUser.phone || '');
+      if (
+        authUser.fullName &&
+        authUser.fullName !== 'کاربر تایم تو' &&
+        authUser.fullName !== 'کاربر BeautyHub'
+      ) {
+        setFirstName(authUser.fullName);
+      }
+      setScreen('REGISTER_STEP_4_SALON');
+      return;
+    }
     setScreen(initialScreen);
-  }, [initialScreen]);
+  }, [initialScreen, authUser, defaultRole]);
 
   useEffect(() => {
     setRoleChoice(defaultRole);
@@ -337,12 +373,15 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   // ۳. ادامه از گام ۱ ثبت‌نام (شماره + رمز عبور + تکرار رمز) به گام ۲ (کد ۶ رقمی)
   const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const knownPhones = [
-      ...adminUsers.map((u) => u.phone || ''),
-      ...businesses
-        .filter((b) => !b.isSampleShowcase)
-        .map((b) => b.ownerPhone || b.phoneDisplay || ''),
-    ].filter(Boolean);
+    const knownPhones =
+      roleChoice === 'BUSINESS_OWNER'
+        ? []
+        : [
+            ...adminUsers.map((u) => u.phone || ''),
+            ...businesses
+              .filter((b) => !b.isSampleShowcase)
+              .map((b) => b.ownerPhone || b.phoneDisplay || ''),
+          ].filter(Boolean);
 
     const check = validateRegistrationStep1({
       phone,
@@ -385,7 +424,22 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
   };
 
-  // ۴. مدیریت ورود ارقام در ۶ باکس OTP
+  // ۴. مدیریت ورود یکپارچه کد ۶ رقمی OTP (پشتیبانی کامل از Auto-fill پیامک روی کیبورد موبایل)
+  const handleUnifiedOtpChange = (rawValue: string) => {
+    setError('');
+    const clean = toEnglishDigitsClient(rawValue)
+      .replace(/\D/g, '')
+      .slice(0, 6);
+    const nextDigits = Array.from({ length: 6 }, (_, i) => clean[i] || '');
+    setOtpDigits(nextDigits);
+    if (
+      clean.length === 6 &&
+      (screen === 'REGISTER_STEP_2_OTP' || screen === 'LOGIN_OTP_VERIFY')
+    ) {
+      void handleVerifyOtpBoxes(clean);
+    }
+  };
+
   const handleOtpBoxChange = (index: number, rawValue: string) => {
     setError('');
     const result = applyOtpDigitChange(otpDigits, index, rawValue);
@@ -440,7 +494,16 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
           return;
         }
 
+        // اگر کاربر از صفحه ثبت کسب‌وکار آمده ولی هنوز کسب‌وکاری ثبت نکرده، مستقیم به گام ۴ ثبت سالن/متخصص هدایت شود
         const isBiz = user.roles.includes('BUSINESS_OWNER');
+        if (roleChoice === 'BUSINESS_OWNER' && !isBiz && !isSuperAdmin) {
+          if (user.fullName && user.fullName !== 'کاربر تایم تو') {
+            setFirstName(user.fullName);
+          }
+          setScreen('REGISTER_STEP_4_SALON');
+          return;
+        }
+
         const dest =
           redirectTo ||
           (isSuperAdmin ? '/admin' : isBiz ? '/app' : undefined);
@@ -570,7 +633,9 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             ? specialistSpecialty.categorySlug
             : isLaserCenterSelected
               ? 'laser-hair-removal'
-              : undefined,
+              : salonType === BusinessType.MenBarbershop
+                ? 'men-barber'
+                : specialistSpecialty.categorySlug || 'hair-color',
           typeLabel: isIndependentSpec
             ? specialistSpecialty.title
             : isLaserCenterSelected
@@ -1200,36 +1265,69 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   کد ۶ رقمی پیامک‌شده به شماره همراه خود را وارد کنید
                 </p>
                 <p className="text-[11px] font-medium text-slate-400">
-                  در صورت دریافت پیامک روی گوشی، کد به صورت خودکار درج می‌شود
+                  کد ۶ رقمی را تایپ کنید یا از پیشنهاد بالای کیبورد گوشی انتخاب نمایید
                 </p>
               </div>
 
-              {/* ۶ خانه مجزای عدد (دقیقاً مطابق عکس ۴ و ۵) */}
+              {/* ورودی یکپارچه کد ۶ رقمی (سازگار با Auto-fill پیامک در اندروید و iOS) */}
               <div
                 dir="ltr"
-                className="grid grid-cols-6 gap-2 sm:gap-2.5 py-1"
+                className="relative py-1 cursor-text"
+                onClick={() => otpInputsRef.current[0]?.focus()}
               >
-                {otpDigits.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => {
-                      otpInputsRef.current[idx] = el;
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete={idx === 0 ? 'one-time-code' : 'off'}
-                    maxLength={6}
-                    value={digit}
-                    aria-label={`رقم ${idx + 1} کد تایید`}
-                    onChange={(e) => handleOtpBoxChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleOtpBoxKeyDown(idx, e)}
-                    className={`h-13 sm:h-14 w-full rounded-2xl border-2 text-center font-mono text-lg font-black transition-all focus:outline-none ${
-                      digit
-                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#061138] shadow-2xs'
-                        : 'border-slate-200 bg-[#F8FAFC] text-[#061138] focus:border-[#0057FF] focus:bg-white focus:ring-4 focus:ring-[#0057FF]/10'
-                    }`}
-                  />
-                ))}
+                <input
+                  key="unified-otp-input"
+                  ref={(el) => {
+                    otpInputsRef.current[0] = el;
+                  }}
+                  id="timeto-otp-code-input"
+                  name="otp"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otpDigits.join('')}
+                  aria-label="کد تایید ۶ رقمی پیامک"
+                  onChange={(e) => handleUnifiedOtpChange(e.target.value)}
+                  onInput={(e) =>
+                    handleUnifiedOtpChange(
+                      (e.target as HTMLInputElement).value
+                    )
+                  }
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData('text');
+                    if (pasted) {
+                      e.preventDefault();
+                      handleUnifiedOtpChange(pasted);
+                    }
+                  }}
+                  className="absolute inset-0 z-10 h-full w-full opacity-0 cursor-text font-mono text-lg"
+                />
+                <div className="grid grid-cols-6 gap-2 sm:gap-2.5 pointer-events-none">
+                  {Array.from({ length: 6 }, (_, idx) => {
+                    const digit = otpDigits[idx] || '';
+                    const activeIdx = Math.min(
+                      5,
+                      otpDigits.join('').length
+                    );
+                    const isCurrent = idx === activeIdx;
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex h-13 sm:h-14 w-full items-center justify-center rounded-2xl border-2 text-center font-mono text-lg font-black transition-all ${
+                          digit
+                            ? 'border-[#0057FF] bg-[#EFF6FF] text-[#061138] shadow-2xs'
+                            : isCurrent
+                              ? 'border-[#0057FF] bg-white text-[#061138] ring-4 ring-[#0057FF]/10'
+                              : 'border-slate-200 bg-[#F8FAFC] text-[#061138]'
+                        }`}
+                      >
+                        {digit ? toPersianDigits(digit) : ''}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {error ? (
@@ -1383,6 +1481,77 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 </p>
               </div>
 
+              {/* انتخاب مستقیم نوع حساب در همان فرم تکمیل پروفایل تا سالن‌دار یا متخصص هرگز به اشتباه به عنوان مشتری عادی ثبت‌نام نشود */}
+              <div className="space-y-1.5 pt-1">
+                <label className="block text-right text-xs font-extrabold text-[#061138]">
+                  نوع فعالیت شما در تایم‌تو چیست؟
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRoleChoice('CUSTOMER')}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 p-2.5 text-center transition-all cursor-pointer ${
+                      roleChoice === 'CUSTOMER'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF] shadow-2xs'
+                        : 'border-slate-200 bg-[#F8FAFC] text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <Users className="h-4.5 w-4.5" />
+                    <span className="text-[11px] font-black">مشتری</span>
+                    <span className="text-[9px] font-semibold opacity-80">
+                      رزرو نوبت
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoleChoice('BUSINESS_OWNER');
+                      setProviderSubType('SALON');
+                      setSalonType(
+                        userGender === 'MALE'
+                          ? BusinessType.MenBarbershop
+                          : BusinessType.WomenSalon
+                      );
+                    }}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 p-2.5 text-center transition-all cursor-pointer ${
+                      roleChoice === 'BUSINESS_OWNER' &&
+                      providerSubType === 'SALON'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF] shadow-2xs'
+                        : 'border-slate-200 bg-[#F8FAFC] text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <Store className="h-4.5 w-4.5" />
+                    <span className="text-[11px] font-black">سالن‌دار</span>
+                    <span className="text-[9px] font-semibold opacity-80">
+                      ثبت سالن زیبایی
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoleChoice('BUSINESS_OWNER');
+                      setProviderSubType('SPECIALIST');
+                      setSalonType(BusinessType.IndependentSpecialist);
+                      setIsLaserCenterSelected(false);
+                    }}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-2xl border-2 p-2.5 text-center transition-all cursor-pointer ${
+                      roleChoice === 'BUSINESS_OWNER' &&
+                      providerSubType === 'SPECIALIST'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF] shadow-2xs'
+                        : 'border-slate-200 bg-[#F8FAFC] text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <Sparkles className="h-4.5 w-4.5" />
+                    <span className="text-[11px] font-black">متخصص زیبایی</span>
+                    <span className="text-[9px] font-semibold opacity-80">
+                      ناخن، مژه، فیشال
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               {error ? (
                 <p className="rounded-xl bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-600 border border-rose-200">
                   {error}
@@ -1396,9 +1565,9 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               >
                 {roleChoice === 'BUSINESS_OWNER'
                   ? providerSubType === 'SPECIALIST'
-                    ? 'ادامه به مشخصات تخصص ←'
-                    : 'ادامه به مشخصات سالن ←'
-                  : 'ورود به حساب'}
+                    ? 'ادامه به ثبت مشخصات متخصص ←'
+                    : 'ادامه به ثبت مشخصات سالن ←'
+                  : 'تکمیل ثبت‌نام و ورود'}
               </button>
             </form>
           ) : null}
@@ -1545,53 +1714,126 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  <label className="block text-right text-xs font-extrabold text-[#061138]">
-                    نوع مرکز (نمایش در بخش سالن‌ها)
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      {
-                        id: 'WOMEN',
-                        val: BusinessType.WomenSalon,
-                        isLaser: false,
-                        label: 'سالن بانوان',
-                      },
-                      {
-                        id: 'MEN',
-                        val: BusinessType.MenBarbershop,
-                        isLaser: false,
-                        label: 'پیرایش مردانه',
-                      },
-                      {
-                        id: 'LASER',
-                        val: BusinessType.WomenSalon,
-                        isLaser: true,
-                        label: 'مرکز لیزر',
-                      },
-                    ].map((item) => {
-                      const isSelected = item.isLaser
-                        ? isLaserCenterSelected
-                        : !isLaserCenterSelected && salonType === item.val;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => {
-                            setSalonType(item.val);
-                            setIsLaserCenterSelected(item.isLaser);
-                          }}
-                          className={`rounded-xl border py-2.5 px-2 text-[11px] font-extrabold transition cursor-pointer ${
-                            isSelected
-                              ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
-                              : 'border-slate-200 bg-slate-50 text-slate-600'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
+                <div className="space-y-2.5">
+                  <div className="space-y-1.5">
+                    <label className="block text-right text-xs font-extrabold text-[#061138]">
+                      نوع مرکز (نمایش در بخش سالن‌ها)
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        {
+                          id: 'WOMEN',
+                          val: BusinessType.WomenSalon,
+                          isLaser: false,
+                          label: 'سالن بانوان',
+                        },
+                        {
+                          id: 'MEN',
+                          val: BusinessType.MenBarbershop,
+                          isLaser: false,
+                          label: 'پیرایش مردانه',
+                        },
+                        {
+                          id: 'LASER',
+                          val: BusinessType.WomenSalon,
+                          isLaser: true,
+                          label: 'مرکز لیزر',
+                        },
+                      ].map((item) => {
+                        const isSelected = item.isLaser
+                          ? isLaserCenterSelected
+                          : !isLaserCenterSelected && salonType === item.val;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setSalonType(item.val);
+                              setIsLaserCenterSelected(item.isLaser);
+                              if (
+                                item.id === 'WOMEN' &&
+                                specialistSpecialty.categorySlug ===
+                                  'men-grooming'
+                              ) {
+                                setSpecialistSpecialty({
+                                  title: 'سالن زیبایی بانوان',
+                                  categorySlug: 'hair-color',
+                                });
+                              }
+                            }}
+                            className={`rounded-xl border py-2.5 px-2 text-[11px] font-extrabold transition cursor-pointer ${
+                              isSelected
+                                ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
+                                : 'border-slate-200 bg-slate-50 text-slate-600'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  {!isLaserCenterSelected &&
+                  salonType === BusinessType.WomenSalon ? (
+                    <div className="space-y-1.5">
+                      <label className="block text-right text-xs font-extrabold text-[#061138]">
+                        لاین و حوزه اصلی سالن شما (جهت نمایش کیت خدمات مرتبط)
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        {[
+                          {
+                            title: 'سالن زیبایی و مو و رنگ',
+                            label: 'مو، رنگ و کراتین',
+                            categorySlug: 'hair-color',
+                          },
+                          {
+                            title: 'مرکز تخصصی پوست و فیشیال',
+                            label: 'پوست و فیشیال',
+                            categorySlug: 'skin-facial',
+                          },
+                          {
+                            title: 'مرکز کاشت و طراحی ناخن',
+                            label: 'کاشت و طراحی ناخن',
+                            categorySlug: 'nail-services',
+                          },
+                          {
+                            title: 'مرکز تخصصی مژه و ابرو',
+                            label: 'مژه و ابرو',
+                            categorySlug: 'lash-brow',
+                          },
+                          {
+                            title: 'عمارت عروس و میکاپ تخصصی',
+                            label: 'میکاپ و عروس',
+                            categorySlug: 'bridal-makeup',
+                          },
+                        ].map((lineItem) => {
+                          const activeLine =
+                            specialistSpecialty.categorySlug ===
+                            lineItem.categorySlug;
+                          return (
+                            <button
+                              key={lineItem.categorySlug}
+                              type="button"
+                              onClick={() =>
+                                setSpecialistSpecialty({
+                                  title: lineItem.title,
+                                  categorySlug: lineItem.categorySlug,
+                                })
+                              }
+                              className={`rounded-xl border py-2 px-2 text-[11px] font-extrabold transition cursor-pointer ${
+                                activeLine
+                                  ? 'border-[#0057FF] bg-[#EFF6FF] text-[#0057FF]'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                              }`}
+                            >
+                              {lineItem.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -1694,20 +1936,24 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
                   کد ۶ رقمی پیامک‌شده به شماره همراه شما
                 </label>
-                <div dir="ltr" className="grid grid-cols-6 gap-2">
-                  {otpDigits.map((digit, idx) => (
-                    <input
-                      key={idx}
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete={idx === 0 ? 'one-time-code' : 'off'}
-                      maxLength={6}
-                      value={digit}
-                      onChange={(e) => handleOtpBoxChange(idx, e.target.value)}
-                      className="h-11 w-full rounded-xl border border-slate-300 bg-[#F8FAFC] text-center font-mono text-base font-black text-[#061138]"
-                    />
-                  ))}
-                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="one-time-code"
+                  name="otp"
+                  dir="ltr"
+                  maxLength={6}
+                  value={otpDigits.join('')}
+                  onChange={(e) => handleUnifiedOtpChange(e.target.value)}
+                  onInput={(e) =>
+                    handleUnifiedOtpChange(
+                      (e.target as HTMLInputElement).value
+                    )
+                  }
+                  placeholder="کد ۶ رقمی..."
+                  className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 px-4 text-center font-mono text-lg font-black tracking-[0.35em] text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                />
               </div>
 
               <div className="space-y-1.5">
