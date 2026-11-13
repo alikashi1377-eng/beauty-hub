@@ -67,9 +67,7 @@ export const HomePage: React.FC = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
 
   const approvedSalons = businesses.filter(
-    (b) =>
-      b.approvalStatus !== 'REJECTED' &&
-      b.type !== BusinessType.IndependentSpecialist
+    (b) => b.approvalStatus !== 'REJECTED'
   );
   const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
     const aSpon = Number(Boolean(a.isSponsored));
@@ -125,6 +123,12 @@ export const HomePage: React.FC = () => {
 
   const filteredProfessionals = specialists.filter((sp) => {
     if (proSpecialtyFilter === 'ALL') return true;
+    if (proSpecialtyFilter === 'laser') {
+      return (
+        sp.roleTitle.includes('لیزر') ||
+        sp.specialties.some((s) => s.includes('لیزر'))
+      );
+    }
     if (proSpecialtyFilter === 'hair') {
       return (
         sp.roleTitle.includes('مو') ||
@@ -598,6 +602,7 @@ export const HomePage: React.FC = () => {
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {[
               { id: 'ALL', label: 'همه متخصصان' },
+              { id: 'laser', label: 'لیزر موهای زائد' },
               { id: 'hair', label: 'مو و رنگ' },
               { id: 'skin', label: 'پوست و میکاپ' },
               { id: 'nails', label: 'ناخن و مژه' },

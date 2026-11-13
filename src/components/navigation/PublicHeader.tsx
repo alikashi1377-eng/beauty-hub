@@ -29,12 +29,28 @@ export const PublicHeader: React.FC = () => {
     adminNotifications,
     openAuthModal,
     logoutUser,
+    businesses,
   } = usePrototypeData();
 
   const totalFavs = favoriteBusinessIds.length + favoriteSpecialistIds.length;
+  const cleanUserPhone = (authUser?.phone || '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/\D/g, '');
+  const hasRegisteredSalonForPhone = Boolean(
+    cleanUserPhone &&
+      businesses.some((b) => {
+        if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) return false;
+        const bPhone = String(b.ownerPhone || b.phoneDisplay || '')
+          .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+          .replace(/\D/g, '');
+        return bPhone === cleanUserPhone;
+      })
+  );
   const isBusinessOwner =
     Boolean(ownedBusinessId) ||
-    Boolean(authUser?.roles?.includes('BUSINESS_OWNER'));
+    Boolean(authUser?.roles?.includes('BUSINESS_OWNER')) ||
+    Boolean(authUser?.businessMemberships?.length) ||
+    hasRegisteredSalonForPhone;
   const isLoggedInCustomerOnly = Boolean(authUser && !isBusinessOwner);
   const isPlatformAdmin = Boolean(
     authUser?.isPlatformAdmin && authUser?.roles?.includes('PLATFORM_ADMIN')
@@ -144,10 +160,10 @@ export const PublicHeader: React.FC = () => {
           {isBusinessOwner ? (
             <Link
               to="/app"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-[#061138] bg-[#00E5FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 shadow-[0_6px_16px_-4px_rgba(0,229,255,0.4)]"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-[#061138] bg-[#00E5FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 shadow-[0_6px_16px_-4px_rgba(0,229,255,0.4)]"
             >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>پیشخوان سالن</span>
+              <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
+              <span>ورود به پیشخوان</span>
             </Link>
           ) : !isPlatformAdmin ? (
             <button

@@ -563,12 +563,50 @@ async function ensureRegisteredOwnerBusinessesInDb(
       );
     }
 
-    // بررسی دسته‌بندی پیش‌فرض
-    const catRes = await client.query(
-      `SELECT id FROM categories ORDER BY (slug = 'hair-color') DESC, sort_order ASC LIMIT 1`
+    // بارگذاری نقشه دسته‌بندی‌ها برای تشخیص دقیق دسته هر سالن/متخصص (به‌ویژه لیزر موهای زائد)
+    const allCatsRes = await client.query(
+      `SELECT id, slug FROM categories`
     );
-    if (!catRes.rowCount || !catRes.rows[0]) return;
-    const defaultCategoryId = String(catRes.rows[0].id);
+    const categoryIdBySlug = new Map<string, string>();
+    for (const cRow of allCatsRes.rows) {
+      if (cRow.slug && cRow.id) {
+        categoryIdBySlug.set(String(cRow.slug), String(cRow.id));
+      }
+    }
+    const defaultCategoryId =
+      categoryIdBySlug.get('hair-color') ||
+      (allCatsRes.rows[0]?.id ? String(allCatsRes.rows[0].id) : '');
+    if (!defaultCategoryId) return;
+
+    const laserCategoryId = categoryIdBySlug.get('laser-hair-removal');
+    if (laserCategoryId) {
+      // اطمینان از اینکه هر کسب‌وکار یا متخصصی که در نام، عنوان یا خدماتش عبارت «لیزر» دارد به دسته‌بندی laser-hair-removal متصل باشد
+      await client.query(
+        `
+        UPDATE businesses b
+        SET primary_category_id = $1
+        WHERE b.primary_category_id IS DISTINCT FROM $1
+          AND (
+            b.name ILIKE '%لیزر%'
+            OR b.type_label ILIKE '%لیزر%'
+            OR b.short_description ILIKE '%لیزر%'
+            OR EXISTS (
+              SELECT 1 FROM services s
+              WHERE s.business_id = b.id
+                AND s.is_active = TRUE
+                AND (s.category_slug = 'laser-hair-removal' OR s.title ILIKE '%لیزر%' OR s.category_label ILIKE '%لیزر%')
+            )
+            OR EXISTS (
+              SELECT 1 FROM specialists sp
+              WHERE sp.business_id = b.id
+                AND sp.is_active = TRUE
+                AND (sp.role_title ILIKE '%لیزر%' OR sp.full_name ILIKE '%لیزر%' OR array_to_string(sp.specialties, ' ') ILIKE '%لیزر%')
+            )
+          )
+        `,
+        [laserCategoryId]
+      );
+    }
 
     // جمع‌آوری تمام حساب‌هایی که نقش صاحب کسب‌وکار دارند (از رجیستری یا overrides)
     const candidateByPhone = new Map<string, Record<string, unknown>>();
@@ -619,6 +657,18 @@ async function ensureRegisteredOwnerBusinessesInDb(
 
       const fullName = String(item.fullName || 'مدیر سالن').trim();
       const city = String(item.city || 'اصفهان').trim();
+      const rawCatSlug = String(item.categorySlug || '').trim();
+      const rawTypeLabel = String(item.typeLabel || '').trim();
+      const isLaserBiz =
+        rawCatSlug === 'laser-hair-removal' ||
+        explicitSalonName.includes('لیزر') ||
+        rawTypeLabel.includes('لیزر') ||
+        String(item.shortDescription || '').includes('لیزر');
+      const targetCatSlug = isLaserBiz
+        ? 'laser-hair-removal'
+        : rawCatSlug || 'hair-color';
+      const resolvedCategoryId =
+        categoryIdBySlug.get(targetCatSlug) || defaultCategoryId;
 
       const userUpsert = await client.query(
         `
@@ -657,6 +707,12 @@ async function ensureRegisteredOwnerBusinessesInDb(
 
       if (existingBizRes.rowCount && existingBizRes.rows[0]) {
         const existingBizUuid = String(existingBizRes.rows[0].id);
+        if (isLaserBiz && laserCategoryId) {
+          await client.query(
+            `UPDATE businesses SET primary_category_id = $2 WHERE id = $1 AND primary_category_id IS DISTINCT FROM $2`,
+            [existingBizUuid, laserCategoryId]
+          );
+        }
         await client.query(
           `
           INSERT INTO business_members (business_id, user_id, member_role, is_active)
@@ -689,18 +745,23 @@ async function ensureRegisteredOwnerBusinessesInDb(
             ? 'INDEPENDENT_SPECIALIST'
             : 'WOMEN_SALON';
       const bizTypeLabel =
-        bizType === 'MEN_BARBERSHOP'
-          ? 'آرایشگاه مردانه'
-          : bizType === 'INDEPENDENT_SPECIALIST'
-            ? 'متخصص مستقل زیبایی'
-            : 'سالن زیبایی زنانه';
+        rawTypeLabel ||
+        (isLaserBiz
+          ? 'مرکز لیزر موهای زائد'
+          : bizType === 'MEN_BARBERSHOP'
+            ? 'آرایشگاه مردانه'
+            : bizType === 'INDEPENDENT_SPECIALIST'
+              ? 'متخصص مستقل زیبایی'
+              : 'سالن زیبایی زنانه');
       const legacyId =
         item.businessId &&
         String(item.businessId).trim() &&
         !/^biz-[1-8]$/.test(String(item.businessId).trim())
           ? String(item.businessId).trim()
           : null;
-      const slug = `salon-${cleanPhone.slice(-4)}-${crypto.randomBytes(2).toString('hex')}`;
+      const slug = item.slug
+        ? normalizeValidSlug(String(item.slug), 'salon')
+        : `salon-${cleanPhone.slice(-4)}-${crypto.randomBytes(2).toString('hex')}`;
 
       const insertedBiz = await client.query(
         `
@@ -738,7 +799,7 @@ async function ensureRegisteredOwnerBusinessesInDb(
         [
           legacyId,
           ownerUserId,
-          defaultCategoryId,
+          resolvedCategoryId,
           slug,
           resolvedSalonName,
           bizType,
@@ -780,6 +841,9 @@ async function ensureRegisteredOwnerBusinessesInDb(
       const extraMeta = {
         ownerName: fullName,
         ownerPhone: persianPhone,
+        categorySlug: targetCatSlug,
+        typeLabel: bizTypeLabel,
+        targetGender: isLaserBiz ? 'BOTH' : undefined,
         avatarUrl: item.avatarUrl ? String(item.avatarUrl) : undefined,
         trialDaysRemaining: 30,
         extraSmsBalance: 0,
@@ -829,8 +893,34 @@ function mergeBusinessRowWithExtra(
     /^biz-[1-8]$/.test(base.id) ||
     Boolean(extra.isSampleShowcase);
 
+  const effectiveTypeLabel =
+    typeof extra.typeLabel === 'string' && extra.typeLabel.trim()
+      ? extra.typeLabel.trim()
+      : base.typeLabel;
+  const isLaser =
+    base.categorySlug === 'laser-hair-removal' ||
+    extra.categorySlug === 'laser-hair-removal' ||
+    base.name.includes('لیزر') ||
+    effectiveTypeLabel.includes('لیزر') ||
+    base.shortDescription.includes('لیزر');
+  const effectiveCategorySlug = isLaser
+    ? 'laser-hair-removal'
+    : typeof extra.categorySlug === 'string' && extra.categorySlug.trim()
+      ? extra.categorySlug.trim()
+      : base.categorySlug;
+
   return {
     ...base,
+    typeLabel: effectiveTypeLabel,
+    categorySlug: effectiveCategorySlug,
+    targetGender:
+      extra.targetGender === 'FEMALE' ||
+      extra.targetGender === 'MALE' ||
+      extra.targetGender === 'BOTH'
+        ? extra.targetGender
+        : isLaser
+          ? 'BOTH'
+          : base.targetGender,
     isSampleShowcase: isLegacySample,
     isSponsored:
       extra.isSponsored !== undefined
@@ -2594,6 +2684,32 @@ export async function updateBusinessProfileInDb(
       ? rawSubStatus
       : 'ACTIVE';
 
+    const nextName = (patch.name ?? String(current.name)).trim();
+    const nextShortDesc = (
+      patch.shortDescription ?? String(current.short_description)
+    ).trim();
+    const nextTypeLabel = (
+      patch.typeLabel ?? String(current.type_label || 'سالن زیبایی زنانه')
+    ).trim();
+    const combinedLaserCheck = `${nextName} ${nextTypeLabel} ${nextShortDesc} ${patch.categorySlug || ''}`;
+    const shouldBeLaserCategory =
+      patch.categorySlug === 'laser-hair-removal' ||
+      combinedLaserCheck.includes('لیزر');
+
+    let nextPrimaryCategoryId = current.primary_category_id;
+    if (shouldBeLaserCategory || patch.categorySlug) {
+      const targetCatSlug = shouldBeLaserCategory
+        ? 'laser-hair-removal'
+        : String(patch.categorySlug);
+      const catLookup = await client.query(
+        `SELECT id FROM service_categories WHERE slug = $1 LIMIT 1`,
+        [targetCatSlug]
+      );
+      if (catLookup.rowCount && catLookup.rows[0]?.id) {
+        nextPrimaryCategoryId = catLookup.rows[0].id;
+      }
+    }
+
     await client.query(
       `
       UPDATE businesses
@@ -2611,12 +2727,14 @@ export async function updateBusinessProfileInDb(
         subscription_plan = $12,
         subscription_status = $13,
         is_featured = $14,
+        primary_category_id = $15,
+        type_label = $16,
         updated_at = NOW()
       WHERE id = $1
       `,
       [
         biz.id,
-        (patch.name ?? String(current.name)).trim(),
+        nextName,
         (patch.city ?? String(current.city)).trim(),
         (patch.neighborhood ?? String(current.neighborhood)).trim(),
         (patch.address ?? String(current.address)).trim(),
@@ -2624,7 +2742,7 @@ export async function updateBusinessProfileInDb(
         patch.instagramHandle !== undefined
           ? patch.instagramHandle
           : current.instagram_handle,
-        (patch.shortDescription ?? String(current.short_description)).trim(),
+        nextShortDesc,
         (patch.aboutText ?? String(current.about_text)).trim(),
         validCoords ? nextLat : null,
         validCoords ? nextLng : null,
@@ -2635,6 +2753,10 @@ export async function updateBusinessProfileInDb(
           : patch.isSponsored !== undefined
             ? Boolean(patch.isSponsored)
             : Boolean(current.is_featured),
+        nextPrimaryCategoryId,
+        shouldBeLaserCategory && !patch.typeLabel
+          ? 'مرکز لیزر موهای زائد'
+          : nextTypeLabel,
       ]
     );
 
@@ -2658,11 +2780,18 @@ export async function updateBusinessProfileInDb(
       'depositEnabled',
       'depositPercent',
       'walletBalanceToman',
+      'categorySlug',
+      'typeLabel',
+      'targetGender',
+      'slug',
     ];
     for (const k of extKeys) {
       if (patch[k] !== undefined) {
         extPatch[k] = patch[k];
       }
+    }
+    if (shouldBeLaserCategory) {
+      extPatch.categorySlug = 'laser-hair-removal';
     }
 
     if (Object.keys(extPatch).length > 0) {
@@ -2752,27 +2881,206 @@ export async function updateBusinessWorkingHoursInDb(
 export async function updateBusinessApprovalInDb(
   pool: Pool,
   businessIdOrLegacy: string,
-  status: ApprovalStatus
+  status: ApprovalStatus,
+  snapshot?: Record<string, unknown>
 ): Promise<void> {
   if (!['APPROVED', 'PENDING_REVIEW', 'REJECTED'].includes(status)) {
     throw new Error('INVALID_INPUT_PAYLOAD');
   }
 
   const cleaned = (businessIdOrLegacy || '').trim();
-  const res = await pool.query(
-    `
-    UPDATE businesses
-    SET
-      approval_status = $2,
-      verified_badge = ($2 = 'APPROVED'),
-      updated_at = NOW()
-    WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
-    RETURNING id
-    `,
-    [cleaned, status]
-  );
-  if (!res.rowCount) {
-    throw new Error('BUSINESS_NOT_FOUND');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureExtendedMetaTables(client);
+
+    const res = await client.query(
+      `
+      UPDATE businesses
+      SET
+        approval_status = $2,
+        verified_badge = ($2 = 'APPROVED'),
+        updated_at = NOW()
+      WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1
+      RETURNING id
+      `,
+      [cleaned, status]
+    );
+
+    if (!res.rowCount && snapshot && typeof snapshot.name === 'string') {
+      const snapName = String(snapshot.name || 'سالن زیبایی').trim();
+      const snapOwnerPhone = toEnglishDigits(
+        String(snapshot.ownerPhone || snapshot.phoneDisplay || '09130000000')
+      ).replace(/\D/g, '');
+      const validPhone = /^09\d{9}$/.test(snapOwnerPhone)
+        ? snapOwnerPhone
+        : '09130000000';
+      const snapOwnerName = String(snapshot.ownerName || snapName).trim();
+      const snapCity = String(snapshot.city || 'اصفهان').trim();
+
+      const ownerUserRes = await client.query(
+        `
+        INSERT INTO users (phone, full_name, default_city, is_active)
+        VALUES ($1, $2, $3, TRUE)
+        ON CONFLICT (phone) DO UPDATE SET
+          full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), users.full_name),
+          updated_at = NOW()
+        RETURNING id
+        `,
+        [validPhone, snapOwnerName, snapCity]
+      );
+      const ownerUserId = String(ownerUserRes.rows[0].id);
+
+      const combinedText = `${snapName} ${snapshot.typeLabel || ''} ${snapshot.categorySlug || ''} ${snapshot.shortDescription || ''}`;
+      const isLaser =
+        snapshot.categorySlug === 'laser-hair-removal' ||
+        combinedText.includes('لیزر');
+      const targetCatSlug = isLaser
+        ? 'laser-hair-removal'
+        : String(snapshot.categorySlug || 'hair-salon');
+      const catRes = await client.query(
+        `SELECT id FROM service_categories WHERE slug = $1 LIMIT 1`,
+        [targetCatSlug]
+      );
+      const catFallbackRes =
+        catRes.rowCount && catRes.rows[0]?.id
+          ? catRes
+          : await client.query(
+              `SELECT id FROM service_categories ORDER BY sort_order ASC LIMIT 1`
+            );
+      const primaryCategoryId = catFallbackRes.rows[0]?.id;
+
+      const baseSlug = normalizeValidSlug(
+        String(snapshot.slug || snapName),
+        `salon-${validPhone.slice(-4)}`
+      );
+      const slugVal = `${baseSlug}-${Date.now().toString().slice(-4)}`;
+
+      const createdBiz = await client.query(
+        `
+        INSERT INTO businesses (
+          legacy_demo_id,
+          owner_user_id,
+          primary_category_id,
+          slug,
+          name,
+          type,
+          type_label,
+          city,
+          neighborhood,
+          address,
+          map_lat,
+          map_lng,
+          phone_display,
+          instagram_handle,
+          short_description,
+          about_text,
+          visual_theme,
+          starting_price_toman,
+          verified_badge,
+          approval_status,
+          subscription_plan,
+          subscription_status
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, $13, $14, $15, $16,
+          'rose', $17, $18, $19, 'شروع رایگان', 'TRIAL'
+        )
+        RETURNING id
+        `,
+        [
+          cleaned.startsWith('biz-') ? cleaned : `biz-owner-${validPhone}`,
+          ownerUserId,
+          primaryCategoryId,
+          slugVal,
+          snapName,
+          String(snapshot.type || 'WOMEN_SALON'),
+          String(
+            snapshot.typeLabel ||
+              (isLaser ? 'مرکز لیزر موهای زائد' : 'سالن زیبایی زنانه')
+          ),
+          snapCity,
+          String(snapshot.neighborhood || 'مرکز شهر').trim(),
+          String(snapshot.address || snapCity).trim(),
+          typeof snapshot.mapLat === 'number' ? snapshot.mapLat : 32.6539,
+          typeof snapshot.mapLng === 'number' ? snapshot.mapLng : 51.666,
+          toPersianDigitsServer(validPhone),
+          snapshot.instagramHandle ? String(snapshot.instagramHandle) : null,
+          String(snapshot.shortDescription || `${snapName} در ${snapCity}`)
+            .trim()
+            .slice(0, 290),
+          String(
+            snapshot.aboutText ||
+              snapshot.shortDescription ||
+              `${snapName} در ${snapCity}`
+          ).trim(),
+          Number(snapshot.startingPriceToman) || 250000,
+          status === 'APPROVED',
+          status,
+        ]
+      );
+      const createdId = String(createdBiz.rows[0].id);
+      await client.query(
+        `
+        INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+        VALUES ($1, $2::jsonb, NOW())
+        ON CONFLICT (business_id) DO UPDATE
+        SET extra_json = COALESCE(business_meta_ext.extra_json, '{}'::jsonb) || $2::jsonb,
+            updated_at = NOW()
+        `,
+        [
+          createdId,
+          JSON.stringify({
+            ownerName: snapOwnerName,
+            ownerPhone: toPersianDigitsServer(validPhone),
+            categorySlug: targetCatSlug,
+            typeLabel: String(
+              snapshot.typeLabel ||
+                (isLaser ? 'مرکز لیزر موهای زائد' : 'سالن زیبایی زنانه')
+            ),
+            slug: slugVal,
+            ...(snapshot.avatarUrl ? { avatarUrl: snapshot.avatarUrl } : {}),
+          }),
+        ]
+      );
+    }
+
+    // همچنین در رجیستری حساب‌های ثبت‌شده وضعیت تایید را ذخیره کنیم
+    const kvRes = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'registered_accounts_registry' LIMIT 1`
+    );
+    if (Array.isArray(kvRes.rows[0]?.value_json)) {
+      const list = [...(kvRes.rows[0].value_json as Array<Record<string, unknown>>)];
+      let changed = false;
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        if (
+          String(item.businessId || '') === cleaned ||
+          String(item.slug || '') === cleaned
+        ) {
+          list[i] = { ...item, approvalStatus: status };
+          changed = true;
+        }
+      }
+      if (changed) {
+        await client.query(
+          `
+          INSERT INTO platform_kv_store (key, value_json, updated_at)
+          VALUES ('registered_accounts_registry', $1::jsonb, NOW())
+          ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+          `,
+          [JSON.stringify(list)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -5977,6 +6285,10 @@ export async function syncRegisteredAccountsInDb(
     businessId?: string;
     businessName?: string;
     businessType?: string;
+    categorySlug?: string;
+    typeLabel?: string;
+    slug?: string;
+    approvalStatus?: string;
     neighborhood?: string;
     address?: string;
     mapLat?: number;
@@ -6117,6 +6429,10 @@ export async function syncRegisteredAccountsInDb(
         ...(acc.businessId ? { businessId: acc.businessId } : {}),
         ...(acc.businessName ? { businessName: acc.businessName } : {}),
         ...(acc.businessType ? { businessType: acc.businessType } : {}),
+        ...(acc.categorySlug ? { categorySlug: acc.categorySlug } : {}),
+        ...(acc.typeLabel ? { typeLabel: acc.typeLabel } : {}),
+        ...(acc.slug ? { slug: acc.slug } : {}),
+        ...(acc.approvalStatus ? { approvalStatus: acc.approvalStatus } : {}),
         ...(acc.neighborhood ? { neighborhood: acc.neighborhood } : {}),
         ...(acc.address ? { address: acc.address } : {}),
         ...(typeof acc.mapLat === 'number' ? { mapLat: acc.mapLat } : {}),

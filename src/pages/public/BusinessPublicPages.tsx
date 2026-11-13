@@ -283,7 +283,18 @@ export const BusinessPublicProfileView: React.FC<{
     .trim()
     .replace(/^@/, '');
   const instagramUrl = `https://www.instagram.com/${cleanInstaHandle}`;
-  const googleMapsUrl = `https://www.google.com/maps?q=${business.mapLat ?? 32.6362},${business.mapLng ?? 51.665}`;
+  const fullManualAddressQuery = [
+    business.city || 'اصفهان',
+    business.neighborhood,
+    business.address,
+  ]
+    .filter(Boolean)
+    .join('، ')
+    .trim();
+  const googleMapsUrl =
+    business.address && business.address.trim().length >= 5
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullManualAddressQuery)}`
+      : `https://www.google.com/maps?q=${business.mapLat ?? 32.6362},${business.mapLng ?? 51.665}`;
 
   const quickActions = [
     {

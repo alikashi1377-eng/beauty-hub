@@ -1,4 +1,4 @@
-const CACHE_NAME = 'timeto-pwa-v6-live';
+const CACHE_NAME = 'timeto-pwa-v7-live';
 const PRECACHE_ASSETS = [
   '/manifest.webmanifest',
   '/icon.svg',

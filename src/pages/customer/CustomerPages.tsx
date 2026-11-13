@@ -235,16 +235,23 @@ export const BookingStepPage: React.FC = () => {
   } = usePrototypeData();
 
   const handleProceedToConfirm = () => {
+    const targetSlug = business?.slug || businessSlug || bookingDraft.businessSlug || '';
+    if (targetSlug && bookingDraft.businessSlug !== targetSlug) {
+      updateBookingDraft({ businessSlug: targetSlug });
+    }
+    const confirmUrl = targetSlug
+      ? `/booking/confirm?business=${encodeURIComponent(targetSlug)}`
+      : '/booking/confirm';
     if (!authUser) {
       openAuthModal({
         initialScreen: 'LOGIN',
         defaultRole: 'CUSTOMER',
-        redirectTo: '/booking/confirm',
+        redirectTo: confirmUrl,
         promptReason: 'برای تکمیل و ثبت نهایی نوبت، وارد حساب کاربری خود شوید',
       });
       return;
     }
-    navigate('/booking/confirm');
+    navigate(confirmUrl);
   };
 
   const [serviceCatFilter, setServiceCatFilter] = useState<string>('ALL');
@@ -1039,12 +1046,47 @@ export const BookingConfirmPage: React.FC = () => {
   const [quickTopUpSuccess, setQuickTopUpSuccess] = useState('');
   const [isRequestingTopUpZibal, setIsRequestingTopUpZibal] = useState(false);
 
+  const urlBusinessParam = searchParams.get('business')?.trim() || '';
+  const pendingZibalDraft = React.useMemo(() => {
+    try {
+      const rawPending = window.localStorage.getItem(
+        'timeto_pending_zibal_booking_v1'
+      );
+      if (!rawPending) return null;
+      const parsed = JSON.parse(rawPending) as {
+        businessId?: string;
+        businessSlug?: string;
+        businessName?: string;
+        createdAt?: number;
+        bookingDraft?: Partial<typeof bookingDraft>;
+      };
+      // معتبر تا ۴۵ دقیقه پس از رفتن به درگاه
+      if (
+        parsed?.createdAt &&
+        Date.now() - parsed.createdAt > 45 * 60 * 1000
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const effectiveBusinessSlug =
+    urlBusinessParam ||
+    pendingZibalDraft?.businessSlug ||
+    pendingZibalDraft?.bookingDraft?.businessSlug ||
+    bookingDraft.businessSlug ||
+    '';
+
   // هرگز روی businesses[0] (مثل سالن آنجل) fallback نشود تا بیعانه فقط به حساب سالن انتخاب‌شده واریز گردد
   const business = businesses.find(
     (b) =>
-      Boolean(bookingDraft.businessSlug) &&
-      (b.slug === bookingDraft.businessSlug ||
-        b.id === bookingDraft.businessSlug)
+      Boolean(effectiveBusinessSlug) &&
+      (b.slug === effectiveBusinessSlug ||
+        b.id === effectiveBusinessSlug ||
+        (pendingZibalDraft?.businessId && b.id === pendingZibalDraft.businessId))
   );
 
   const bizServices = business
@@ -1096,25 +1138,21 @@ export const BookingConfirmPage: React.FC = () => {
   const latePenaltyPercent = business?.lateCancellationPenaltyPercent ?? 50;
   const hasEnoughWalletBalance = customerWalletBalanceToman >= depositAmountToman;
 
-  // بازیابی اطلاعات پیش‌نویس نوبت در صورت بازگشت از درگاه پرداخت زیبال با دکمه Back گوشی
+  // بازیابی و قفل کردن اطلاعات پیش‌نویس نوبت در صورت بازگشت از درگاه پرداخت زیبال با دکمه Back گوشی
   useEffect(() => {
-    if (bookingDraft.businessSlug && bookingDraft.serviceId) return;
-    try {
-      const rawPending = window.localStorage.getItem(
-        'timeto_pending_zibal_booking_v1'
-      );
-      if (rawPending) {
-        const parsed = JSON.parse(rawPending) as {
-          bookingDraft?: Partial<typeof bookingDraft>;
-        };
-        if (parsed?.bookingDraft?.businessSlug) {
-          updateBookingDraft(parsed.bookingDraft);
-        }
-      }
-    } catch {
-      // ignore
+    const targetSlug =
+      urlBusinessParam ||
+      pendingZibalDraft?.businessSlug ||
+      pendingZibalDraft?.bookingDraft?.businessSlug;
+    if (targetSlug && bookingDraft.businessSlug !== targetSlug) {
+      updateBookingDraft({
+        ...(pendingZibalDraft?.bookingDraft || {}),
+        businessSlug: targetSlug,
+      });
+    } else if (!bookingDraft.serviceId && pendingZibalDraft?.bookingDraft) {
+      updateBookingDraft(pendingZibalDraft.bookingDraft);
     }
-  }, [bookingDraft.businessSlug, bookingDraft.serviceId]);
+  }, [urlBusinessParam, pendingZibalDraft, bookingDraft.businessSlug, bookingDraft.serviceId]);
 
   // بررسی بازگشت کاربر از درگاه پرداخت اینترنتی زیبال (Callback URL)
   useEffect(() => {
@@ -1450,7 +1488,7 @@ export const BookingConfirmPage: React.FC = () => {
         // ignore storage errors
       }
 
-      const callbackUrl = `${window.location.origin}/booking/confirm?zibal_booking=1&orderId=${encodeURIComponent(orderId)}`;
+      const callbackUrl = `${window.location.origin}/booking/confirm?business=${encodeURIComponent(business.slug)}&zibal_booking=1&orderId=${encodeURIComponent(orderId)}`;
       const res = await fetch('/api/v1/payments/zibal/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1470,7 +1508,10 @@ export const BookingConfirmPage: React.FC = () => {
           mobile: bookingDraft.customerPhone.trim(),
           customerPhone: bookingDraft.customerPhone.trim(),
           customerName: bookingDraft.customerName.trim(),
-          bookingDraft,
+          bookingDraft: {
+            ...bookingDraft,
+            businessSlug: business.slug,
+          },
         }),
       });
 
@@ -1488,6 +1529,17 @@ export const BookingConfirmPage: React.FC = () => {
         );
         setIsSubmitting(false);
         return;
+      }
+
+      // ثبت قطعی businessSlug در URL فعلی تاریخچه مرورگر تا با زدن دکمه Back از درگاه زیبال، دقیقاً همین سالن بارگذاری شود
+      try {
+        window.history.replaceState(
+          null,
+          '',
+          `/booking/confirm?business=${encodeURIComponent(business.slug)}`
+        );
+      } catch {
+        // ignore
       }
 
       // در مرورگر اصلی (سایت واقعی timeto24.ir یا تب مستقل موبایل/دسکتاپ) مستقیماً در همان تب وارد درگاه شاپرک زیبال می‌شود تا با زدن دکمه Back دقیقاً به همین صفحه برگردد
@@ -1547,7 +1599,16 @@ export const BookingConfirmPage: React.FC = () => {
         // ignore
       }
 
-      const callbackUrl = `${window.location.origin}/booking/confirm?zibal_wallet=1&orderId=${encodeURIComponent(orderId)}`;
+      const callbackUrl = `${window.location.origin}/booking/confirm?business=${encodeURIComponent(business.slug)}&zibal_wallet=1&orderId=${encodeURIComponent(orderId)}`;
+      try {
+        window.history.replaceState(
+          null,
+          '',
+          `/booking/confirm?business=${encodeURIComponent(business.slug)}`
+        );
+      } catch {
+        // ignore
+      }
       const res = await fetch('/api/v1/payments/zibal/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

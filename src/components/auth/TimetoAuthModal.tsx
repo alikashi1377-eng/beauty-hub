@@ -84,7 +84,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [screen, setScreen] = useState<AuthFlowScreen>(resolvedInitialScreen);
   const [roleChoice, setRoleChoice] = useState<AccountRoleChoice>(defaultRole);
 
-  // فیلدهای شماره و رمز عبور
+  // فیلدهای شماره و رمز عبور (همیشه فعال در صفحه ورود برای کارکرد ۱۰۰٪ Autofill مرورگر موبایل)
   const [phone, setPhone] = useState<string>(
     authUser?.phone || savedMemory?.phone || ''
   );
@@ -92,12 +92,17 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     savedMemory?.password || ''
   );
   const [showPasswordInputInLogin, setShowPasswordInputInLogin] =
-    useState<boolean>(Boolean(savedMemory?.password));
+    useState<boolean>(true);
   const [regPassword, setRegPassword] = useState<string>('');
   const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
   const [showRegPassword, setShowRegPassword] = useState<boolean>(false);
   const [passwordSavedInMemoryBadge, setPasswordSavedInMemoryBadge] =
     useState<boolean>(false);
+
+  const loginPhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const loginPasswordInputRef = useRef<HTMLInputElement | null>(null);
+  const regPhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const regPasswordInputRef = useRef<HTMLInputElement | null>(null);
 
   // فیلدهای ۶ خانه کد تایید (OTP)
   const [otpDigits, setOtpDigits] = useState<string[]>([
@@ -236,13 +241,61 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         });
     }
 
+    // پایش مستقیم مقدار DOM ورودی کد پیامک و رمز عبور برای پشتیبانی ۱۰۰٪ از Autofill کیبورد iOS و اندروید
+    const autofillSyncInterval = window.setInterval(() => {
+      const otpEl = otpInputsRef.current[0];
+      if (otpEl && otpEl.value) {
+        const cleanDomOtp = toEnglishDigitsClient(otpEl.value)
+          .replace(/\D/g, '')
+          .slice(0, 6);
+        if (cleanDomOtp && cleanDomOtp !== otpDigits.join('')) {
+          handleUnifiedOtpChange(cleanDomOtp);
+        }
+      }
+    }, 220);
+
     return () => {
       window.clearTimeout(t);
+      window.clearInterval(autofillSyncInterval);
       if (abortController) {
         abortController.abort();
       }
     };
   }, [screen]);
+
+  // همگام‌سازی خودکار Autofill مرورگر موبایل برای شماره موبایل و رمز عبور در صفحه ورود و ثبت‌نام
+  useEffect(() => {
+    if (screen !== 'LOGIN' && screen !== 'REGISTER_STEP_1_PHONE') return;
+    const syncTimer = window.setInterval(() => {
+      if (screen === 'LOGIN') {
+        const domPhone = loginPhoneInputRef.current?.value;
+        if (domPhone) {
+          const norm = normalizeIranMobileInput(domPhone);
+          if (norm && norm !== phone) {
+            setPhone(norm);
+          }
+        }
+        const domPass = loginPasswordInputRef.current?.value;
+        if (domPass && domPass !== loginPassword) {
+          setLoginPassword(domPass);
+        }
+      } else if (screen === 'REGISTER_STEP_1_PHONE') {
+        const domRegPhone = regPhoneInputRef.current?.value;
+        if (domRegPhone) {
+          const norm = normalizeIranMobileInput(domRegPhone);
+          if (norm && norm !== phone) {
+            setPhone(norm);
+          }
+        }
+        const domRegPass = regPasswordInputRef.current?.value;
+        if (domRegPass && domRegPass !== regPassword) {
+          setRegPassword(domRegPass);
+          setRegConfirmPassword(domRegPass);
+        }
+      }
+    }, 250);
+    return () => window.clearInterval(syncTimer);
+  }, [screen, phone, loginPassword, regPassword]);
 
   const [suggestedPassword, setSuggestedPassword] = useState<string>(() =>
     generateSuggestedPassword()
@@ -293,11 +346,23 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   // ۱. ورود با رمز عبور از صفحه اول ورود
   const handleLoginWithPasswordClick = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const rawIdentifier = toEnglishDigitsClient(phone).trim();
+    const effectiveRawPhone =
+      loginPhoneInputRef.current?.value || phone || '';
+    const effectivePassword =
+      loginPasswordInputRef.current?.value || loginPassword || '';
+
+    const rawIdentifier = toEnglishDigitsClient(effectiveRawPhone).trim();
     const isPhoneCandidate = /^0?9\d+$/.test(rawIdentifier.replace(/\D/g, ''));
     const normalizedPhone = isPhoneCandidate
       ? normalizeIranMobileInput(rawIdentifier)
       : rawIdentifier;
+
+    if (normalizedPhone && normalizedPhone !== phone) {
+      setPhone(normalizedPhone);
+    }
+    if (effectivePassword && effectivePassword !== loginPassword) {
+      setLoginPassword(effectivePassword);
+    }
 
     if (
       !normalizedPhone ||
@@ -307,7 +372,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       return;
     }
 
-    // اگر فیلد رمز هنوز باز نشده، ابتدا بررسی کنیم آیا رمز در حافظه ذخیره شده یا فیلد را نمایش دهیم
     if (!showPasswordInputInLogin) {
       const accounts = getSavedMemoryAccounts();
       const mem = accounts[normalizedPhone];
@@ -319,7 +383,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       return;
     }
 
-    if (loginPassword.trim().length < 4) {
+    if (effectivePassword.trim().length < 4) {
       setError('لطفاً رمز عبور خود را وارد کنید.');
       return;
     }
@@ -327,7 +391,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     setError('');
     setIsSubmitting(true);
     try {
-      const user = await loginWithPassword(normalizedPhone, loginPassword);
+      const user = await loginWithPassword(normalizedPhone, effectivePassword);
       const isSuperAdmin =
         user.isPlatformAdmin && user.roles.includes('PLATFORM_ADMIN');
       const isBizOwner = user.roles.includes('BUSINESS_OWNER');
@@ -373,18 +437,32 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   // ۳. ادامه از گام ۱ ثبت‌نام (شماره + رمز عبور + تکرار رمز) به گام ۲ (کد ۶ رقمی)
   const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const knownPhones =
-      roleChoice === 'BUSINESS_OWNER'
-        ? []
-        : [
-            ...adminUsers.map((u) => u.phone || ''),
-            ...businesses
-              .filter((b) => !b.isSampleShowcase)
-              .map((b) => b.ownerPhone || b.phoneDisplay || ''),
-          ].filter(Boolean);
+    const normalizedCandidate = normalizeIranMobileInput(
+      regPhoneInputRef.current?.value || phone
+    );
+    const existingSalonForPhone = businesses.find((b) => {
+      if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) return false;
+      const bPhone = normalizeIranMobileInput(
+        b.ownerPhone || b.phoneDisplay || ''
+      );
+      return Boolean(normalizedCandidate && bPhone === normalizedCandidate);
+    });
+    if (existingSalonForPhone) {
+      setError(
+        `با این شماره موبایل قبلاً کسب‌وکار «${existingSalonForPhone.name}» ثبت شده است. هر شماره فقط امکان ثبت یک سالن یا تخصص را دارد؛ لطفاً از بخش «ورود به حساب» وارد پیشخوان خود شوید.`
+      );
+      return;
+    }
+
+    const knownPhones = [
+      ...adminUsers.map((u) => u.phone || ''),
+      ...businesses
+        .filter((b) => !b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id))
+        .map((b) => b.ownerPhone || b.phoneDisplay || ''),
+    ].filter(Boolean);
 
     const check = validateRegistrationStep1({
-      phone,
+      phone: normalizedCandidate || phone,
       password: regPassword,
       confirmPassword: regConfirmPassword,
       existingPhones: knownPhones,
@@ -756,7 +834,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   };
 
   return (
-    <div className="relative mx-auto w-full max-w-[430px] select-none">
+    <div className="relative mx-auto w-full max-w-[430px]">
       {/* پس‌زمینه هاله‌ای ظریف هویت بصری تایم تو */}
       <div className="relative overflow-hidden rounded-[32px] border border-[#CBD5E1] bg-gradient-to-b from-[#EFF6FF] via-[#F8FAFC] to-white p-5 sm:p-7 shadow-[0_24px_60px_-18px_rgba(6,17,56,0.28)]">
         {isModal && onClose ? (
@@ -807,10 +885,14 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             <form
               onSubmit={handleLoginWithPasswordClick}
               className="space-y-4"
+              autoComplete="on"
               noValidate
             >
               <div className="relative">
                 <input
+                  ref={loginPhoneInputRef}
+                  id="timeto-login-username"
+                  name="username"
                   type="tel"
                   inputMode="tel"
                   dir="ltr"
@@ -818,8 +900,19 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   autoComplete="username tel"
                   value={phone}
                   onChange={(e) => {
-                    setPhone(normalizeIranMobileInput(e.target.value));
+                    const norm = normalizeIranMobileInput(e.target.value);
+                    setPhone(norm);
                     setError('');
+                    const accounts = getSavedMemoryAccounts();
+                    if (accounts[norm]?.password && !loginPassword) {
+                      setLoginPassword(accounts[norm].password);
+                    }
+                  }}
+                  onInput={(e) => {
+                    const norm = normalizeIranMobileInput(
+                      (e.target as HTMLInputElement).value
+                    );
+                    if (norm !== phone) setPhone(norm);
                   }}
                   placeholder="09xxxxxxxxx"
                   aria-label="شماره موبایل"
@@ -832,6 +925,9 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 <div className="space-y-1.5">
                   <div className="relative">
                     <input
+                      ref={loginPasswordInputRef}
+                      id="timeto-login-password"
+                      name="password"
                       type={showRegPassword ? 'text' : 'password'}
                       dir="ltr"
                       autoComplete="current-password"
@@ -840,7 +936,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                         setLoginPassword(e.target.value);
                         setError('');
                       }}
-                      placeholder="رمز عبور حساب شما"
+                      onInput={(e) => {
+                        const val = (e.target as HTMLInputElement).value;
+                        if (val !== loginPassword) setLoginPassword(val);
+                      }}
+                      placeholder="رمز عبور حساب شما (یا ورود با کد پیامک)"
                       aria-label="رمز عبور"
                       className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-10 text-center font-mono text-sm font-bold text-[#061138] placeholder:font-sans placeholder:text-xs placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
                     />
@@ -861,7 +961,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   {savedMemory?.password &&
                   loginPassword === savedMemory.password ? (
                     <p className="text-center text-[11px] font-bold text-emerald-600">
-                      ✓ رمز عبور ذخیره‌شده شما از حافظه سیستم بارگذاری شد
+                      ✓ رمز عبور ذخیره‌شده شما به صورت خودکار بارگذاری شد
                     </p>
                   ) : null}
                 </div>
@@ -1269,25 +1369,23 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 </p>
               </div>
 
-              {/* ورودی یکپارچه کد ۶ رقمی (سازگار با Auto-fill پیامک در اندروید و iOS) */}
-              <div
-                dir="ltr"
-                className="relative py-1 cursor-text"
-                onClick={() => otpInputsRef.current[0]?.focus()}
-              >
+              {/* ورودی مستقیم و استاندارد کد ۶ رقمی (کاملاً مرئی برای کارکرد ۱۰۰٪ Autofill پیامک کیبورد موبایل در اندروید و iOS) */}
+              <div className="space-y-2">
                 <input
                   key="unified-otp-input"
                   ref={(el) => {
                     otpInputsRef.current[0] = el;
                   }}
                   id="timeto-otp-code-input"
-                  name="otp"
+                  name="one-time-code"
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   autoComplete="one-time-code"
+                  dir="ltr"
                   maxLength={6}
                   value={otpDigits.join('')}
+                  placeholder="• • • • • •"
                   aria-label="کد تایید ۶ رقمی پیامک"
                   onChange={(e) => handleUnifiedOtpChange(e.target.value)}
                   onInput={(e) =>
@@ -1302,32 +1400,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       handleUnifiedOtpChange(pasted);
                     }
                   }}
-                  className="absolute inset-0 z-10 h-full w-full opacity-0 cursor-text font-mono text-lg"
+                  className="w-full rounded-2xl border-2 border-[#0057FF] bg-[#EFF6FF]/60 py-3.5 px-4 text-center font-mono text-2xl font-black tracking-[0.55em] text-[#061138] placeholder:tracking-[0.35em] placeholder:text-slate-300 focus:border-[#0057FF] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#0057FF]/15"
                 />
-                <div className="grid grid-cols-6 gap-2 sm:gap-2.5 pointer-events-none">
-                  {Array.from({ length: 6 }, (_, idx) => {
-                    const digit = otpDigits[idx] || '';
-                    const activeIdx = Math.min(
-                      5,
-                      otpDigits.join('').length
-                    );
-                    const isCurrent = idx === activeIdx;
-                    return (
-                      <div
-                        key={idx}
-                        className={`flex h-13 sm:h-14 w-full items-center justify-center rounded-2xl border-2 text-center font-mono text-lg font-black transition-all ${
-                          digit
-                            ? 'border-[#0057FF] bg-[#EFF6FF] text-[#061138] shadow-2xs'
-                            : isCurrent
-                              ? 'border-[#0057FF] bg-white text-[#061138] ring-4 ring-[#0057FF]/10'
-                              : 'border-slate-200 bg-[#F8FAFC] text-[#061138]'
-                        }`}
-                      >
-                        {digit ? toPersianDigits(digit) : ''}
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
 
               {error ? (
@@ -1657,6 +1731,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
+                      {
+                        title: 'متخصص و اپراتور لیزر موهای زائد',
+                        label: 'لیزر موهای زائد',
+                        categorySlug: 'laser-hair-removal',
+                      },
                       {
                         title: 'متخصص کاشت و طراحی ناخن',
                         label: 'ناخن‌کار و طراحی ناخن',

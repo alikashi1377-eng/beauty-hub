@@ -5015,6 +5015,9 @@ export const BusinessProfileEditPage: React.FC = () => {
     currentBiz?.instagramHandle ?? ''
   );
   const [address, setAddress] = useState(currentBiz?.address ?? '');
+  const [neighborhood, setNeighborhood] = useState(
+    currentBiz?.neighborhood ?? 'چهارباغ بالا'
+  );
   const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 32.6288);
   const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.6621);
   const [shortDesc, setShortDesc] = useState(
@@ -5041,6 +5044,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     setTargetGender(currentBiz.targetGender ?? 'FEMALE');
     setInstagramHandle(currentBiz.instagramHandle ?? '');
     setAddress(currentBiz.address ?? '');
+    setNeighborhood(currentBiz.neighborhood ?? 'چهارباغ بالا');
     setMapLat(currentBiz.mapLat ?? 32.6288);
     setMapLng(currentBiz.mapLng ?? 51.6621);
     setShortDesc(currentBiz.shortDescription ?? '');
@@ -5155,6 +5159,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       coverUrl: coverUrl || undefined,
       targetGender,
       instagramHandle: cleanedInsta,
+      neighborhood: neighborhood.trim() || currentBiz.neighborhood,
       address: address.trim(),
       mapLat,
       mapLng,
@@ -5168,6 +5173,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       businessName: name.trim(),
       avatarUrl,
       instagramHandle: cleanedInsta,
+      neighborhood: neighborhood.trim() || currentBiz.neighborhood,
       address: address.trim(),
       mapLat,
       mapLng,
@@ -5180,7 +5186,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     const nextStep1Done = Boolean(
       name.trim().length >= 2 && (avatarUrl || currentBiz.avatarUrl)
     );
-    const nextStep2Done = Boolean(address.trim().length >= 5 && mapLat && mapLng);
+    const nextStep2Done = Boolean(address.trim().length >= 5);
     const nextStep3Done =
       (cleanCardDigits.length === 16 || cleanShebaDigits.length === 24) &&
       Boolean(bankAccountHolder.trim());
@@ -5189,7 +5195,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       if (!nextStep2Done) {
         setActiveStep('LOCATION');
         showToast(
-          'تصویر و مشخصات ذخیره شد ✓ انتقال خودکار به گام ۲: ثبت نشانی و موقعیت روی نقشه'
+          'تصویر و مشخصات ذخیره شد ✓ انتقال خودکار به گام ۲: ثبت دستی نشانی دقیق سالن'
         );
         return;
       }
@@ -5456,49 +5462,52 @@ export const BusinessProfileEditPage: React.FC = () => {
               </div>
             ) : null}
 
-            {/* گام ۲: نقشه ساده ۱-کلیکی و آدرس متنی */}
+            {/* گام ۲: ثبت دستی محله و نشانی دقیق متنی توسط صاحب کسب‌وکار (مسیریابی روی نقشه در پروفایل عمومی برای مشتریان نمایش داده می‌شود) */}
             {activeStep === 'LOCATION' ? (
               <div className="space-y-4">
-                <LocationMapPicker
-                  city={currentBiz.city}
-                  neighborhood={currentBiz.neighborhood}
-                  address={address}
-                  lat={mapLat}
-                  lng={mapLng}
-                  onSelectLocation={(coords) => {
-                    setMapLat(coords.lat);
-                    setMapLng(coords.lng);
-                    const nextAddress = coords.suggestedAddress || address;
-                    if (coords.suggestedAddress) {
-                      setAddress(coords.suggestedAddress);
-                    }
-                    updateBusinessProfile(currentBiz.id, {
-                      mapLat: coords.lat,
-                      mapLng: coords.lng,
-                      address: nextAddress,
-                      neighborhood:
-                        coords.neighborhood || currentBiz.neighborhood,
-                    });
-                    updateOnboardingDraft({
-                      mapLat: coords.lat,
-                      mapLng: coords.lng,
-                      address: nextAddress,
-                      neighborhood:
-                        coords.neighborhood || currentBiz.neighborhood,
-                    });
-                  }}
-                />
+                <div className="p-3.5 rounded-2xl bg-[#F5F3FF] border border-[#DDD6FE] text-xs text-[#4C1D95] leading-relaxed">
+                  <p className="font-extrabold mb-1">
+                    ثبت دستی نشانی دقیق کسب‌وکار (بدون نیاز به درگیری با پین نقشه)
+                  </p>
+                  <p className="text-[11px] text-[#5B21B6]">
+                    محله و آدرس دقیق متنی خود را در کادرهای زیر بنویسید. سیستم به صورت خودکار بخش نقشه و دکمه مسیریابی (گوگل‌مپ، نشان و بلد) را در پروفایل عمومی شما برای مشتریان فعال می‌کند.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <FormField id="prof-city" label="شهر">
+                    <Input
+                      id="prof-city"
+                      value={currentBiz.city || 'اصفهان'}
+                      disabled
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="prof-neighborhood"
+                    label="محله یا محدوده فعالیت"
+                    required
+                  >
+                    <Input
+                      id="prof-neighborhood"
+                      value={neighborhood}
+                      onChange={(e) => setNeighborhood(e.target.value)}
+                      placeholder="مثال: چهارباغ بالا، مرداویج، نظر میانی..."
+                    />
+                  </FormField>
+                </div>
 
                 <FormField
                   id="prof-address"
-                  label="نشانی دقیق متنی (اگر از روی نقشه پیدا نشد، مستقیم اینجا بنویسید)"
+                  label="نشانی دقیق متنی (خیابان، کوچه، مجتمع، طبقه و واحد)"
                   required
                 >
-                  <Input
+                  <Textarea
                     id="prof-address"
+                    rows={3}
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder="مثال: اصفهان، خیابان چهارباغ بالا، مجتمع پارسیان، طبقه ۲"
+                    placeholder="مثال: اصفهان، خیابان چهارباغ بالا، روبه‌روی مجتمع کوثر، ساختمان پارسیان، طبقه ۲، واحد ۴"
                   />
                 </FormField>
 

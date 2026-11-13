@@ -31,6 +31,10 @@ export interface SavedMemoryAccount {
   businessId?: string;
   businessName?: string;
   businessType?: BusinessType;
+  categorySlug?: string;
+  typeLabel?: string;
+  slug?: string;
+  approvalStatus?: string;
   city?: string;
   neighborhood?: string;
   joinedJalali?: string;

@@ -126,17 +126,32 @@ export const SearchPage: React.FC = () => {
     return ids;
   }, [normalizedQ, services, specialists]);
 
-  // اگر کاربر دسته‌بندی خاصی انتخاب کرد، سالن‌هایی که یا دسته‌شان آن است یا خدمتی در آن دسته دارند نمایش داده شوند
+  // اگر کاربر دسته‌بندی خاصی انتخاب کرد، سالن‌ها و متخصصانی که یا دسته‌شان آن است یا خدمتی/تخصصی در آن دسته دارند نمایش داده شوند
   const businessIdsMatchingSelectedCategory = React.useMemo(() => {
     if (categoryFilter === 'ALL') return null;
     const ids = new Set<string>();
+    const isLaserCat = categoryFilter === 'laser-hair-removal';
     services.forEach((s) => {
-      if (s.categorySlug === categoryFilter) {
+      if (
+        s.categorySlug === categoryFilter ||
+        (isLaserCat &&
+          (s.title.includes('لیزر') || (s.category || '').includes('لیزر')))
+      ) {
         ids.add(s.businessId);
       }
     });
+    specialists.forEach((sp) => {
+      if (
+        isLaserCat &&
+        (sp.roleTitle.includes('لیزر') ||
+          sp.fullName.includes('لیزر') ||
+          sp.specialties.some((item) => item.includes('لیزر')))
+      ) {
+        ids.add(sp.businessId);
+      }
+    });
     return ids;
-  }, [categoryFilter, services]);
+  }, [categoryFilter, services, specialists]);
 
   const baseFiltered = filterBusinesses(businesses, {
     query: '',
@@ -149,8 +164,15 @@ export const SearchPage: React.FC = () => {
     sortBy,
   }).filter((b) => {
     if (categoryFilter === 'ALL') return true;
+    const isLaserCat = categoryFilter === 'laser-hair-removal';
+    const hasLaserKeyword =
+      isLaserCat &&
+      ((b.name || '').includes('لیزر') ||
+        (b.typeLabel || '').includes('لیزر') ||
+        (b.shortDescription || '').includes('لیزر'));
     return (
       b.categorySlug === categoryFilter ||
+      hasLaserKeyword ||
       Boolean(businessIdsMatchingSelectedCategory?.has(b.id))
     );
   });
@@ -166,14 +188,28 @@ export const SearchPage: React.FC = () => {
       )
     : baseFiltered;
 
-  const matchedSpecialistsInSearch = normalizedQ
-    ? specialists.filter(
-        (sp) =>
-          sp.fullName.toLowerCase().includes(normalizedQ) ||
-          sp.roleTitle.toLowerCase().includes(normalizedQ) ||
-          sp.specialties.some((s) => s.toLowerCase().includes(normalizedQ))
-      )
-    : [];
+  const matchedSpecialistsInSearch = React.useMemo(() => {
+    if (!normalizedQ && categoryFilter === 'ALL') return [];
+    const isLaserCat = categoryFilter === 'laser-hair-removal';
+    return specialists.filter((sp) => {
+      const matchesQ =
+        !normalizedQ ||
+        sp.fullName.toLowerCase().includes(normalizedQ) ||
+        sp.roleTitle.toLowerCase().includes(normalizedQ) ||
+        sp.specialties.some((s) => s.toLowerCase().includes(normalizedQ));
+      if (!matchesQ) return false;
+      if (categoryFilter === 'ALL') return true;
+      if (isLaserCat) {
+        return (
+          sp.roleTitle.includes('لیزر') ||
+          sp.fullName.includes('لیزر') ||
+          sp.specialties.some((s) => s.includes('لیزر')) ||
+          Boolean(businessIdsMatchingSelectedCategory?.has(sp.businessId))
+        );
+      }
+      return Boolean(businessIdsMatchingSelectedCategory?.has(sp.businessId));
+    });
+  }, [normalizedQ, categoryFilter, specialists, businessIdsMatchingSelectedCategory]);
 
   const handleResetFilters = () => {
     setQuery('');

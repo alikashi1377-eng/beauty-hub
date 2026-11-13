@@ -565,65 +565,56 @@ export const BusinessRegisterPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* ۴. نشانی هوشمند از روی نقشه و آدرس اینترنتی صفحه سالن */}
+              {/* ۴. ثبت دستی محله و نشانی دقیق سالن (مسیریابی روی نقشه به صورت خودکار در پروفایل برای مشتریان نمایش داده می‌شود) */}
               <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-extrabold text-[#061138]">
-                    ۴. انتخاب لوکیشن روی نقشه (ثبت خودکار آدرس و لینک گوگل‌مپ)
+                    ۴. ثبت دستی شهر، محله و نشانی دقیق کسب‌وکار
                   </h2>
                 </div>
 
-                <FormField
-                  id="reg-city"
-                  label="شهر"
-                  required
-                  error={errors.city}
-                >
-                  <Select
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
                     id="reg-city"
-                    value={onboardingDraft.city}
-                    onChange={(e) =>
-                      updateOnboardingDraft({ city: e.target.value })
-                    }
-                    options={IRAN_CITIES.map((c) => ({ value: c, label: c }))}
-                  />
-                </FormField>
+                    label="شهر"
+                    required
+                    error={errors.city}
+                  >
+                    <Select
+                      id="reg-city"
+                      value={onboardingDraft.city}
+                      onChange={(e) =>
+                        updateOnboardingDraft({ city: e.target.value })
+                      }
+                      options={IRAN_CITIES.map((c) => ({ value: c, label: c }))}
+                    />
+                  </FormField>
 
-                {/* انتخاب موقعیت روی نقشه با ثبت خودکار لینک گوگل‌مپ و نشانی */}
-                <LocationMapPicker
-                  city={onboardingDraft.city}
-                  neighborhood={onboardingDraft.neighborhood}
-                  address={onboardingDraft.address}
-                  lat={onboardingDraft.mapLat ?? 32.6288}
-                  lng={onboardingDraft.mapLng ?? 51.6621}
-                  onSelectLocation={({
-                    lat,
-                    lng,
-                    neighborhood,
-                    suggestedAddress,
-                  }) => {
-                    updateOnboardingDraft({
-                      mapLat: lat,
-                      mapLng: lng,
-                      neighborhood:
-                        neighborhood || onboardingDraft.neighborhood,
-                      address: suggestedAddress || onboardingDraft.address,
-                    });
-                    showToast(
-                      'لوکیشن و لینک گوگل‌مپ به صورت خودکار به عنوان نشانی ثبت شد.',
-                      'success'
-                    );
-                  }}
-                />
+                  <FormField
+                    id="reg-neighborhood"
+                    label="محله یا محدوده فعالیت"
+                    required
+                  >
+                    <Input
+                      id="reg-neighborhood"
+                      value={onboardingDraft.neighborhood}
+                      placeholder="مثلاً چهارباغ بالا، مرداویج، نظر میانی..."
+                      onChange={(e) =>
+                        updateOnboardingDraft({ neighborhood: e.target.value })
+                      }
+                    />
+                  </FormField>
+                </div>
 
                 <FormField
                   id="reg-address"
-                  label="نشانی ثبت‌شده از روی نقشه (در صورت نیاز قابل ویرایش است)"
+                  label="نشانی دقیق متنی (خیابان، کوچه، ساختمان، طبقه و واحد)"
                   required
                 >
                   <Input
                     id="reg-address"
                     value={onboardingDraft.address}
+                    placeholder="مثال: اصفهان، خیابان چهارباغ بالا، مجتمع پارسیان، طبقه ۲، واحد ۴"
                     onChange={(e) =>
                       updateOnboardingDraft({ address: e.target.value })
                     }

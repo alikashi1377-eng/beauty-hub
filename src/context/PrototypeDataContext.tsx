@@ -1641,6 +1641,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               businessId: acc.businessId || matchedBiz?.id,
               businessName: ov.name || acc.businessName || matchedBiz?.name,
               businessType: acc.businessType || matchedBiz?.type,
+              categorySlug:
+                ov.categorySlug || acc.categorySlug || matchedBiz?.categorySlug,
+              typeLabel: ov.typeLabel || acc.typeLabel || matchedBiz?.typeLabel,
+              slug: ov.slug || acc.slug || matchedBiz?.slug,
+              approvalStatus:
+                ov.approvalStatus ||
+                acc.approvalStatus ||
+                matchedBiz?.approvalStatus,
               neighborhood:
                 ov.neighborhood || acc.neighborhood || matchedBiz?.neighborhood,
               address: ov.address || matchedBiz?.address,
@@ -1653,6 +1661,37 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 ov.shortDescription || matchedBiz?.shortDescription,
             };
           });
+          // همچنین هر سالن محلی ثبت‌شده که هنوز در syncPayloadAccounts نیست را به دیتابیس سینک کن تا در گوشی سایر کاربران هم نمایش داده شود
+          for (const lb of localOnbList) {
+            if (!lb || lb.isSampleShowcase || /^biz-[1-8]$/.test(lb.id)) continue;
+            const lbPhone = toEnglishDigitsClient(
+              String(lb.ownerPhone || lb.phoneDisplay || '')
+            ).replace(/\D/g, '');
+            if (!/^09\d{9}$/.test(lbPhone)) continue;
+            if (syncPayloadAccounts.some((a) => a.phone === lbPhone)) continue;
+            const ov = overrides[lb.id] || overrides[lb.slug] || {};
+            syncPayloadAccounts.push({
+              phone: lbPhone,
+              fullName: ov.ownerName || lb.ownerName || lb.name || 'مدیر سالن',
+              city: ov.city || lb.city || 'اصفهان',
+              role: 'owner',
+              password: '',
+              businessId: lb.id,
+              businessName: ov.name || lb.name,
+              businessType: ov.type || lb.type,
+              categorySlug: ov.categorySlug || lb.categorySlug,
+              typeLabel: ov.typeLabel || lb.typeLabel,
+              slug: ov.slug || lb.slug,
+              approvalStatus: ov.approvalStatus || lb.approvalStatus,
+              neighborhood: ov.neighborhood || lb.neighborhood,
+              address: ov.address || lb.address,
+              mapLat: ov.mapLat ?? lb.mapLat,
+              mapLng: ov.mapLng ?? lb.mapLng,
+              avatarUrl: ov.avatarUrl || lb.avatarUrl,
+              instagramHandle: ov.instagramHandle || lb.instagramHandle,
+              shortDescription: ov.shortDescription || lb.shortDescription,
+            });
+          }
           if (
             localPersistedUser?.phone &&
             !syncPayloadAccounts.some((a) => a.phone === localPersistedUser.phone)
@@ -1668,6 +1707,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               businessId: localOwnedBizId || undefined,
               businessName: undefined,
               businessType: undefined,
+              categorySlug: undefined,
+              typeLabel: undefined,
+              slug: undefined,
+              approvalStatus: undefined,
               neighborhood: undefined,
               address: undefined,
               mapLat: undefined,
@@ -1705,14 +1748,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const firstRealBiz = response.data.businesses[0];
         const firstRealSrv = response.data.services[0];
         const firstRealSpc = response.data.specialists[0];
+        // هرگز پیش‌نویس نوبت انتخاب‌شده توسط مشتری را با سالن اول لیست (مثل angel) بازنویسی نکنیم!
         setBookingDraft((prev) => ({
           ...prev,
-          businessSlug: firstRealBiz?.slug ?? prev.businessSlug,
-          serviceId: firstRealSrv?.id ?? prev.serviceId,
-          serviceIds: firstRealSrv?.id ? [firstRealSrv.id] : prev.serviceIds,
-          specialistId: firstRealSpc?.id ?? prev.specialistId,
-          customerName: localPersistedUser?.fullName ?? '',
-          customerPhone: localPersistedUser?.phone ?? '',
+          businessSlug: prev.businessSlug || firstRealBiz?.slug || '',
+          serviceId: prev.serviceId || firstRealSrv?.id || '',
+          serviceIds:
+            prev.serviceIds && prev.serviceIds.length > 0
+              ? prev.serviceIds
+              : firstRealSrv?.id
+                ? [firstRealSrv.id]
+                : [],
+          specialistId: prev.specialistId || firstRealSpc?.id || '',
+          customerName: prev.customerName || localPersistedUser?.fullName || '',
+          customerPhone: prev.customerPhone || localPersistedUser?.phone || '',
           lastReferenceCode: undefined,
         }));
 
@@ -1947,28 +1996,80 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    if (dataMode === 'real' && !memAccount) {
+    if (dataMode === 'real') {
       try {
         const res = await realApiClient.loginWithPassword(
           resolvedPhone,
           password
         );
-        setAuthUser(res.user);
+        const mergedUser: AuthenticatedSessionUser = memAccount
+          ? {
+              ...res.user,
+              fullName: memAccount.fullName || res.user.fullName,
+              roles:
+                memAccount.role === 'BUSINESS_OWNER' &&
+                !res.user.roles.includes('BUSINESS_OWNER')
+                  ? [...res.user.roles, 'BUSINESS_OWNER']
+                  : res.user.roles,
+            }
+          : res.user;
+        if (memAccount?.businessId) {
+          setOwnedBusinessId(memAccount.businessId);
+          try {
+            window.localStorage.setItem(
+              'timeto_owned_business_id_v1',
+              memAccount.businessId
+            );
+          } catch {
+            // ignore
+          }
+        }
+        setAuthUser(mergedUser);
         saveVisitorRole(
-          res.user.roles.includes('BUSINESS_OWNER')
+          mergedUser.roles.includes('BUSINESS_OWNER')
             ? 'BUSINESS_OWNER'
             : 'CUSTOMER'
         );
         setBookingDraft((prev) => ({
           ...prev,
-          customerName: res.user.fullName || prev.customerName,
-          customerPhone: res.user.phone || prev.customerPhone,
+          customerName: mergedUser.fullName || prev.customerName,
+          customerPhone: mergedUser.phone || prev.customerPhone,
         }));
-        await loadAuthenticatedRoleData(res.user);
+        await loadAuthenticatedRoleData(mergedUser);
         showToast(res.message, 'success');
-        return res.user;
+        return mergedUser;
       } catch {
-        // ادامه با نشست محلی در صورت ثبت‌نام در مرورگر
+        // اگر حساب فقط در مرورگر بود، نشست رسمی سرور را از طریق register-sync صادر کن
+        if (memAccount) {
+          try {
+            const syncRes = await realApiClient.syncRegisteredAccounts({
+              accounts: [
+                {
+                  phone: memAccount.phone,
+                  fullName: memAccount.fullName,
+                  city: memAccount.city || 'اصفهان',
+                  role:
+                    memAccount.role === 'BUSINESS_OWNER' ? 'owner' : 'customer',
+                  password: memAccount.password || password,
+                  businessId: memAccount.businessId,
+                  businessName: memAccount.businessName,
+                  businessType: memAccount.businessType,
+                  categorySlug: memAccount.categorySlug,
+                  typeLabel: memAccount.typeLabel,
+                  slug: memAccount.slug,
+                  neighborhood: memAccount.neighborhood,
+                  avatarUrl: memAccount.avatarUrl,
+                },
+              ],
+              issueSessionForPhone: resolvedPhone,
+            });
+            if (syncRes.user) {
+              setAuthUser(syncRes.user);
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
@@ -2018,14 +2119,52 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }): Promise<AuthenticatedSessionUser> => {
     let createdBusinessId: string | undefined;
+    let createdBusinessSlug: string | undefined;
 
     if (payload.role === 'BUSINESS_OWNER') {
       const existingAccounts = getSavedMemoryAccounts();
       const prevAccount = existingAccounts[payload.phone];
-      if (prevAccount?.businessId) {
+      const cleanPayloadPhone = toEnglishDigitsClient(payload.phone).replace(
+        /\D/g,
+        ''
+      );
+      const existingBizForPhone = businesses.find((b) => {
+        if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) return false;
+        const bOwnerPhone = toEnglishDigitsClient(
+          String(b.ownerPhone || b.phoneDisplay || '')
+        ).replace(/\D/g, '');
+        return (
+          (prevAccount?.businessId && b.id === prevAccount.businessId) ||
+          (cleanPayloadPhone && bOwnerPhone === cleanPayloadPhone)
+        );
+      });
+
+      if (existingBizForPhone) {
+        createdBusinessId = existingBizForPhone.id;
+        createdBusinessSlug = existingBizForPhone.slug;
+        setOwnedBusinessId(existingBizForPhone.id);
+        try {
+          window.localStorage.setItem(
+            'timeto_owned_business_id_v1',
+            existingBizForPhone.id
+          );
+        } catch {
+          // ignore
+        }
+      } else if (prevAccount?.businessId) {
         createdBusinessId = prevAccount.businessId;
+        createdBusinessSlug = prevAccount.slug;
+        setOwnedBusinessId(prevAccount.businessId);
+        try {
+          window.localStorage.setItem(
+            'timeto_owned_business_id_v1',
+            prevAccount.businessId
+          );
+        } catch {
+          // ignore
+        }
       } else {
-        const newBizId = `biz-onb-${Date.now()}`;
+        const newBizId = `biz-owner-${cleanPayloadPhone || Date.now()}`;
         createdBusinessId = newBizId;
         const salonName =
           payload.salonInfo?.businessName?.trim() ||
@@ -2037,11 +2176,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           payload.salonInfo?.neighborhood?.trim() || 'چهارباغ بالا';
         const isLaserCenter =
           payload.salonInfo?.categorySlug === 'laser-hair-removal' ||
-          salonName.includes('لیزر');
+          salonName.includes('لیزر') ||
+          String(payload.salonInfo?.typeLabel || '').includes('لیزر');
+
+        const generatedSlug = `salon-${cleanPayloadPhone.slice(-4) || Math.floor(1000 + Math.random() * 8999)}`;
+        createdBusinessSlug = generatedSlug;
 
         const newBiz: BusinessItem = {
           id: newBizId,
-          slug: `salon-${Math.floor(1000 + Math.random() * 8999)}`,
+          slug: generatedSlug,
           name: salonName,
           type: salonType,
           typeLabel:
@@ -2067,7 +2210,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           rating: 5.0,
           reviewCount: 0,
           startingPriceToman: 0,
-          shortDescription: `مرکز تخصصی زیبایی ${salonName} در ${salonCity}`,
+          shortDescription: `${isLaserCenter ? 'مرکز تخصصی لیزر' : 'مرکز تخصصی زیبایی'} ${salonName} در ${salonCity}`,
           aboutText: '',
           verifiedBadge: false,
           approvalStatus: 'PENDING_REVIEW',
@@ -2092,7 +2235,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const localOnbList: BusinessItem[] = JSON.parse(localOnbRaw);
           window.localStorage.setItem(
             'timeto_local_onboarded_businesses_v1',
-            JSON.stringify([newBiz, ...localOnbList])
+            JSON.stringify([
+              newBiz,
+              ...localOnbList.filter((x) => x.id !== newBiz.id),
+            ])
           );
           window.localStorage.setItem('timeto_owned_business_id_v1', newBizId);
         } catch {
@@ -2126,7 +2272,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           return next;
         });
 
-        setBusinesses((prev) => [newBiz, ...prev]);
+        setBusinesses((prev) => [
+          newBiz,
+          ...prev.filter((b) => b.id !== newBiz.id),
+        ]);
         setOwnedBusinessId(newBizId);
       }
     }
@@ -2171,6 +2320,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     }
 
+    const resolvedCategorySlug =
+      payload.salonInfo?.categorySlug ||
+      (String(payload.salonInfo?.businessName || '').includes('لیزر') ||
+      String(payload.salonInfo?.typeLabel || '').includes('لیزر')
+        ? 'laser-hair-removal'
+        : undefined);
+
     saveMemoryAccount({
       phone: payload.phone,
       password: payload.password || 'Timeto@1234',
@@ -2186,6 +2342,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       businessId: createdBusinessId,
       businessName: payload.salonInfo?.businessName,
       businessType: payload.salonInfo?.businessType,
+      categorySlug: resolvedCategorySlug,
+      typeLabel: payload.salonInfo?.typeLabel,
+      slug: createdBusinessSlug,
       city: payload.salonInfo?.city || 'اصفهان',
       neighborhood: payload.salonInfo?.neighborhood,
       updatedAt: Date.now(),
@@ -2223,6 +2382,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             businessId: acc.businessId,
             businessName: acc.businessName,
             businessType: acc.businessType,
+            categorySlug: acc.categorySlug,
+            typeLabel: acc.typeLabel,
+            slug: acc.slug,
+            approvalStatus: acc.approvalStatus,
             neighborhood: acc.neighborhood,
             avatarUrl: acc.avatarUrl,
           })
@@ -2240,6 +2403,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                   businessId: createdBusinessId,
                   businessName: payload.salonInfo?.businessName,
                   businessType: payload.salonInfo?.businessType,
+                  categorySlug: resolvedCategorySlug,
+                  typeLabel: payload.salonInfo?.typeLabel,
+                  slug: createdBusinessSlug,
                   neighborhood: payload.salonInfo?.neighborhood,
                   avatarUrl: payload.avatarUrl,
                 },

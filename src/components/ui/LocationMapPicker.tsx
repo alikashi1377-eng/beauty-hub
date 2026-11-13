@@ -153,7 +153,19 @@ export const LocationMapPicker: React.FC<LocationMapPickerProps> = ({
     Math.max(16, Math.round(((32.71 - selectedLat) / 0.17) * 100))
   );
 
-  const googleMapsDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${selectedLat},${selectedLng}`;
+  const fullAddressQuery = [city || 'اصفهان', neighborhood, address]
+    .filter(Boolean)
+    .join('، ')
+    .trim();
+  const isDefaultCoords =
+    (Math.abs(selectedLat - 32.6288) < 0.001 &&
+      Math.abs(selectedLng - 51.6621) < 0.001) ||
+    (Math.abs(selectedLat - 32.6539) < 0.001 &&
+      Math.abs(selectedLng - 51.666) < 0.001);
+  const googleMapsDirectionsUrl =
+    address && address.trim().length >= 5 && isDefaultCoords
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddressQuery)}`
+      : `https://www.google.com/maps/dir/?api=1&destination=${selectedLat},${selectedLng}`;
   const neshanDirectUrl = `https://nshn.ir/?lat=${selectedLat}&lng=${selectedLng}`;
 
   const applyCoordinates = (newLat: number, newLng: number) => {

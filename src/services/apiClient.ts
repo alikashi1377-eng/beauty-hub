@@ -708,6 +708,10 @@ export const realApiClient = {
       businessId?: string;
       businessName?: string;
       businessType?: string;
+      categorySlug?: string;
+      typeLabel?: string;
+      slug?: string;
+      approvalStatus?: string;
       neighborhood?: string;
       address?: string;
       mapLat?: number;
