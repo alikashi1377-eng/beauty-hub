@@ -503,6 +503,9 @@ export const realApiClient = {
     customerName: string;
     customerPhone: string;
     customerNotes?: string;
+    depositPaidToman?: number;
+    paymentMethod?: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode?: string;
   }): Promise<{ item: AppointmentItem }> {
     return requestJson<{ ok: boolean; item: AppointmentItem }>(
       '/api/v1/appointments',

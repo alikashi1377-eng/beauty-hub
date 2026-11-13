@@ -1006,28 +1006,50 @@ export function createApiV1Router(
       try {
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
 
-        // ارسال پیامک اطلاع‌رسانی فوری نوبت جدید به هر دو طرف (صاحب کسب‌وکار و مشتری)
+        // واریز آنی بیعانه به کیف پول کسب‌وکار دقیقِ انتخاب‌شده در دیتابیس و ارسال پیامک اطلاع‌رسانی
         try {
+          const depositPaidToman = Math.max(
+            0,
+            Number(req.body?.depositPaidToman) || 0
+          );
+          const bizRes = await pool.query(
+            `
+            SELECT b.id, b.name, b.phone_display, bme.extra_json
+            FROM businesses b
+            LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+            WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
+            LIMIT 1
+            `,
+            [String(item.businessSlug || req.body?.businessSlug || '')]
+          );
+          const row = bizRes.rows[0];
+          const extra =
+            row?.extra_json && typeof row.extra_json === 'object'
+              ? { ...(row.extra_json as Record<string, unknown>) }
+              : {};
+
+          if (row?.id && depositPaidToman > 0) {
+            const prevBalance = Math.max(
+              0,
+              Number(extra.walletBalanceToman) || 0
+            );
+            extra.walletBalanceToman = prevBalance + depositPaidToman;
+            await pool.query(
+              `
+              INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+              VALUES ($1::uuid, $2::jsonb, NOW())
+              ON CONFLICT (business_id)
+              DO UPDATE SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
+              `,
+              [row.id, JSON.stringify(extra)]
+            );
+          }
+
           const config = customEnv ?? loadServerEnv();
           const effectiveSms = customEnv
             ? config.sms
             : resolveEffectiveSmsConfig(config.sms);
           if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
-            const bizRes = await pool.query(
-              `
-              SELECT b.name, b.phone_display, bme.extra_json
-              FROM businesses b
-              LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-              WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
-              LIMIT 1
-              `,
-              [String(req.body?.businessSlug || item.businessSlug || '')]
-            );
-            const row = bizRes.rows[0];
-            const extra =
-              row?.extra_json && typeof row.extra_json === 'object'
-                ? (row.extra_json as Record<string, unknown>)
-                : {};
             const rawOwnerPhone = String(
               extra.ownerPhone || row?.phone_display || ''
             )
@@ -1037,6 +1059,15 @@ export function createApiV1Router(
               rawOwnerPhone.length === 10 && rawOwnerPhone.startsWith('9')
                 ? `0${rawOwnerPhone}`
                 : rawOwnerPhone;
+
+            const ownerPatternId =
+              effectiveSms.bookingOwnerTemplate ||
+              process.env.SMS_BOOKING_OWNER_TEMPLATE ||
+              undefined;
+            const customerPatternId =
+              effectiveSms.bookingCustomerTemplate ||
+              process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
+              undefined;
 
             // ۱. پیامک به صاحب کسب‌وکار / متخصص
             if (/^09\d{9}$/.test(cleanOwnerPhone)) {
@@ -1049,7 +1080,7 @@ export function createApiV1Router(
                   item.timeSlot,
                 ],
                 fallbackSingleArg: `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
-                customTemplateId: process.env.SMS_BOOKING_OWNER_TEMPLATE,
+                customTemplateId: ownerPatternId,
                 config: effectiveSms,
                 nodeEnv: config.nodeEnv,
               }).catch(() => {});
@@ -1079,7 +1110,7 @@ export function createApiV1Router(
                   item.timeSlot,
                 ],
                 fallbackSingleArg: `ثبت نوبت ${bizTitle} ${item.dateJalali} ساعت ${item.timeSlot}`,
-                customTemplateId: process.env.SMS_BOOKING_CUSTOMER_TEMPLATE,
+                customTemplateId: customerPatternId,
                 config: effectiveSms,
                 nodeEnv: config.nodeEnv,
               }).catch(() => {});
@@ -2483,6 +2514,64 @@ export function createApiV1Router(
     });
   });
 
+  interface ZibalStoredOrder {
+    orderId: string;
+    trackId: string;
+    purpose: 'booking' | 'wallet_topup';
+    businessId: string;
+    businessSlug: string;
+    businessName: string;
+    amountToman: number;
+    customerPhone: string;
+    customerName: string;
+    bookingDraft?: Record<string, unknown>;
+    createdAt: string;
+    verifiedAt?: string;
+    refNumber?: string;
+  }
+
+  const zibalOrdersFilePath = path.resolve(
+    process.cwd(),
+    'zibal-gateway-orders.json'
+  );
+  const zibalOrdersMap = new Map<string, ZibalStoredOrder>();
+  try {
+    if (fs.existsSync(zibalOrdersFilePath)) {
+      const parsed = JSON.parse(
+        fs.readFileSync(zibalOrdersFilePath, 'utf-8')
+      ) as ZibalStoredOrder[];
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && item.trackId) {
+            zibalOrdersMap.set(`track:${item.trackId}`, item);
+          }
+          if (item && item.orderId) {
+            zibalOrdersMap.set(`order:${item.orderId}`, item);
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore read error
+  }
+
+  const persistZibalOrders = () => {
+    try {
+      const uniqueByOrder = new Map<string, ZibalStoredOrder>();
+      for (const val of zibalOrdersMap.values()) {
+        if (val?.orderId) uniqueByOrder.set(val.orderId, val);
+      }
+      const list = Array.from(uniqueByOrder.values()).slice(-400);
+      fs.writeFileSync(
+        zibalOrdersFilePath,
+        JSON.stringify(list, null, 2),
+        'utf-8'
+      );
+    } catch {
+      // ignore write error
+    }
+  };
+
   router.post('/payments/zibal/request', async (req: Request, res: Response) => {
     try {
       const incomingMerchant = String(req.body?.merchantId || '').trim();
@@ -2587,12 +2676,35 @@ export function createApiV1Router(
       }
 
       if (data?.result === 100 && data?.trackId) {
+        const trackIdStr = String(data.trackId);
+        const orderMeta: ZibalStoredOrder = {
+          orderId,
+          trackId: trackIdStr,
+          purpose:
+            req.body?.purpose === 'wallet_topup' ? 'wallet_topup' : 'booking',
+          businessId: String(req.body?.businessId || '').trim(),
+          businessSlug: String(req.body?.businessSlug || '').trim(),
+          businessName: String(req.body?.businessName || '').trim(),
+          amountToman,
+          customerPhone: String(req.body?.customerPhone || mobile || '').trim(),
+          customerName: String(req.body?.customerName || '').trim(),
+          bookingDraft:
+            req.body?.bookingDraft && typeof req.body.bookingDraft === 'object'
+              ? (req.body.bookingDraft as Record<string, unknown>)
+              : undefined,
+          createdAt: new Date().toISOString(),
+        };
+        zibalOrdersMap.set(`track:${trackIdStr}`, orderMeta);
+        zibalOrdersMap.set(`order:${orderId}`, orderMeta);
+        persistZibalOrders();
+
         res.status(200).json({
           ok: true,
           provider: 'zibal',
-          trackId: String(data.trackId),
-          paymentUrl: `https://gateway.zibal.ir/start/${data.trackId}`,
+          trackId: trackIdStr,
+          paymentUrl: `https://gateway.zibal.ir/start/${trackIdStr}`,
           orderId,
+          orderMeta,
           isSandbox: usedMerchant === 'zibal',
           fallbackNotice,
         });
@@ -2633,10 +2745,31 @@ export function createApiV1Router(
         process.env.PAYMENT_MERCHANT_ID?.trim() ||
         'zibal';
       const trackId = String(req.body?.trackId || '').trim();
+      const orderId = String(req.body?.orderId || '').trim();
       if (!trackId) {
         res.status(400).json({
           ok: false,
           message: 'کد رهگیری زیبال (trackId) ارسال نشده است.',
+        });
+        return;
+      }
+
+      const storedOrder =
+        zibalOrdersMap.get(`track:${trackId}`) ||
+        (orderId ? zibalOrdersMap.get(`order:${orderId}`) : undefined);
+
+      // اگر قبلاً این تراکنش در سرور تایید شده است، مانع تایید و شارژ مجدد شویم
+      if (storedOrder?.verifiedAt) {
+        res.status(200).json({
+          ok: true,
+          verified: true,
+          alreadyVerified: true,
+          refNumber: storedOrder.refNumber || trackId,
+          trackId,
+          orderMeta: storedOrder,
+          result: 201,
+          status: 1,
+          message: 'این تراکنش قبلاً با موفقیت تایید و ثبت شده است.',
         });
         return;
       }
@@ -2680,11 +2813,24 @@ export function createApiV1Router(
 
       // در درگاه زیبال: result=100 یعنی تایید موفق، result=201 یعنی قبلاً تایید شده
       const verified = data?.result === 100 || data?.result === 201;
+      const refNumStr = data?.refNumber ? String(data.refNumber) : trackId;
+      if (verified && storedOrder) {
+        storedOrder.verifiedAt = new Date().toISOString();
+        storedOrder.refNumber = refNumStr;
+        zibalOrdersMap.set(`track:${trackId}`, storedOrder);
+        if (storedOrder.orderId) {
+          zibalOrdersMap.set(`order:${storedOrder.orderId}`, storedOrder);
+        }
+        persistZibalOrders();
+      }
+
       res.status(200).json({
         ok: verified,
         verified,
-        refNumber: data?.refNumber ? String(data.refNumber) : trackId,
+        alreadyVerified: false,
+        refNumber: refNumStr,
         trackId,
+        orderMeta: storedOrder ?? null,
         result: data?.result,
         status: data?.status,
         message:

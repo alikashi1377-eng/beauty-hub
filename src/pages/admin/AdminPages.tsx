@@ -670,7 +670,7 @@ export const AdminDashboardPage: React.FC = () => {
             {[
               { id: '7d', label: '۷ روز گذشته' },
               { id: '30d', label: '۳۰ روز گذشته' },
-              { id: '1y', label: 'امسال' },
+              { id: '1y', label: 'یک سال' },
             ].map((rng) => (
               <button
                 key={rng.id}
@@ -688,122 +688,202 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="relative pt-4">
-          <svg viewBox="0 0 720 220" className="w-full h-52 overflow-visible">
-            <defs>
-              <linearGradient id="adm-bar-highlight" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.16" />
-                <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
-              </linearGradient>
-            </defs>
+        {(() => {
+          const chartConfig =
+            chartRange === '7d'
+              ? {
+                  periodTitle: 'روند ۷ روز گذشته (هفتگی)',
+                  yLabels: ['۴۰', '۳۰', '۲۰', '۱۰'],
+                  highlightX: 505,
+                  highlightCx: 533,
+                  highlightCy: 76,
+                  tooltipX: 445,
+                  secondaryPath:
+                    'M65,155 C145,148 215,150 295,135 C375,120 455,130 533,108 C605,95 650,110 685,98',
+                  primaryPath:
+                    'M65,145 C145,132 215,138 295,115 C375,92 455,110 533,76 C605,64 650,82 685,68',
+                  points: [
+                    { x: 65, y: 145, label: 'شنبه' },
+                    { x: 170, y: 135, label: 'یکشنبه' },
+                    { x: 275, y: 118, label: 'دوشنبه' },
+                    { x: 380, y: 98, label: 'سه‌شنبه' },
+                    { x: 455, y: 106, label: 'چهارشنبه' },
+                    { x: 533, y: 76, label: 'پنجشنبه', active: true },
+                    { x: 655, y: 68, label: 'جمعه' },
+                  ],
+                }
+              : chartRange === '30d'
+                ? {
+                    periodTitle: 'روند ۳۰ روز گذشته (بازه‌های ۵ روزه ماه)',
+                    yLabels: ['۱۲۰', '۹۰', '۶۰', '۳۰'],
+                    highlightX: 467,
+                    highlightCx: 495,
+                    highlightCy: 68,
+                    tooltipX: 407,
+                    secondaryPath:
+                      'M65,162 C155,150 245,140 340,126 C420,114 495,96 580,88 C630,82 660,78 685,74',
+                    primaryPath:
+                      'M65,152 C155,136 245,120 340,102 C420,86 495,68 580,58 C630,52 660,48 685,44',
+                    points: [
+                      { x: 65, y: 152, label: '۱ تا ۵ ماه' },
+                      { x: 190, y: 132, label: '۶ تا ۱۰ ماه' },
+                      { x: 315, y: 106, label: '۱۱ تا ۱۵ ماه' },
+                      { x: 410, y: 88, label: '۱۶ تا ۲۰ ماه' },
+                      { x: 495, y: 68, label: '۲۱ تا ۲۵ ماه', active: true },
+                      { x: 600, y: 55, label: '۲۶ تا ۳۰ ماه' },
+                      { x: 675, y: 44, label: 'امروز' },
+                    ],
+                  }
+                : {
+                    periodTitle: 'روند ۱ ساله (۱۲ ماه سال)',
+                    yLabels: ['۴۰۰', '۳۰۰', '۲۰۰', '۱۰۰'],
+                    highlightX: 547,
+                    highlightCx: 575,
+                    highlightCy: 56,
+                    tooltipX: 480,
+                    secondaryPath:
+                      'M55,168 C140,160 230,148 320,132 C410,118 500,98 575,82 C625,72 655,66 685,60',
+                    primaryPath:
+                      'M55,160 C140,148 230,132 320,112 C410,94 500,74 575,56 C625,46 655,40 685,35',
+                    points: [
+                      { x: 55, y: 160, label: 'فروردین' },
+                      { x: 112, y: 152, label: 'اردیبهشت' },
+                      { x: 169, y: 142, label: 'خرداد' },
+                      { x: 226, y: 132, label: 'تیر' },
+                      { x: 283, y: 120, label: 'مرداد' },
+                      { x: 340, y: 108, label: 'شهریور' },
+                      { x: 397, y: 96, label: 'مهر' },
+                      { x: 454, y: 82, label: 'آبان' },
+                      { x: 511, y: 68, label: 'آذر' },
+                      { x: 575, y: 56, label: 'دی', active: true },
+                      { x: 630, y: 45, label: 'بهمن' },
+                      { x: 685, y: 35, label: 'اسفند' },
+                    ],
+                  };
 
-            {[35, 80, 125, 170].map((y, idx) => (
-              <g key={y}>
-                <line
-                  x1="45"
-                  y1={y}
-                  x2="695"
-                  y2={y}
-                  stroke="#F3EEFF"
-                  strokeDasharray="4 4"
+          return (
+            <div className="relative pt-4">
+              <svg viewBox="0 0 720 220" className="w-full h-52 overflow-visible">
+                <defs>
+                  <linearGradient
+                    id="adm-bar-highlight"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.16" />
+                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
+                  </linearGradient>
+                </defs>
+
+                {[35, 80, 125, 170].map((y, idx) => (
+                  <g key={y}>
+                    <line
+                      x1="45"
+                      y1={y}
+                      x2="695"
+                      y2={y}
+                      stroke="#F3EEFF"
+                      strokeDasharray="4 4"
+                    />
+                    <text
+                      x="35"
+                      y={y + 4}
+                      textAnchor="end"
+                      className="fill-[#6B6480] text-[10px] font-bold"
+                    >
+                      {chartConfig.yLabels[idx]}
+                    </text>
+                  </g>
+                ))}
+
+                <rect
+                  x={chartConfig.highlightX}
+                  y="20"
+                  width="56"
+                  height="155"
+                  rx="14"
+                  fill="url(#adm-bar-highlight)"
                 />
-                <text
-                  x="35"
-                  y={y + 4}
-                  textAnchor="end"
-                  className="fill-[#6B6480] text-[10px] font-bold"
-                >
-                  {['۴۰', '۳۰', '۲۰', '۱۰'][idx]}
-                </text>
-              </g>
-            ))}
 
-            <rect
-              x="505"
-              y="20"
-              width="56"
-              height="155"
-              rx="14"
-              fill="url(#adm-bar-highlight)"
-            />
+                <path
+                  d={chartConfig.secondaryPath}
+                  fill="none"
+                  stroke="#A78BFA"
+                  strokeOpacity="0.7"
+                  strokeWidth="2.5"
+                  strokeDasharray="6 6"
+                  strokeLinecap="round"
+                />
 
-            <path
-              d="M65,155 C145,148 215,150 295,135 C375,120 455,130 533,108 C605,95 650,110 685,98"
-              fill="none"
-              stroke="#A78BFA"
-              strokeOpacity="0.7"
-              strokeWidth="2.5"
-              strokeDasharray="6 6"
-              strokeLinecap="round"
-            />
+                <path
+                  d={chartConfig.primaryPath}
+                  fill="none"
+                  stroke="#8B5CF6"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                />
 
-            <path
-              d="M65,145 C145,132 215,138 295,115 C375,92 455,110 533,76 C605,64 650,82 685,68"
-              fill="none"
-              stroke="#8B5CF6"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-            />
+                {chartConfig.points.map((pt) => (
+                  <circle
+                    key={pt.label}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={pt.active ? 6 : 3.5}
+                    fill="#FFFFFF"
+                    stroke="#8B5CF6"
+                    strokeWidth={pt.active ? 3.5 : 2}
+                  />
+                ))}
 
-            <circle
-              cx="533"
-              cy="76"
-              r="6"
-              fill="#FFFFFF"
-              stroke="#8B5CF6"
-              strokeWidth="3.5"
-            />
-            <g transform="translate(445, 22)">
-              <rect
-                x="0"
-                y="0"
-                width="176"
-                height="40"
-                rx="12"
-                fill="#1E1B2E"
-              />
-              <text
-                x="88"
-                y="16"
-                textAnchor="middle"
-                className="fill-white text-[10px] font-extrabold"
-              >
-                وضعیت شبکه واقعی (اصفهان)
-              </text>
-              <text
-                x="88"
-                y="31"
-                textAnchor="middle"
-                className="fill-amber-300 text-[11px] font-extrabold"
-              >
-                {toPersianDigits(realBusinesses.length)} سالن ·{' '}
-                {toPersianDigits(realAppointments.length)} رزرو
-              </text>
-            </g>
+                <g transform={`translate(${chartConfig.tooltipX}, 14)`}>
+                  <rect
+                    x="0"
+                    y="0"
+                    width="186"
+                    height="42"
+                    rx="12"
+                    fill="#1E1B2E"
+                  />
+                  <text
+                    x="93"
+                    y="16"
+                    textAnchor="middle"
+                    className="fill-white text-[10px] font-extrabold"
+                  >
+                    {chartConfig.periodTitle}
+                  </text>
+                  <text
+                    x="93"
+                    y="32"
+                    textAnchor="middle"
+                    className="fill-amber-300 text-[11px] font-extrabold"
+                  >
+                    {toPersianDigits(realBusinesses.length)} سالن ·{' '}
+                    {toPersianDigits(realAppointments.length)} رزرو ثبت‌شده
+                  </text>
+                </g>
 
-            {[
-              { x: 65, label: 'شنبه' },
-              { x: 170, label: 'یکشنبه' },
-              { x: 275, label: 'دوشنبه' },
-              { x: 380, label: 'سه‌شنبه' },
-              { x: 455, label: 'چهارشنبه' },
-              { x: 533, label: 'پنجشنبه' },
-              { x: 655, label: 'جمعه' },
-            ].map((d) => (
-              <text
-                key={d.label}
-                x={d.x}
-                y="198"
-                textAnchor="middle"
-                className={`text-[11px] font-bold ${
-                  d.label === 'پنجشنبه' ? 'fill-[#8B5CF6]' : 'fill-[#6B6480]'
-                }`}
-              >
-                {d.label}
-              </text>
-            ))}
-          </svg>
-        </div>
+                {chartConfig.points.map((d) => (
+                  <text
+                    key={d.label}
+                    x={d.x}
+                    y="198"
+                    textAnchor="middle"
+                    className={`${
+                      chartRange === '1y' ? 'text-[9.5px]' : 'text-[10.5px]'
+                    } font-bold ${
+                      d.active ? 'fill-[#8B5CF6] font-extrabold' : 'fill-[#6B6480]'
+                    }`}
+                  >
+                    {d.label}
+                  </text>
+                ))}
+              </svg>
+            </div>
+          );
+        })()}
       </Card>
 
       {/* ۳. جدول صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده واقعی */}
@@ -4620,6 +4700,9 @@ export const AdminSettingsPage: React.FC = () => {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [maskedSavedKey, setMaskedSavedKey] = useState<string | null>(null);
   const [bodyIdInput, setBodyIdInput] = useState('');
+  const [bookingOwnerBodyIdInput, setBookingOwnerBodyIdInput] = useState('');
+  const [bookingCustomerBodyIdInput, setBookingCustomerBodyIdInput] =
+    useState('');
   const [senderInput, setSenderInput] = useState('');
   const [smsConfigured, setSmsConfigured] = useState(false);
   const [smsSaving, setSmsSaving] = useState(false);
@@ -4645,6 +4728,14 @@ export const AdminSettingsPage: React.FC = () => {
         setSmsConfigured(Boolean(data.configured));
         setMaskedSavedKey(data.maskedApiKey ?? null);
         if (data.template) setBodyIdInput(String(data.template));
+        if (data.bookingOwnerTemplate !== undefined) {
+          setBookingOwnerBodyIdInput(String(data.bookingOwnerTemplate || ''));
+        }
+        if (data.bookingCustomerTemplate !== undefined) {
+          setBookingCustomerBodyIdInput(
+            String(data.bookingCustomerTemplate || '')
+          );
+        }
         if (data.sender) setSenderInput(String(data.sender));
       })
       .catch(() => {
@@ -4708,6 +4799,8 @@ export const AdminSettingsPage: React.FC = () => {
           provider: 'melipayamak',
           apiKey: effectiveKeyToSend,
           template: bodyIdInput.trim(),
+          bookingOwnerTemplate: bookingOwnerBodyIdInput.trim(),
+          bookingCustomerTemplate: bookingCustomerBodyIdInput.trim(),
           sender: senderInput.trim(),
         }),
       });
@@ -4855,8 +4948,8 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 id="mp-body-id"
-                label="۲. کد الگوی پیامک تاییدشده (bodyId)"
-                hint="کد عددی پترن تاییدشده در ملی‌پیامک"
+                label="۲. کد الگوی اصلی تایید شماره / ورود (bodyId)"
+                hint="کد عددی پترن ۱ متغیره {0} در ملی‌پیامک (الزامی)"
                 required
               >
                 <Input
@@ -4864,7 +4957,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   dir="ltr"
                   value={bodyIdInput}
                   onChange={(e) => setBodyIdInput(e.target.value)}
-                  placeholder="کد عددی الگو (bodyId)"
+                  placeholder="کد عددی الگو (مثلاً 123456)"
                 />
               </FormField>
 
@@ -4881,6 +4974,53 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   placeholder="شماره خط (اختیاری)"
                 />
               </FormField>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3">
+              <div>
+                <p className="text-xs font-extrabold text-[#061138]">
+                  الگوهای اختصاصی پیامک ثبت نوبت (اختیاری — در صورت خالی بودن از الگوی اصلی بالا استفاده می‌شود)
+                </p>
+                <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">
+                  اگر در پنل ملی‌پیامک فقط همان یک پترن تایید کد ورود (تک‌متغیره{' '}
+                  <code dir="ltr">{'{0}'}</code>) را ساخته‌اید، این دو کادر را خالی بگذارید؛ سامانه به صورت خودکار پیامک نوبت را با همان پترن اصلی ارسال می‌کند. اما اگر پترن ۴ متغیره اختصاصی نوبت (شامل نام مشتری{' '}
+                  <code dir="ltr">{'{0}'}</code>، خدمت/سالن{' '}
+                  <code dir="ltr">{'{1}'}</code>، تاریخ{' '}
+                  <code dir="ltr">{'{2}'}</code> و ساعت{' '}
+                  <code dir="ltr">{'{3}'}</code>) در ملی‌پیامک ثبت کرده‌اید، کد آن‌ها را در زیر وارد نمایید:
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField
+                  id="mp-booking-owner-id"
+                  label="کد الگوی پیامک نوبت جدید برای سالن‌دار (اختیاری)"
+                  hint="پترن ۴ متغیره اطلاع‌رسانی به صاحب سالن"
+                >
+                  <Input
+                    id="mp-booking-owner-id"
+                    dir="ltr"
+                    value={bookingOwnerBodyIdInput}
+                    onChange={(e) => setBookingOwnerBodyIdInput(e.target.value)}
+                    placeholder="خالی = استفاده از الگوی اصلی"
+                  />
+                </FormField>
+
+                <FormField
+                  id="mp-booking-customer-id"
+                  label="کد الگوی پیامک رسید نوبت برای مشتری (اختیاری)"
+                  hint="پترن ۴ متغیره رسید رزرو برای مشتری"
+                >
+                  <Input
+                    id="mp-booking-customer-id"
+                    dir="ltr"
+                    value={bookingCustomerBodyIdInput}
+                    onChange={(e) =>
+                      setBookingCustomerBodyIdInput(e.target.value)
+                    }
+                    placeholder="خالی = استفاده از الگوی اصلی"
+                  />
+                </FormField>
+              </div>
             </div>
 
             {smsStatusMessage ? (

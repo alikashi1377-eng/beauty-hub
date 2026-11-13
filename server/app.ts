@@ -205,6 +205,8 @@ export function createApiApp(
       configured: isReady,
       maskedApiKey: maskApiKeyForDisplay(effective.apiKey),
       template: effective.template ?? '',
+      bookingOwnerTemplate: effective.bookingOwnerTemplate ?? '',
+      bookingCustomerTemplate: effective.bookingCustomerTemplate ?? '',
       sender: effective.sender ?? '',
       apiUrl: effective.apiUrl ?? '',
     });
@@ -225,6 +227,14 @@ export function createApiApp(
       ).toLowerCase() as SmsProviderType;
       const apiKeyRaw = String(req.body?.apiKey ?? '').trim();
       const templateRaw = String(req.body?.template ?? '').trim();
+      const bookingOwnerTemplateRaw =
+        req.body?.bookingOwnerTemplate !== undefined
+          ? String(req.body.bookingOwnerTemplate).trim()
+          : undefined;
+      const bookingCustomerTemplateRaw =
+        req.body?.bookingCustomerTemplate !== undefined
+          ? String(req.body.bookingCustomerTemplate).trim()
+          : undefined;
       const senderRaw = String(req.body?.sender ?? '').trim();
 
       const config = customEnv ?? loadServerEnv();
@@ -237,6 +247,14 @@ export function createApiApp(
           : apiKeyRaw;
 
       const finalTemplate = templateRaw || currentEffective.template || '';
+      const finalBookingOwnerTemplate =
+        bookingOwnerTemplateRaw !== undefined
+          ? bookingOwnerTemplateRaw || null
+          : currentEffective.bookingOwnerTemplate ?? null;
+      const finalBookingCustomerTemplate =
+        bookingCustomerTemplateRaw !== undefined
+          ? bookingCustomerTemplateRaw || null
+          : currentEffective.bookingCustomerTemplate ?? null;
 
       if (providerRaw === 'melipayamak' && (!finalApiKey || !finalTemplate)) {
         res.status(400).json({
@@ -252,6 +270,8 @@ export function createApiApp(
         provider: providerRaw,
         apiKey: finalApiKey,
         template: finalTemplate,
+        bookingOwnerTemplate: finalBookingOwnerTemplate,
+        bookingCustomerTemplate: finalBookingCustomerTemplate,
         sender: senderRaw || currentEffective.sender || null,
       });
 
@@ -261,6 +281,8 @@ export function createApiApp(
         configured: Boolean(updated?.apiKey && updated?.template),
         maskedApiKey: maskApiKeyForDisplay(updated?.apiKey ?? null),
         template: updated?.template ?? '',
+        bookingOwnerTemplate: updated?.bookingOwnerTemplate ?? '',
+        bookingCustomerTemplate: updated?.bookingCustomerTemplate ?? '',
         sender: updated?.sender ?? '',
         message:
           'تنظیمات درگاه ملی‌پیامک با موفقیت ذخیره و به صورت آنی روی سرور فعال شد.',

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Calendar,
@@ -1905,6 +1905,24 @@ export const BusinessServicesPage: React.FC = () => {
     });
     if (!validation.isValid) {
       setFormErrors(validation.errors);
+      const firstErr =
+        validation.errors.title ||
+        validation.errors.priceToman ||
+        validation.errors.durationMinutes ||
+        validation.errors.category ||
+        'لطفاً فیلدهای خالی (عنوان خدمت و قیمت) را تکمیل کنید.';
+      showToast(firstErr, 'warning');
+      return;
+    }
+
+    if (
+      serviceMode === 'PACKAGE' &&
+      selectedPackageStages.map((s) => s.trim()).filter(Boolean).length === 0
+    ) {
+      showToast(
+        'برای ساخت پکیج چندمرحله‌ای، هنوز هیچ مرحله‌ای انتخاب نشده است! لطفاً حداقل یک مرحله از چک‌لیست انتخاب کنید یا به حالت «خدمت تکی» تغییر دهید.',
+        'warning'
+      );
       return;
     }
 
@@ -2541,6 +2559,64 @@ export const BusinessServicesPage: React.FC = () => {
 
       {bizServices.length > 0 ? (
         <>
+          {/* نوار هوشمند هدایت به گام بعدی تکمیل نشده پنل سالن پس از ثبت خدمات */}
+          {(() => {
+            const hasBankInfo = Boolean(
+              (currentBiz?.bankCardNumber &&
+                currentBiz.bankCardNumber.replace(/\D/g, '').length >= 16) ||
+                (currentBiz?.bankShebaNumber &&
+                  currentBiz.bankShebaNumber.replace(/\D/g, '').length >= 24)
+            );
+            const hasAddressInfo = Boolean(
+              currentBiz?.address && currentBiz.address.trim().length >= 5
+            );
+            const hasAvatarInfo = Boolean(
+              currentBiz?.avatarUrl && currentBiz.avatarUrl.trim()
+            );
+
+            if (!hasBankInfo) {
+              return (
+                <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#6EE7B7] flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-extrabold text-[#065F46]">
+                      ✓ خدمات شما ثبت شد! گام بعدی تکمیل نشده: ثبت شماره کارت و شبا جهت واریز بیعانه‌ها
+                    </p>
+                    <p className="text-[11px] text-[#047857]">
+                      برای اینکه بیعانه نوبت‌های آنلاین مستقیماً به حساب شما تسویه شود، شماره کارت یا شبای خود را ثبت کنید.
+                    </p>
+                  </div>
+                  <Link to="/app/profile#financial-section">
+                    <Button variant="primary" size="sm">
+                      <span>رفتن به ثبت کارت و شبا</span>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                </div>
+              );
+            }
+            if (!hasAvatarInfo || !hasAddressInfo) {
+              return (
+                <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="space-y-0.5">
+                    <p className="font-extrabold text-[#1E3A8A]">
+                      ✓ خدمات شما ثبت شد! گام بعدی تکمیل نشده: تکمیل عکس پروفایل و نشانی سالن
+                    </p>
+                    <p className="text-[11px] text-[#1D4ED8]">
+                      برای نمایش کامل در نتایج جست‌وجو، تصویر پروفایل و آدرس دقیق سالن را تکمیل نمایید.
+                    </p>
+                  </div>
+                  <Link to="/app/profile">
+                    <Button variant="primary" size="sm">
+                      <span>تکمیل مشخصات پروفایل</span>
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* فیلتر دسته‌بندی خدمات */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -4908,9 +4984,12 @@ export const BusinessGalleryPage: React.FC = () => {
 
 /** ۸. پروفایل عمومی سالن (/app/profile) */
 export const BusinessProfileEditPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentBusiness,
     businesses,
+    services,
+    gallery,
     updateBusinessProfile,
     updateOnboardingDraft,
     settlementRequests,
@@ -4952,6 +5031,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
   );
   const [savedNotice, setSavedNotice] = useState(false);
+  const [stepValidationError, setStepValidationError] = useState('');
 
   useEffect(() => {
     if (!currentBiz) return;
@@ -4982,47 +5062,194 @@ export const BusinessProfileEditPage: React.FC = () => {
     );
   }
 
+  const isStep1Done = Boolean(
+    name.trim().length >= 2 && (avatarUrl || currentBiz.avatarUrl)
+  );
+  const isStep2Done = Boolean(address.trim().length >= 5 && mapLat && mapLng);
+  const cleanCardDigits = toEnglishDigitsClient(bankCardNumber)
+    .replace(/\D/g, '')
+    .slice(0, 16);
+  const cleanShebaDigits = toEnglishDigitsClient(bankShebaNumber)
+    .toUpperCase()
+    .replace(/[^0-9]/g, '')
+    .slice(0, 24);
+  const isStep3Done =
+    (cleanCardDigits.length === 16 || cleanShebaDigits.length === 24) &&
+    Boolean(bankAccountHolder.trim());
+
+  const bizServicesCount = services.filter(
+    (s) => s.businessId === currentBiz.id
+  ).length;
+  const bizGalleryCount = gallery.filter(
+    (g) => g.businessId === currentBiz.id
+  ).length;
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    setStepValidationError('');
+
+    // ۱. اعتبارسنجی دقیق گام فعلی؛ اگر فیلدی ناقص است ذخیره نشود و به کاربر اعلام گردد
+    if (activeStep === 'INFO') {
+      if (!name.trim() || name.trim().length < 2) {
+        const msg =
+          'هنوز «نام سالن، کلینیک یا مرکز زیبایی» را وارد نکرده‌اید. لطفاً ابتدا این کادر را پر کنید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+      if (!avatarUrl && !currentBiz.avatarUrl) {
+        const msg =
+          'هنوز «تصویر پروفایل سالن» را انتخاب نکرده‌اید. لطفاً ابتدا عکس پروفایل را بارگذاری و کراپ کنید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+      if (!shortDesc.trim()) {
+        const msg =
+          'کادر «معرفی کوتاه یک‌خطی» خالی است. لطفاً یک جمله کوتاه برای نمایش در کارت سالن بنویسید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+    } else if (activeStep === 'LOCATION') {
+      if (!address.trim() || address.trim().length < 5) {
+        const msg =
+          'کادر «نشانی دقیق متنی» هنوز خالی یا ناقص است. لطفاً آدرس سالن را وارد کنید یا از روی نقشه انتخاب نمایید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+    } else if (activeStep === 'WALLET') {
+      if (cleanCardDigits.length === 0 && cleanShebaDigits.length === 0) {
+        const msg =
+          'هنوز «شماره کارت بانکی ۱۶ رقمی» یا «شماره شبا ۲۴ رقمی» را وارد نکرده‌اید. لطفاً حداقل یکی از این دو را تکمیل کنید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+      if (cleanCardDigits.length > 0 && cleanCardDigits.length !== 16) {
+        const msg = `شماره کارت بانکی ناقص است (باید ۱۶ رقم باشد، اما ${toPersianDigits(cleanCardDigits.length)} رقم وارد شده است).`;
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+      if (cleanShebaDigits.length > 0 && cleanShebaDigits.length !== 24) {
+        const msg = `شماره شبا ناقص است (باید ۲۴ رقم عددی بعد از IR باشد، اما ${toPersianDigits(cleanShebaDigits.length)} رقم وارد شده است).`;
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+      if (!bankAccountHolder.trim() || bankAccountHolder.trim().length < 2) {
+        const msg =
+          'کادر «نام صاحب حساب» خالی است. لطفاً نام و نام خانوادگی صاحب حساب بانکی را بنویسید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
+    }
+
     const cleanedInsta = instagramHandle.trim();
-    const cleanCard = bankCardNumber.replace(/\D/g, '').slice(0, 16);
-    const cleanSheba = bankShebaNumber
-      .toUpperCase()
-      .replace(/[^0-9I-R]/g, '')
-      .replace(/^IR/, '');
     updateBusinessProfile(currentBiz.id, {
-      name,
+      name: name.trim(),
       avatarUrl: avatarUrl || undefined,
       coverUrl: coverUrl || undefined,
       targetGender,
       instagramHandle: cleanedInsta,
-      address,
+      address: address.trim(),
       mapLat,
       mapLng,
-      shortDescription: shortDesc,
-      aboutText,
-      bankCardNumber: cleanCard || undefined,
-      bankShebaNumber: cleanSheba ? `IR${cleanSheba}` : undefined,
+      shortDescription: shortDesc.trim(),
+      aboutText: aboutText.trim(),
+      bankCardNumber: cleanCardDigits || undefined,
+      bankShebaNumber: cleanShebaDigits ? `IR${cleanShebaDigits}` : undefined,
       bankAccountHolder: bankAccountHolder.trim() || undefined,
     });
     updateOnboardingDraft({
-      businessName: name,
+      businessName: name.trim(),
       avatarUrl,
       instagramHandle: cleanedInsta,
-      address,
+      address: address.trim(),
       mapLat,
       mapLng,
-      shortDescription: shortDesc,
+      shortDescription: shortDesc.trim(),
     });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
-  };
 
-  const isStep1Done = Boolean(name.trim() && (avatarUrl || currentBiz.avatarUrl));
-  const isStep2Done = Boolean(address.trim() && mapLat && mapLng);
-  const isStep3Done =
-    bankCardNumber.replace(/\D/g, '').length >= 16 ||
-    bankShebaNumber.replace(/\D/g, '').length >= 24;
+    // ۲. اکشن هوشمند پس از ذخیره: انتقال خودکار به قسمت بعدی که هنوز پر نشده است
+    const nextStep1Done = Boolean(
+      name.trim().length >= 2 && (avatarUrl || currentBiz.avatarUrl)
+    );
+    const nextStep2Done = Boolean(address.trim().length >= 5 && mapLat && mapLng);
+    const nextStep3Done =
+      (cleanCardDigits.length === 16 || cleanShebaDigits.length === 24) &&
+      Boolean(bankAccountHolder.trim());
+
+    if (activeStep === 'INFO') {
+      if (!nextStep2Done) {
+        setActiveStep('LOCATION');
+        showToast(
+          'تصویر و مشخصات ذخیره شد ✓ انتقال خودکار به گام ۲: ثبت نشانی و موقعیت روی نقشه'
+        );
+        return;
+      }
+      if (!nextStep3Done) {
+        setActiveStep('WALLET');
+        showToast(
+          'مشخصات ذخیره شد ✓ انتقال خودکار به گام ۳: تکمیل شماره کارت و شبا'
+        );
+        return;
+      }
+    } else if (activeStep === 'LOCATION') {
+      if (!nextStep3Done) {
+        setActiveStep('WALLET');
+        showToast(
+          'نشانی سالن ذخیره شد ✓ انتقال خودکار به گام ۳: تکمیل شماره کارت و شبا'
+        );
+        return;
+      }
+      if (!nextStep1Done) {
+        setActiveStep('INFO');
+        showToast(
+          'نشانی ذخیره شد ✓ لطفاً اکنون گام ۱ (تصویر و مشخصات پایه) را تکمیل کنید.'
+        );
+        return;
+      }
+    } else if (activeStep === 'WALLET') {
+      if (!nextStep1Done) {
+        setActiveStep('INFO');
+        showToast(
+          'شماره کارت و شبا ذخیره شد ✓ انتقال خودکار به گام ۱: تکمیل تصویر و مشخصات'
+        );
+        return;
+      }
+      if (!nextStep2Done) {
+        setActiveStep('LOCATION');
+        showToast(
+          'شماره کارت و شبا ذخیره شد ✓ انتقال خودکار به گام ۲: تکمیل نشانی سالن'
+        );
+        return;
+      }
+    }
+
+    // اگر هر ۳ گام پروفایل کامل شد، بررسی کن آیا خدمات یا گالری هنوز خالی است تا به آن بخش برود
+    if (bizServicesCount === 0) {
+      showToast(
+        'پروفایل و حساب بانکی کامل شد ✓ انتقال خودکار به بخش بعدی: تعریف خدمات و تعرفه‌ها'
+      );
+      setTimeout(() => navigate('/app/services'), 500);
+      return;
+    }
+    if (bizGalleryCount === 0) {
+      showToast(
+        'اطلاعات پروفایل ذخیره شد ✓ انتقال به بخش آپلود گالری نمونه‌کارها'
+      );
+      setTimeout(() => navigate('/app/gallery'), 500);
+      return;
+    }
+
+    showToast('تمامی اطلاعات پروفایل و حساب بانکی سالن با موفقیت ذخیره شد ✓');
+  };
 
   return (
     <div className="space-y-4">
@@ -5092,6 +5319,16 @@ export const BusinessProfileEditPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <Card padding="lg" className="lg:col-span-7">
           <form onSubmit={handleSave} className="space-y-4">
+            {stepValidationError ? (
+              <div
+                role="alert"
+                className="p-3.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2.5 text-xs font-extrabold text-[#B91C1C]"
+              >
+                <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                <span>{stepValidationError}</span>
+              </div>
+            ) : null}
+
             {/* گام ۱: تصویر پروفایل (با ذخیره آنی بدون پریدن) و مشخصات پایه */}
             {activeStep === 'INFO' ? (
               <div className="space-y-4">
@@ -5516,8 +5753,14 @@ export const BusinessProfileEditPage: React.FC = () => {
 
 /** ۹. ساعات کاری هفتگی (/app/working-hours) — پشتیبانی از یک‌سره یا دو شیفته (استراحت بین روز) */
 export const BusinessWorkingHoursPage: React.FC = () => {
-  const { currentBusiness, businesses, updateBusinessWorkingHours, showToast } =
-    usePrototypeData();
+  const navigate = useNavigate();
+  const {
+    currentBusiness,
+    businesses,
+    services,
+    updateBusinessWorkingHours,
+    showToast,
+  } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [hours, setHours] = useState(currentBiz?.workingHours ?? []);
 
@@ -5748,17 +5991,82 @@ export const BusinessWorkingHoursPage: React.FC = () => {
             ))}
           </div>
 
-          <div className="pt-4 border-t border-[#E6E0F5]">
+          <div className="pt-4 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
             <Button
               variant="primary"
               disabled={!currentBiz}
               onClick={() => {
-                if (currentBiz) {
-                  updateBusinessWorkingHours(currentBiz.id, hours);
+                if (!currentBiz) return;
+                if (openDaysCount === 0) {
+                  showToast(
+                    'همه روزهای هفته تعطیل علامت خورده است! لطفاً حداقل یک روز کاری فعال برای سالن انتخاب کنید.',
+                    'warning'
+                  );
+                  return;
+                }
+                const toMin = (val?: string) => {
+                  const clean = toEnglishDigitsClient(String(val || '00:00'));
+                  const [hh, mm] = clean.split(':').map((x) => Number(x) || 0);
+                  return hh * 60 + mm;
+                };
+                for (const d of hours) {
+                  if (!d.isOpen) continue;
+                  if (toMin(d.closeTime) <= toMin(d.openTime)) {
+                    showToast(
+                      `در روز «${d.dayName}»، ساعت پایان (${d.closeTime}) باید بعد از ساعت شروع (${d.openTime}) باشد.`,
+                      'warning'
+                    );
+                    return;
+                  }
+                  if (d.hasBreak) {
+                    const s2Open = d.secondOpenTime || '۱۶:۰۰';
+                    const s2Close = d.secondCloseTime || '۲۱:۰۰';
+                    if (toMin(s2Open) < toMin(d.closeTime)) {
+                      showToast(
+                        `در روز «${d.dayName}»، شروع شیفت عصر (${s2Open}) نباید قبل از پایان شیفت صبح (${d.closeTime}) باشد.`,
+                        'warning'
+                      );
+                      return;
+                    }
+                    if (toMin(s2Close) <= toMin(s2Open)) {
+                      showToast(
+                        `در روز «${d.dayName}»، پایان شیفت عصر (${s2Close}) باید بعد از شروع شیفت عصر (${s2Open}) باشد.`,
+                        'warning'
+                      );
+                      return;
+                    }
+                  }
+                }
+
+                updateBusinessWorkingHours(currentBiz.id, hours);
+
+                const bizSrvCount = services.filter(
+                  (s) => s.businessId === currentBiz.id
+                ).length;
+                const hasBank = Boolean(
+                  (currentBiz.bankCardNumber &&
+                    currentBiz.bankCardNumber.replace(/\D/g, '').length >= 16) ||
+                    (currentBiz.bankShebaNumber &&
+                      currentBiz.bankShebaNumber.replace(/\D/g, '').length >= 24)
+                );
+
+                if (bizSrvCount === 0) {
+                  showToast(
+                    'ساعات کاری ذخیره شد ✓ انتقال خودکار به بخش بعدی: تعریف خدمات و تعرفه‌ها'
+                  );
+                  setTimeout(() => navigate('/app/services'), 450);
+                } else if (!hasBank) {
+                  showToast(
+                    'ساعات کاری ذخیره شد ✓ انتقال خودکار به بخش تکمیل شماره کارت و شبا'
+                  );
+                  setTimeout(
+                    () => navigate('/app/profile#financial-section'),
+                    450
+                  );
                 }
               }}
             >
-              ذخیره ساعات کاری و شیفت‌ها
+              ذخیره ساعات کاری و ادامه به مرحله بعد
             </Button>
           </div>
         </Card>
@@ -7693,6 +8001,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
 
 /** ۱۳. تنظیمات پنل کسب‌وکار، اطلاع‌رسانی پیامکی، قوانین رزرو و رمز عبور (/app/settings) */
 export const BusinessSettingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     authUser,
     currentBusiness,
@@ -7763,6 +8072,13 @@ export const BusinessSettingsPage: React.FC = () => {
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!fixedPassword.trim() || fixedPassword.trim().length < 6) {
+      showToast(
+        'لطفاً ابتدا رمز عبور ثابت جدید (حداقل ۶ کاراکتر) را در کادر وارد کنید.',
+        'warning'
+      );
+      return;
+    }
     setIsSavingPass(true);
     try {
       const ok = await setAccountPassword(fixedPassword);
@@ -7950,11 +8266,14 @@ export const BusinessSettingsPage: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() =>
-                    showToast('تنظیمات اطلاع‌رسانی پیامکی سالن با موفقیت ذخیره شد.')
-                  }
+                  onClick={() => {
+                    showToast(
+                      'تنظیمات اعلان پیامکی ذخیره شد ✓ انتقال خودکار به تب «قوانین بیعانه و کنسلی نوبت»'
+                    );
+                    setActiveTab('booking_rules');
+                  }}
                 >
-                  ذخیره تنظیمات اعلان پیامکی
+                  ذخیره تنظیمات اعلان و رفتن به قوانین بیعانه ←
                 </Button>
               </div>
             </Card>
@@ -8131,9 +8450,20 @@ export const BusinessSettingsPage: React.FC = () => {
               <Button
                 variant="primary"
                 onClick={() => {
+                  if (
+                    !depositPercentRule ||
+                    depositPercentRule < 1 ||
+                    depositPercentRule > 100
+                  ) {
+                    showToast(
+                      'کادر «درصد بیعانه» خالی یا نامعتبر است! لطفاً عددی بین ۱ تا ۱۰۰ درصد وارد کنید.',
+                      'warning'
+                    );
+                    return;
+                  }
                   const safePercent = Math.max(
                     1,
-                    Math.min(100, depositPercentRule || 30)
+                    Math.min(100, depositPercentRule)
                   );
                   setDepositPercentRule(safePercent);
                   if (currentBiz) {
@@ -8144,6 +8474,26 @@ export const BusinessSettingsPage: React.FC = () => {
                       lateCancellationPenaltyPercent,
                     });
                   }
+
+                  const hasBank = Boolean(
+                    (currentBiz?.bankCardNumber &&
+                      currentBiz.bankCardNumber.replace(/\D/g, '').length >=
+                        16) ||
+                      (currentBiz?.bankShebaNumber &&
+                        currentBiz.bankShebaNumber.replace(/\D/g, '').length >=
+                          24)
+                  );
+                  if (!hasBank) {
+                    showToast(
+                      `قوانین بیعانه (${toPersianDigits(safePercent)}٪) ذخیره شد ✓ انتقال خودکار به بخش ثبت شماره کارت و شبا جهت واریز بیعانه‌ها`
+                    );
+                    setTimeout(
+                      () => navigate('/app/profile#financial-section'),
+                      450
+                    );
+                    return;
+                  }
+
                   showToast(
                     `قوانین بیعانه (${toPersianDigits(safePercent)}٪)، مهلت کنسلی و جریمه دیرکرد سالن با موفقیت ذخیره شد ✓`
                   );

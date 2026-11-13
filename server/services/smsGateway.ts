@@ -22,6 +22,8 @@ export interface SmsConfig {
   apiKey: string | null;
   sender: string | null;
   template: string | null;
+  bookingOwnerTemplate?: string | null;
+  bookingCustomerTemplate?: string | null;
   apiUrl: string | null;
 }
 
@@ -275,6 +277,12 @@ export function resolveSmsConfig(
   const rawTemplate = normalizeDigitsToEnglish(
     stripSurroundingQuotes(envSource.SMS_OTP_TEMPLATE)
   );
+  const rawBookingOwnerTemplate = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(envSource.SMS_BOOKING_OWNER_TEMPLATE)
+  );
+  const rawBookingCustomerTemplate = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(envSource.SMS_BOOKING_CUSTOMER_TEMPLATE)
+  );
   const rawApiUrl = stripSurroundingQuotes(envSource.SMS_API_URL);
 
   if (provider === 'melipayamak') {
@@ -285,6 +293,8 @@ export function resolveSmsConfig(
       apiKey: extractedKey || null,
       sender: rawSender || null,
       template: rawTemplate || null,
+      bookingOwnerTemplate: rawBookingOwnerTemplate || null,
+      bookingCustomerTemplate: rawBookingCustomerTemplate || null,
       apiUrl: rawApiUrl || extractedEndpoint || null,
     };
   }
@@ -294,6 +304,8 @@ export function resolveSmsConfig(
     apiKey: rawApiKey || null,
     sender: rawSender || null,
     template: rawTemplate || null,
+    bookingOwnerTemplate: rawBookingOwnerTemplate || null,
+    bookingCustomerTemplate: rawBookingCustomerTemplate || null,
     apiUrl: rawApiUrl || null,
   };
 }
@@ -305,6 +317,8 @@ export function setRuntimeSmsOverride(input: {
   apiKey?: string | null;
   sender?: string | null;
   template?: string | null;
+  bookingOwnerTemplate?: string | null;
+  bookingCustomerTemplate?: string | null;
   apiUrl?: string | null;
 } | null): SmsConfig | null {
   if (!input) {
@@ -318,6 +332,18 @@ export function setRuntimeSmsOverride(input: {
   const rawTemplate = normalizeDigitsToEnglish(
     stripSurroundingQuotes(input.template ?? '')
   );
+  const rawBookingOwner = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(
+      input.bookingOwnerTemplate ?? runtimeSmsOverride?.bookingOwnerTemplate ?? ''
+    )
+  );
+  const rawBookingCustomer = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(
+      input.bookingCustomerTemplate ??
+        runtimeSmsOverride?.bookingCustomerTemplate ??
+        ''
+    )
+  );
   const rawUrl = stripSurroundingQuotes(input.apiUrl ?? '');
 
   if (provider === 'melipayamak') {
@@ -328,6 +354,8 @@ export function setRuntimeSmsOverride(input: {
       apiKey: extractedKey || null,
       sender: rawSender || null,
       template: rawTemplate || null,
+      bookingOwnerTemplate: rawBookingOwner || null,
+      bookingCustomerTemplate: rawBookingCustomer || null,
       apiUrl: rawUrl || extractedEndpoint || null,
     };
     return runtimeSmsOverride;
@@ -338,6 +366,8 @@ export function setRuntimeSmsOverride(input: {
     apiKey: rawKey || null,
     sender: rawSender || null,
     template: rawTemplate || null,
+    bookingOwnerTemplate: rawBookingOwner || null,
+    bookingCustomerTemplate: rawBookingCustomer || null,
     apiUrl: rawUrl || null,
   };
   return runtimeSmsOverride;
@@ -827,9 +857,41 @@ export async function sendPatternSmsViaGateway(params: {
     Boolean(trimmedCustomTemplate) &&
     /^\d+$/.test(normalizeDigitsToEnglish(trimmedCustomTemplate));
 
+  const sendWithSingleArgFallback = async (): Promise<SmsDeliveryResult> => {
+    const firstAttempt = await sendOtpSmsViaGateway(
+      phone,
+      fallbackSingleArg,
+      config,
+      nodeEnv
+    );
+    if (firstAttempt.sent || config.provider !== 'melipayamak') {
+      return firstAttempt;
+    }
+    // اگر پترن تک‌متغیره ملی‌پیامک به دلیل فاصله (Space) خطا داد، نسخه بدون فاصله یا کد عددی ارسال شود
+    const compactArg = fallbackSingleArg.trim().replace(/\s+/g, '-');
+    if (compactArg && compactArg !== fallbackSingleArg) {
+      const secondAttempt = await sendOtpSmsViaGateway(
+        phone,
+        compactArg,
+        config,
+        nodeEnv
+      );
+      if (secondAttempt.sent) {
+        return secondAttempt;
+      }
+    }
+    const digitsOnly = normalizeDigitsToEnglish(fallbackSingleArg).replace(
+      /\D/g,
+      ''
+    );
+    const numericFallback =
+      digitsOnly.length >= 4 ? digitsOnly.slice(-6) : '140524';
+    return sendOtpSmsViaGateway(phone, numericFallback, config, nodeEnv);
+  };
+
   // اگر پترن چندپارامتری اختصاصی تعریف نشده، با پترن اصلی تک‌پارامتری ارسال شود
   if (!hasDedicatedPattern || config.provider !== 'melipayamak') {
-    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+    return sendWithSingleArgFallback();
   }
 
   const bodyId = Number.parseInt(
@@ -860,11 +922,16 @@ export async function sendPatternSmsViaGateway(params: {
   const timeout = setTimeout(() => controller.abort(), 8500);
   try {
     // لیست کاندیدهای آرایه args:
-    // ۱) آرایه کامل ۴ تایی ([نام مشتری، خدمت/سالن، تاریخ، ساعت]) برای تطابق اندیس‌های {0} و {2} و {3}
-    // ۲) آرایه ۳ تایی ([نام مشتری، تاریخ، ساعت]) در صورتی که وب‌سرویس ملی‌پیامک تعداد کروشه‌ها (۳ متغیر) را شمارش کند
+    // ۱) آرایه کامل ۴ تایی ([نام مشتری، خدمت/سالن، تاریخ، ساعت])
+    // ۲) آرایه ۳ تایی ([نام مشتری، تاریخ، ساعت])
+    // ۳) آرایه ۲ تایی ([نام مشتری، تاریخ-ساعت])
     const candidateArgsList: string[][] = [cleanArgs];
     if (cleanArgs.length === 4) {
       candidateArgsList.push([cleanArgs[0], cleanArgs[2], cleanArgs[3]]);
+      candidateArgsList.push([
+        cleanArgs[0],
+        `${cleanArgs[2]} ساعت ${cleanArgs[3]}`,
+      ]);
     }
 
     for (const candidateArgs of candidateArgsList) {
@@ -905,9 +972,9 @@ export async function sendPatternSmsViaGateway(params: {
     }
 
     // در صورت خطا در پترن اختصاصی، فالبک به پترن اصلی
-    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+    return sendWithSingleArgFallback();
   } catch {
-    return sendOtpSmsViaGateway(phone, fallbackSingleArg, config, nodeEnv);
+    return sendWithSingleArgFallback();
   } finally {
     clearTimeout(timeout);
   }

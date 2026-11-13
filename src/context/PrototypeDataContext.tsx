@@ -207,7 +207,9 @@ interface PrototypeDataContextValue {
   customerWalletTransactions: CustomerWalletTransactionItem[];
   topUpCustomerWallet: (
     amountToman: number,
-    trackingCode?: string
+    trackingCode?: string,
+    targetPhone?: string,
+    targetName?: string
   ) => CustomerWalletTransactionItem;
   payFromCustomerWallet: (
     amountToman: number,
@@ -337,16 +339,28 @@ interface PrototypeDataContextValue {
   submitBusinessOnboarding: () => Promise<boolean>;
   bookingDraft: BookingDraft;
   updateBookingDraft: (patch: Partial<BookingDraft>) => void;
-  completeSimulatedBooking: (paymentMeta?: {
-    depositPaidToman: number;
-    paymentMethod: 'GATEWAY' | 'WALLET';
-    paymentTrackingCode: string;
-  }) => AppointmentItem;
-  submitBooking: (paymentMeta?: {
-    depositPaidToman: number;
-    paymentMethod: 'GATEWAY' | 'WALLET';
-    paymentTrackingCode: string;
-  }) => Promise<AppointmentItem>;
+  completeSimulatedBooking: (
+    paymentMeta?: {
+      depositPaidToman: number;
+      paymentMethod: 'GATEWAY' | 'WALLET';
+      paymentTrackingCode: string;
+    },
+    overrideDraft?: Partial<BookingDraft> & {
+      businessId?: string;
+      businessName?: string;
+    }
+  ) => AppointmentItem;
+  submitBooking: (
+    paymentMeta?: {
+      depositPaidToman: number;
+      paymentMethod: 'GATEWAY' | 'WALLET';
+      paymentTrackingCode: string;
+    },
+    overrideDraft?: Partial<BookingDraft> & {
+      businessId?: string;
+      businessName?: string;
+    }
+  ) => Promise<AppointmentItem>;
   toast: ToastNotice | null;
   showToast: (
     message: string,
@@ -3553,18 +3567,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const activeCustomerPhone =
-    (authUser?.phone || bookingDraft.customerPhone || 'guest')
+  const normalizeCustomerPhoneKey = (raw?: string | null): string => {
+    const digits = String(raw || '')
       .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-      .replace(/\D/g, '') || 'guest';
+      .replace(/\D/g, '');
+    if (digits.length === 10 && digits.startsWith('9')) return `0${digits}`;
+    if (digits.length === 12 && digits.startsWith('989'))
+      return `0${digits.slice(2)}`;
+    return digits;
+  };
+
+  const activeCustomerPhone =
+    normalizeCustomerPhoneKey(authUser?.phone || bookingDraft.customerPhone) ||
+    'guest';
 
   const customerWalletTransactions = React.useMemo(() => {
+    if (!activeCustomerPhone || activeCustomerPhone === 'guest') return [];
     return allCustomerWalletTxs.filter(
-      (tx) =>
-        tx.customerPhone === activeCustomerPhone ||
-        (authUser?.fullName && tx.customerName === authUser.fullName)
+      (tx) => normalizeCustomerPhoneKey(tx.customerPhone) === activeCustomerPhone
     );
-  }, [allCustomerWalletTxs, activeCustomerPhone, authUser?.fullName]);
+  }, [allCustomerWalletTxs, activeCustomerPhone]);
 
   const customerWalletBalanceToman = React.useMemo(() => {
     let bal = 0;
@@ -3583,25 +3605,56 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const topUpCustomerWallet = (
     amountToman: number,
-    trackingCode?: string
+    trackingCode?: string,
+    targetPhone?: string,
+    targetName?: string
   ): CustomerWalletTransactionItem => {
+    const resolvedPhone =
+      normalizeCustomerPhoneKey(targetPhone) || activeCustomerPhone;
+    const resolvedName =
+      targetName?.trim() ||
+      authUser?.fullName ||
+      bookingDraft.customerName ||
+      'کاربر تایم تو';
+    const cleanTracking =
+      trackingCode?.trim() ||
+      `ZP-${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+    // جلوگیری از ثبت مضاعف یک کد رهگیری یکسان
+    const existingTx = allCustomerWalletTxs.find(
+      (item) =>
+        item.type === 'TOPUP' &&
+        item.trackingCode === cleanTracking &&
+        normalizeCustomerPhoneKey(item.customerPhone) === resolvedPhone
+    );
+    if (existingTx) {
+      return existingTx;
+    }
+
     const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
     const tx: CustomerWalletTransactionItem = {
       id: makeUniqueId('cwtx'),
-      customerPhone: activeCustomerPhone,
-      customerName:
-        authUser?.fullName || bookingDraft.customerName || 'کاربر تایم تو',
+      customerPhone: resolvedPhone,
+      customerName: resolvedName,
       type: 'TOPUP',
       amountToman: Math.max(0, Math.round(amountToman)),
       title: 'شارژ کیف پول از درگاه شاپرک',
-      description: `افزایش موجودی کیف پول از طریق درگاه بانکی`,
-      trackingCode:
-        trackingCode ||
-        `ZP-${Math.floor(10000000 + Math.random() * 90000000)}`,
+      description: `افزایش موجودی کیف پول از طریق درگاه بانکی (${resolvedPhone})`,
+      trackingCode: cleanTracking,
       createdAtJalali: todayJalali,
       createdAtMs: Date.now(),
     };
     setAllCustomerWalletTxs((prev) => {
+      if (
+        prev.some(
+          (item) =>
+            item.type === 'TOPUP' &&
+            item.trackingCode === cleanTracking &&
+            normalizeCustomerPhoneKey(item.customerPhone) === resolvedPhone
+        )
+      ) {
+        return prev;
+      }
       const next = [tx, ...prev];
       persistCustomerWalletTxs(next);
       return next;
@@ -5583,14 +5636,37 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     return Array.from(map.values());
   }, [specialists, businesses]);
 
-  const completeSimulatedBooking = (paymentMeta?: {
-    depositPaidToman: number;
-    paymentMethod: 'GATEWAY' | 'WALLET';
-    paymentTrackingCode: string;
-  }): AppointmentItem => {
-    const biz =
-      businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
-      businesses[0];
+  const completeSimulatedBooking = (
+    paymentMeta?: {
+      depositPaidToman: number;
+      paymentMethod: 'GATEWAY' | 'WALLET';
+      paymentTrackingCode: string;
+    },
+    overrideDraft?: Partial<BookingDraft> & {
+      businessId?: string;
+      businessName?: string;
+    }
+  ): AppointmentItem => {
+    const effectiveDraft: BookingDraft = {
+      ...bookingDraft,
+      ...(overrideDraft || {}),
+    };
+    const targetSlug = String(effectiveDraft.businessSlug || '').trim();
+    const targetBizId = String(overrideDraft?.businessId || '').trim();
+
+    // هرگز روی businesses[0] (مثل سالن آنجل) fallback نشود! فقط کسب‌وکار دقیقِ انتخاب‌شده توسط کاربر ملاک است
+    const biz = businesses.find(
+      (b) =>
+        (targetSlug && (b.slug === targetSlug || b.id === targetSlug)) ||
+        (targetBizId && b.id === targetBizId)
+    );
+
+    if (!biz && !targetSlug && !targetBizId) {
+      const msg =
+        'اطلاعات سالن یا متخصص انتخاب‌شده یافت نشد. لطفاً مجدداً از صفحه پروفایل سالن اقدام به رزرو نمایید.';
+      showToast(msg, 'danger');
+      throw new Error(msg);
+    }
 
     if (biz?.isSampleShowcase || /^biz-[1-8]$/.test(biz?.id || '')) {
       const msg =
@@ -5599,66 +5675,77 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       throw new Error(msg);
     }
 
-    const bizServices = biz
-      ? services.filter((s) => s.businessId === biz.id)
-      : services;
+    const resolvedBizId = biz?.id || targetBizId || targetSlug;
+    const resolvedBizSlug = biz?.slug || targetSlug || targetBizId;
+    const resolvedBizName =
+      biz?.name || overrideDraft?.businessName || 'سالن زیبایی';
+
+    const bizServices = services.filter((s) => s.businessId === resolvedBizId);
     const summary = computeSelectedServicesSummary(
       bizServices.length > 0 ? bizServices : services,
-      bookingDraft.serviceIds ?? [],
-      bookingDraft.serviceId
+      effectiveDraft.serviceIds ?? [],
+      effectiveDraft.serviceId
     );
-    const primarySrv = summary.selectedServices[0] ?? services[0];
-    const bizSpecs = biz
-      ? mergedSpecialists.filter((sp) => sp.businessId === biz.id)
-      : mergedSpecialists;
+    const primarySrv = summary.selectedServices[0];
+    const bizSpecs = mergedSpecialists.filter(
+      (sp) => sp.businessId === resolvedBizId
+    );
     const spc =
-      bizSpecs.find((sp) => sp.id === bookingDraft.specialistId) ??
-      mergedSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+      bizSpecs.find((sp) => sp.id === effectiveDraft.specialistId) ??
+      mergedSpecialists.find((sp) => sp.id === effectiveDraft.specialistId) ??
       bizSpecs[0];
     const resolvedSpecialistName =
       spc?.fullName && spc.fullName.trim() !== 'مریم فرهادی'
         ? spc.fullName.trim()
         : biz?.ownerName && biz.ownerName.trim() !== 'مریم فرهادی'
           ? biz.ownerName.trim()
-          : biz?.name || 'متخصص مرکز';
+          : resolvedBizName;
     const refCode = `TM-${Math.floor(404000 + Math.random() * 9000)}`;
 
     const optimisticApt: AppointmentItem = {
       id: `apt-${Date.now()}`,
       referenceCode: refCode,
-      businessId: biz?.id ?? 'biz-1',
-      businessSlug: biz?.slug ?? bookingDraft.businessSlug,
-      businessName: biz?.name ?? 'سالن زیبایی',
-      customerName: bookingDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
+      businessId: resolvedBizId,
+      businessSlug: resolvedBizSlug,
+      businessName: resolvedBizName,
+      customerName:
+        effectiveDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
       customerPhoneMasked:
-        bookingDraft.customerPhone || authUser?.phone || '۰۹۱۳***۰۰۰۰',
-      serviceId: primarySrv?.id ?? bookingDraft.serviceId,
-      serviceTitle: summary.combinedTitle,
-      specialistId: spc?.id ?? bookingDraft.specialistId,
+        effectiveDraft.customerPhone || authUser?.phone || '۰۹۱۳***۰۰۰۰',
+      serviceId: primarySrv?.id || effectiveDraft.serviceId,
+      serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+      specialistId:
+        spc?.id || effectiveDraft.specialistId || `spec-ind-${resolvedBizId}`,
       specialistName: resolvedSpecialistName,
-      dateJalali: bookingDraft.dateJalali,
-      timeSlot: bookingDraft.timeSlot,
-      durationMinutes: summary.totalDurationMinutes,
+      dateJalali: effectiveDraft.dateJalali,
+      timeSlot: effectiveDraft.timeSlot,
+      durationMinutes: summary.totalDurationMinutes || 60,
       priceToman: summary.totalPriceToman || 450000,
       depositPaidToman: paymentMeta?.depositPaidToman,
       paymentMethod: paymentMeta?.paymentMethod,
       paymentTrackingCode: paymentMeta?.paymentTrackingCode,
       createdAtMs: Date.now(),
       status: AppointmentStatus.Pending,
-      notes: bookingDraft.customerNotes || undefined,
+      notes: effectiveDraft.customerNotes || undefined,
     };
 
     if (dataMode === 'real') {
       void realApiClient
         .createAppointment({
-          businessSlug: bookingDraft.businessSlug,
-          serviceId: bookingDraft.serviceId,
-          specialistId: spc?.id ?? bookingDraft.specialistId,
-          dateJalali: bookingDraft.dateJalali,
-          timeSlot: bookingDraft.timeSlot,
-          customerName: bookingDraft.customerName,
-          customerPhone: bookingDraft.customerPhone,
-          customerNotes: bookingDraft.customerNotes,
+          businessSlug: resolvedBizSlug,
+          serviceId: effectiveDraft.serviceId,
+          specialistId:
+            spc?.id ||
+            effectiveDraft.specialistId ||
+            `spec-ind-${resolvedBizId}`,
+          dateJalali: effectiveDraft.dateJalali,
+          timeSlot: effectiveDraft.timeSlot,
+          customerName: effectiveDraft.customerName,
+          customerPhone: effectiveDraft.customerPhone,
+          customerNotes: effectiveDraft.customerNotes,
+          depositPaidToman: paymentMeta?.depositPaidToman,
+          paymentMethod: paymentMeta?.paymentMethod,
+          paymentTrackingCode: paymentMeta?.paymentTrackingCode,
         })
         .then((res) => {
           const pendingItem: AppointmentItem = {
@@ -5675,7 +5762,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             status: AppointmentStatus.Pending,
           };
           setAppointments((prev) => {
-            const next = [pendingItem, ...prev.filter((a) => a.id !== pendingItem.id)];
+            const next = [
+              pendingItem,
+              ...prev.filter((a) => a.id !== pendingItem.id),
+            ];
             persistSavedAppointments(next);
             return next;
           });
@@ -5706,16 +5796,41 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
     setBookingDraft((prev) => ({ ...prev, lastReferenceCode: refCode }));
-    showToast('پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓');
+    showToast(
+      'پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓'
+    );
     return optimisticApt;
   };
 
-  const submitBooking = async (paymentMeta?: {
-    depositPaidToman: number;
-    paymentMethod: 'GATEWAY' | 'WALLET';
-    paymentTrackingCode: string;
-  }): Promise<AppointmentItem> => {
-    const biz = businesses.find((b) => b.slug === bookingDraft.businessSlug);
+  const submitBooking = async (
+    paymentMeta?: {
+      depositPaidToman: number;
+      paymentMethod: 'GATEWAY' | 'WALLET';
+      paymentTrackingCode: string;
+    },
+    overrideDraft?: Partial<BookingDraft> & {
+      businessId?: string;
+      businessName?: string;
+    }
+  ): Promise<AppointmentItem> => {
+    const effectiveDraft: BookingDraft = {
+      ...bookingDraft,
+      ...(overrideDraft || {}),
+    };
+    const targetSlug = String(effectiveDraft.businessSlug || '').trim();
+    const targetBizId = String(overrideDraft?.businessId || '').trim();
+
+    const biz = businesses.find(
+      (b) =>
+        (targetSlug && (b.slug === targetSlug || b.id === targetSlug)) ||
+        (targetBizId && b.id === targetBizId)
+    );
+    if (!biz && !targetSlug && !targetBizId) {
+      const msg =
+        'اطلاعات سالن یا متخصص انتخاب‌شده یافت نشد. لطفاً مجدداً از صفحه پروفایل سالن اقدام به رزرو نمایید.';
+      showToast(msg, 'danger');
+      throw new Error(msg);
+    }
     if (biz?.isSampleShowcase || /^biz-[1-8]$/.test(biz?.id || '')) {
       const msg =
         'این سالن یک نمونه نمایشی جهت آشنایی با پلتفرم تایم تو است و امکان ثبت رزرو واقعی روی آن وجود ندارد.';
@@ -5723,31 +5838,42 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       throw new Error(msg);
     }
 
-    const bizSpecs = biz
-      ? mergedSpecialists.filter((sp) => sp.businessId === biz.id)
-      : mergedSpecialists;
+    const resolvedBizId = biz?.id || targetBizId || targetSlug;
+    const resolvedBizSlug = biz?.slug || targetSlug || targetBizId;
+    const resolvedBizName =
+      biz?.name || overrideDraft?.businessName || 'سالن زیبایی';
+
+    const bizSpecs = mergedSpecialists.filter(
+      (sp) => sp.businessId === resolvedBizId
+    );
     const spc =
-      bizSpecs.find((sp) => sp.id === bookingDraft.specialistId) ??
-      mergedSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
+      bizSpecs.find((sp) => sp.id === effectiveDraft.specialistId) ??
+      mergedSpecialists.find((sp) => sp.id === effectiveDraft.specialistId) ??
       bizSpecs[0];
     const resolvedSpecialistName =
       spc?.fullName && spc.fullName.trim() !== 'مریم فرهادی'
         ? spc.fullName.trim()
         : biz?.ownerName && biz.ownerName.trim() !== 'مریم فرهادی'
           ? biz.ownerName.trim()
-          : biz?.name || 'متخصص مرکز';
+          : resolvedBizName;
 
     if (dataMode === 'real') {
       try {
         const res = await realApiClient.createAppointment({
-          businessSlug: bookingDraft.businessSlug,
-          serviceId: bookingDraft.serviceId,
-          specialistId: spc?.id ?? bookingDraft.specialistId,
-          dateJalali: bookingDraft.dateJalali,
-          timeSlot: bookingDraft.timeSlot,
-          customerName: bookingDraft.customerName,
-          customerPhone: bookingDraft.customerPhone,
-          customerNotes: bookingDraft.customerNotes,
+          businessSlug: resolvedBizSlug,
+          serviceId: effectiveDraft.serviceId,
+          specialistId:
+            spc?.id ||
+            effectiveDraft.specialistId ||
+            `spec-ind-${resolvedBizId}`,
+          dateJalali: effectiveDraft.dateJalali,
+          timeSlot: effectiveDraft.timeSlot,
+          customerName: effectiveDraft.customerName,
+          customerPhone: effectiveDraft.customerPhone,
+          customerNotes: effectiveDraft.customerNotes,
+          depositPaidToman: paymentMeta?.depositPaidToman,
+          paymentMethod: paymentMeta?.paymentMethod,
+          paymentTrackingCode: paymentMeta?.paymentTrackingCode,
         });
         const pendingItem: AppointmentItem = {
           ...res.item,
@@ -5763,7 +5889,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           status: AppointmentStatus.Pending,
         };
         setAppointments((prev) => {
-          const next = [pendingItem, ...prev.filter((a) => a.id !== pendingItem.id)];
+          const next = [
+            pendingItem,
+            ...prev.filter((a) => a.id !== pendingItem.id),
+          ];
           persistSavedAppointments(next);
           return next;
         });
@@ -5776,12 +5905,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
         return pendingItem;
       } catch {
-        // اگر سالن تازه ثبت شده و در حافظه محلی است، نوبت به صورت محلی ثبت و برای سالن‌دار ارسال شود
-        return completeSimulatedBooking(paymentMeta);
+        // اگر سالن تازه ثبت شده و در حافظه محلی است، نوبت به صورت محلی روی همان سالن ثبت و برای سالن‌دار ارسال شود
+        return completeSimulatedBooking(paymentMeta, overrideDraft);
       }
     }
 
-    return completeSimulatedBooking(paymentMeta);
+    return completeSimulatedBooking(paymentMeta, overrideDraft);
   };
 
   const adminUsers: AdminUserRecord[] = React.useMemo(() => {

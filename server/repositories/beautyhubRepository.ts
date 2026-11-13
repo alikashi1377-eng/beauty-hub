@@ -2981,10 +2981,45 @@ export async function createAppointmentInDb(
       `,
       [biz.id, specialistIdRaw]
     );
-    if (!spcRes.rowCount || !spcRes.rows[0]) {
+    let spc = spcRes.rows[0];
+    if (!spc && specialistIdRaw.startsWith('spec-ind-')) {
+      const anySpcRes = await client.query(
+        `
+        SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, full_name
+        FROM specialists
+        WHERE business_id = $1 AND is_active = TRUE
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [biz.id]
+      );
+      if (anySpcRes.rowCount && anySpcRes.rows[0]) {
+        spc = anySpcRes.rows[0];
+      } else {
+        const autoSlug = `spc-owner-${crypto.randomBytes(3).toString('hex')}`;
+        const createdSpcRes = await client.query(
+          `
+          INSERT INTO specialists (
+            business_id, slug, full_name, role_title, experience_years,
+            specialties, bio, is_independent, is_active, city, starting_price_toman
+          )
+          VALUES ($1, $2, $3, 'متخصص و مدیر مرکز', 5, ARRAY['خدمات تخصصی زیبایی'], $4, FALSE, TRUE, 'اصفهان', $5)
+          RETURNING id, id::text AS external_id, full_name
+          `,
+          [
+            biz.id,
+            autoSlug,
+            biz.name || 'متخصص مرکز',
+            `متخصص ارشد در ${biz.name}`,
+            Number(srv.price_toman) || 350000,
+          ]
+        );
+        spc = createdSpcRes.rows[0];
+      }
+    }
+    if (!spc) {
       throw new Error('SPECIALIST_NOT_FOUND_FOR_BUSINESS');
     }
-    const spc = spcRes.rows[0];
 
     // بررسی تخصیص خدمت به متخصص در جدول specialist_services (در صورتی که برای این متخصص محدودیت خدمات تعریف شده باشد)
     const spcSrvCountRes = await client.query(
@@ -3949,9 +3984,19 @@ export async function onboardBusinessInDb(
       [JSON.stringify(notifItem)]
     );
 
-    const workingHours = Array.isArray(draft.workingHours)
-      ? draft.workingHours
-      : [];
+    const defaultWorkingHours = [
+      { dayName: 'شنبه', isOpen: true, openTime: '09:30', closeTime: '20:30' },
+      { dayName: 'یکشنبه', isOpen: true, openTime: '09:30', closeTime: '20:30' },
+      { dayName: 'دوشنبه', isOpen: true, openTime: '09:30', closeTime: '20:30' },
+      { dayName: 'سه‌شنبه', isOpen: true, openTime: '09:30', closeTime: '20:30' },
+      { dayName: 'چهارشنبه', isOpen: true, openTime: '09:30', closeTime: '20:30' },
+      { dayName: 'پنج‌شنبه', isOpen: true, openTime: '09:30', closeTime: '20:00' },
+      { dayName: 'جمعه', isOpen: false, openTime: '10:00', closeTime: '16:00' },
+    ];
+    const workingHours =
+      Array.isArray(draft.workingHours) && draft.workingHours.length > 0
+        ? draft.workingHours
+        : defaultWorkingHours;
     for (let idx = 0; idx < Math.min(7, workingHours.length); idx++) {
       const wh = workingHours[idx];
       const { openTimeSql, closeTimeSql } = normalizeWorkingTimePair(
@@ -3999,7 +4044,20 @@ export async function onboardBusinessInDb(
       );
     }
 
-    const staff = Array.isArray(draft.staff) ? draft.staff : [];
+    const staff =
+      Array.isArray(draft.staff) && draft.staff.length > 0
+        ? draft.staff
+        : [
+            {
+              id: 'stf-owner-default',
+              fullName:
+                draft.businessType === BusinessType.IndependentSpecialist
+                  ? businessName
+                  : ownerNameClean,
+              roleTitle:
+                typeLabelMap[draft.businessType] || 'متخصص و مدیر مرکز',
+            },
+          ];
     for (const stf of staff) {
       const spcSlug = `${normalizeValidSlug(stf.fullName, 'spc')}-${crypto.randomBytes(2).toString('hex')}`;
       await client.query(
@@ -4008,7 +4066,7 @@ export async function onboardBusinessInDb(
           business_id, slug, full_name, role_title, experience_years,
           specialties, bio, is_independent, is_active, city, starting_price_toman
         )
-        VALUES ($1, $2, $3, $4, 3, $5, $6, FALSE, TRUE, $7, $8)
+        VALUES ($1, $2, $3, $4, 3, $5, $6, $7, TRUE, $8, $9)
         `,
         [
           newBizId,
@@ -4017,6 +4075,7 @@ export async function onboardBusinessInDb(
           stf.roleTitle.trim(),
           [stf.roleTitle.trim()],
           `${stf.roleTitle.trim()} در ${businessName}`,
+          draft.businessType === BusinessType.IndependentSpecialist,
           city,
           startingPrice,
         ]
@@ -4913,6 +4972,7 @@ export async function getBusinessAvailabilityInDb(
 
     let targetSpecialistUuid: string | null = null;
     if (specialistIdRaw !== undefined && specialistIdRaw.trim() !== '') {
+      const cleanSpcParam = specialistIdRaw.trim();
       const spcRes = await client.query(
         `
         SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, full_name
@@ -4922,12 +4982,13 @@ export async function getBusinessAvailabilityInDb(
           AND (id::text = $2 OR legacy_demo_id = $2 OR slug = $2)
         LIMIT 1
         `,
-        [biz.id, specialistIdRaw.trim()]
+        [biz.id, cleanSpcParam]
       );
-      if (!spcRes.rowCount || !spcRes.rows[0]) {
+      if (spcRes.rowCount && spcRes.rows[0]) {
+        targetSpecialistUuid = String(spcRes.rows[0].id);
+      } else if (!cleanSpcParam.startsWith('spec-ind-')) {
         throw new Error('SPECIALIST_NOT_FOUND_FOR_BUSINESS');
       }
-      targetSpecialistUuid = String(spcRes.rows[0].id);
     }
 
     // بررسی تخصیص خدمت به متخصص در صورتی که هر دو پارامتر ارسال شده باشند

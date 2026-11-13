@@ -1003,6 +1003,7 @@ export const BookingConfirmPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const {
     dataMode,
+    isLoadingInitialData,
     authUser,
     businesses,
     services,
@@ -1038,9 +1039,13 @@ export const BookingConfirmPage: React.FC = () => {
   const [quickTopUpSuccess, setQuickTopUpSuccess] = useState('');
   const [isRequestingTopUpZibal, setIsRequestingTopUpZibal] = useState(false);
 
-  const business =
-    businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
-    businesses[0];
+  // هرگز روی businesses[0] (مثل سالن آنجل) fallback نشود تا بیعانه فقط به حساب سالن انتخاب‌شده واریز گردد
+  const business = businesses.find(
+    (b) =>
+      Boolean(bookingDraft.businessSlug) &&
+      (b.slug === bookingDraft.businessSlug ||
+        b.id === bookingDraft.businessSlug)
+  );
 
   const bizServices = business
     ? services.filter((s) => s.businessId === business.id)
@@ -1113,9 +1118,12 @@ export const BookingConfirmPage: React.FC = () => {
 
   // بررسی بازگشت کاربر از درگاه پرداخت اینترنتی زیبال (Callback URL)
   useEffect(() => {
+    if (isLoadingInitialData) return;
+
     const isZibalBookingCallback = searchParams.get('zibal_booking') === '1';
     const isZibalWalletCallback = searchParams.get('zibal_wallet') === '1';
     const trackId = searchParams.get('trackId')?.trim();
+    const orderIdParam = searchParams.get('orderId')?.trim() || '';
     const successParam = searchParams.get('success')?.trim();
 
     if ((!isZibalBookingCallback && !isZibalWalletCallback) || !trackId) {
@@ -1132,6 +1140,7 @@ export const BookingConfirmPage: React.FC = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             trackId,
+            orderId: orderIdParam,
             merchantId:
               paymentConfig.zibalMerchantId ||
               paymentConfig.zarinpalMerchantId ||
@@ -1141,8 +1150,20 @@ export const BookingConfirmPage: React.FC = () => {
         const data = (await res.json()) as {
           ok?: boolean;
           verified?: boolean;
+          alreadyVerified?: boolean;
           refNumber?: string;
           message?: string;
+          orderMeta?: {
+            orderId?: string;
+            purpose?: 'booking' | 'wallet_topup';
+            businessId?: string;
+            businessSlug?: string;
+            businessName?: string;
+            amountToman?: number;
+            customerPhone?: string;
+            customerName?: string;
+            bookingDraft?: Partial<typeof bookingDraft>;
+          } | null;
         };
 
         if (cancelled) return;
@@ -1167,16 +1188,38 @@ export const BookingConfirmPage: React.FC = () => {
           return;
         }
 
+        if (data?.alreadyVerified) {
+          if (isZibalBookingCallback) {
+            navigate('/booking/result');
+          }
+          return;
+        }
+
         if (isZibalWalletCallback) {
-          let topUpAmt = quickTopUpAmount;
+          let topUpAmt =
+            data?.orderMeta?.amountToman && data.orderMeta.amountToman > 0
+              ? data.orderMeta.amountToman
+              : quickTopUpAmount;
+          let targetPhone = data?.orderMeta?.customerPhone || '';
+          let targetName = data?.orderMeta?.customerName || '';
           try {
             const rawPending = window.localStorage.getItem(
               'timeto_pending_zibal_wallet_v1'
             );
             if (rawPending) {
-              const parsed = JSON.parse(rawPending) as { amountToman?: number };
+              const parsed = JSON.parse(rawPending) as {
+                amountToman?: number;
+                customerPhone?: string;
+                customerName?: string;
+              };
               if (parsed?.amountToman && parsed.amountToman > 0) {
                 topUpAmt = parsed.amountToman;
+              }
+              if (!targetPhone && parsed?.customerPhone) {
+                targetPhone = parsed.customerPhone;
+              }
+              if (!targetName && parsed?.customerName) {
+                targetName = parsed.customerName;
               }
               window.localStorage.removeItem('timeto_pending_zibal_wallet_v1');
             }
@@ -1185,7 +1228,9 @@ export const BookingConfirmPage: React.FC = () => {
           }
           topUpCustomerWallet(
             topUpAmt,
-            `شارژ آنلاین کیف پول از طریق درگاه زیبال (کد رهگیری: ${trackingRef})`
+            trackingRef,
+            targetPhone || bookingDraft.customerPhone || authUser?.phone,
+            targetName || bookingDraft.customerName || authUser?.fullName
           );
           setPaymentMethod('WALLET');
           setQuickTopUpSuccess(
@@ -1194,9 +1239,24 @@ export const BookingConfirmPage: React.FC = () => {
           return;
         }
 
-        // ثبت نهایی نوبت پس از تایید پرداخت بیعانه در زیبال
-        let resolvedDeposit = depositAmountToman;
-        let resolvedBizId = business?.id || '';
+        // ثبت نهایی نوبت پس از تایید پرداخت بیعانه در زیبال دقیقاً برای همان سالن انتخاب‌شده
+        let resolvedDeposit =
+          data?.orderMeta?.amountToman && data.orderMeta.amountToman > 0
+            ? data.orderMeta.amountToman
+            : depositAmountToman;
+        let resolvedBizId =
+          data?.orderMeta?.businessId || business?.id || '';
+        let resolvedBizSlug =
+          data?.orderMeta?.businessSlug ||
+          bookingDraft.businessSlug ||
+          business?.slug ||
+          '';
+        let resolvedBizName =
+          data?.orderMeta?.businessName || business?.name || '';
+        let savedDraft: Partial<typeof bookingDraft> = {
+          ...(data?.orderMeta?.bookingDraft || {}),
+        };
+
         try {
           const rawPending = window.localStorage.getItem(
             'timeto_pending_zibal_booking_v1'
@@ -1205,12 +1265,24 @@ export const BookingConfirmPage: React.FC = () => {
             const parsed = JSON.parse(rawPending) as {
               depositAmountToman?: number;
               businessId?: string;
+              businessSlug?: string;
+              businessName?: string;
+              bookingDraft?: Partial<typeof bookingDraft>;
             };
             if (parsed?.depositAmountToman && parsed.depositAmountToman > 0) {
               resolvedDeposit = parsed.depositAmountToman;
             }
-            if (parsed?.businessId) {
+            if (!resolvedBizId && parsed?.businessId) {
               resolvedBizId = parsed.businessId;
+            }
+            if (!resolvedBizSlug && parsed?.businessSlug) {
+              resolvedBizSlug = parsed.businessSlug;
+            }
+            if (!resolvedBizName && parsed?.businessName) {
+              resolvedBizName = parsed.businessName;
+            }
+            if (parsed?.bookingDraft) {
+              savedDraft = { ...parsed.bookingDraft, ...savedDraft };
             }
             window.localStorage.removeItem('timeto_pending_zibal_booking_v1');
           }
@@ -1218,13 +1290,32 @@ export const BookingConfirmPage: React.FC = () => {
           // ignore
         }
 
-        await submitBooking({
-          depositPaidToman: resolvedDeposit,
-          paymentMethod: 'GATEWAY',
-          paymentTrackingCode: trackingRef,
-        });
-        const targetBiz =
-          businesses.find((b) => b.id === resolvedBizId) ?? business;
+        if (savedDraft && Object.keys(savedDraft).length > 0) {
+          updateBookingDraft({
+            ...savedDraft,
+            ...(resolvedBizSlug ? { businessSlug: resolvedBizSlug } : {}),
+          });
+        }
+
+        await submitBooking(
+          {
+            depositPaidToman: resolvedDeposit,
+            paymentMethod: 'GATEWAY',
+            paymentTrackingCode: trackingRef,
+          },
+          {
+            ...savedDraft,
+            ...(resolvedBizSlug ? { businessSlug: resolvedBizSlug } : {}),
+            businessId: resolvedBizId,
+            businessName: resolvedBizName,
+          }
+        );
+
+        const targetBiz = businesses.find(
+          (b) =>
+            (resolvedBizId && b.id === resolvedBizId) ||
+            (resolvedBizSlug && b.slug === resolvedBizSlug)
+        );
         if (targetBiz) {
           updateBusinessProfile(targetBiz.id, {
             walletBalanceToman:
@@ -1249,7 +1340,7 @@ export const BookingConfirmPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [searchParams]);
+  }, [searchParams, isLoadingInitialData]);
 
   if (!business || !service || !specialist) {
     return (
@@ -1349,6 +1440,7 @@ export const BookingConfirmPage: React.FC = () => {
             orderId,
             businessId: business.id,
             businessSlug: business.slug,
+            businessName: business.name,
             depositAmountToman,
             bookingDraft,
             createdAt: Date.now(),
@@ -1367,11 +1459,18 @@ export const BookingConfirmPage: React.FC = () => {
             paymentConfig.zibalMerchantId ||
             paymentConfig.zarinpalMerchantId ||
             '',
+          purpose: 'booking',
+          businessId: business.id,
+          businessSlug: business.slug,
+          businessName: business.name,
           amountToman: depositAmountToman,
           description: `بیعانه رزرو نوبت ${business.name} — ${selectedServicesSummary.combinedTitle || service.title}`,
           orderId,
           callbackUrl,
           mobile: bookingDraft.customerPhone.trim(),
+          customerPhone: bookingDraft.customerPhone.trim(),
+          customerName: bookingDraft.customerName.trim(),
+          bookingDraft,
         }),
       });
 
@@ -1428,12 +1527,18 @@ export const BookingConfirmPage: React.FC = () => {
     setFormError('');
     try {
       const orderId = `ZBL-WL-${Date.now()}`;
+      const custPhone =
+        bookingDraft.customerPhone.trim() || authUser?.phone || '';
+      const custName =
+        bookingDraft.customerName.trim() || authUser?.fullName || '';
       try {
         window.localStorage.setItem(
           'timeto_pending_zibal_wallet_v1',
           JSON.stringify({
             orderId,
             amountToman: quickTopUpAmount,
+            customerPhone: custPhone,
+            customerName: custName,
             returnPath: '/booking/confirm',
             createdAt: Date.now(),
           })
@@ -1451,11 +1556,14 @@ export const BookingConfirmPage: React.FC = () => {
             paymentConfig.zibalMerchantId ||
             paymentConfig.zarinpalMerchantId ||
             '',
+          purpose: 'wallet_topup',
           amountToman: quickTopUpAmount,
           description: `شارژ کیف پول مشتری در تایم تو (${formatPriceToman(quickTopUpAmount)})`,
           orderId,
           callbackUrl,
-          mobile: bookingDraft.customerPhone.trim() || authUser?.phone || '',
+          mobile: custPhone,
+          customerPhone: custPhone,
+          customerName: custName,
         }),
       });
       const data = (await res.json()) as {
@@ -2004,9 +2112,16 @@ export const BookingConfirmPage: React.FC = () => {
 export const BookingResultPage: React.FC = () => {
   const { bookingDraft, businesses, services, specialists, appointments } =
     usePrototypeData();
-  const business =
-    businesses.find((b) => b.slug === bookingDraft.businessSlug) ??
-    businesses[0];
+  const latestAppointment = appointments[0];
+  const business = businesses.find(
+    (b) =>
+      (bookingDraft.businessSlug &&
+        (b.slug === bookingDraft.businessSlug ||
+          b.id === bookingDraft.businessSlug)) ||
+      (latestAppointment &&
+        (b.id === latestAppointment.businessId ||
+          b.slug === latestAppointment.businessSlug))
+  );
   const bizServices = business
     ? services.filter((s) => s.businessId === business.id)
     : services;
@@ -2021,8 +2136,6 @@ export const BookingResultPage: React.FC = () => {
   const specialist =
     bizSpecialists.find((sp) => sp.id === bookingDraft.specialistId) ??
     bizSpecialists[0];
-
-  const latestAppointment = appointments[0];
   const resolvedSpecialistName =
     (latestAppointment &&
     (!business || latestAppointment.businessId === business.id)
@@ -2229,7 +2342,13 @@ export const CustomerOverviewPage: React.FC = () => {
         });
         const data = (await res.json()) as {
           verified?: boolean;
+          alreadyVerified?: boolean;
           refNumber?: string;
+          orderMeta?: {
+            amountToman?: number;
+            customerPhone?: string;
+            customerName?: string;
+          } | null;
         };
         if (cancelled) return;
 
@@ -2249,15 +2368,34 @@ export const CustomerOverviewPage: React.FC = () => {
           return;
         }
 
-        let resolvedAmount = topUpAmount;
+        if (data?.alreadyVerified) {
+          return;
+        }
+
+        let resolvedAmount =
+          data?.orderMeta?.amountToman && data.orderMeta.amountToman > 0
+            ? data.orderMeta.amountToman
+            : topUpAmount;
+        let targetPhone = data?.orderMeta?.customerPhone || '';
+        let targetName = data?.orderMeta?.customerName || '';
         try {
           const raw = window.localStorage.getItem(
             'timeto_pending_zibal_wallet_v1'
           );
           if (raw) {
-            const parsed = JSON.parse(raw) as { amountToman?: number };
+            const parsed = JSON.parse(raw) as {
+              amountToman?: number;
+              customerPhone?: string;
+              customerName?: string;
+            };
             if (parsed?.amountToman && parsed.amountToman > 0) {
               resolvedAmount = parsed.amountToman;
+            }
+            if (!targetPhone && parsed?.customerPhone) {
+              targetPhone = parsed.customerPhone;
+            }
+            if (!targetName && parsed?.customerName) {
+              targetName = parsed.customerName;
             }
             window.localStorage.removeItem('timeto_pending_zibal_wallet_v1');
           }
@@ -2268,7 +2406,9 @@ export const CustomerOverviewPage: React.FC = () => {
         const refCode = data?.refNumber || `ZBL-${trackId}`;
         topUpCustomerWallet(
           resolvedAmount,
-          `شارژ آنلاین کیف پول از طریق درگاه زیبال (کد رهگیری: ${refCode})`
+          refCode,
+          targetPhone || authUser?.phone,
+          targetName || authUser?.fullName
         );
         setZibalTopUpRedirectUrl(null);
         setWalletNotice(
@@ -2298,6 +2438,8 @@ export const CustomerOverviewPage: React.FC = () => {
           JSON.stringify({
             orderId,
             amountToman: topUpAmount,
+            customerPhone: authUser?.phone || '',
+            customerName: authUser?.fullName || '',
             returnPath: '/me',
             createdAt: Date.now(),
           })
@@ -2315,11 +2457,14 @@ export const CustomerOverviewPage: React.FC = () => {
             paymentConfig.zibalMerchantId ||
             paymentConfig.zarinpalMerchantId ||
             '',
+          purpose: 'wallet_topup',
           amountToman: topUpAmount,
           description: `شارژ کیف پول مشتری در تایم تو (${formatPriceToman(topUpAmount)})`,
           orderId,
           callbackUrl,
           mobile: authUser?.phone || '',
+          customerPhone: authUser?.phone || '',
+          customerName: authUser?.fullName || '',
         }),
       });
       const data = (await res.json()) as {
