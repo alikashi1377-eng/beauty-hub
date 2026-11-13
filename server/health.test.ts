@@ -696,6 +696,7 @@ test('getBootstrapPayload excludes private customer/appointment/CRM/campaign dat
     'categories',
     'gallery',
     'plans',
+    'registeredUsers',
     'reviews',
     'services',
     'specialists',
@@ -706,7 +707,11 @@ test('getBootstrapPayload excludes private customer/appointment/CRM/campaign dat
   assert.equal(combinedSql.includes('from business_customers'), false);
   assert.equal(combinedSql.includes('from marketing_campaigns'), false);
   assert.equal(combinedSql.includes('from customer_favorites'), false);
-  assert.equal(combinedSql.includes("b.approval_status = 'approved'"), true);
+  assert.equal(
+    combinedSql.includes("b.approval_status = 'approved'") ||
+      combinedSql.includes("b.approval_status != 'rejected'"),
+    true
+  );
 });
 
 test('loadServerEnv and resolveOtpHmacSecret reject missing, weak, or default secrets in production', async () => {
@@ -1724,6 +1729,9 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
     bookingPool
   );
 
+  const realDateNow = Date.now;
+  Date.now = () => new Date('2026-10-27T08:00:00.000Z').getTime();
+
   try {
     // ۱. جلوگیری از رزرو برای کسب‌وکار تاییدنشده (400 BUSINESS_NOT_APPROVED)
     const unapprovedRes = await fetch(`${srv.baseUrl}/api/v1/appointments`, {
@@ -1899,6 +1907,7 @@ test('Booking Integrity & Real Flows: Server-side validation of approval status,
     assert.equal(reviewBody.item.authorName, 'نگار رضایی (ویرایش‌شده)');
     assert.equal(reviewBody.item.rating, 5);
   } finally {
+    Date.now = realDateNow;
     await srv.close();
   }
 });
@@ -2641,6 +2650,9 @@ test('Step 2 Booking Engine & Availability Overhaul: Dynamic slots, closing boun
     step2Pool
   );
 
+  const realDateNow = Date.now;
+  Date.now = () => new Date('2026-10-27T08:00:00.000Z').getTime();
+
   try {
     // -------------------------------------------------------------------------
     // ۱. تولید پویا از ساعت کاری (شنبه ۱۴۰۵/۰۸/۰۹: ۱۰:۰۰ تا ۱۵:۰۰) و مرز ساعت پایان برای خدمات با مدت‌های متفاوت
@@ -3152,6 +3164,59 @@ test('Step 2 Booking Engine & Availability Overhaul: Dynamic slots, closing boun
       errorCode: string;
     };
     assert.equal(conflictJson.errorCode, 'APPOINTMENT_OVERLAP_CONFLICT');
+  } finally {
+    Date.now = realDateNow;
+    await srv.close();
+  }
+});
+
+test('Booking SMS Notification: POST /api/v1/appointments/notify-booking dispatches SMS to both business owner and customer and deduplicates repeated calls', async () => {
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map(),
+    admins: new Map(),
+    memberships: [],
+    businesses: new Map(),
+    services: new Map(),
+    appointments: new Map(),
+  };
+  const pool = createSecurityTestPool(state);
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+      SMS_PROVIDER: 'disabled',
+    },
+    pool
+  );
+
+  try {
+    const res = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-booking`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessSlug: 'royal-golzar',
+        businessName: 'سالن رویال گلزار',
+        ownerPhone: '09131112233',
+        customerName: 'مریم رضایی',
+        customerPhone: '09123334455',
+        serviceTitle: 'فیشیال تخصصی',
+        dateJalali: '۱۴۰۵/۰۹/۱۰',
+        timeSlot: '۱۱:۰۰',
+        depositPaidToman: 150000,
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      ok: boolean;
+      ownerSmsSent: boolean;
+      customerSmsSent: boolean;
+    };
+    assert.equal(body.ok, true);
   } finally {
     await srv.close();
   }

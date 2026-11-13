@@ -361,7 +361,10 @@ export function createApiApp(
   app.use(
     '/api/v1',
     async (req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith('/payments/zibal')) {
+      if (
+        req.path.startsWith('/payments/zibal') ||
+        req.path.startsWith('/appointments/notify-booking')
+      ) {
         return next();
       }
 

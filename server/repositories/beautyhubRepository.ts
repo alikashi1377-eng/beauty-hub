@@ -3215,6 +3215,10 @@ export async function createAppointmentInDb(
     customerPhone?: string;
     customerNotes?: string;
     serviceStartsAtIso?: string;
+    serviceTitle?: string;
+    priceToman?: number;
+    durationMinutes?: number;
+    allowAutoCreateService?: boolean;
   }
 ): Promise<AppointmentItem> {
   const serviceIdRaw = (input.serviceId ?? '').trim();
@@ -3273,10 +3277,43 @@ export async function createAppointmentInDb(
       `,
       [biz.id, serviceIdRaw]
     );
-    if (!srvRes.rowCount || !srvRes.rows[0]) {
+    let srv = srvRes.rows[0];
+    if (!srv && input.allowAutoCreateService) {
+      const fallbackSrvRes = await client.query(
+        `
+        SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, title, duration_minutes, price_toman
+        FROM services
+        WHERE business_id = $1 AND is_active = TRUE
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [biz.id]
+      );
+      if (fallbackSrvRes.rowCount && fallbackSrvRes.rows[0]) {
+        srv = fallbackSrvRes.rows[0];
+      } else {
+        const autoSrvRes = await client.query(
+          `
+          INSERT INTO services (
+            business_id, legacy_demo_id, title, category, duration_minutes, price_toman, description, is_active
+          )
+          VALUES ($1, $2, $3, 'خدمات تخصصی', $4, $5, 'خدمت ثبت‌شده کسب‌وکار', TRUE)
+          RETURNING id, COALESCE(legacy_demo_id, id::text) AS external_id, title, duration_minutes, price_toman
+          `,
+          [
+            biz.id,
+            serviceIdRaw,
+            (input.serviceTitle || 'خدمات تخصصی زیبایی').trim(),
+            Math.max(15, Number(input.durationMinutes) || 60),
+            Math.max(50000, Number(input.priceToman) || 350000),
+          ]
+        );
+        srv = autoSrvRes.rows[0];
+      }
+    }
+    if (!srv) {
       throw new Error('SERVICE_NOT_FOUND_FOR_BUSINESS');
     }
-    const srv = srvRes.rows[0];
 
     const spcRes = await client.query(
       `
@@ -3290,7 +3327,10 @@ export async function createAppointmentInDb(
       [biz.id, specialistIdRaw]
     );
     let spc = spcRes.rows[0];
-    if (!spc && specialistIdRaw.startsWith('spec-ind-')) {
+    if (
+      !spc &&
+      (specialistIdRaw.startsWith('spec-ind-') || input.allowAutoCreateService)
+    ) {
       const anySpcRes = await client.query(
         `
         SELECT id, COALESCE(legacy_demo_id, id::text) AS external_id, full_name
@@ -3367,10 +3407,23 @@ export async function createAppointmentInDb(
       `,
       [biz.id, dayOfWeek, dayName]
     );
-    if (!whRes.rowCount || !whRes.rows[0] || !whRes.rows[0].is_open) {
+    let whRow = whRes.rows[0];
+    if ((!whRes.rowCount || !whRow) && input.allowAutoCreateService) {
+      const totalWhRes = await client.query(
+        `SELECT COUNT(*)::int AS cnt FROM business_working_hours WHERE business_id = $1`,
+        [biz.id]
+      );
+      if (Number(totalWhRes.rows[0]?.cnt ?? 0) === 0) {
+        whRow = {
+          is_open: true,
+          open_str: '08:00',
+          close_str: '22:00',
+        };
+      }
+    }
+    if (!whRow || !whRow.is_open) {
       throw new Error('OUTSIDE_BUSINESS_WORKING_HOURS');
     }
-    const whRow = whRes.rows[0];
     const openMins = parseTimeLabelToMinutes(String(whRow.open_str || ''));
     const closeMins = parseTimeLabelToMinutes(String(whRow.close_str || ''));
     if (

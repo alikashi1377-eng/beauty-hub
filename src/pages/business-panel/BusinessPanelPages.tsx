@@ -5033,6 +5033,15 @@ export const BusinessProfileEditPage: React.FC = () => {
   const [bankAccountHolder, setBankAccountHolder] = useState(
     currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
   );
+  const [depositPercentRule, setDepositPercentRule] = useState<number>(
+    currentBiz?.depositPercent && currentBiz.depositPercent > 0
+      ? currentBiz.depositPercent
+      : 30
+  );
+  const [cancellationDeadlineHours, setCancellationDeadlineHours] =
+    useState<number>(currentBiz?.cancellationDeadlineHours ?? 24);
+  const [lateCancellationPenaltyPercent, setLateCancellationPenaltyPercent] =
+    useState<number>(currentBiz?.lateCancellationPenaltyPercent ?? 30);
   const [savedNotice, setSavedNotice] = useState(false);
   const [stepValidationError, setStepValidationError] = useState('');
 
@@ -5053,6 +5062,15 @@ export const BusinessProfileEditPage: React.FC = () => {
     setBankShebaNumber(currentBiz.bankShebaNumber ?? '');
     setBankAccountHolder(
       currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
+    );
+    setDepositPercentRule(
+      currentBiz.depositPercent && currentBiz.depositPercent > 0
+        ? currentBiz.depositPercent
+        : 30
+    );
+    setCancellationDeadlineHours(currentBiz.cancellationDeadlineHours ?? 24);
+    setLateCancellationPenaltyPercent(
+      currentBiz.lateCancellationPenaltyPercent ?? 30
     );
   }, [currentBiz?.id]);
 
@@ -5150,8 +5168,23 @@ export const BusinessProfileEditPage: React.FC = () => {
         showToast(msg, 'warning');
         return;
       }
+      if (
+        !depositPercentRule ||
+        depositPercentRule < 1 ||
+        depositPercentRule > 100
+      ) {
+        const msg =
+          'لطفاً درصد بیعانه آنلاین را عددی بین ۱ تا ۱۰۰ درصد مشخص کنید.';
+        setStepValidationError(msg);
+        showToast(msg, 'warning');
+        return;
+      }
     }
 
+    const safeDepositPercent = Math.max(
+      1,
+      Math.min(100, Number(depositPercentRule) || 30)
+    );
     const cleanedInsta = instagramHandle.trim();
     updateBusinessProfile(currentBiz.id, {
       name: name.trim(),
@@ -5168,6 +5201,10 @@ export const BusinessProfileEditPage: React.FC = () => {
       bankCardNumber: cleanCardDigits || undefined,
       bankShebaNumber: cleanShebaDigits ? `IR${cleanShebaDigits}` : undefined,
       bankAccountHolder: bankAccountHolder.trim() || undefined,
+      depositEnabled: true,
+      depositPercent: safeDepositPercent,
+      cancellationDeadlineHours,
+      lateCancellationPenaltyPercent,
     });
     updateOnboardingDraft({
       businessName: name.trim(),
@@ -5366,7 +5403,7 @@ export const BusinessProfileEditPage: React.FC = () => {
                       showToast('تصویر پروفایل سالن بلافاصله ذخیره و ثبت شد ✓');
                     }
                   }}
-                  label="تصویر پروفایل و ویترین سالن (با قابلیت کراپ، چپ/راست و پیش‌نمایش در ۳ جایگاه)"
+                  label="تصویر پروفایل و ویترین سالن"
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -5605,32 +5642,175 @@ export const BusinessProfileEditPage: React.FC = () => {
                     />
                   </FormField>
 
-                  {/* موجودی کیف پول بیعانه‌ها و لینک یکپارچه به تنظیمات قوانین بیعانه */}
-                  <div className="pt-3 border-t border-[#E2E8F0] space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-[#CBD5E1]">
+                  {/* تعیین مستقیم درصد بیعانه و قوانین کنسلی در همین بخش شبا و حساب بانکی */}
+                  <div className="pt-3 border-t border-[#E2E8F0] space-y-4">
+                    <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-3.5">
                       <div className="space-y-1">
-                        <span className="text-xs font-extrabold text-[#061138] block">
-                          درصد بیعانه فعال سالن شما:{' '}
+                        <label
+                          htmlFor="wallet-deposit-custom-input"
+                          className="text-xs sm:text-sm font-extrabold text-[#061138] block"
+                        >
+                          تعیین درصد بیعانه آنلاین هنگام ثبت نوبت:{' '}
                           <span className="text-[#0057FF]">
-                            {toPersianDigits(
-                              currentBiz.depositPercent &&
-                                currentBiz.depositPercent > 0
-                                ? currentBiz.depositPercent
-                                : 30
-                            )}
-                            ٪ مبلغ خدمت
+                            ({toPersianDigits(depositPercentRule || 30)}٪ مبلغ خدمت)
                           </span>
-                        </span>
-                        <span className="text-[11px] text-[#64748B] block">
-                          تعیین درصد بیعانه (پیشنهادی یا درصد دلخواه کارفرما) و قوانین کنسلی در بخش «تنظیمات پنل» یکپارچه شده است.
-                        </span>
+                        </label>
+                        <p className="text-[11px] text-[#64748B] leading-relaxed">
+                          یکی از درصدهای پیشنهادی را انتخاب کنید یا درصد دلخواه خود (بین ۱ تا ۱۰۰ درصد) را وارد نمایید.
+                        </p>
                       </div>
-                      <Link
-                        to="/app/settings#booking_rules"
-                        className="px-3.5 py-2 rounded-xl bg-[#EEF4FF] hover:bg-[#0057FF] text-[#0057FF] hover:text-white border border-[#BFDBFE] text-xs font-extrabold transition-colors shrink-0"
-                      >
-                        تنظیم درصد بیعانه در تنظیمات ←
-                      </Link>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { pct: 20, label: '۲۰٪ مبلغ خدمت' },
+                          { pct: 30, label: '۳۰٪ (پیشنهادی)' },
+                          { pct: 50, label: '۵۰٪ مبلغ خدمت' },
+                          { pct: 100, label: '۱۰۰٪ پرداخت کامل' },
+                        ].map((preset) => {
+                          const isSelected = depositPercentRule === preset.pct;
+                          return (
+                            <button
+                              key={preset.pct}
+                              type="button"
+                              onClick={() => {
+                                setDepositPercentRule(preset.pct);
+                                updateBusinessProfile(currentBiz.id, {
+                                  depositEnabled: true,
+                                  depositPercent: preset.pct,
+                                });
+                              }}
+                              className={`py-2 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
+                                  : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1]">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-extrabold text-[#061138] block">
+                            درصد دلخواه کارفرما (بین ۱ تا ۱۰۰ درصد):
+                          </span>
+                          <span className="text-[11px] text-[#64748B] block">
+                            هر درصدی وارد کنید (مثلاً ۱۵٪، ۲۵٪ یا ۴۰٪) همان در زمان رزرو محاسبه می‌شود
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="wallet-deposit-custom-input"
+                            type="number"
+                            min={1}
+                            max={100}
+                            dir="ltr"
+                            value={depositPercentRule || ''}
+                            onChange={(e) => {
+                              const raw = parseInt(
+                                toEnglishDigitsClient(e.target.value),
+                                10
+                              );
+                              if (Number.isNaN(raw)) {
+                                setDepositPercentRule(0);
+                              } else {
+                                const clamped = Math.max(
+                                  1,
+                                  Math.min(100, raw)
+                                );
+                                setDepositPercentRule(clamped);
+                                updateBusinessProfile(currentBiz.id, {
+                                  depositEnabled: true,
+                                  depositPercent: clamped,
+                                });
+                              }
+                            }}
+                            onBlur={() => {
+                              if (
+                                !depositPercentRule ||
+                                depositPercentRule < 1
+                              ) {
+                                setDepositPercentRule(30);
+                                updateBusinessProfile(currentBiz.id, {
+                                  depositEnabled: true,
+                                  depositPercent: 30,
+                                });
+                              }
+                            }}
+                            aria-label="درصد دلخواه بیعانه"
+                            className="w-24 rounded-xl border-2 border-[#0057FF]/40 bg-white px-3 py-1.5 text-center text-sm font-black text-[#061138] tabular-nums focus:border-[#0057FF] focus:outline-none"
+                          />
+                          <span className="text-xs font-extrabold text-[#061138]">
+                            درصد (٪)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <FormField
+                          id="wallet-cancel-deadline"
+                          label="مهلت لغو نوبت با بازگشت کامل بیعانه"
+                        >
+                          <Select
+                            id="wallet-cancel-deadline"
+                            value={String(cancellationDeadlineHours)}
+                            onChange={(e) => {
+                              const hrs = Number(e.target.value);
+                              setCancellationDeadlineHours(hrs);
+                              updateBusinessProfile(currentBiz.id, {
+                                cancellationDeadlineHours: hrs,
+                              });
+                            }}
+                            options={[
+                              { value: '3', label: 'تا ۳ ساعت قبل از نوبت' },
+                              { value: '6', label: 'تا ۶ ساعت قبل از نوبت' },
+                              { value: '12', label: 'تا ۱۲ ساعت قبل از نوبت' },
+                              {
+                                value: '24',
+                                label: 'تا ۲۴ ساعت قبل از نوبت (پیشنهادی)',
+                              },
+                              { value: '48', label: 'تا ۴۸ ساعت قبل از نوبت' },
+                            ]}
+                          />
+                        </FormField>
+
+                        <FormField
+                          id="wallet-late-penalty"
+                          label="قانون کنسلی دیرهنگام (کمتر از مهلت مجاز)"
+                        >
+                          <Select
+                            id="wallet-late-penalty"
+                            value={String(lateCancellationPenaltyPercent)}
+                            onChange={(e) => {
+                              const pen = Number(e.target.value);
+                              setLateCancellationPenaltyPercent(pen);
+                              updateBusinessProfile(currentBiz.id, {
+                                lateCancellationPenaltyPercent: pen,
+                              });
+                            }}
+                            options={[
+                              {
+                                value: '0',
+                                label: 'بدون جریمه (بازگشت ۱۰۰٪ بیعانه)',
+                              },
+                              {
+                                value: '30',
+                                label: 'کسر ۳۰٪ خسارت دیرکرد برای سالن',
+                              },
+                              {
+                                value: '50',
+                                label: 'کسر ۵۰٪ خسارت دیرکرد برای سالن',
+                              },
+                              {
+                                value: '100',
+                                label: 'عدم بازگشت بیعانه در کنسلی دقیقه نودی',
+                              },
+                            ]}
+                          />
+                        </FormField>
+                      </div>
                     </div>
 
                     <div className="p-3.5 rounded-xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-2.5">
@@ -8153,7 +8333,6 @@ export const BusinessSettingsPage: React.FC = () => {
           onChange={setActiveTab}
           tabs={[
             { id: 'notifications', label: 'پیامک‌های خودکار و اعلان‌ها' },
-            { id: 'booking_rules', label: 'قوانین بیعانه، رزرو و کنسلی نوبت' },
             { id: 'security', label: 'تنظیم و بازیابی رمز عبور' },
           ]}
         />
@@ -8277,12 +8456,11 @@ export const BusinessSettingsPage: React.FC = () => {
                   size="sm"
                   onClick={() => {
                     showToast(
-                      'تنظیمات اعلان پیامکی ذخیره شد ✓ انتقال خودکار به تب «قوانین بیعانه و کنسلی نوبت»'
+                      'تنظیمات ارسال پیامک خودکار برای مشتریان و مدیر سالن ذخیره شد ✓'
                     );
-                    setActiveTab('booking_rules');
                   }}
                 >
-                  ذخیره تنظیمات اعلان و رفتن به قوانین بیعانه ←
+                  ذخیره تنظیمات اعلان پیامکی
                 </Button>
               </div>
             </Card>

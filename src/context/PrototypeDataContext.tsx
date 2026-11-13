@@ -5895,11 +5895,41 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       notes: effectiveDraft.customerNotes || undefined,
     };
 
+    const resolvedOwnerPhone =
+      biz?.ownerPhone || biz?.phoneDisplay || undefined;
+
+    const triggerBookingNotification = () => {
+      void fetch('/api/v1/appointments/notify-booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessSlug: resolvedBizSlug,
+          businessId: resolvedBizId,
+          businessName: resolvedBizName,
+          ownerPhone: resolvedOwnerPhone,
+          customerName:
+            effectiveDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
+          customerPhone: effectiveDraft.customerPhone || authUser?.phone || '',
+          serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+          dateJalali: effectiveDraft.dateJalali,
+          timeSlot: effectiveDraft.timeSlot,
+          depositPaidToman: paymentMeta?.depositPaidToman,
+        }),
+      }).catch(() => {});
+    };
+
     if (dataMode === 'real') {
       void realApiClient
         .createAppointment({
           businessSlug: resolvedBizSlug,
+          businessId: resolvedBizId,
+          businessName: resolvedBizName,
+          ownerPhone: resolvedOwnerPhone,
           serviceId: effectiveDraft.serviceId,
+          serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+          priceToman: summary.totalPriceToman || 450000,
+          durationMinutes: summary.totalDurationMinutes || 60,
+          allowAutoCreateService: true,
           specialistId:
             spc?.id ||
             effectiveDraft.specialistId ||
@@ -5939,6 +5969,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             ...prev,
             lastReferenceCode: res.item.referenceCode,
           }));
+          triggerBookingNotification();
           showToast(
             'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای مدیر سالن ارسال شد ✓'
           );
@@ -5949,6 +5980,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             persistSavedAppointments(next);
             return next;
           });
+          triggerBookingNotification();
           showToast(
             'پرداخت بیعانه تایید شد و نوبت شما در پنل سالن ثبت گردید ✓'
           );
@@ -5962,6 +5994,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
     setBookingDraft((prev) => ({ ...prev, lastReferenceCode: refCode }));
+    triggerBookingNotification();
     showToast(
       'پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓'
     );
@@ -6008,6 +6041,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const resolvedBizSlug = biz?.slug || targetSlug || targetBizId;
     const resolvedBizName =
       biz?.name || overrideDraft?.businessName || 'سالن زیبایی';
+    const resolvedOwnerPhone =
+      biz?.ownerPhone || biz?.phoneDisplay || undefined;
+
+    const bizServices = services.filter((s) => s.businessId === resolvedBizId);
+    const summary = computeSelectedServicesSummary(
+      bizServices.length > 0 ? bizServices : services,
+      effectiveDraft.serviceIds ?? [],
+      effectiveDraft.serviceId
+    );
 
     const bizSpecs = mergedSpecialists.filter(
       (sp) => sp.businessId === resolvedBizId
@@ -6027,7 +6069,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const res = await realApiClient.createAppointment({
           businessSlug: resolvedBizSlug,
+          businessId: resolvedBizId,
+          businessName: resolvedBizName,
+          ownerPhone: resolvedOwnerPhone,
           serviceId: effectiveDraft.serviceId,
+          serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+          priceToman: summary.totalPriceToman || 450000,
+          durationMinutes: summary.totalDurationMinutes || 60,
+          allowAutoCreateService: true,
           specialistId:
             spc?.id ||
             effectiveDraft.specialistId ||
@@ -6066,6 +6115,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev,
           lastReferenceCode: res.item.referenceCode,
         }));
+        void fetch('/api/v1/appointments/notify-booking', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            businessSlug: resolvedBizSlug,
+            businessId: resolvedBizId,
+            businessName: resolvedBizName,
+            ownerPhone: resolvedOwnerPhone,
+            customerName:
+              effectiveDraft.customerName ||
+              authUser?.fullName ||
+              'مراجع تایم‌تو',
+            customerPhone:
+              effectiveDraft.customerPhone || authUser?.phone || '',
+            serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+            dateJalali: effectiveDraft.dateJalali,
+            timeSlot: effectiveDraft.timeSlot,
+            depositPaidToman: paymentMeta?.depositPaidToman,
+          }),
+        }).catch(() => {});
         showToast(
           'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای تایید به مدیر سالن ارسال شد ✓'
         );

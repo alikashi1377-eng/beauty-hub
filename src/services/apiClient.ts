@@ -496,7 +496,14 @@ export const realApiClient = {
 
   async createAppointment(input: {
     businessSlug: string;
+    businessId?: string;
+    businessName?: string;
+    ownerPhone?: string;
     serviceId: string;
+    serviceTitle?: string;
+    priceToman?: number;
+    durationMinutes?: number;
+    allowAutoCreateService?: boolean;
     specialistId: string;
     dateJalali: string;
     timeSlot: string;

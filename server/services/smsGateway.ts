@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 export type SmsProviderType =
   | 'disabled'
   | 'console'
@@ -310,7 +313,55 @@ export function resolveSmsConfig(
   };
 }
 
-let runtimeSmsOverride: SmsConfig | null = null;
+const smsGatewayConfigFilePath = path.resolve(
+  process.cwd(),
+  'sms-gateway-config.json'
+);
+
+function readPersistedSmsConfig(): SmsConfig | null {
+  if (process.env.NODE_ENV === 'test') return null;
+  try {
+    if (fs.existsSync(smsGatewayConfigFilePath)) {
+      const raw = fs.readFileSync(smsGatewayConfigFilePath, 'utf-8');
+      const parsed = JSON.parse(raw) as Partial<SmsConfig>;
+      if (parsed && parsed.provider && parsed.apiKey) {
+        return {
+          provider: parsed.provider,
+          apiKey: parsed.apiKey || null,
+          sender: parsed.sender || null,
+          template: parsed.template || null,
+          bookingOwnerTemplate: parsed.bookingOwnerTemplate || null,
+          bookingCustomerTemplate: parsed.bookingCustomerTemplate || null,
+          apiUrl: parsed.apiUrl || null,
+        };
+      }
+    }
+  } catch {
+    // ignore read error
+  }
+  return null;
+}
+
+function writePersistedSmsConfig(cfg: SmsConfig | null): void {
+  if (process.env.NODE_ENV === 'test') return;
+  try {
+    if (!cfg) {
+      if (fs.existsSync(smsGatewayConfigFilePath)) {
+        fs.unlinkSync(smsGatewayConfigFilePath);
+      }
+      return;
+    }
+    fs.writeFileSync(
+      smsGatewayConfigFilePath,
+      JSON.stringify(cfg, null, 2),
+      'utf-8'
+    );
+  } catch {
+    // ignore write error
+  }
+}
+
+let runtimeSmsOverride: SmsConfig | null = readPersistedSmsConfig();
 
 export function setRuntimeSmsOverride(input: {
   provider?: SmsProviderType;
@@ -323,6 +374,7 @@ export function setRuntimeSmsOverride(input: {
 } | null): SmsConfig | null {
   if (!input) {
     runtimeSmsOverride = null;
+    writePersistedSmsConfig(null);
     return null;
   }
 
@@ -358,6 +410,7 @@ export function setRuntimeSmsOverride(input: {
       bookingCustomerTemplate: rawBookingCustomer || null,
       apiUrl: rawUrl || extractedEndpoint || null,
     };
+    writePersistedSmsConfig(runtimeSmsOverride);
     return runtimeSmsOverride;
   }
 
@@ -370,6 +423,7 @@ export function setRuntimeSmsOverride(input: {
     bookingCustomerTemplate: rawBookingCustomer || null,
     apiUrl: rawUrl || null,
   };
+  writePersistedSmsConfig(runtimeSmsOverride);
   return runtimeSmsOverride;
 }
 
@@ -378,7 +432,30 @@ export function getRuntimeSmsOverride(): SmsConfig | null {
 }
 
 export function resolveEffectiveSmsConfig(baseConfig: SmsConfig): SmsConfig {
-  return runtimeSmsOverride ?? baseConfig;
+  if (!runtimeSmsOverride && process.env.NODE_ENV !== 'test') {
+    runtimeSmsOverride = readPersistedSmsConfig();
+  }
+  if (!runtimeSmsOverride) {
+    return baseConfig;
+  }
+  return {
+    provider:
+      runtimeSmsOverride.provider !== 'disabled'
+        ? runtimeSmsOverride.provider
+        : baseConfig.provider,
+    apiKey: runtimeSmsOverride.apiKey || baseConfig.apiKey,
+    sender: runtimeSmsOverride.sender || baseConfig.sender,
+    template: runtimeSmsOverride.template || baseConfig.template,
+    bookingOwnerTemplate:
+      runtimeSmsOverride.bookingOwnerTemplate ||
+      baseConfig.bookingOwnerTemplate ||
+      null,
+    bookingCustomerTemplate:
+      runtimeSmsOverride.bookingCustomerTemplate ||
+      baseConfig.bookingCustomerTemplate ||
+      null,
+    apiUrl: runtimeSmsOverride.apiUrl || baseConfig.apiUrl,
+  };
 }
 
 export function maskApiKeyForDisplay(apiKey: string | null): string | null {
@@ -889,15 +966,11 @@ export async function sendPatternSmsViaGateway(params: {
     return sendOtpSmsViaGateway(phone, numericFallback, config, nodeEnv);
   };
 
-  // اگر پترن چندپارامتری اختصاصی تعریف نشده، با پترن اصلی تک‌پارامتری ارسال شود
-  if (!hasDedicatedPattern || config.provider !== 'melipayamak') {
+  // اگر پترن چندپارامتری اختصاصی تعریف نشده و درگاه غیر از ملی‌پیامک است
+  if (config.provider !== 'melipayamak') {
     return sendWithSingleArgFallback();
   }
 
-  const bodyId = Number.parseInt(
-    normalizeDigitsToEnglish(trimmedCustomTemplate),
-    10
-  );
   const { extractedKey, extractedEndpoint } = normalizeMelipayamakApiKey(
     config.apiKey || ''
   );
@@ -918,13 +991,39 @@ export async function sendPatternSmsViaGateway(params: {
   const cleanRecipient = normalizeDigitsToEnglish(phone).replace(/\D/g, '');
   const cleanArgs = args.map((a) => String(a ?? '').trim());
 
+  // جمع‌آوری شناسه‌های الگوی کاندید: ابتدا الگوی اختصاصی نوبت (در صورت وجود)، سپس الگوی اصلی (SMS_OTP_TEMPLATE)
+  const candidateBodyIds: number[] = [];
+  if (hasDedicatedPattern) {
+    const customIdNum = Number.parseInt(
+      normalizeDigitsToEnglish(trimmedCustomTemplate),
+      10
+    );
+    if (!Number.isNaN(customIdNum) && customIdNum > 0) {
+      candidateBodyIds.push(customIdNum);
+    }
+  }
+  const mainTemplateClean = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(config.template ?? undefined)
+  );
+  if (/^\d+$/.test(mainTemplateClean)) {
+    const mainIdNum = Number.parseInt(mainTemplateClean, 10);
+    if (
+      !Number.isNaN(mainIdNum) &&
+      mainIdNum > 0 &&
+      !candidateBodyIds.includes(mainIdNum)
+    ) {
+      candidateBodyIds.push(mainIdNum);
+    }
+  }
+
+  if (candidateBodyIds.length === 0) {
+    return sendWithSingleArgFallback();
+  }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8500);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    // لیست کاندیدهای آرایه args:
-    // ۱) آرایه کامل ۴ تایی ([نام مشتری، خدمت/سالن، تاریخ، ساعت])
-    // ۲) آرایه ۳ تایی ([نام مشتری، تاریخ، ساعت])
-    // ۳) آرایه ۲ تایی ([نام مشتری، تاریخ-ساعت])
+    // لیست کاندیدهای آرایه args برای تطبیق خودکار با پترن‌های ۴، ۳، ۲ و ۱ متغیره در ملی‌پیامک:
     const candidateArgsList: string[][] = [cleanArgs];
     if (cleanArgs.length === 4) {
       candidateArgsList.push([cleanArgs[0], cleanArgs[2], cleanArgs[3]]);
@@ -933,45 +1032,51 @@ export async function sendPatternSmsViaGateway(params: {
         `${cleanArgs[2]} ساعت ${cleanArgs[3]}`,
       ]);
     }
+    candidateArgsList.push([fallbackSingleArg]);
+    const compactSingle = fallbackSingleArg.trim().replace(/\s+/g, '-');
+    if (compactSingle && compactSingle !== fallbackSingleArg) {
+      candidateArgsList.push([compactSingle]);
+    }
 
-    for (const candidateArgs of candidateArgsList) {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          bodyId,
-          to: cleanRecipient,
-          args: candidateArgs,
-        }),
-        signal: controller.signal,
-      });
-      const rawText = await res.text();
-      let parsed: { recId?: number | string; status?: string } | null = null;
-      try {
-        parsed = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        parsed = null;
-      }
-      const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
-      const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
-      if (
-        res.ok &&
-        recIdStr &&
-        (Number.isNaN(numericRecId) || numericRecId > 100)
-      ) {
-        return {
-          sent: true,
-          provider: 'melipayamak',
-          providerMessageId: recIdStr,
-          httpStatus: res.status,
-        };
+    for (const targetBodyId of candidateBodyIds) {
+      for (const candidateArgs of candidateArgsList) {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            bodyId: targetBodyId,
+            to: cleanRecipient,
+            args: candidateArgs,
+          }),
+          signal: controller.signal,
+        });
+        const rawText = await res.text();
+        let parsed: { recId?: number | string; status?: string } | null = null;
+        try {
+          parsed = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          parsed = null;
+        }
+        const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
+        const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
+        if (
+          res.ok &&
+          recIdStr &&
+          (Number.isNaN(numericRecId) || numericRecId > 100)
+        ) {
+          return {
+            sent: true,
+            provider: 'melipayamak',
+            providerMessageId: recIdStr,
+            httpStatus: res.status,
+          };
+        }
       }
     }
 
-    // در صورت خطا در پترن اختصاصی، فالبک به پترن اصلی
     return sendWithSingleArgFallback();
   } catch {
     return sendWithSingleArgFallback();

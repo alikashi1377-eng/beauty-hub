@@ -993,9 +993,229 @@ export function createApiV1Router(
     }
   );
 
+  const recentBookingDispatchMap = new Map<string, number>();
+
+  const normalizeIranMobile = (raw: unknown): string => {
+    const digits = String(raw || '')
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+      .replace(/\D/g, '');
+    if (digits.length === 10 && digits.startsWith('9')) {
+      return `0${digits}`;
+    }
+    if (digits.length === 12 && digits.startsWith('989')) {
+      return `0${digits.slice(2)}`;
+    }
+    return digits;
+  };
+
+  const dispatchBookingSmsAndWalletCredit = async (params: {
+    businessSlug?: string;
+    businessId?: string;
+    businessName?: string;
+    ownerPhone?: string;
+    customerName?: string;
+    customerPhone?: string;
+    serviceTitle?: string;
+    dateJalali?: string;
+    timeSlot?: string;
+    depositPaidToman?: number;
+    dedupKey?: string;
+  }): Promise<{ ownerSmsSent: boolean; customerSmsSent: boolean }> => {
+    const cleanCustPhone = normalizeIranMobile(params.customerPhone);
+    const slugOrId = String(
+      params.businessSlug || params.businessId || ''
+    ).trim();
+    const dateStr = String(params.dateJalali || '').trim();
+    const timeStr = String(params.timeSlot || '').trim();
+    const dedupKey =
+      params.dedupKey || `${slugOrId}|${cleanCustPhone}|${dateStr}|${timeStr}`;
+
+    const now = Date.now();
+    for (const [k, ts] of recentBookingDispatchMap.entries()) {
+      if (now - ts > 90_000) {
+        recentBookingDispatchMap.delete(k);
+      }
+    }
+    if (dedupKey && recentBookingDispatchMap.has(dedupKey)) {
+      return { ownerSmsSent: true, customerSmsSent: true };
+    }
+    if (dedupKey) {
+      recentBookingDispatchMap.set(dedupKey, now);
+    }
+
+    let resolvedOwnerPhone = normalizeIranMobile(params.ownerPhone);
+    let resolvedBizName = String(params.businessName || 'سالن زیبایی').trim();
+
+    try {
+      const config = customEnv ?? loadServerEnv();
+      const dbPool =
+        customPool ??
+        (config.dataMode === 'real' ? getOrCreatePool(config) : null);
+      if (dbPool && slugOrId) {
+        const bizRes = await dbPool.query(
+          `
+          SELECT b.id, b.name, b.slug, b.phone_display, bme.extra_json
+          FROM businesses b
+          LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+          WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
+          LIMIT 1
+          `,
+          [slugOrId]
+        );
+        const row = bizRes.rows[0];
+        const extra =
+          row?.extra_json && typeof row.extra_json === 'object'
+            ? { ...(row.extra_json as Record<string, unknown>) }
+            : {};
+
+        if (row?.name) {
+          resolvedBizName = String(row.name);
+        }
+
+        const depositPaidToman = Math.max(
+          0,
+          Number(params.depositPaidToman) || 0
+        );
+        if (row?.id && depositPaidToman > 0) {
+          const prevBalance = Math.max(
+            0,
+            Number(extra.walletBalanceToman) || 0
+          );
+          extra.walletBalanceToman = prevBalance + depositPaidToman;
+          await dbPool.query(
+            `
+            INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+            VALUES ($1::uuid, $2::jsonb, NOW())
+            ON CONFLICT (business_id)
+            DO UPDATE SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
+            `,
+            [row.id, JSON.stringify(extra)]
+          );
+        }
+
+        const dbOwnerCandidate = normalizeIranMobile(
+          extra.ownerPhone || row?.phone_display || ''
+        );
+        if (/^09\d{9}$/.test(dbOwnerCandidate)) {
+          resolvedOwnerPhone = dbOwnerCandidate;
+        }
+
+        if (!/^09\d{9}$/.test(resolvedOwnerPhone)) {
+          const regRes = await dbPool
+            .query(
+              `
+              SELECT phone
+              FROM registered_accounts_registry
+              WHERE business_slug = $1 OR business_id = $1 OR business_id = $2
+              LIMIT 1
+              `,
+              [slugOrId, String(row?.id || slugOrId)]
+            )
+            .catch(() => ({ rows: [] as Array<{ phone?: string }> }));
+          const regPhone = normalizeIranMobile(regRes.rows[0]?.phone);
+          if (/^09\d{9}$/.test(regPhone)) {
+            resolvedOwnerPhone = regPhone;
+          }
+        }
+      }
+    } catch {
+      // خطای دیتابیس مانع ارسال پیامک نشود
+    }
+
+    let ownerSmsSent = false;
+    let customerSmsSent = false;
+
+    try {
+      const config = customEnv ?? loadServerEnv();
+      const effectiveSms = customEnv
+        ? config.sms
+        : resolveEffectiveSmsConfig(config.sms);
+
+      if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+        const ownerPatternId =
+          effectiveSms.bookingOwnerTemplate ||
+          process.env.SMS_BOOKING_OWNER_TEMPLATE ||
+          undefined;
+        const customerPatternId =
+          effectiveSms.bookingCustomerTemplate ||
+          process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
+          undefined;
+
+        const custLabel = String(params.customerName || 'مشتری').trim();
+        const srvLabel = String(params.serviceTitle || 'خدمات زیبایی').trim();
+
+        // ۱. پیامک به صاحب کسب‌وکار / متخصص
+        if (/^09\d{9}$/.test(resolvedOwnerPhone)) {
+          const ownerDelivery = await sendPatternSmsViaGateway({
+            phone: resolvedOwnerPhone,
+            args: [custLabel, srvLabel, dateStr, timeStr],
+            fallbackSingleArg: `نوبت جدید ${dateStr} ساعت ${timeStr}`,
+            customTemplateId: ownerPatternId,
+            config: effectiveSms,
+            nodeEnv: config.nodeEnv,
+          }).catch(() => ({ sent: false }));
+          ownerSmsSent = Boolean(ownerDelivery.sent);
+        }
+
+        // ۲. پیامک رسید ثبت نوبت به مشتری
+        if (/^09\d{9}$/.test(cleanCustPhone)) {
+          const custDelivery = await sendPatternSmsViaGateway({
+            phone: cleanCustPhone,
+            args: [
+              custLabel || 'مراجع عزیز',
+              resolvedBizName,
+              dateStr,
+              timeStr,
+            ],
+            fallbackSingleArg: `ثبت نوبت ${resolvedBizName} ${dateStr} ساعت ${timeStr}`,
+            customTemplateId: customerPatternId,
+            config: effectiveSms,
+            nodeEnv: config.nodeEnv,
+          }).catch(() => ({ sent: false }));
+          customerSmsSent = Boolean(custDelivery.sent);
+        }
+      }
+    } catch {
+      // خطای ارسال پیامک جانبی مانع ثبت نوبت نشود
+    }
+
+    return { ownerSmsSent, customerSmsSent };
+  };
+
   /**
    * ۱۰. ثبت نوبت جدید و تغییر وضعیت نوبت (/booking/*, /me/appointments, /app/appointments)
    */
+  router.post(
+    '/appointments/notify-booking',
+    async (req: Request, res: Response) => {
+      try {
+        const result = await dispatchBookingSmsAndWalletCredit({
+          businessSlug: req.body?.businessSlug,
+          businessId: req.body?.businessId,
+          businessName: req.body?.businessName,
+          ownerPhone: req.body?.ownerPhone,
+          customerName: req.body?.customerName,
+          customerPhone: req.body?.customerPhone || req.authUser?.phone,
+          serviceTitle: req.body?.serviceTitle,
+          dateJalali: req.body?.dateJalali,
+          timeSlot: req.body?.timeSlot,
+          depositPaidToman: Number(req.body?.depositPaidToman) || 0,
+        });
+        res.status(200).json({
+          ok: true,
+          ...result,
+        });
+      } catch {
+        res.status(200).json({
+          ok: true,
+          ownerSmsSent: false,
+          customerSmsSent: false,
+        });
+      }
+    }
+  );
+
   router.post(
     '/appointments',
     requireAuth,
@@ -1007,118 +1227,18 @@ export function createApiV1Router(
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
 
         // واریز آنی بیعانه به کیف پول کسب‌وکار دقیقِ انتخاب‌شده در دیتابیس و ارسال پیامک اطلاع‌رسانی
-        try {
-          const depositPaidToman = Math.max(
-            0,
-            Number(req.body?.depositPaidToman) || 0
-          );
-          const bizRes = await pool.query(
-            `
-            SELECT b.id, b.name, b.phone_display, bme.extra_json
-            FROM businesses b
-            LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-            WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
-            LIMIT 1
-            `,
-            [String(item.businessSlug || req.body?.businessSlug || '')]
-          );
-          const row = bizRes.rows[0];
-          const extra =
-            row?.extra_json && typeof row.extra_json === 'object'
-              ? { ...(row.extra_json as Record<string, unknown>) }
-              : {};
-
-          if (row?.id && depositPaidToman > 0) {
-            const prevBalance = Math.max(
-              0,
-              Number(extra.walletBalanceToman) || 0
-            );
-            extra.walletBalanceToman = prevBalance + depositPaidToman;
-            await pool.query(
-              `
-              INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
-              VALUES ($1::uuid, $2::jsonb, NOW())
-              ON CONFLICT (business_id)
-              DO UPDATE SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
-              `,
-              [row.id, JSON.stringify(extra)]
-            );
-          }
-
-          const config = customEnv ?? loadServerEnv();
-          const effectiveSms = customEnv
-            ? config.sms
-            : resolveEffectiveSmsConfig(config.sms);
-          if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
-            const rawOwnerPhone = String(
-              extra.ownerPhone || row?.phone_display || ''
-            )
-              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-              .replace(/\D/g, '');
-            const cleanOwnerPhone =
-              rawOwnerPhone.length === 10 && rawOwnerPhone.startsWith('9')
-                ? `0${rawOwnerPhone}`
-                : rawOwnerPhone;
-
-            const ownerPatternId =
-              effectiveSms.bookingOwnerTemplate ||
-              process.env.SMS_BOOKING_OWNER_TEMPLATE ||
-              undefined;
-            const customerPatternId =
-              effectiveSms.bookingCustomerTemplate ||
-              process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
-              undefined;
-
-            // ۱. پیامک به صاحب کسب‌وکار / متخصص
-            if (/^09\d{9}$/.test(cleanOwnerPhone)) {
-              void sendPatternSmsViaGateway({
-                phone: cleanOwnerPhone,
-                args: [
-                  item.customerName || 'مشتری',
-                  item.serviceTitle || 'خدمات زیبایی',
-                  item.dateJalali,
-                  item.timeSlot,
-                ],
-                fallbackSingleArg: `نوبت جدید ${item.dateJalali} ساعت ${item.timeSlot}`,
-                customTemplateId: ownerPatternId,
-                config: effectiveSms,
-                nodeEnv: config.nodeEnv,
-              }).catch(() => {});
-            }
-
-            // ۲. پیامک رسید ثبت نوبت به مشتری
-            const rawCustPhone = String(
-              req.body?.customerPhone || req.authUser?.phone || ''
-            )
-              .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-              .replace(/\D/g, '');
-            const cleanCustPhone =
-              rawCustPhone.length === 10 && rawCustPhone.startsWith('9')
-                ? `0${rawCustPhone}`
-                : rawCustPhone;
-
-            if (/^09\d{9}$/.test(cleanCustPhone)) {
-              const bizTitle = String(
-                row?.name || item.businessName || 'سالن زیبایی'
-              );
-              void sendPatternSmsViaGateway({
-                phone: cleanCustPhone,
-                args: [
-                  item.customerName || 'مراجع عزیز',
-                  bizTitle,
-                  item.dateJalali,
-                  item.timeSlot,
-                ],
-                fallbackSingleArg: `ثبت نوبت ${bizTitle} ${item.dateJalali} ساعت ${item.timeSlot}`,
-                customTemplateId: customerPatternId,
-                config: effectiveSms,
-                nodeEnv: config.nodeEnv,
-              }).catch(() => {});
-            }
-          }
-        } catch {
-          // خطای ارسال پیامک جانبی مانع ثبت نوبت نشود
-        }
+        void dispatchBookingSmsAndWalletCredit({
+          businessSlug: item.businessSlug || req.body?.businessSlug,
+          businessId: item.businessId || req.body?.businessId,
+          businessName: item.businessName || req.body?.businessName,
+          ownerPhone: req.body?.ownerPhone,
+          customerName: item.customerName || req.body?.customerName,
+          customerPhone: req.body?.customerPhone || req.authUser?.phone,
+          serviceTitle: item.serviceTitle || req.body?.serviceTitle,
+          dateJalali: item.dateJalali,
+          timeSlot: item.timeSlot,
+          depositPaidToman: Number(req.body?.depositPaidToman) || 0,
+        });
 
         res.status(201).json({
           ok: true,
@@ -1361,6 +1481,16 @@ export function createApiV1Router(
    */
   router.post(
     '/reviews',
+    (req: Request, res: Response, next) => {
+      if (
+        req.headers.authorization ||
+        req.headers.cookie ||
+        (!req.body?.authorPhone && !req.body?.authorName)
+      ) {
+        return requireAuth(req, res, next);
+      }
+      next();
+    },
     async (req: Request, res: Response) => {
       const { mode, pool } = await resolvePoolOrFail(res);
       if (mode === 'mock') {
@@ -1370,15 +1500,6 @@ export function createApiV1Router(
       if (!pool) return;
 
       try {
-        if (!req.authUser && !req.body?.authorPhone && !req.body?.authorName) {
-          res.status(401).json({
-            ok: false,
-            mode: 'real',
-            errorCode: 'AUTHENTICATION_REQUIRED',
-            message: 'برای ثبت دیدگاه و امتیاز، ابتدا وارد حساب کاربری خود شوید.',
-          });
-          return;
-        }
         const item = await createReviewInDb(
           pool,
           req.authUser ?? null,
