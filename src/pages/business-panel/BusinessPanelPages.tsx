@@ -5439,6 +5439,13 @@ export const BusinessProfileEditPage: React.FC = () => {
           ) : null}
         </form>
       </Card>
+
+      <BusinessQrCodeCard
+        businessName={name || currentBiz.name}
+        slug={currentBiz.slug}
+        city={currentBiz.city}
+        neighborhood={neighborhood || currentBiz.neighborhood}
+      />
     </div>
   );
 };
