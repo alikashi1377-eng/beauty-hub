@@ -64,6 +64,7 @@ import { validateReviewContent } from '../utils/reviewModeration';
 import {
   calculateBookingFinancialBreakdown,
   isAppointmentEligibleForSettlement,
+  resolveAppointmentFinancialBreakdown,
   validateServiceAntiFraud,
 } from '../utils/financialEngine';
 import {
@@ -198,6 +199,10 @@ interface PrototypeDataContextValue {
   addService: (item: Omit<ServiceItem, 'id'>) => void;
   updateService: (id: string, patch: Partial<ServiceItem>) => void;
   deleteService: (id: string) => void;
+  reorderBusinessServices: (
+    businessId: string,
+    orderedServiceIds: string[]
+  ) => void;
   specialists: SpecialistItem[];
   addSpecialist: (item: Omit<SpecialistItem, 'id'>) => void;
   updateSpecialist: (id: string, patch: Partial<SpecialistItem>) => void;
@@ -781,12 +786,35 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [businesses, setBusinesses] = useState<BusinessItem[]>(() =>
     mergeBusinessOverrides([])
   );
+  const applySavedServiceSortOrder = (list: ServiceItem[]): ServiceItem[] => {
+    try {
+      const rawOrder = window.localStorage.getItem('timeto_service_sort_order_v1');
+      if (!rawOrder) return list;
+      const orderMap = JSON.parse(rawOrder) as Record<string, number>;
+      if (!orderMap || typeof orderMap !== 'object') return list;
+      const withOrder = list.map((srv, idx) => ({
+        ...srv,
+        sortOrder:
+          typeof orderMap[srv.id] === 'number'
+            ? orderMap[srv.id]
+            : typeof srv.sortOrder === 'number'
+              ? srv.sortOrder
+              : 10000 + idx,
+      }));
+      return [...withOrder].sort(
+        (a, b) => (a.sortOrder ?? 10000) - (b.sortOrder ?? 10000)
+      );
+    } catch {
+      return list;
+    }
+  };
+
   const [services, setServices] = useState<ServiceItem[]>(() => {
     try {
       const saved = window.localStorage.getItem('timeto_local_services_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return applySavedServiceSortOrder(parsed);
       }
     } catch {
       // ignore
@@ -826,39 +854,71 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         /^biz-[1-8]$/.test(item.businessId) ||
         /^apt-100[1-9]$/.test(item.id) ||
         item.businessSlug === 'royal-golzar';
-      const fixSpecialistName = (item: AppointmentItem): AppointmentItem => {
+      const normalizeAptFinancials = (item: AppointmentItem): AppointmentItem => {
+        const matchedBiz = businesses.find(
+          (b) =>
+            b.id === item.businessId ||
+            b.slug === item.businessSlug ||
+            b.name === item.businessName
+        );
+        const resolved = resolveAppointmentFinancialBreakdown({
+          appointment: item,
+          business: matchedBiz,
+        });
+        const fixedItem: AppointmentItem = {
+          ...item,
+          priceToman: resolved.totalServicePriceToman,
+          depositPaidToman: resolved.baseDepositToman,
+          platformCommissionToman: resolved.platformCommissionToman,
+          customerGatewayAndTaxFeeToman: resolved.customerGatewayAndTaxFeeToman,
+          salonNetDepositCreditedToman: resolved.salonNetDepositCreditedToman,
+        };
         if (
-          item.specialistName === 'مریم فرهادی' ||
-          item.specialistId === 'spc-1'
+          fixedItem.specialistName === 'مریم فرهادی' ||
+          fixedItem.specialistId === 'spc-1'
         ) {
-          const matchedBiz = businesses.find(
-            (b) =>
-              b.id === item.businessId ||
-              b.slug === item.businessSlug ||
-              b.name === item.businessName
-          );
           const cleanOwner =
             matchedBiz?.ownerName &&
             matchedBiz.ownerName.trim() !== 'مریم فرهادی'
               ? matchedBiz.ownerName.trim()
-              : matchedBiz?.name || item.businessName || 'متخصص مرکز';
+              : matchedBiz?.name || fixedItem.businessName || 'متخصص مرکز';
           return {
-            ...item,
+            ...fixedItem,
             specialistName: cleanOwner,
           };
         }
-        return item;
+        return fixedItem;
       };
       for (const item of incoming) {
         if (!isSampleApt(item)) {
-          map.set(item.id, fixSpecialistName(item));
+          map.set(item.id, normalizeAptFinancials(item));
         }
       }
       for (const item of savedList) {
         if (!isSampleApt(item)) {
           const existing = map.get(item.id);
-          const merged = existing ? { ...item, ...existing } : item;
-          map.set(item.id, fixSpecialistName(merged));
+          const merged: AppointmentItem = existing
+            ? {
+                ...item,
+                ...existing,
+                depositPaidToman:
+                  existing.depositPaidToman && existing.depositPaidToman > 0
+                    ? existing.depositPaidToman
+                    : item.depositPaidToman,
+                paymentMethod: existing.paymentMethod || item.paymentMethod,
+                paymentTrackingCode:
+                  existing.paymentTrackingCode || item.paymentTrackingCode,
+                inPersonSettled:
+                  existing.inPersonSettled ?? item.inPersonSettled,
+                inPersonSettledAmountToman:
+                  existing.inPersonSettledAmountToman ??
+                  item.inPersonSettledAmountToman,
+                inPersonSettledAtJalali:
+                  existing.inPersonSettledAtJalali ??
+                  item.inPersonSettledAtJalali,
+              }
+            : item;
+          map.set(item.id, normalizeAptFinancials(merged));
         }
       }
       return Array.from(map.values());
@@ -1371,9 +1431,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setServices((prev) => {
           const map = new Map(prev.map((s) => [s.id, s]));
           for (const s of wsRes.data.services) {
-            map.set(s.id, s);
+            const prevItem = map.get(s.id);
+            map.set(s.id, prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s);
           }
-          return Array.from(map.values());
+          return applySavedServiceSortOrder(Array.from(map.values()));
         });
         setSpecialists((prev) => {
           const map = new Map(prev.map((sp) => [sp.id, sp]));
@@ -1416,7 +1477,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setAdminUsers(adminRes.data.users);
         }
         if (Array.isArray(adminRes.data.appointments)) {
-          setAppointments(adminRes.data.appointments);
+          const adminAppointments = adminRes.data.appointments;
+          setAppointments((prev) =>
+            mergeSavedAppointments([...adminAppointments, ...prev])
+          );
         }
         if (Array.isArray(adminRes.adminNotifications)) {
           setAdminNotifications((prev) => {
@@ -1503,10 +1567,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               !/^biz-[1-8]$/.test(s.businessId) &&
               !/^srv-[1-8]\d\d$/.test(s.id)
             ) {
-              map.set(s.id, s);
+              const prevItem = map.get(s.id);
+              map.set(
+                s.id,
+                prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s
+              );
             }
           }
-          return Array.from(map.values());
+          return applySavedServiceSortOrder(Array.from(map.values()));
         });
         setSpecialists(() => {
           const map = new Map<string, SpecialistItem>();
@@ -3648,6 +3716,53 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
   };
 
+  const reorderBusinessServices = (
+    businessId: string,
+    orderedServiceIds: string[]
+  ) => {
+    if (!businessId || orderedServiceIds.length === 0) return;
+    setServices((prev) => {
+      const orderLookup = new Map<string, number>();
+      orderedServiceIds.forEach((id, index) => {
+        orderLookup.set(id, index + 1);
+      });
+
+      try {
+        const rawOrder = window.localStorage.getItem('timeto_service_sort_order_v1');
+        const savedOrderMap: Record<string, number> = rawOrder
+          ? JSON.parse(rawOrder)
+          : {};
+        orderedServiceIds.forEach((id, index) => {
+          savedOrderMap[id] = index + 1;
+        });
+        window.localStorage.setItem(
+          'timeto_service_sort_order_v1',
+          JSON.stringify(savedOrderMap)
+        );
+      } catch {
+        // ignore storage errors
+      }
+
+      const bizItems: ServiceItem[] = [];
+      const otherItems: ServiceItem[] = [];
+      prev.forEach((srv, idx) => {
+        if (srv.businessId === businessId) {
+          bizItems.push({
+            ...srv,
+            sortOrder: orderLookup.get(srv.id) ?? 5000 + idx,
+          });
+        } else {
+          otherItems.push(srv);
+        }
+      });
+
+      bizItems.sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
+      const next = [...bizItems, ...otherItems];
+      persistLocalServices(next);
+      return next;
+    });
+  };
+
   const persistLocalSpecialists = (list: SpecialistItem[]) => {
     try {
       window.localStorage.setItem(
@@ -4159,14 +4274,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const alreadyPaidDeposit = Math.max(
-      0,
-      Number(targetApt.depositPaidToman) || 0
+    const matchedBiz = businesses.find(
+      (b) =>
+        b.id === targetApt.businessId ||
+        b.slug === targetApt.businessSlug ||
+        b.name === targetApt.businessName
     );
-    const defaultRemaining = Math.max(
-      0,
-      (targetApt.priceToman || 0) - alreadyPaidDeposit
-    );
+    const aptBreakdown = resolveAppointmentFinancialBreakdown({
+      appointment: targetApt,
+      business: matchedBiz,
+    });
+    const alreadyPaidDeposit = aptBreakdown.baseDepositToman;
+    const defaultRemaining = aptBreakdown.remainingInSalonToman;
     const resolvedAmount =
       customAmountToman && customAmountToman > 0
         ? customAmountToman
@@ -5910,6 +6029,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       },
     });
 
+    const resolvedBaseDepositToman =
+      paymentMeta?.depositPaidToman && paymentMeta.depositPaidToman > 0
+        ? paymentMeta.depositPaidToman
+        : financialBreakdown.baseDepositToman;
+
     const optimisticApt: AppointmentItem = {
       id: `apt-${Date.now()}`,
       referenceCode: refCode,
@@ -5929,8 +6053,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       timeSlot: effectiveDraft.timeSlot,
       durationMinutes: summary.totalDurationMinutes || 60,
       priceToman: summary.totalPriceToman || 450000,
-      depositPaidToman:
-        paymentMeta?.depositPaidToman ?? financialBreakdown.baseDepositToman,
+      depositPaidToman: resolvedBaseDepositToman,
       platformCommissionToman: financialBreakdown.platformCommissionToman,
       customerGatewayAndTaxFeeToman:
         financialBreakdown.customerGatewayAndTaxFeeToman,
@@ -5961,7 +6084,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
           dateJalali: effectiveDraft.dateJalali,
           timeSlot: effectiveDraft.timeSlot,
-          depositPaidToman: paymentMeta?.depositPaidToman,
+          depositPaidToman: resolvedBaseDepositToman,
         }),
       }).catch(() => {});
     };
@@ -5987,7 +6110,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           customerName: effectiveDraft.customerName,
           customerPhone: effectiveDraft.customerPhone,
           customerNotes: effectiveDraft.customerNotes,
-          depositPaidToman: paymentMeta?.depositPaidToman,
+          depositPaidToman: resolvedBaseDepositToman,
           paymentMethod: paymentMeta?.paymentMethod,
           paymentTrackingCode: paymentMeta?.paymentTrackingCode,
         })
@@ -5999,7 +6122,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               res.item.specialistName.trim() !== 'مریم فرهادی'
                 ? res.item.specialistName
                 : resolvedSpecialistName,
-            depositPaidToman: paymentMeta?.depositPaidToman,
+            depositPaidToman: resolvedBaseDepositToman,
+            platformCommissionToman: financialBreakdown.platformCommissionToman,
+            customerGatewayAndTaxFeeToman:
+              financialBreakdown.customerGatewayAndTaxFeeToman,
+            salonNetDepositCreditedToman:
+              financialBreakdown.salonNetDepositCreditedToman,
             paymentMethod: paymentMeta?.paymentMethod,
             paymentTrackingCode: paymentMeta?.paymentTrackingCode,
             createdAtMs: Date.now(),
@@ -6113,6 +6241,23 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ? biz.ownerName.trim()
           : resolvedBizName;
 
+    const submitBreakdown = calculateBookingFinancialBreakdown({
+      totalServicePriceToman: summary.totalPriceToman || 450000,
+      depositPercent: biz?.depositPercent,
+      business: biz,
+      commissionConfig: {
+        maleCommissionPercent: paymentConfig.maleCommissionPercent,
+        laserCommissionPercent: paymentConfig.laserCommissionPercent,
+        femaleCommissionPercent:
+          paymentConfig.femaleCommissionPercent ||
+          paymentConfig.platformCommissionPercent,
+      },
+    });
+    const resolvedSubmitDeposit =
+      paymentMeta?.depositPaidToman && paymentMeta.depositPaidToman > 0
+        ? paymentMeta.depositPaidToman
+        : submitBreakdown.baseDepositToman;
+
     if (dataMode === 'real') {
       try {
         const res = await realApiClient.createAppointment({
@@ -6134,7 +6279,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           customerName: effectiveDraft.customerName,
           customerPhone: effectiveDraft.customerPhone,
           customerNotes: effectiveDraft.customerNotes,
-          depositPaidToman: paymentMeta?.depositPaidToman,
+          depositPaidToman: resolvedSubmitDeposit,
           paymentMethod: paymentMeta?.paymentMethod,
           paymentTrackingCode: paymentMeta?.paymentTrackingCode,
         });
@@ -6145,7 +6290,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             res.item.specialistName.trim() !== 'مریم فرهادی'
               ? res.item.specialistName
               : resolvedSpecialistName,
-          depositPaidToman: paymentMeta?.depositPaidToman,
+          depositPaidToman: resolvedSubmitDeposit,
+          platformCommissionToman: submitBreakdown.platformCommissionToman,
+          customerGatewayAndTaxFeeToman:
+            submitBreakdown.customerGatewayAndTaxFeeToman,
+          salonNetDepositCreditedToman:
+            submitBreakdown.salonNetDepositCreditedToman,
           paymentMethod: paymentMeta?.paymentMethod,
           paymentTrackingCode: paymentMeta?.paymentTrackingCode,
           createdAtMs: Date.now(),
@@ -6180,7 +6330,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
             dateJalali: effectiveDraft.dateJalali,
             timeSlot: effectiveDraft.timeSlot,
-            depositPaidToman: paymentMeta?.depositPaidToman,
+            depositPaidToman: resolvedSubmitDeposit,
           }),
         }).catch(() => {});
         showToast(
@@ -6688,6 +6838,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           addService,
           updateService,
           deleteService,
+          reorderBusinessServices,
           specialists: mergedSpecialists,
           addSpecialist,
           updateSpecialist,

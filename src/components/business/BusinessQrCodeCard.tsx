@@ -499,13 +499,13 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
   };
 
   /**
-   * ترسیم ۱۰۰٪ وکتور کل پوستر در رزولوشن 4K (2559×3840 پیکسل)
+   * ترسیم ۱۰۰٪ وکتور کل پوستر در رزولوشن 4K (2559×3840 پیکسل) با تایپوگرافی اختصاصی Estedad
    */
   const renderFullVectorPoster4K = (
     ctx: CanvasRenderingContext2D,
     qrImg: HTMLImageElement
   ) => {
-    const fontStack = 'Vazirmatn, Tahoma, sans-serif';
+    const fontStack = '"Estedad", -apple-system, BlinkMacSystemFont, sans-serif';
 
     // ۱. پس‌زمینه سرمه‌ای و موج‌های نوری گوشه‌ها
     drawPosterBackgroundAndWaves(ctx);
@@ -516,7 +516,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     // ۳. سه سطر راهنما + دایره‌های تیک آبی (بدون هیچ کادر مستطیلی اضافه در پس‌زمینه)
     const bullets = [
       {
-        text: 'دوربین، گوشی یا بارکدخوان رو باز کن',
+        text: 'دوربین گوشی یا بارکدخوان رو باز کن',
         yText: 274,
         yCircle: 266,
       },
@@ -537,7 +537,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
       ctx.fillStyle = '#F8FAFC';
       ctx.textAlign = 'right';
       ctx.direction = 'rtl';
-      ctx.font = `bold 23px ${fontStack}`;
+      ctx.font = `700 22.5px ${fontStack}`;
       ctx.fillText(item.text, 738, item.yText);
     }
 
@@ -569,7 +569,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.fillStyle = '#061A48';
     ctx.textAlign = 'center';
     ctx.direction = 'rtl';
-    ctx.font = `bold 25px ${fontStack}`;
+    ctx.font = `800 25px ${fontStack}`;
     ctx.fillText('اسکن کن و وارد شوید', 282, 814);
     drawLocationPinIcon(ctx, 140, 804);
     ctx.restore();
@@ -600,7 +600,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.fillStyle = '#03123A';
     ctx.textAlign = 'center';
     ctx.direction = 'rtl';
-    ctx.font = `bold 22px ${fontStack}`;
+    ctx.font = `800 21.5px ${fontStack}`;
     ctx.fillText('پروفایل رسمی سالن', 645, 485);
 
     // نام سالن / کسب‌وکار
@@ -614,7 +614,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
 
     // شهر و محله کسب‌وکار
     ctx.fillStyle = '#DBEAFE';
-    ctx.font = `bold 21px ${fontStack}`;
+    ctx.font = `700 20.5px ${fontStack}`;
     ctx.fillText(cleanLocation.slice(0, 30), 645, 630, 296);
 
     // خط جداکننده ظریف وسط کارت
@@ -661,7 +661,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
         : shortUrlText.length > 21
         ? 17
         : 19;
-    ctx.font = `bold ${urlFontSize}px "Plus Jakarta Sans", Tahoma, monospace`;
+    ctx.font = `800 ${urlFontSize}px "Estedad", "Plus Jakarta Sans", monospace`;
     ctx.fillText(shortUrlText.slice(0, 30), 662, 717, 226);
 
     // ردیف پایین کارت راست: «تایید فوری نوبت در تایم‌تو» + آیکون صاعقه
@@ -669,7 +669,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.fillStyle = '#E2E8F0';
     ctx.direction = 'rtl';
     ctx.textAlign = 'center';
-    ctx.font = `bold 19px ${fontStack}`;
+    ctx.font = `700 18.5px ${fontStack}`;
     ctx.fillText('تایید فوری نوبت در تایم‌تو', 634, 799);
     ctx.restore();
 
@@ -691,7 +691,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.fillStyle = '#FFFFFF';
     ctx.direction = 'rtl';
     ctx.textAlign = 'center';
-    ctx.font = `bold 24px ${fontStack}`;
+    ctx.font = `800 23.5px ${fontStack}`;
     ctx.fillText(
       'می‌تونی بدون تماس تلفنی، ۲۴ ساعته از ما نوبت بگیری',
       456,
@@ -703,17 +703,46 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     drawBottomBrandAndWebsite(ctx);
   };
 
+  const ensurePosterFontsLoaded = async () => {
+    if (typeof document === 'undefined' || !document.fonts) return;
+    try {
+      if (typeof FontFace !== 'undefined') {
+        const extraBoldFace = new FontFace(
+          'Estedad',
+          'url(/fonts/Estedad-ExtraBold.woff2) format("woff2")',
+          { weight: '800 900', style: 'normal' }
+        );
+        const boldFace = new FontFace(
+          'Estedad',
+          'url(/fonts/Estedad-Bold.woff2) format("woff2")',
+          { weight: '700', style: 'normal' }
+        );
+        const loadedFaces = await Promise.allSettled([
+          extraBoldFace.load(),
+          boldFace.load(),
+        ]);
+        for (const res of loadedFaces) {
+          if (res.status === 'fulfilled') {
+            document.fonts.add(res.value);
+          }
+        }
+      }
+      await Promise.allSettled([
+        document.fonts.load('900 54px "Estedad"'),
+        document.fonts.load('800 30px "Estedad"'),
+        document.fonts.load('700 24px "Estedad"'),
+      ]);
+      await document.fonts.ready;
+    } catch {
+      // ignore font loading fallback
+    }
+  };
+
   const handleDownloadPrintableStand = async () => {
     if (!qrDataUrl || isDownloading) return;
     setIsDownloading(true);
 
-    try {
-      if (typeof document !== 'undefined' && document.fonts?.ready) {
-        await document.fonts.ready;
-      }
-    } catch {
-      // ignore font readiness errors
-    }
+    await ensurePosterFontsLoaded();
 
     const canvas = document.createElement('canvas');
     canvas.width = BASE_WIDTH * PRINT_SCALE; // 2559px

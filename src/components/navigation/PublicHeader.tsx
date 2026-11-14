@@ -165,7 +165,7 @@ export const PublicHeader: React.FC = () => {
               <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
               <span>ورود به پیشخوان</span>
             </Link>
-          ) : !isPlatformAdmin ? (
+          ) : !isPlatformAdmin && !isLoggedInCustomerOnly ? (
             <button
               type="button"
               onClick={() =>

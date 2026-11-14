@@ -3219,6 +3219,9 @@ export async function createAppointmentInDb(
     priceToman?: number;
     durationMinutes?: number;
     allowAutoCreateService?: boolean;
+    depositPaidToman?: number;
+    paymentMethod?: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode?: string;
   }
 ): Promise<AppointmentItem> {
   const serviceIdRaw = (input.serviceId ?? '').trim();
@@ -3650,6 +3653,11 @@ export async function createAppointmentInDb(
 
     await client.query('COMMIT');
 
+    const resolvedDepositPaidToman =
+      typeof input.depositPaidToman === 'number' && input.depositPaidToman > 0
+        ? Math.round(input.depositPaidToman)
+        : Math.max(20_000, Math.round((priceToman * 30) / 100));
+
     return {
       id: String(aptRow.external_id),
       referenceCode: String(aptRow.reference_code),
@@ -3666,6 +3674,9 @@ export async function createAppointmentInDb(
       timeSlot: String(aptRow.time_slot_label),
       durationMinutes,
       priceToman,
+      depositPaidToman: resolvedDepositPaidToman,
+      paymentMethod: input.paymentMethod,
+      paymentTrackingCode: input.paymentTrackingCode,
       status: aptRow.status as AppointmentStatus,
       notes: aptRow.notes ? String(aptRow.notes) : undefined,
     };
@@ -4556,25 +4567,33 @@ export async function getCustomerPrivatePayloadInDb(
       ),
     ]);
 
-    const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
-      id: String(r.external_id),
-      referenceCode: String(r.reference_code),
-      businessId: String(r.business_external_id),
-      businessSlug: String(r.business_slug),
-      businessName: String(r.business_name),
-      serviceId: String(r.service_external_id),
-      serviceTitle: String(r.service_title_snapshot),
-      specialistId: String(r.specialist_external_id),
-      specialistName: String(r.specialist_name_snapshot),
-      customerName: String(r.customer_name),
-      customerPhoneMasked: String(r.customer_phone_masked),
-      dateJalali: String(r.date_jalali),
-      timeSlot: String(r.time_slot_label),
-      durationMinutes: Number(r.duration_minutes_snapshot),
-      priceToman: Number(r.service_price_toman_snapshot),
-      status: r.status as AppointmentStatus,
-      notes: r.notes ? String(r.notes) : undefined,
-    }));
+    const appointments: AppointmentItem[] = aptRes.rows.map((r) => {
+      const rowPrice = Number(r.service_price_toman_snapshot) || 0;
+      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      return {
+        id: String(r.external_id),
+        referenceCode: String(r.reference_code),
+        businessId: String(r.business_external_id),
+        businessSlug: String(r.business_slug),
+        businessName: String(r.business_name),
+        serviceId: String(r.service_external_id),
+        serviceTitle: String(r.service_title_snapshot),
+        specialistId: String(r.specialist_external_id),
+        specialistName: String(r.specialist_name_snapshot),
+        customerName: String(r.customer_name),
+        customerPhoneMasked: String(r.customer_phone_masked),
+        dateJalali: String(r.date_jalali),
+        timeSlot: String(r.time_slot_label),
+        durationMinutes: Number(r.duration_minutes_snapshot),
+        priceToman: rowPrice,
+        depositPaidToman: Math.max(
+          20_000,
+          Math.round((effectivePrice * 30) / 100)
+        ),
+        status: r.status as AppointmentStatus,
+        notes: r.notes ? String(r.notes) : undefined,
+      };
+    });
 
     const favoriteBusinessIds = favRes.rows.map((r) =>
       String(r.business_external_id)
@@ -4901,27 +4920,40 @@ export async function getBusinessWorkspacePayloadInDb(
       startingPriceToman: Number(row.starting_price_toman),
     }));
 
-    const appointments: AppointmentItem[] = aptRes.rows.map((row) => ({
-      id: String(row.external_id),
-      referenceCode: String(row.reference_code),
-      businessId: String(row.business_external_id),
-      businessSlug: String(row.business_slug),
-      businessName: String(row.business_name),
-      serviceId: String(row.service_external_id),
-      serviceTitle: String(row.service_title_snapshot),
-      specialistId: String(row.specialist_external_id),
-      specialistName: String(row.specialist_name_snapshot),
-      customerName: String(row.customer_name),
-      customerPhoneMasked: toPersianDigitsServer(
-        String(row.customer_phone || row.customer_phone_masked || '')
-      ),
-      dateJalali: String(row.date_jalali),
-      timeSlot: String(row.time_slot_label),
-      durationMinutes: Number(row.duration_minutes_snapshot),
-      priceToman: Number(row.service_price_toman_snapshot),
-      status: row.status as AppointmentStatus,
-      notes: row.notes ? String(row.notes) : undefined,
-    }));
+    const bizDepositPct =
+      business?.depositPercent &&
+      [20, 30, 50, 100].includes(Number(business.depositPercent))
+        ? Number(business.depositPercent)
+        : 30;
+    const appointments: AppointmentItem[] = aptRes.rows.map((row) => {
+      const rowPrice = Number(row.service_price_toman_snapshot) || 0;
+      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      return {
+        id: String(row.external_id),
+        referenceCode: String(row.reference_code),
+        businessId: String(row.business_external_id),
+        businessSlug: String(row.business_slug),
+        businessName: String(row.business_name),
+        serviceId: String(row.service_external_id),
+        serviceTitle: String(row.service_title_snapshot),
+        specialistId: String(row.specialist_external_id),
+        specialistName: String(row.specialist_name_snapshot),
+        customerName: String(row.customer_name),
+        customerPhoneMasked: toPersianDigitsServer(
+          String(row.customer_phone || row.customer_phone_masked || '')
+        ),
+        dateJalali: String(row.date_jalali),
+        timeSlot: String(row.time_slot_label),
+        durationMinutes: Number(row.duration_minutes_snapshot),
+        priceToman: rowPrice,
+        depositPaidToman: Math.max(
+          20_000,
+          Math.round((effectivePrice * bizDepositPct) / 100)
+        ),
+        status: row.status as AppointmentStatus,
+        notes: row.notes ? String(row.notes) : undefined,
+      };
+    });
 
     const customers: CustomerRecord[] = custRes.rows.map((row) => ({
       id: String(row.external_id),
@@ -5252,25 +5284,40 @@ export async function getAdminOverviewPayloadInDb(
     const users: AdminUserRecord[] =
       combinedByPhone.size > 0 ? Array.from(combinedByPhone.values()) : directUsers;
 
-    const appointments: AppointmentItem[] = aptRes.rows.map((r) => ({
-      id: String(r.external_id),
-      referenceCode: String(r.reference_code),
-      businessId: String(r.business_external_id),
-      businessSlug: String(r.business_slug),
-      businessName: String(r.business_name),
-      serviceId: String(r.service_external_id),
-      serviceTitle: String(r.service_title_snapshot),
-      specialistId: String(r.specialist_external_id),
-      specialistName: String(r.specialist_name_snapshot),
-      customerName: String(r.customer_name),
-      customerPhoneMasked: String(r.customer_phone_masked),
-      dateJalali: String(r.date_jalali),
-      timeSlot: String(r.time_slot_label),
-      durationMinutes: Number(r.duration_minutes_snapshot),
-      priceToman: Number(r.service_price_toman_snapshot),
-      status: r.status as AppointmentStatus,
-      notes: r.notes ? String(r.notes) : undefined,
-    }));
+    const bizByIdMap = new Map(businesses.map((b) => [b.id, b]));
+    const appointments: AppointmentItem[] = aptRes.rows.map((r) => {
+      const rowPrice = Number(r.service_price_toman_snapshot) || 0;
+      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      const matchedBiz = bizByIdMap.get(String(r.business_external_id));
+      const depPct =
+        matchedBiz?.depositPercent &&
+        [20, 30, 50, 100].includes(Number(matchedBiz.depositPercent))
+          ? Number(matchedBiz.depositPercent)
+          : 30;
+      return {
+        id: String(r.external_id),
+        referenceCode: String(r.reference_code),
+        businessId: String(r.business_external_id),
+        businessSlug: String(r.business_slug),
+        businessName: String(r.business_name),
+        serviceId: String(r.service_external_id),
+        serviceTitle: String(r.service_title_snapshot),
+        specialistId: String(r.specialist_external_id),
+        specialistName: String(r.specialist_name_snapshot),
+        customerName: String(r.customer_name),
+        customerPhoneMasked: String(r.customer_phone_masked),
+        dateJalali: String(r.date_jalali),
+        timeSlot: String(r.time_slot_label),
+        durationMinutes: Number(r.duration_minutes_snapshot),
+        priceToman: rowPrice,
+        depositPaidToman: Math.max(
+          20_000,
+          Math.round((effectivePrice * depPct) / 100)
+        ),
+        status: r.status as AppointmentStatus,
+        notes: r.notes ? String(r.notes) : undefined,
+      };
+    });
 
     return {
       businesses,

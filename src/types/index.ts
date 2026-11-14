@@ -59,6 +59,7 @@ export interface ServiceItem {
   description: string;
   isPopular?: boolean;
   isActive?: boolean;
+  sortOrder?: number;
 }
 
 export interface SpecialistItem {

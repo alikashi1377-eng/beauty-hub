@@ -25,6 +25,9 @@ import {
   Send,
   Download,
   Copy,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -95,6 +98,7 @@ import {
   calculateBookingFinancialBreakdown,
   isAppointmentEligibleForSettlement,
   normalizeDepositPercent,
+  resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
 } from '../../utils/financialEngine';
 
@@ -1441,6 +1445,7 @@ export const BusinessServicesPage: React.FC = () => {
     addService,
     updateService,
     deleteService,
+    reorderBusinessServices,
     updateBusinessProfile,
     showToast,
   } = usePrototypeData();
@@ -1549,6 +1554,11 @@ export const BusinessServicesPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
+  const [dragOverServiceId, setDragOverServiceId] = useState<string | null>(
+    null
+  );
+
   const bizServices = currentBiz
     ? services.filter((s) => s.businessId === currentBiz.id)
     : [];
@@ -1561,6 +1571,43 @@ export const BusinessServicesPage: React.FC = () => {
   const currentChecklist =
     CATEGORY_PACKAGE_STAGE_CHECKLISTS[category] ??
     CATEGORY_PACKAGE_STAGE_CHECKLISTS['پوست و فیشیال'];
+
+  const moveServiceRelativeTo = (sourceId: string, targetId: string) => {
+    if (!currentBiz || !sourceId || !targetId || sourceId === targetId) return;
+    const currentOrderIds = bizServices.map((s) => s.id);
+    const fromIdx = currentOrderIds.indexOf(sourceId);
+    const toIdx = currentOrderIds.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+    const nextOrderIds = [...currentOrderIds];
+    const [moved] = nextOrderIds.splice(fromIdx, 1);
+    nextOrderIds.splice(toIdx, 0, moved);
+    reorderBusinessServices(currentBiz.id, nextOrderIds);
+  };
+
+  const handleMoveServiceStep = (
+    serviceId: string,
+    direction: 'UP' | 'DOWN'
+  ) => {
+    if (!currentBiz) return;
+    const visibleIdx = visibleServices.findIndex((s) => s.id === serviceId);
+    if (visibleIdx < 0) return;
+    const targetVisibleIdx =
+      direction === 'UP' ? visibleIdx - 1 : visibleIdx + 1;
+    if (
+      targetVisibleIdx < 0 ||
+      targetVisibleIdx >= visibleServices.length
+    ) {
+      return;
+    }
+    const targetService = visibleServices[targetVisibleIdx];
+    if (!targetService) return;
+    moveServiceRelativeTo(serviceId, targetService.id);
+    showToast(
+      direction === 'UP'
+        ? 'خدمت یک ردیف بالاتر منتقل شد ✓'
+        : 'خدمت یک ردیف پایین‌تر منتقل شد ✓'
+    );
+  };
 
   const handleClearAllServices = () => {
     if (bizServices.length === 0) return;
@@ -2621,149 +2668,296 @@ export const BusinessServicesPage: React.FC = () => {
             ))}
           </div>
 
-          <ResponsiveTable<ServiceItem>
-            keyExtractor={(s) => s.id}
-            data={visibleServices}
-            columns={[
-          {
-            key: 'title',
-            header: 'عنوان، مراحل پکیج و شرح خدمت',
-            render: (s) => (
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <p className="font-extrabold text-[#1E1B2E]">{s.title}</p>
-                  {s.packageIncludes && s.packageIncludes.length > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
-                      پکیج {toPersianDigits(s.packageIncludes.length)} مرحله‌ای
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-xs text-[#6B6480]">{s.description}</p>
-                {s.packageIncludes && s.packageIncludes.length > 0 ? (
-                  <div className="flex flex-wrap gap-1 pt-0.5">
-                    {s.packageIncludes.map((inc) => (
-                      <span
-                        key={inc}
-                        className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-[#475569]"
-                      >
-                        • {inc}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ),
-          },
-          {
-            key: 'cat',
-            header: 'دسته‌بندی',
-            render: (s) => <StatusBadge label={s.category} tone="primary" />,
-          },
-          {
-            key: 'duration',
-            header: 'مدت زمان',
-            render: (s) => (
-              <span className="tabular-nums text-xs font-semibold text-[#6B6480] inline-flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-[#6B6480]" />
-                {formatDurationMinutes(s.durationMinutes)}
+          {/* راهنمای جابه‌جایی لمسی (با انگشت) و ماوس برای تغییر ترتیب خدمات */}
+          <div className="px-3.5 py-2.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
+            <div className="inline-flex items-center gap-2 font-bold">
+              <span className="w-7 h-7 rounded-xl bg-[#E0ECFF] text-[#0057FF] inline-flex items-center justify-center shrink-0">
+                <GripVertical className="w-4 h-4" />
               </span>
-            ),
-          },
-          {
-            key: 'price',
-            header: 'مدل قیمت‌گذاری و تعرفه (تومان)',
-            align: 'left',
-            render: (s) => (
-              <div className="space-y-1 text-left">
-                <span className="text-xs font-extrabold text-[#8B5CF6] block tabular-nums">
-                  {formatServicePriceShort(s)}
-                </span>
-                <div className="inline-flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    dir="ltr"
-                    inputMode="numeric"
-                    aria-label={`قیمت پایه ${s.title}`}
-                    value={formatNumericInputWithCommas(String(s.priceToman))}
-                    onChange={(e) => {
-                      const nextPrice = parseNumericInput(e.target.value);
-                      if (nextPrice >= 0) {
-                        updateService(s.id, { priceToman: nextPrice });
-                      }
-                    }}
-                    className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
-                  />
-                  {s.pricingType === 'RANGE' ? (
-                    <>
-                      <span className="text-[10px] text-[#64748B]">تا</span>
-                      <input
-                        type="text"
-                        dir="ltr"
-                        inputMode="numeric"
-                        aria-label={`سقف قیمت ${s.title}`}
-                        value={formatNumericInputWithCommas(
-                          String(s.maxPriceToman || s.priceToman)
-                        )}
-                        onChange={(e) => {
-                          const nextMax = parseNumericInput(e.target.value);
-                          if (nextMax >= 0) {
-                            updateService(s.id, { maxPriceToman: nextMax });
+              <span>
+                برای تغییر جایگاه هر خدمت در منوی رزرو، دستگیره سمت راست کارت را با انگشت نگه دارید و به بالا یا پایین بکشید (یا از دکمه‌های ↑ ↓ استفاده کنید).
+              </span>
+            </div>
+            <span className="text-[11px] font-extrabold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-xl border border-[#BFDBFE]">
+              {toPersianDigits(visibleServices.length)} خدمت قابل جابه‌جایی
+            </span>
+          </div>
+
+          {/* لیست تعاملی خدمات با قابلیت کشیدن با انگشت (Touch Drag) و ماوس (Mouse Drag) */}
+          <div className="space-y-3">
+            {visibleServices.map((s, idx) => {
+              const isDragging = draggedServiceId === s.id;
+              const isDragOver =
+                dragOverServiceId === s.id && draggedServiceId !== s.id;
+              const isFirst = idx === 0;
+              const isLast = idx === visibleServices.length - 1;
+
+              return (
+                <div
+                  key={s.id}
+                  data-service-reorder-id={s.id}
+                  draggable
+                  onDragStart={(e) => {
+                    setDraggedServiceId(s.id);
+                    setDragOverServiceId(s.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    try {
+                      e.dataTransfer.setData('text/plain', s.id);
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (draggedServiceId && draggedServiceId !== s.id) {
+                      setDragOverServiceId(s.id);
+                      moveServiceRelativeTo(draggedServiceId, s.id);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const sourceId =
+                      draggedServiceId || e.dataTransfer.getData('text/plain');
+                    if (sourceId && sourceId !== s.id) {
+                      moveServiceRelativeTo(sourceId, s.id);
+                    }
+                    setDraggedServiceId(null);
+                    setDragOverServiceId(null);
+                    showToast('جایگاه خدمت در لیست بروزرسانی شد ✓');
+                  }}
+                  onDragEnd={() => {
+                    if (draggedServiceId) {
+                      setDraggedServiceId(null);
+                      setDragOverServiceId(null);
+                    }
+                  }}
+                  className={`rounded-3xl border bg-white p-3.5 sm:p-4 transition-all ${
+                    isDragging
+                      ? 'border-[#0057FF] ring-2 ring-[#0057FF]/30 bg-[#EFF6FF]/60 shadow-lg scale-[1.01] z-10'
+                      : isDragOver
+                        ? 'border-[#8B5CF6] bg-[#F5F3FF]/50'
+                        : 'border-[#E6E0F5] hover:border-[#CBD5E1] shadow-[0_4px_20px_-4px_rgba(139,92,246,0.06)]'
+                  }`}
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+                    {/* بخش راست: دستگیره کشیدن با انگشت + دکمه‌های بالا/پایین + عنوان و شرح خدمت */}
+                    <div className="flex items-start gap-2.5 sm:gap-3 min-w-0 flex-1">
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`نگه دارید و برای تغییر جایگاه «${s.title}» به بالا یا پایین بکشید`}
+                          title="با انگشت یا ماوس نگه دارید و به بالا یا پایین بکشید"
+                          onTouchStart={() => {
+                            setDraggedServiceId(s.id);
+                            setDragOverServiceId(s.id);
+                          }}
+                          onTouchMove={(e) => {
+                            if (!draggedServiceId) return;
+                            const touch = e.touches[0];
+                            if (!touch) return;
+                            const targetEl = document.elementFromPoint(
+                              touch.clientX,
+                              touch.clientY
+                            );
+                            const rowEl = targetEl?.closest(
+                              '[data-service-reorder-id]'
+                            ) as HTMLElement | null;
+                            const overId = rowEl?.getAttribute(
+                              'data-service-reorder-id'
+                            );
+                            if (overId && overId !== draggedServiceId) {
+                              setDragOverServiceId(overId);
+                              moveServiceRelativeTo(draggedServiceId, overId);
+                            }
+                          }}
+                          onTouchEnd={() => {
+                            if (draggedServiceId) {
+                              setDraggedServiceId(null);
+                              setDragOverServiceId(null);
+                              showToast('جایگاه خدمت در لیست بروزرسانی شد ✓');
+                            }
+                          }}
+                          onTouchCancel={() => {
+                            setDraggedServiceId(null);
+                            setDragOverServiceId(null);
+                          }}
+                          className="w-9 h-9 rounded-2xl bg-[#F8FAFC] hover:bg-[#EFF6FF] active:bg-[#DBEAFE] border border-[#CBD5E1] text-[#475569] hover:text-[#0057FF] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none transition-colors"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={isFirst}
+                            onClick={() => handleMoveServiceStep(s.id, 'UP')}
+                            aria-label={`انتقال ${s.title} به بالا`}
+                            title="انتقال به بالا"
+                            className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors ${
+                              isFirst
+                                ? 'border-[#E2E8F0] text-[#CBD5E1] cursor-not-allowed'
+                                : 'border-[#CBD5E1] bg-white hover:bg-[#EFF6FF] text-[#334155] hover:text-[#0057FF] cursor-pointer'
+                            }`}
+                          >
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isLast}
+                            onClick={() => handleMoveServiceStep(s.id, 'DOWN')}
+                            aria-label={`انتقال ${s.title} به پایین`}
+                            title="انتقال به پایین"
+                            className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors ${
+                              isLast
+                                ? 'border-[#E2E8F0] text-[#CBD5E1] cursor-not-allowed'
+                                : 'border-[#CBD5E1] bg-white hover:bg-[#EFF6FF] text-[#334155] hover:text-[#0057FF] cursor-pointer'
+                            }`}
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-lg bg-[#F1F5F9] text-[#475569] text-[11px] font-black tabular-nums">
+                            #{toPersianDigits(idx + 1)}
+                          </span>
+                          <p className="font-extrabold text-[#1E1B2E] text-sm sm:text-base">
+                            {s.title}
+                          </p>
+                          <StatusBadge label={s.category} tone="primary" />
+                          {s.packageIncludes && s.packageIncludes.length > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
+                              پکیج {toPersianDigits(s.packageIncludes.length)} مرحله‌ای
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <p className="text-xs text-[#6B6480] leading-relaxed">
+                          {s.description}
+                        </p>
+
+                        {s.packageIncludes && s.packageIncludes.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {s.packageIncludes.map((inc) => (
+                              <span
+                                key={inc}
+                                className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-[#475569]"
+                              >
+                                • {inc}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* بخش چپ: مدت زمان، تعرفه قابل ویرایش سریع، وضعیت رزرو و عملیات */}
+                    <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 pt-2.5 lg:pt-0 border-t lg:border-t-0 border-[#F1F5F9]">
+                      <span className="tabular-nums text-xs font-semibold text-[#6B6480] inline-flex items-center gap-1 bg-[#F8FAFC] px-2.5 py-1.5 rounded-xl border border-[#E2E8F0]">
+                        <Clock className="w-3.5 h-3.5 text-[#6B6480]" />
+                        {formatDurationMinutes(s.durationMinutes)}
+                      </span>
+
+                      <div className="space-y-1 text-left">
+                        <span className="text-xs font-extrabold text-[#8B5CF6] block tabular-nums">
+                          {formatServicePriceShort(s)}
+                        </span>
+                        <div className="inline-flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            dir="ltr"
+                            inputMode="numeric"
+                            aria-label={`قیمت پایه ${s.title}`}
+                            value={formatNumericInputWithCommas(
+                              String(s.priceToman)
+                            )}
+                            onChange={(e) => {
+                              const nextPrice = parseNumericInput(
+                                e.target.value
+                              );
+                              if (nextPrice >= 0) {
+                                updateService(s.id, { priceToman: nextPrice });
+                              }
+                            }}
+                            className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
+                          />
+                          {s.pricingType === 'RANGE' ? (
+                            <>
+                              <span className="text-[10px] text-[#64748B]">
+                                تا
+                              </span>
+                              <input
+                                type="text"
+                                dir="ltr"
+                                inputMode="numeric"
+                                aria-label={`سقف قیمت ${s.title}`}
+                                value={formatNumericInputWithCommas(
+                                  String(s.maxPriceToman || s.priceToman)
+                                )}
+                                onChange={(e) => {
+                                  const nextMax = parseNumericInput(
+                                    e.target.value
+                                  );
+                                  if (nextMax >= 0) {
+                                    updateService(s.id, {
+                                      maxPriceToman: nextMax,
+                                    });
+                                  }
+                                }}
+                                className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateService(s.id, {
+                            isActive: !(s.isActive ?? true),
+                          })
+                        }
+                        className="cursor-pointer"
+                      >
+                        <StatusBadge
+                          label={
+                            s.isActive !== false ? 'فعال در رزرو' : 'غیرفعال'
                           }
-                        }}
-                        className="w-24 px-2 py-1 rounded-xl border border-[#DDD6FE] bg-[#F5F3FF]/60 focus:bg-white focus:border-[#8B5CF6] text-[11px] font-black text-[#8B5CF6] tabular-nums text-left outline-none transition-colors"
-                      />
-                    </>
-                  ) : null}
+                          tone={s.isActive !== false ? 'success' : 'neutral'}
+                        />
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditModal(s)}
+                          aria-label={`ویرایش ${s.title}`}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>ویرایش و شخصی‌سازی</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteTarget(s)}
+                          aria-label={`حذف ${s.title}`}
+                          className="text-[#EF4444] hover:bg-[#FEF2F2]"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ),
-          },
-          {
-            key: 'active',
-            header: 'وضعیت رزرو',
-            render: (s) => (
-              <button
-                type="button"
-                onClick={() =>
-                  updateService(s.id, { isActive: !(s.isActive ?? true) })
-                }
-                className="cursor-pointer"
-              >
-                <StatusBadge
-                  label={s.isActive !== false ? 'فعال در رزرو' : 'غیرفعال'}
-                  tone={s.isActive !== false ? 'success' : 'neutral'}
-                />
-              </button>
-            ),
-          },
-          {
-            key: 'actions',
-            header: 'عملیات',
-            render: (s) => (
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openEditModal(s)}
-                  aria-label={`ویرایش ${s.title}`}
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>ویرایش و شخصی‌سازی</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeleteTarget(s)}
-                  aria-label={`حذف ${s.title}`}
-                  className="text-[#EF4444] hover:bg-[#FEF2F2]"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            ),
-          },
-        ]}
-      />
+              );
+            })}
+          </div>
         </>
       ) : null}
 
@@ -6883,20 +7077,18 @@ export const BusinessAnalyticsPage: React.FC = () => {
   const activeOrDoneAppointments = bizAppointments.filter(
     (a) => a.status !== AppointmentStatus.Cancelled
   );
-  // فقط مبلغ واقعی بیعانه پرداخت‌شده آنلاین و تفکیک کمیسیون پلتفرم
-  const onlineDepositsTotalToman = activeOrDoneAppointments.reduce(
-    (sum, a) => sum + (a.depositPaidToman || 0),
-    0
-  );
+  // استخراج دقیق و بدون خطای بیعانه پرداخت‌شده آنلاین و تفکیک کمیسیون پلتفرم برای تمامی نوبت‌ها
+  const onlineDepositsTotalToman = activeOrDoneAppointments.reduce((sum, a) => {
+    const bd = resolveAppointmentFinancialBreakdown({
+      appointment: a,
+      business: currentBiz,
+    });
+    return sum + bd.baseDepositToman;
+  }, 0);
   const totalPlatformCommissionDeductedToman = activeOrDoneAppointments.reduce(
     (sum, a) => {
-      if ((a.depositPaidToman || 0) <= 0) return sum;
-      if (typeof a.platformCommissionToman === 'number') {
-        return sum + a.platformCommissionToman;
-      }
-      const bd = calculateBookingFinancialBreakdown({
-        totalServicePriceToman: a.priceToman || 0,
-        depositPercent: currentBiz?.depositPercent || 30,
+      const bd = resolveAppointmentFinancialBreakdown({
+        appointment: a,
         business: currentBiz,
       });
       return sum + bd.platformCommissionToman;
@@ -6908,18 +7100,10 @@ export const BusinessAnalyticsPage: React.FC = () => {
     onlineDepositsTotalToman - totalPlatformCommissionDeductedToman
   );
   const lockedFutureEscrowToman = activeOrDoneAppointments
-    .filter(
-      (a) =>
-        (a.depositPaidToman || 0) > 0 &&
-        !isAppointmentEligibleForSettlement(a)
-    )
+    .filter((a) => !isAppointmentEligibleForSettlement(a))
     .reduce((sum, a) => {
-      if (typeof a.salonNetDepositCreditedToman === 'number') {
-        return sum + a.salonNetDepositCreditedToman;
-      }
-      const bd = calculateBookingFinancialBreakdown({
-        totalServicePriceToman: a.priceToman || 0,
-        depositPercent: currentBiz?.depositPercent || 30,
+      const bd = resolveAppointmentFinancialBreakdown({
+        appointment: a,
         business: currentBiz,
       });
       return sum + bd.salonNetDepositCreditedToman;
@@ -6933,8 +7117,11 @@ export const BusinessAnalyticsPage: React.FC = () => {
   const remainingUnsettledInSalonToman = activeOrDoneAppointments.reduce(
     (sum, a) => {
       if (a.inPersonSettled) return sum;
-      const rem = Math.max(0, (a.priceToman || 0) - (a.depositPaidToman || 0));
-      return sum + rem;
+      const bd = resolveAppointmentFinancialBreakdown({
+        appointment: a,
+        business: currentBiz,
+      });
+      return sum + bd.remainingInSalonToman;
     },
     0
   );
@@ -6999,8 +7186,12 @@ export const BusinessAnalyticsPage: React.FC = () => {
   const serviceRevenueMap = new Map<string, number>();
   for (const apt of activeOrDoneAppointments) {
     const prev = serviceRevenueMap.get(apt.serviceTitle) ?? 0;
+    const aptBd = resolveAppointmentFinancialBreakdown({
+      appointment: apt,
+      business: currentBiz,
+    });
     const realCollectedForApt =
-      (apt.depositPaidToman || 0) +
+      aptBd.salonNetDepositCreditedToman +
       (apt.inPersonSettled ? apt.inPersonSettledAmountToman || 0 : 0);
     serviceRevenueMap.set(apt.serviceTitle, prev + realCollectedForApt);
   }
@@ -7420,11 +7611,13 @@ export const BusinessAnalyticsPage: React.FC = () => {
           ) : (
             <div className="space-y-2.5 max-h-80 overflow-y-auto">
               {activeOrDoneAppointments.slice(0, 8).map((apt) => {
-                const paidDeposit = apt.depositPaidToman || 0;
-                const remainingInSalon = Math.max(
-                  0,
-                  (apt.priceToman || 0) - paidDeposit
-                );
+                const aptBd = resolveAppointmentFinancialBreakdown({
+                  appointment: apt,
+                  business: currentBiz,
+                });
+                const paidDeposit = aptBd.baseDepositToman;
+                const remainingInSalon = aptBd.remainingInSalonToman;
+                const effectiveTotalServicePrice = aptBd.totalServicePriceToman;
                 return (
                   <div
                     key={apt.id}
@@ -7437,7 +7630,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
                       <p className="text-[11px] text-[#64748B] tabular-nums">
                         {apt.dateJalali} ساعت {apt.timeSlot} · کل خدمت:{' '}
                         <strong className="text-[#475569]">
-                          {formatPriceToman(apt.priceToman)}
+                          {formatPriceToman(effectiveTotalServicePrice)}
                         </strong>
                       </p>
                       <div className="flex flex-wrap items-center gap-2 text-[11px] tabular-nums">
@@ -7445,7 +7638,10 @@ export const BusinessAnalyticsPage: React.FC = () => {
                           بیعانه دریافتی آنلاین: {formatPriceToman(paidDeposit)}
                         </span>
                         <span className="px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#B45309] font-extrabold">
-                          الباقی حضوری در سالن: {formatPriceToman(remainingInSalon)}
+                          الباقی حضوری در سالن:{' '}
+                          {remainingInSalon > 0
+                            ? formatPriceToman(remainingInSalon)
+                            : '۰ تومان (تسویه کامل آنلاین)'}
                         </span>
                       </div>
                     </div>
@@ -7921,16 +8117,11 @@ export const BusinessSubscriptionPage: React.FC = () => {
       (a) =>
         (a.businessId === currentBiz.id || a.businessSlug === currentBiz.slug) &&
         a.status !== AppointmentStatus.Cancelled &&
-        (a.depositPaidToman || 0) > 0 &&
         !isAppointmentEligibleForSettlement(a)
     )
     .reduce((sum, a) => {
-      if (typeof a.salonNetDepositCreditedToman === 'number') {
-        return sum + a.salonNetDepositCreditedToman;
-      }
-      const bd = calculateBookingFinancialBreakdown({
-        totalServicePriceToman: a.priceToman || 0,
-        depositPercent: currentBiz.depositPercent || 30,
+      const bd = resolveAppointmentFinancialBreakdown({
+        appointment: a,
         business: currentBiz,
         commissionConfig: paymentConfig,
       });

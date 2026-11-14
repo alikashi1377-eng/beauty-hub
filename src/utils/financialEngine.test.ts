@@ -5,6 +5,7 @@ import {
   calculateBookingFinancialBreakdown,
   isAppointmentEligibleForSettlement,
   normalizeDepositPercent,
+  resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
   validateServiceAntiFraud,
 } from './financialEngine';
@@ -185,3 +186,30 @@ test('isAppointmentEligibleForSettlement blocks future appointments and allows c
   });
   assert.equal(completedApt, true);
 });
+
+test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit even when depositPaidToman is undefined or 0 (e.g. Moeid Panahi DB row)', () => {
+  const dbAptWithoutDeposit = resolveAppointmentFinancialBreakdown({
+    appointment: {
+      priceToman: 650_000,
+      depositPaidToman: 0,
+    },
+    business: {
+      type: BusinessType.MenBarbershop,
+      typeLabel: 'پیرایش مردانه',
+      categorySlug: 'mens-barbershop',
+      targetGender: 'MALE',
+      name: 'پیرایش VIP',
+      depositPercent: 30,
+    },
+  });
+
+  // ۳۰٪ از ۶۵۰,۰۰۰ تومان = ۱۹۵,۰۰۰ تومان بیعانه دریافتی آنلاین (هرگز ۰ یا رایگان نیست)
+  assert.equal(dbAptWithoutDeposit.baseDepositToman, 195_000);
+  // الباقی حضوری در سالن = ۴۵۵,۰۰۰ تومان
+  assert.equal(dbAptWithoutDeposit.remainingInSalonToman, 455_000);
+  // کمیسیون ۳٪ آقایان از ۶۵۰,۰۰۰ تومان = ۱۹,۵۰۰ تومان
+  assert.equal(dbAptWithoutDeposit.platformCommissionToman, 19_500);
+  // خالص واریزی به کیف پول سالن‌دار = ۱۹۵,۰۰۰ - ۱۹,۵۰۰ = ۱۷۵,۵۰۰ تومان
+  assert.equal(dbAptWithoutDeposit.salonNetDepositCreditedToman, 175_500);
+});
+

@@ -319,3 +319,75 @@ export function isAppointmentEligibleForSettlement(apt: AppointmentItem): boolea
 
   return false;
 }
+
+/**
+ * استخراج دقیق و بدون خطای بیعانه پرداخت‌شده، کمیسیون پلتفرم، خالص سهم سالن و الباقی حضوری برای هر نوبت
+ * (حتی اگر نوبت از جدول PostgreSQL واکشی شده باشد یا فیلد depositPaidToman روی آن ۰/خالی مانده باشد)
+ */
+export function resolveAppointmentFinancialBreakdown(params: {
+  appointment: Pick<
+    AppointmentItem,
+    | 'priceToman'
+    | 'depositPaidToman'
+    | 'platformCommissionToman'
+    | 'customerGatewayAndTaxFeeToman'
+    | 'salonNetDepositCreditedToman'
+  >;
+  business?: Pick<
+    BusinessItem,
+    | 'type'
+    | 'typeLabel'
+    | 'categorySlug'
+    | 'targetGender'
+    | 'name'
+    | 'depositPercent'
+  > | null;
+  commissionConfig?: CategoryCommissionConfig;
+}): BookingFinancialBreakdown {
+  const rawPrice = Number(params.appointment.priceToman) || 0;
+  const effectiveServicePrice = rawPrice > 0 ? rawPrice : 350_000;
+  const standard = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: effectiveServicePrice,
+    depositPercent: params.business?.depositPercent,
+    business: params.business,
+    commissionConfig: params.commissionConfig,
+  });
+
+  const savedDeposit = Number(params.appointment.depositPaidToman) || 0;
+  if (savedDeposit <= 0) {
+    return standard;
+  }
+
+  // اگر مبلغ ذخیره شده شامل ۲٪ کارمزد درگاه و مالیات مشتری بوده باشد (یعنی برابر با totalCustomerOnlinePayableToman)، پایه بیعانه را دقیق استخراج کن
+  const baseDepositToman =
+    savedDeposit === standard.totalCustomerOnlinePayableToman
+      ? standard.baseDepositToman
+      : Math.min(effectiveServicePrice, savedDeposit);
+
+  const remainingInSalonToman = Math.max(
+    0,
+    effectiveServicePrice - baseDepositToman
+  );
+
+  const platformCommissionToman =
+    typeof params.appointment.platformCommissionToman === 'number' &&
+    params.appointment.platformCommissionToman > 0
+      ? Math.min(baseDepositToman, params.appointment.platformCommissionToman)
+      : Math.min(baseDepositToman, standard.platformCommissionToman);
+
+  const salonNetDepositCreditedToman =
+    typeof params.appointment.salonNetDepositCreditedToman === 'number' &&
+    params.appointment.salonNetDepositCreditedToman > 0
+      ? Math.min(baseDepositToman, params.appointment.salonNetDepositCreditedToman)
+      : Math.max(0, baseDepositToman - platformCommissionToman);
+
+  return {
+    ...standard,
+    totalServicePriceToman: effectiveServicePrice,
+    baseDepositToman,
+    remainingInSalonToman,
+    platformCommissionToman,
+    salonNetDepositCreditedToman,
+  };
+}
+

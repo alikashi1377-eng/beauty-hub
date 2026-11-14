@@ -1351,7 +1351,7 @@ export const BookingConfirmPage: React.FC = () => {
           });
         }
 
-        await submitBooking(
+        const createdApt = await submitBooking(
           {
             depositPaidToman: resolvedDeposit,
             paymentMethod: 'GATEWAY',
@@ -1365,15 +1365,22 @@ export const BookingConfirmPage: React.FC = () => {
           }
         );
 
+        const finalSalonNetCredit =
+          resolvedSalonNetCredit > 0
+            ? resolvedSalonNetCredit
+            : createdApt?.salonNetDepositCreditedToman ??
+              createdApt?.depositPaidToman ??
+              0;
+
         const targetBiz = businesses.find(
           (b) =>
             (resolvedBizId && b.id === resolvedBizId) ||
             (resolvedBizSlug && b.slug === resolvedBizSlug)
         );
-        if (targetBiz) {
+        if (targetBiz && finalSalonNetCredit > 0) {
           updateBusinessProfile(targetBiz.id, {
             walletBalanceToman:
-              (targetBiz.walletBalanceToman ?? 0) + resolvedSalonNetCredit,
+              (targetBiz.walletBalanceToman ?? 0) + finalSalonNetCredit,
           });
         }
         navigate('/booking/result');
