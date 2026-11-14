@@ -204,9 +204,9 @@ export const BUSINESS_DASHBOARD_STORIES: BusinessStoryItem[] = [
           'افزایش ۱۵ درصدی امتیاز تکمیل پروفایل بلافاصله پس از ثبت',
         ],
         visualQuote:
-          'ثبت شماره کارت ۱۶ رقمی یا شماره شبا ۲۴ رقمی در بخش پروفایل سالن انجام می‌شود.',
+          'ثبت شماره کارت ۱۶ رقمی یا شماره شبا ۲۴ رقمی در بخش «شبا، بیعانه و تسویه» انجام می‌شود.',
         ctaLabel: 'ثبت شماره کارت و شبا',
-        ctaHref: '/app/profile#financial-section',
+        ctaHref: '/app/subscription',
         accentFrom: '#0F172A',
         accentTo: '#0F766E',
         glowColor: '#2DD4BF',

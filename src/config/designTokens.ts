@@ -91,11 +91,11 @@ export const ARCHITECTURE_ROUTES: RouteItem[] = [
   { path: '/app/staff', samplePath: '/app/staff', title: 'متخصصان و پرسنل', environment: 'business_panel', description: 'مدیریت اعضای تیم، خدمات تخصیص‌یافته و وضعیت فعالیت' },
   { path: '/app/customers', samplePath: '/app/customers', title: 'پرونده مشتریان', environment: 'business_panel', description: 'جست‌وجوی مشتریان و مشاهده تاریخچه مراجعات در مودال' },
   { path: '/app/gallery', samplePath: '/app/gallery', title: 'گالری نمونه کارها', environment: 'business_panel', description: 'مدیریت آیتم‌های تصویری نمونه کار در محیط دمو' },
-  { path: '/app/profile', samplePath: '/app/profile', title: 'پروفایل عمومی سالن', environment: 'business_panel', description: 'ویرایش اطلاعات نمایشی سالن در بازارچه عمومی' },
+  { path: '/app/profile', samplePath: '/app/profile', title: 'اطلاعات سالن', environment: 'business_panel', description: 'ویرایش تصویر پروفایل، نشانی دقیق و مشخصات سالن' },
   { path: '/app/working-hours', samplePath: '/app/working-hours', title: 'ساعات کاری هفتگی', environment: 'business_panel', description: 'تنظیم باز یا بسته بودن و ساعت شروع/پایان هر روز هفته' },
   { path: '/app/marketing', samplePath: '/app/marketing', title: 'کمپین‌های بازاریابی', environment: 'business_panel', description: 'تعریف کد تخفیف و کمپین‌های پیامکی آزمایشی' },
   { path: '/app/analytics', samplePath: '/app/analytics', title: 'گزارش‌ها و آمار', environment: 'business_panel', description: 'تحلیل درآمد آزمایشی، خدمات محبوب و عملکرد ماهانه' },
-  { path: '/app/subscription', samplePath: '/app/subscription', title: 'اشتراک و ارتقای پلن', environment: 'business_panel', description: 'بررسی پلن فعلی و مقایسه پلن‌های اشتراک' },
+  { path: '/app/subscription', samplePath: '/app/subscription', title: 'شبا، بیعانه و تسویه', environment: 'business_panel', description: 'ثبت شماره کارت و شبا، درصد بیعانه و سیکل تسویه هفتگی پایا' },
   { path: '/app/settings', samplePath: '/app/settings', title: 'تنظیمات پنل', environment: 'business_panel', description: 'تنظیمات کسب‌وکار، اعلان‌ها، قوانین لغو و امنیت حساب' },
 
   { path: '/login', samplePath: '/login', title: 'ورود آزمایشی کاربر', environment: 'customer', description: 'ورود دمو بدون ارسال پیامک واقعی برای تست نقش‌ها' },

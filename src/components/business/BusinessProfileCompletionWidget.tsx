@@ -174,7 +174,7 @@ export function computeBusinessProfileCompletion(params: {
       shortLabel: 'شماره کارت و شبا',
       weightPercent: 15,
       completed: hasFinancialInfo,
-      href: '/app/profile#financial-section',
+      href: '/app/subscription',
       statusHint: 'تکمیل شماره کارت ۱۶ رقمی یا شبا جهت تسویه بیعانه و نوبت‌ها',
     },
     {
@@ -376,8 +376,8 @@ export const BusinessProfileCompletionBanner: React.FC<{
               <span className="text-xs font-extrabold text-[#061138]">
                 تکمیل پروفایل سالن
               </span>
-              <span className="rounded-md bg-[#E8EFFA] px-1.5 py-0.5 text-[10px] font-bold text-[#0057FF]">
-                پلن {summary.planName}
+              <span className="rounded-md bg-[#ECFDF5] px-1.5 py-0.5 text-[10px] font-bold text-[#059669]">
+                پنل رایگان همیشگی ✓
               </span>
             </div>
             <div className="flex items-center gap-2">

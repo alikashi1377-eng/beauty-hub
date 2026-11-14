@@ -107,7 +107,7 @@ export const BUSINESS_PRIMARY_NAV_GROUPS: BusinessPrimaryNavGroup[] = [
       },
       {
         to: '/app/profile',
-        label: 'پروفایل و شبا',
+        label: 'اطلاعات سالن',
         icon: <Store className="w-4 h-4" />,
       },
       {
@@ -145,12 +145,12 @@ export const BUSINESS_PRIMARY_NAV_GROUPS: BusinessPrimaryNavGroup[] = [
     subTabs: [
       {
         to: '/app/analytics',
-        label: 'گزارش درآمد و تسویه شبا',
+        label: 'گزارش درآمد و دخل روزانه',
         icon: <BarChart3 className="w-4 h-4" />,
       },
       {
         to: '/app/subscription',
-        label: 'تعرفه همکاری و تبلیغات ویژه',
+        label: 'شبا، بیعانه و تسویه',
         icon: <CreditCard className="w-4 h-4" />,
       },
     ],
@@ -284,7 +284,16 @@ export const BusinessAvatarProfileMenu: React.FC = () => {
               className="flex items-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold text-[#061138] hover:bg-[#F3F6FC] transition-colors"
             >
               <Store className="w-4 h-4 text-[#0057FF]" />
-              <span>ویرایش مشخصات و شماره شبا</span>
+              <span>ویرایش اطلاعات سالن</span>
+            </Link>
+
+            <Link
+              to="/app/subscription"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold text-[#061138] hover:bg-[#F3F6FC] transition-colors"
+            >
+              <CreditCard className="w-4 h-4 text-[#0057FF]" />
+              <span>شبا، بیعانه و تسویه</span>
             </Link>
 
             <Link
