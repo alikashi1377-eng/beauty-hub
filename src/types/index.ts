@@ -174,6 +174,8 @@ export interface BusinessItem {
   createdAtJalali?: string;
   targetGender?: 'FEMALE' | 'MALE' | 'BOTH';
   laserDeviceModel?: string;
+  contractAccepted?: boolean;
+  contractAcceptedAtJalali?: string;
 }
 
 export interface CustomerWalletTransactionItem {
@@ -281,6 +283,10 @@ export interface PaymentGatewayConfig {
   zibalMerchantId?: string;
   zarinpalMerchantId?: string;
   platformCommissionPercent?: number;
+  maleCommissionPercent?: number;
+  laserCommissionPercent?: number;
+  femaleCommissionPercent?: number;
+  settlementCycle?: 'WEEKLY' | 'BIWEEKLY';
 }
 
 export interface PaymentOrderItem {
@@ -337,6 +343,9 @@ export interface AppointmentItem {
   durationMinutes: number;
   priceToman: number;
   depositPaidToman?: number;
+  platformCommissionToman?: number;
+  customerGatewayAndTaxFeeToman?: number;
+  salonNetDepositCreditedToman?: number;
   paymentMethod?: 'GATEWAY' | 'WALLET';
   paymentTrackingCode?: string;
   refundedToWalletToman?: number;

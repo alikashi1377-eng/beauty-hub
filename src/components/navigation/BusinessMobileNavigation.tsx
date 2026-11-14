@@ -138,19 +138,19 @@ export const BUSINESS_PRIMARY_NAV_GROUPS: BusinessPrimaryNavGroup[] = [
   },
   {
     id: 'finance',
-    label: 'مالی و پلن',
+    label: 'مالی و تسویه',
     defaultPath: '/app/analytics',
     matchPaths: ['/app/analytics', '/app/subscription'],
     icon: <Wallet className="w-5 h-5" />,
     subTabs: [
       {
         to: '/app/analytics',
-        label: 'گزارش درآمد و عملکرد',
+        label: 'گزارش درآمد و تسویه شبا',
         icon: <BarChart3 className="w-4 h-4" />,
       },
       {
         to: '/app/subscription',
-        label: 'اشتراک و تبلیغات ویژه',
+        label: 'تعرفه همکاری و تبلیغات ویژه',
         icon: <CreditCard className="w-4 h-4" />,
       },
     ],
@@ -260,9 +260,9 @@ export const BusinessAvatarProfileMenu: React.FC = () => {
             <p className="text-[11px] font-medium text-[#475569] truncate">
               مدیر: {ownerName}
             </p>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[10px] font-extrabold">
               <Sparkles className="w-3 h-3" />
-              <span>پلن: {planName}</span>
+              <span>پنل نرم‌افزاری رایگان همیشگی ✓</span>
             </span>
           </div>
 

@@ -523,121 +523,146 @@ export const CategoriesPage: React.FC = () => {
   );
 };
 
-/** ۴. صفحه پلن‌های کسب‌وکار (/pricing) */
+/** ۴. صفحه شرایط همکاری ویژه سالن‌داران (/pricing) */
 export const PricingPage: React.FC = () => {
-  const { plans } = usePrototypeData();
+  const commissionTiers = [
+    {
+      id: 'tier-men',
+      title: 'آرایشگاه و پیرایش آقایان',
+      percent: 3,
+      badge: '۳٪ از کل مبلغ خدمت',
+      description:
+        'مناسب آرایشگاه‌های مردانه، استایل مو و گریم داماد با ثبت نامحدود آرایشگر و تقویم نوبت‌دهی اختصاصی.',
+      features: [
+        'پنل مدیریت، تقویم نوبت‌دهی و حسابداری دخل روزانه ۱۰۰٪ رایگان همیشگی',
+        'دریافت بیعانه آنلاین الزامی (۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪) جهت تضمین حضور مشتری',
+        'کسر تنها ۳٪ کارمزد از کل مبلغ خدمت از محل بیعانه دریافتی',
+        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+      ],
+    },
+    {
+      id: 'tier-laser',
+      title: 'مراکز لیزر موهای زائد',
+      percent: 4,
+      badge: '۴٪ از کل مبلغ خدمت',
+      isRecommended: true,
+      description:
+        'ویژه مراکز تخصصی لیزر بانوان و آقایان با کیت‌های آماده نواحی بدن و پکیج‌های فول‌بادی.',
+      features: [
+        'پنل مدیریت، پرونده جلسات لیزر و حسابداری ۱۰۰٪ رایگان همیشگی',
+        'کیت‌های آماده خدمات لیزر بر اساس مدل دستگاه و نواحی کاربردی',
+        'کسر تنها ۴٪ کارمزد از کل مبلغ خدمت از محل بیعانه آنلاین',
+        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+      ],
+    },
+    {
+      id: 'tier-women',
+      title: 'سالن‌های زیبایی و متخصصان بانوان',
+      percent: 5,
+      badge: '۵٪ از کل مبلغ خدمت',
+      description:
+        'ویژه سالن‌های زیبایی بانوان، رنگ و لایت، ناخن، مژه، فیشیال و میکاپ عروس با پرسنل نامحدود.',
+      features: [
+        'تقویم چندمتخصصه، گالری نمونه‌کار و حسابداری دوحالته ۱۰۰٪ رایگان همیشگی',
+        'پیامک دوطرفه خودکار ثبت نوبت برای مشتری و مدیر سالن',
+        'کسر تنها ۵٪ کارمزد از کل مبلغ خدمت از محل بیعانه آنلاین',
+        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-10">
       <PageHeader
-        kicker="ویژه مدیران سالن و متخصصان"
-        title="پلن‌های اشتراک و پنل مدیریت کسب‌وکار Timeto"
-        subtitle="ثبت‌نام اولیه و راه‌اندازی ویترین آنلاین سالن کاملاً رایگان است. هر زمان که به پیامک یادآور خودکار، تقویم چندمتخصصه و جایگاه ویژه در جست‌وجو نیاز داشتید، پلن خود را ارتقا دهید."
+        kicker="ویژه مدیران سالن، مراکز لیزر و متخصصان زیبایی"
+        title="پنل مدیریت ۱۰۰٪ رایگان همیشگی — بدون حق اشتراک ماهانه"
+        subtitle="در تایم تو هیچ هزینه اشتراک ماهانه‌ای پرداخت نمی‌کنید! تمامی امکانات نرم‌افزاری پنل (تقویم نوبت‌دهی، حسابداری دخل روزانه، پرسنل نامحدود و پرونده مشتریان) کاملاً رایگان است و تنها زمانی که ما برای شما مشتری بیاوریم، درصد کارمزد توافقی از محل بیعانه کسر می‌شود."
         breadcrumbs={[
           { label: 'صفحه اصلی', href: '/' },
-          { label: 'تعرفه کسب‌وکارها' },
+          { label: 'شرایط همکاری سالن‌داران' },
         ]}
       />
 
-      {/* بخش ارزش خرید: چرا ارتقا به پلن حرفه‌ای ارزش دارد؟ */}
+      {/* بخش ارزش همکاری بدون ریسک برای سالن‌دار */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ECFDF5] text-[#059669] text-xs font-extrabold">
             <CalendarCheck className="w-4 h-4" />
-            <span>کاهش ۷۰٪ کنسلی و عدم حضور</span>
+            <span>صفر تومان هزینه ثابت ماهانه</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            پیامک تایید و یادآور خودکار به مشتری
+            همه امکانات پنل از روز اول باز و رایگان است
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            با ارسال خودکار پیامک در لحظه رزرو و ۲۴ ساعت قبل از نوبت، تایم‌های
-            خالی و فراموشی نوبت مشتریان به حداقل می‌رسد.
+            برخلاف نرم‌افزارهای اشتراکی، نیازی به خرید پلن ماهانه ندارید؛ تقویم نامحدود پرسنل، حسابداری دخل روزانه و پرونده مشتریان برای همیشه رایگان است.
           </p>
         </div>
 
         <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
             <TrendingUp className="w-4 h-4" />
-            <span>۲.۴ برابر جذب مشتری جدید</span>
+            <span>تضمین حضور مشتری با بیعانه آنلاین</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            اولویت نمایش در نتایج جست‌وجوی اصفهان
+            بیعانه استاندارد ۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            سالن‌های دارای پلن حرفه‌ای و VIP با نشان تایید ویژه در صدر نتایج
-            جست‌وجوی محله و خدمات به مراجعان نمایش داده می‌شوند.
+            مشتری هنگام رزرو نوبت، بیعانه انتخابی شما را آنلاین پرداخت می‌کند تا وقت سالن شما هرگز با کنسلی‌های لحظه آخری نسوزد.
           </p>
         </div>
 
         <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FEF3C7] text-[#D97706] text-xs font-extrabold">
             <ShieldCheck className="w-4 h-4" />
-            <span>نظم مالی و تقویم چندمتخصصه</span>
+            <span>تسویه منظم هفتگی شبا (پایا)</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            تقویم مجزا برای هر لاین و پرسنل
+            واریز خالص بیعانه‌ها در سیکل هفتگی شنبه‌ها
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            بدون تداخل ساعت کاری، برای هر متخصص تقویم مجزا، پرونده وفاداری
-            مشتریان و گزارش سهم درآمدی دقیق داشته باشید.
+            پس از انجام نوبت مشتری، خالص بیعانه‌های جمع‌شده در کیف پول شما در سیکل هفتگی پایا (شنبه‌ها) مستقیماً به شماره شبای ثبت‌شده شما واریز می‌گردد.
           </p>
         </div>
       </div>
 
+      {/* کارت‌های نرخ کمیسیون ۳ دسته کسب‌وکار به جای پلن‌های ماهانه */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-        {plans.map((plan) => (
+        {commissionTiers.map((tier) => (
           <Card
-            key={plan.id}
+            key={tier.id}
             className={`rounded-3xl flex flex-col justify-between space-y-6 ${
-              plan.isRecommended
-                ? 'border-[#8B5CF6] ring-2 ring-[#8B5CF6]/15'
+              tier.isRecommended
+                ? 'border-[#0057FF] ring-2 ring-[#0057FF]/15'
                 : ''
             }`}
           >
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-extrabold text-[#1E1B2E]">
-                  {plan.name}
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg font-extrabold text-[#061138]">
+                  {tier.title}
                 </h2>
-                {plan.isRecommended ? (
-                  <span className="px-3 py-1 rounded-full bg-[#EDE9FE] text-xs font-bold text-[#8B5CF6]">
-                    پیشنهاد ویژه سالن‌ها
-                  </span>
-                ) : null}
+                <span className="px-3 py-1 rounded-full bg-[#E0ECFF] text-xs font-black text-[#0057FF] shrink-0">
+                  {tier.badge}
+                </span>
               </div>
-              <p className="text-xs text-[#6B6480] leading-relaxed">
-                {plan.audience}
+              <p className="text-xs text-[#475569] leading-relaxed">
+                {tier.description}
               </p>
 
-              <div className="pt-2 pb-4 border-b border-[#E6E0F5]">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
-                  {formatPriceToman(plan.monthlyPriceToman)}
+              <div className="pt-2 pb-4 border-b border-[#E2E8F0]">
+                <span className="text-2xl sm:text-3xl font-extrabold text-[#059669] tabular-nums">
+                  پنل رایگان
                 </span>
-                <span className="text-xs text-[#6B6480] mr-1.5">
-                  {plan.monthlyPriceToman > 0 ? '/ ماهانه' : ' (همیشگی)'}
+                <span className="text-xs font-bold text-[#64748B] mr-1.5">
+                  + {toPersianDigits(tier.percent)}٪ کارمزد از رزرو موفق
                 </span>
-              </div>
-
-              <div className="space-y-2 text-xs text-[#6B6480]">
-                <div className="flex justify-between py-1.5 border-b border-[#F3EEFF]">
-                  <span className="text-[#6B6480]">ظرفیت تقویم متخصصان:</span>
-                  <span className="font-bold text-[#1E1B2E]">
-                    {plan.staffLimit}
-                  </span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-[#F3EEFF]">
-                  <span className="text-[#6B6480]">سهمیه پیامک یادآور:</span>
-                  <span className="font-bold text-[#1E1B2E] tabular-nums">
-                    {toPersianDigits(plan.smsQuotaMonthly)} پیامک در ماه
-                  </span>
-                </div>
               </div>
 
               <ul className="space-y-2.5 pt-2">
-                {plan.features.map((feat, idx) => (
+                {tier.features.map((feat, idx) => (
                   <li
                     key={idx}
-                    className="flex items-start gap-2 text-xs text-[#1E1B2E]"
+                    className="flex items-start gap-2 text-xs text-[#061138]"
                   >
                     <Check className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
                     <span>{feat}</span>
@@ -648,90 +673,23 @@ export const PricingPage: React.FC = () => {
 
             <Link to="/business/register">
               <Button
-                variant={plan.isRecommended ? 'primary' : 'outline'}
+                variant={tier.isRecommended ? 'primary' : 'outline'}
                 fullWidth
               >
-                انتخاب و شروع با {plan.name}
+                ثبت رایگان {tier.title}
               </Button>
             </Link>
           </Card>
         ))}
       </div>
 
-      <Card className="rounded-3xl space-y-4">
-        <div className="space-y-1">
-          <h2 className="text-base font-extrabold text-[#1E1B2E]">
-            مقایسه امکانات مدیریتی پلن‌ها
-          </h2>
-          <p className="text-xs text-[#6B6480]">
-            جزئیات سقف نوبت‌دهی، پیامک یادآور و سطح گزارش‌های مالی
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs sm:text-sm text-right border-collapse">
-            <thead>
-              <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF] text-[#6B6480]">
-                <th className="py-3.5 px-4 font-bold">قابلیت / ظرفیت</th>
-                {plans.map((p) => (
-                  <th key={p.id} className="py-3.5 px-4 font-bold text-[#1E1B2E]">
-                    {p.name}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E6E0F5]">
-              <tr>
-                <td className="py-3.5 px-4 font-semibold text-[#6B6480]">
-                  سقف نوبت‌دهی آنلاین
-                </td>
-                {plans.map((p) => (
-                  <td key={p.id} className="py-3.5 px-4 text-[#1E1B2E] font-medium">
-                    {p.comparison.onlineBooking}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="py-3.5 px-4 font-semibold text-[#6B6480]">
-                  بسته پیامک یادآور خودکار
-                </td>
-                {plans.map((p) => (
-                  <td key={p.id} className="py-3.5 px-4 text-[#1E1B2E] font-medium">
-                    {p.comparison.smsReminders}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="py-3.5 px-4 font-semibold text-[#6B6480]">
-                  سطح گزارش‌ها و آمار مالی
-                </td>
-                {plans.map((p) => (
-                  <td key={p.id} className="py-3.5 px-4 text-[#1E1B2E] font-medium">
-                    {p.comparison.analyticsLevel}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="py-3.5 px-4 font-semibold text-[#6B6480]">
-                  پشتیبانی و راه‌اندازی
-                </td>
-                {plans.map((p) => (
-                  <td key={p.id} className="py-3.5 px-4 text-[#1E1B2E] font-medium">
-                    {p.comparison.supportType}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {/* بخش جایگاه‌های تبلیغاتی و ارتقای جایگاه سالن‌ها (مستقل از حق اشتراک ماهانه) */}
+      {/* بخش جایگاه‌های تبلیغاتی و ارتقای جایگاه سالن‌ها */}
       <div className="rounded-3xl bg-[#061138] text-white p-6 sm:p-8 space-y-5 border border-[#1E293B]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
               <Sparkles className="w-4 h-4" />
-              <span>خدمات تبلیغاتی و رشد سریع سالن (قابل فعال‌سازی روی همه پلن‌ها)</span>
+              <span>خدمات تبلیغاتی اختیاری (صدرنشینی در جست‌وجو، بنر صفحه اول و بسته پیامک)</span>
             </span>
             <h2 className="text-lg sm:text-xl font-extrabold text-white">
               چگونه سالن خود را بالاتر از همه رقبا در صفحه اول و صدر جست‌وجوی اصفهان نمایش دهید؟

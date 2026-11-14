@@ -62,6 +62,11 @@ import {
 } from '../utils/formatters';
 import { validateReviewContent } from '../utils/reviewModeration';
 import {
+  calculateBookingFinancialBreakdown,
+  isAppointmentEligibleForSettlement,
+  validateServiceAntiFraud,
+} from '../utils/financialEngine';
+import {
   AccountRoleChoice,
   AuthFlowScreen,
   getSavedMemoryAccounts,
@@ -3517,6 +3522,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const addService = (item: Omit<ServiceItem, 'id'>) => {
+    const targetBiz =
+      businesses.find((b) => b.id === item.businessId) ?? currentBusiness;
+    const antiFraudCheck = validateServiceAntiFraud({
+      title: item.title,
+      description: item.description,
+      priceToman: item.priceToman,
+      business: targetBiz,
+    });
+    if (!antiFraudCheck.valid) {
+      showToast(
+        antiFraudCheck.error || 'اطلاعات یا تعرفه خدمت معتبر نیست.',
+        'warning'
+      );
+      return;
+    }
+
     const applyAddLocal = (resolvedItem: ServiceItem) => {
       setServices((prev) => {
         const seenIds = new Set<string>();
@@ -4273,9 +4294,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       showToast('کسب‌وکاری برای تسویه یافت نشد.', 'warning');
       return null;
     }
-    const balance = targetBiz.walletBalanceToman ?? 0;
-    if (balance <= 0) {
-      showToast('موجودی کیف پول بیعانه سالن شما در حال حاضر ۰ تومان است.', 'info');
+    if (!targetBiz.contractAccepted) {
+      showToast(
+        'لطفاً ابتدا در بخش «اطلاعات سالن ← شبا و حساب بانکی»، مفاد قرارداد همکاری و قوانین تسویه را مطالعه و تایید نمایید.',
+        'warning'
+      );
       return null;
     }
     const rawSheba = (targetBiz.bankShebaNumber || '').trim();
@@ -4287,10 +4310,46 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return null;
     }
 
-    const commissionPct = paymentConfig.platformCommissionPercent ?? 0;
-    const commissionToman = Math.round(balance * (commissionPct / 100));
-    const netPayoutToman = Math.max(0, balance - commissionToman);
+    // قفل امنیتی ضدتقلب: بررسی نوبت‌های آینده که هنوز زمان انجامشان نرسیده است
+    const bizApts = appointments.filter(
+      (a) =>
+        (a.businessId === targetBiz.id || a.businessSlug === targetBiz.slug) &&
+        a.status !== AppointmentStatus.Cancelled
+    );
+    const lockedFutureEscrowToman = bizApts
+      .filter((a) => !isAppointmentEligibleForSettlement(a))
+      .reduce(
+        (sum, a) =>
+          sum + (a.salonNetDepositCreditedToman ?? a.depositPaidToman ?? 0),
+        0
+      );
+
+    const totalWalletBalance = targetBiz.walletBalanceToman ?? 0;
+    const releasableBalance = Math.max(
+      0,
+      totalWalletBalance - lockedFutureEscrowToman
+    );
+
+    if (releasableBalance <= 0) {
+      if (lockedFutureEscrowToman > 0) {
+        showToast(
+          `مبلغ ${lockedFutureEscrowToman.toLocaleString('fa-IR')} تومان مربوط به نوبت‌های آینده است که هنوز زمان انجامشان نرسیده و پس از انجام خدمت قابل برداشت خواهد بود.`,
+          'warning'
+        );
+      } else {
+        showToast(
+          'موجودی آزادشده و قابل برداشت کیف پول سالن شما در حال حاضر ۰ تومان است.',
+          'info'
+        );
+      }
+      return null;
+    }
+
     const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const cycleLabel =
+      paymentConfig.settlementCycle === 'BIWEEKLY'
+        ? 'سیکل دو هفته یک‌بار پایا (۱ و ۱۵ ماه)'
+        : 'سیکل هفتگی پایا (شنبه‌ها)';
 
     const newItem: SettlementRequestItem = {
       id: `STL-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -4301,9 +4360,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       ownerPhone: targetBiz.ownerPhone || targetBiz.phoneDisplay || '',
       shebaNumber: rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`,
       cardNumber: targetBiz.bankCardNumber,
-      amountToman: balance,
-      commissionToman,
-      netPayoutToman,
+      amountToman: releasableBalance,
+      commissionToman: 0,
+      netPayoutToman: releasableBalance,
       createdAtJalali: todayJalali,
       status: 'PENDING',
     };
@@ -4322,11 +4381,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     updateBusinessProfile(targetBiz.id, {
-      walletBalanceToman: 0,
+      walletBalanceToman: Math.max(0, totalWalletBalance - releasableBalance),
     });
 
     showToast(
-      `درخواست تسویه شبا به مبلغ ${netPayoutToman.toLocaleString('fa-IR')} تومان ثبت شد و در سیکل پایا (واریز به حساب در روز کاری بعد / فردا) قرار گرفت ✓`
+      `درخواست تسویه شبا به مبلغ ${releasableBalance.toLocaleString('fa-IR')} تومان ثبت شد و در ${cycleLabel} به حساب شبای شما واریز می‌گردد ✓`
     );
     return newItem;
   };
@@ -5497,16 +5556,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
-    const matchedPlan =
-      plans.find((p) => p.name === targetBiz.subscriptionPlan) ?? plans[0];
-    const totalQuota =
-      (matchedPlan?.smsQuotaMonthly ?? 40) + (targetBiz.extraSmsBalance ?? 0);
+    // قفل ضدتقلب پیامک تبلیغاتی: ارسال پیامک انبوه باشگاه مشتریان صرفاً از شارژ بسته پیامکی خریداری‌شده کسر می‌شود
+    const purchasedSmsQuota = targetBiz.extraSmsBalance ?? 0;
     const usedSoFar = targetBiz.smsSentCount ?? 0;
-    const remainingQuota = Math.max(0, totalQuota - usedSoFar);
+    const remainingQuota = Math.max(0, purchasedSmsQuota - usedSoFar);
 
     if (cleanPhones.length > remainingQuota) {
       showToast(
-        `ظرفیت پیامک باقی‌مانده شما (${remainingQuota} عدد) کمتر از تعداد گیرندگان انتخابی (${cleanPhones.length} نفر) است. لطفاً بسته پیامک اضافه تهیه کنید.`,
+        `ظرفیت بسته پیامکی تبلیغاتی شما (${remainingQuota} پیامک باقی‌مانده) کمتر از تعداد گیرندگان انتخابی (${cleanPhones.length} نفر) است. لطفاً ابتدا از همین صفحه بسته پیامک تهیه کنید.`,
         'warning'
       );
       return false;
@@ -5840,6 +5897,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           : resolvedBizName;
     const refCode = `TM-${Math.floor(404000 + Math.random() * 9000)}`;
 
+    const financialBreakdown = calculateBookingFinancialBreakdown({
+      totalServicePriceToman: summary.totalPriceToman || 450000,
+      depositPercent: biz?.depositPercent,
+      business: biz,
+      commissionConfig: {
+        maleCommissionPercent: paymentConfig.maleCommissionPercent,
+        laserCommissionPercent: paymentConfig.laserCommissionPercent,
+        femaleCommissionPercent:
+          paymentConfig.femaleCommissionPercent ||
+          paymentConfig.platformCommissionPercent,
+      },
+    });
+
     const optimisticApt: AppointmentItem = {
       id: `apt-${Date.now()}`,
       referenceCode: refCode,
@@ -5859,7 +5929,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       timeSlot: effectiveDraft.timeSlot,
       durationMinutes: summary.totalDurationMinutes || 60,
       priceToman: summary.totalPriceToman || 450000,
-      depositPaidToman: paymentMeta?.depositPaidToman,
+      depositPaidToman:
+        paymentMeta?.depositPaidToman ?? financialBreakdown.baseDepositToman,
+      platformCommissionToman: financialBreakdown.platformCommissionToman,
+      customerGatewayAndTaxFeeToman:
+        financialBreakdown.customerGatewayAndTaxFeeToman,
+      salonNetDepositCreditedToman:
+        financialBreakdown.salonNetDepositCreditedToman,
       paymentMethod: paymentMeta?.paymentMethod,
       paymentTrackingCode: paymentMeta?.paymentTrackingCode,
       createdAtMs: Date.now(),

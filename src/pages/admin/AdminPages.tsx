@@ -2898,13 +2898,13 @@ export const AdminSubscriptionsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی، اشتراک و تبلیغات · کنترل کامل پلن‌ها و جایگاه‌های ویژه"
-        title="مدیریت و ویرایش پلن‌های اشتراک و جایگاه‌های تبلیغاتی (Boost)"
-        subtitle="ویرایش مستقیم قیمت و ظرفیت پلن‌ها، تعرفه بسته‌های تبلیغاتی، تایید سفارش‌های خرید سالن‌ها و تنظیم نحوه قرارگیری و مدت زمان تبلیغ هر کسب‌وکار"
+        kicker="مالی و تبلیغات · کنترل کامل بسته‌های تبلیغاتی (Boost) و شارژ پیامک"
+        title="مدیریت جایگاه‌های تبلیغاتی ویژه (صدر جست‌وجو / بنر اول) و بسته‌های پیامک"
+        subtitle="ویرایش مستقیم تعرفه بسته‌های تبلیغاتی، تایید سفارش‌های خرید سالن‌ها و تنظیم نحوه قرارگیری، مدت زمان تبلیغ و شارژ پیامک هر کسب‌وکار"
         routePattern="/admin/subscriptions"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'پلن‌ها و تبلیغات' },
+          { label: 'تبلیغات ویژه و بسته‌ها' },
         ]}
       />
 
@@ -2917,42 +2917,34 @@ export const AdminSubscriptionsPage: React.FC = () => {
           </p>
           <Link to="/admin/payments">
             <Button variant="outline" size="sm">
-              <span>مشاهده همه صورتحساب‌ها و تنظیم بله‌پی / کارت‌به‌کارت ←</span>
+              <span>مشاهده صورتحساب‌ها، نرخ کارمزدها و تسویه شبا ←</span>
             </Button>
           </Link>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#061138]">
           <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
             <p className="font-extrabold text-[#0057FF]">
-              ۱. تغییر قیمت و ظرفیت پلن‌ها و بسته‌ها
+              ۱. تغییر قیمت بسته‌های تبلیغاتی و پیامک
             </p>
             <p className="text-[#334155] leading-relaxed">
-              روی دکمه <strong>«ویرایش پلن»</strong> یا{' '}
-              <strong>«ویرایش تعرفه بسته»</strong> در کارت‌های زیر بزنید تا قیمت
-              ماهانه/هفتگی، سقف متخصصان یا سهمیه پیامک بلافاصله در کل سایت آپدیت
-              شود.
+              روی دکمه <strong>«ویرایش تعرفه بسته»</strong> در کارت‌های زیر بزنید تا قیمت ماهانه/هفتگی صدرنشینی، بنر صفحه اول یا بسته پیامک بلافاصله در کل سایت آپدیت شود.
             </p>
           </div>
           <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
             <p className="font-extrabold text-[#059669]">
-              ۲. وقتی صاحب سالن بسته یا پلن می‌خرد
+              ۲. وقتی صاحب سالن بسته تبلیغاتی یا پیامک می‌خرد
             </p>
             <p className="text-[#334155] leading-relaxed">
-              سفارش او (با کد رهگیری بله‌پی یا کارت‌به‌کارت) همین پایین در بخش{' '}
-              <strong>«درخواست‌های خرید سالن‌ها»</strong> می‌آید. با زدن دکمه{' '}
-              <strong>«تایید و فعال‌سازی»</strong>، جایگاه و مدت زمان تبلیغ او
-              خودکار فعال می‌شود.
+              سفارش او در بخش <strong>«درخواست‌های خرید سالن‌ها»</strong> نمایش داده می‌شود و پس از پرداخت آنلاین یا تایید شما، جایگاه یا شارژ پیامک او خودکار فعال می‌گردد.
             </p>
           </div>
           <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
             <p className="font-extrabold text-[#D97706]">
-              ۳. تنظیم دستی جایگاه، رتبه و مدت زمان
+              ۳. تنظیم دستی جایگاه، رتبه و شارژ پیامک
             </p>
             <p className="text-[#334155] leading-relaxed">
               در جدول پایین صفحه روی دکمه{' '}
-              <strong>«تنظیم جایگاه و زمان تبلیغ»</strong> هر سالن بزنید تا محل
-              نمایش (صفحه اول یا صدر جست‌وجو)، رتبه ۱ تا ۱۰ و تعداد روزهای
-              باقی‌مانده را دقیق تنظیم کنید.
+              <strong>«تنظیم جایگاه و زمان تبلیغ»</strong> هر سالن بزنید تا محل نمایش (صفحه اول یا صدر جست‌وجو)، رتبه ۱ تا ۱۰ و تعداد روزهای باقی‌مانده را دقیق تنظیم کنید.
             </p>
           </div>
         </div>
@@ -3063,75 +3055,15 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* بخش ۱: پلن‌های اشتراک ماهانه (قابل ویرایش توسط مدیر کل) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-[#061138]">
-            ۱. پلن‌های اشتراک ماهانه کسب‌وکارها (قابل ویرایش)
-          </h2>
-          <span className="text-xs text-[#64748B]">
-            تغییرات شما بلافاصله در صفحه تعرفه‌ها و پنل سالن‌ها اعمال می‌شود
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {plans.map((plan) => (
-            <Card
-              key={plan.id}
-              className="space-y-3 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-extrabold text-[#061138]">
-                    {plan.name}
-                  </h3>
-                  {plan.isRecommended ? (
-                    <StatusBadge label="پرفروش" tone="accent" />
-                  ) : null}
-                </div>
-                <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
-                  {plan.monthlyPriceToman === 0
-                    ? 'رایگان (۰ تومان)'
-                    : formatPriceToman(plan.monthlyPriceToman)}
-                </p>
-                <div className="space-y-1 text-xs text-[#334155] pt-2 border-t border-[#E2E8F0]">
-                  <p>
-                    ظرفیت متخصصان: <strong>{plan.staffLimit}</strong>
-                  </p>
-                  <p className="tabular-nums">
-                    سهمیه پیامک ماهانه:{' '}
-                    <strong>{toPersianDigits(plan.smsQuotaMonthly)} عدد</strong>
-                  </p>
-                  <p className="text-[11px] text-[#64748B] pt-1">
-                    {plan.audience}
-                  </p>
-                </div>
-              </div>
-              <div className="pt-3 border-t border-[#E2E8F0]">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  fullWidth
-                  onClick={() => openEditPlanModal(plan)}
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>ویرایش قیمت، ظرفیت و ویژگی‌ها</span>
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* بخش ۲: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل — با کنتراست بالا و خوانایی کامل) */}
+      {/* بخش ۱: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل — با کنتراست بالا و خوانایی کامل) */}
       <Card variant="dark" className="space-y-4 border-2 border-[#0057FF]/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <span className="text-xs font-extrabold text-[#00E5FF]">
-              ۲. بسته‌های تبلیغات و جایگاه‌های ویژه (قابل ویرایش توسط شما)
+              ۱. بسته‌های تبلیغات ویژه و بسته پیامک اضافه (قابل ویرایش توسط شما)
             </span>
             <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
-              تعرفه‌های ارتقای جایگاه سالن‌ها و بسته پیامک اضافه
+              تعرفه‌های ارتقای جایگاه سالن‌ها و بسته پیامک تبلیغاتی
             </h2>
           </div>
           <StatusBadge
@@ -3242,19 +3174,14 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'plan',
-              header: 'پلن، دوره تست و پیامک',
+              header: 'وضعیت پنل و شارژ پیامک',
               render: (b) => (
                 <div className="space-y-1">
-                  <span className="font-bold text-[#0057FF] block">
-                    {b.subscriptionPlan}
+                  <span className="font-bold text-[#059669] block">
+                    پنل رایگان همیشگی (کمیسیونی)
                   </span>
-                  {b.trialDaysRemaining && b.trialDaysRemaining > 0 ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#D97706] border border-[#F59E0B]/40 text-[11px] font-extrabold tabular-nums">
-                      تست تاییدشده مدیریت: {toPersianDigits(b.trialDaysRemaining)} روز باقی‌مانده
-                    </span>
-                  ) : null}
                   <span className="text-[11px] text-[#64748B] tabular-nums block">
-                    شارژ پیامک اضافه:{' '}
+                    شارژ پیامک تبلیغاتی:{' '}
                     {toPersianDigits(b.extraSmsBalance ?? 0)} عدد (ارسالی:{' '}
                     {toPersianDigits(b.smsSentCount ?? 0)})
                   </span>
@@ -3816,8 +3743,17 @@ export const AdminPaymentsPage: React.FC = () => {
   const [zibalMerchantId, setZibalMerchantId] = useState(
     paymentConfig.zibalMerchantId || paymentConfig.zarinpalMerchantId || ''
   );
-  const [commissionPercent, setCommissionPercent] = useState(
-    String(paymentConfig.platformCommissionPercent ?? 0)
+  const [maleCommissionPercent, setMaleCommissionPercent] = useState(
+    String(paymentConfig.maleCommissionPercent ?? 3)
+  );
+  const [laserCommissionPercent, setLaserCommissionPercent] = useState(
+    String(paymentConfig.laserCommissionPercent ?? 4)
+  );
+  const [femaleCommissionPercent, setFemaleCommissionPercent] = useState(
+    String(paymentConfig.femaleCommissionPercent ?? 5)
+  );
+  const [settlementCycle, setSettlementCycle] = useState<'WEEKLY' | 'BIWEEKLY'>(
+    paymentConfig.settlementCycle ?? 'WEEKLY'
   );
   const [shebaNumber, setShebaNumber] = useState(
     paymentConfig.shebaNumber || ''
@@ -3837,15 +3773,19 @@ export const AdminPaymentsPage: React.FC = () => {
 
   const handleSaveGateway = (e: React.FormEvent) => {
     e.preventDefault();
+    const safeMale = Math.max(1, Math.min(30, Number(maleCommissionPercent) || 3));
+    const safeLaser = Math.max(1, Math.min(30, Number(laserCommissionPercent) || 4));
+    const safeFemale = Math.max(1, Math.min(30, Number(femaleCommissionPercent) || 5));
     updatePaymentConfig({
       activeMethod: 'ZIBAL',
       zibalMerchantId: zibalMerchantId.trim(),
       zarinpalMerchantId: zibalMerchantId.trim(),
       shebaNumber: shebaNumber.trim(),
-      platformCommissionPercent: Math.max(
-        0,
-        Math.min(50, Number(commissionPercent) || 0)
-      ),
+      maleCommissionPercent: safeMale,
+      laserCommissionPercent: safeLaser,
+      femaleCommissionPercent: safeFemale,
+      settlementCycle,
+      platformCommissionPercent: safeFemale,
     });
   };
 
@@ -3856,9 +3796,9 @@ export const AdminPaymentsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal) و تسویه شبا (پایا)"
-        title="مدیریت درگاه آنلاین زیبال، کیف پول سالن‌ها و تسویه شبا"
-        subtitle="درگاه رسمی شاپرک (زیبال)، تفکیک درآمد پلن‌ها از بیعانه سالن‌ها و واریز شبانه شبا (IR)"
+        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal)، تعرفه کمیسیون‌ها و سیکل تسویه هفتگی شبا"
+        title="مدیریت درگاه آنلاین زیبال، درصد کارمزد رسته‌ها و تسویه هفتگی شبا"
+        subtitle="درگاه رسمی شاپرک (زیبال)، تنظیم کارمزد ۳٪ آقایان / ۴٪ لیزر / ۵٪ بانوان (از کل مبلغ خدمت) + ۲٪ کارمزد درگاه و مالیات مشتری و تسویه هفتگی پایا"
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -3878,7 +3818,7 @@ export const AdminPaymentsPage: React.FC = () => {
                 تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) — شاپرک بانک مرکزی
               </h2>
               <p className="text-xs text-[#64748B]">
-                کد مرچنت دریافتی از پنل زیبال (یا متغیر محیطی ZIBAL_MERCHANT_ID در لیارا) را وارد کنید
+                کد مرچنت دریافتی از پنل زیبال (یا متغیر محیطی ZIBAL_MERCHANT_ID در لیارا) و نرخ کمیسیون هر رسته را تنظیم کنید
               </p>
             </div>
           </div>
@@ -3944,22 +3884,6 @@ export const AdminPaymentsPage: React.FC = () => {
             </FormField>
 
             <FormField
-              id="pay-commission"
-              label="درصد کارمزد پلتفرم از بیعانه نوبت‌ها (۰ تا ۵۰٪)"
-            >
-              <Input
-                id="pay-commission"
-                type="number"
-                min={0}
-                max={50}
-                dir="ltr"
-                value={commissionPercent}
-                onChange={(e) => setCommissionPercent(e.target.value)}
-                placeholder="0"
-              />
-            </FormField>
-
-            <FormField
               id="pay-sheba"
               label="شماره شبای حساب متصل به درگاه زیبال (شما)"
             >
@@ -3971,30 +3895,103 @@ export const AdminPaymentsPage: React.FC = () => {
                 placeholder="IR820170000000123456789001"
               />
             </FormField>
+
+            <FormField
+              id="pay-settlement-cycle"
+              label="سیکل واریز تسویه شبا به سالن‌ها"
+            >
+              <Select
+                id="pay-settlement-cycle"
+                value={settlementCycle}
+                onChange={(e) =>
+                  setSettlementCycle(e.target.value as 'WEEKLY' | 'BIWEEKLY')
+                }
+                options={[
+                  {
+                    value: 'WEEKLY',
+                    label: 'سیکل هفتگی پایا (شنبه‌ها)',
+                  },
+                  {
+                    value: 'BIWEEKLY',
+                    label: 'دو هفته یک‌بار (۱ و ۱۵ هر ماه)',
+                  },
+                ]}
+              />
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#E2E8F0]">
+            <FormField
+              id="pay-male-commission"
+              label="کارمزد آرایشگاه آقایان (٪ از کل خدمت)"
+            >
+              <Input
+                id="pay-male-commission"
+                type="number"
+                min={1}
+                max={30}
+                dir="ltr"
+                value={maleCommissionPercent}
+                onChange={(e) => setMaleCommissionPercent(e.target.value)}
+                placeholder="3"
+              />
+            </FormField>
+
+            <FormField
+              id="pay-laser-commission"
+              label="کارمزد مراکز لیزر (٪ از کل خدمت)"
+            >
+              <Input
+                id="pay-laser-commission"
+                type="number"
+                min={1}
+                max={30}
+                dir="ltr"
+                value={laserCommissionPercent}
+                onChange={(e) => setLaserCommissionPercent(e.target.value)}
+                placeholder="4"
+              />
+            </FormField>
+
+            <FormField
+              id="pay-female-commission"
+              label="کارمزد سالن‌های بانوان (٪ از کل خدمت)"
+            >
+              <Input
+                id="pay-female-commission"
+                type="number"
+                min={1}
+                max={30}
+                dir="ltr"
+                value={femaleCommissionPercent}
+                onChange={(e) => setFemaleCommissionPercent(e.target.value)}
+                placeholder="5"
+              />
+            </FormField>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
             <span className="text-xs text-[#475569]">
-              در لیارا نیز می‌توانید متغیر <code dir="ltr" className="font-mono font-bold text-[#0057FF]">ZIBAL_MERCHANT_ID</code> را در بخش Environment Variables قرار دهید.
+              علاوه بر کمیسیون بالا (حداقل ۱۰,۰۰۰ تومان)، ۲٪ کارمزد خدمات رزرو آنلاین، درگاه زیبال و مالیات (حداقل ۳,۲۰۰ تومان) روی فاکتور آنلاین مشتری محاسبه می‌شود.
             </span>
 
             <Button type="submit" variant="primary" size="sm">
               <Check className="w-4 h-4" />
-              <span>ذخیره کد مرچنت زیبال و کارمزد پلتفرم</span>
+              <span>ذخیره کد مرچنت زیبال و نرخ‌های کارمزد</span>
             </Button>
           </div>
         </form>
       </Card>
 
-      {/* کارت ۲: تسویه‌حساب شبانه شبا (پایا) با سالن‌داران */}
+      {/* کارت ۲: تسویه‌حساب هفتگی شبا (پایا) با سالن‌داران */}
       <Card className="space-y-4 border-2 border-[#059669]/30 bg-gradient-to-br from-[#ECFDF5]/60 to-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A7F3D0] pb-3">
           <div>
             <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — پایا شبانه
+              تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — سیکل هفتگی پایا (شنبه‌ها)
             </h2>
             <p className="text-xs text-[#475569] mt-0.5">
-              بیعانه‌های دریافتی از مشتریان در کیف پول هر سالن ذخیره می‌شود. با کلیک روی دکمه زیر، کل موجودی سالن‌هایی که شبا ثبت کرده‌اند در لیست واریز پایا قرار می‌گیرد.
+              خالص بیعانه‌های نوبت‌های انجام‌شده در کیف پول هر سالن آزاد می‌شود. با کلیک روی دکمه زیر، کل موجودی آزادشده سالن‌هایی که شبا و قرارداد همکاری ثبت کرده‌اند در لیست واریز پایا قرار می‌گیرد.
             </p>
           </div>
           <Button
@@ -4004,13 +4001,13 @@ export const AdminPaymentsPage: React.FC = () => {
             onClick={() => runNightlyBatchSettlement()}
           >
             <Check className="w-4 h-4" />
-            <span>اجرای تسویه دسته‌ای شبانه شبا ({toPersianDigits(salonsWithWalletBalance.length)} سالن دارای موجودی)</span>
+            <span>اجرای تسویه دسته‌ای هفتگی شبا ({toPersianDigits(salonsWithWalletBalance.length)} سالن دارای موجودی)</span>
           </Button>
         </div>
 
         {settlementRequests.length === 0 ? (
           <div className="rounded-2xl border border-[#CBD5E1] bg-white p-4 text-xs text-[#64748B] text-center">
-            هنوز درخواست تسویه شبا ثبت نشده است. سالن‌داران می‌توانند از پنل خود درخواست تسویه بدهند یا شما دکمه «اجرای تسویه دسته‌ای شبانه شبا» را بزنید.
+            هنوز درخواست تسویه شبا ثبت نشده است. سالن‌داران می‌توانند از پنل خود درخواست تسویه بدهند یا شما دکمه «اجرای تسویه دسته‌ای هفتگی شبا» را بزنید.
           </div>
         ) : (
           <ResponsiveTable

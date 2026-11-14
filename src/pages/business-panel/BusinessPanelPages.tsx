@@ -90,32 +90,24 @@ import {
 } from '../../components/business/BusinessProfileCompletionWidget';
 import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
 import { BusinessQrCodeCard } from '../../components/business/BusinessQrCodeCard';
+import {
+  ALLOWED_DEPOSIT_PERCENTS,
+  calculateBookingFinancialBreakdown,
+  isAppointmentEligibleForSettlement,
+  normalizeDepositPercent,
+  resolveBusinessCommissionMeta,
+} from '../../utils/financialEngine';
 
-/** بررسی رایگان بودن پلن فعلی کسب‌وکار (با پشتیبانی از قفل‌گشایی خودکار هنگام فعال‌سازی پلن تستی توسط مدیریت) */
+/**
+ * در مدل جدید درآمدی تایم تو (کمیسیونی از نوبت‌ها)، تمامی امکانات نرم‌افزاری هسته پنل
+ * (تقویم، حسابداری دخل روزانه، باشگاه مشتریان و پرسنل نامحدود) برای همه کسب‌وکارها ۱۰۰٪ رایگان و باز است.
+ * فقط «بسته پیامک تبلیغاتی گروهی» و «جایگاه‌های تبلیغاتی صدر جست‌وجو / بنر صفحه اول» به صورت افزودنی (Add-on) عرضه می‌شوند.
+ */
 const isFreeSubscriptionPlan = (
-  planId?: string,
-  planName?: string
+  _planId?: string,
+  _planName?: string
 ): boolean => {
-  const id = (planId || '').toLowerCase();
-  const name = (planName || '').trim();
-  if (
-    id === 'plan-professional' ||
-    id === 'plan-vip-multi' ||
-    id === 'plan-vip' ||
-    id === 'plan-vip-brand' ||
-    id === 'plan-enterprise'
-  ) {
-    return false;
-  }
-  if (
-    name.includes('حرفه‌ای') ||
-    name.includes('VIP') ||
-    name.includes('پیشرفته') ||
-    name.includes('ویژه')
-  ) {
-    return false;
-  }
-  return true;
+  return false;
 };
 
 /** بررسی فعال بودن پلن VIP (شامل خرید مستقیم یا فعال‌سازی تستی زمان‌دار VIP توسط مدیر کل) */
@@ -249,36 +241,24 @@ export const BusinessDashboardPage: React.FC = () => {
       {/* ۱. نوار استوری‌های آموزشی و اطلاعیه‌ها (به سبک اینستاگرام با پوستر تصویری و لینک مستقیم به بخش‌ها) */}
       <BusinessStoriesBar />
 
-      {/* بنر روزشمار زنده اشتراک تستی / فعال و جایگاه تبلیغاتی ویژه */}
+      {/* بنر روزشمار زنده جایگاه تبلیغاتی ویژه */}
       {currentBiz &&
-      ((currentBiz.trialDaysRemaining && currentBiz.trialDaysRemaining > 0 && !isFreeSubscriptionPlan(undefined, currentBiz.subscriptionPlan)) ||
-        (currentBiz.isSponsored &&
-          currentBiz.sponsoredDaysRemaining &&
-          currentBiz.sponsoredDaysRemaining > 0)) ? (
+      currentBiz.isSponsored &&
+      currentBiz.sponsoredDaysRemaining &&
+      currentBiz.sponsoredDaysRemaining > 0 ? (
         <div className="rounded-3xl bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#1E1B4B] text-white p-4 sm:p-5 border border-[#0057FF]/40 flex flex-wrap items-center justify-between gap-3 shadow-xs">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full bg-[#00E5FF] text-[#061138] text-[11px] font-black">
-                ⏳ روزشمار اعتبار فعال شما
+                ⏳ جایگاه تبلیغاتی ویژه فعال
               </span>
-              {currentBiz.trialDaysRemaining &&
-              currentBiz.trialDaysRemaining > 0 &&
-              !isFreeSubscriptionPlan(undefined, currentBiz.subscriptionPlan) ? (
-                <span className="text-xs sm:text-sm font-extrabold text-amber-300 tabular-nums">
-                  پلن «{currentBiz.subscriptionPlan}»: {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
-                </span>
-              ) : null}
-              {currentBiz.isSponsored &&
-              currentBiz.sponsoredDaysRemaining &&
-              currentBiz.sponsoredDaysRemaining > 0 ? (
-                <span className="text-xs sm:text-sm font-extrabold text-emerald-300 tabular-nums">
-                  ★ تبلیغ ویژه ({currentBiz.sponsoredLabel || 'صدر نتایج'}):{' '}
-                  {toPersianDigits(currentBiz.sponsoredDaysRemaining)} روز باقی‌مانده
-                </span>
-              ) : null}
+              <span className="text-xs sm:text-sm font-extrabold text-emerald-300 tabular-nums">
+                ★ تبلیغ ویژه ({currentBiz.sponsoredLabel || 'صدر نتایج'}):{' '}
+                {toPersianDigits(currentBiz.sponsoredDaysRemaining)} روز باقی‌مانده
+              </span>
             </div>
             <p className="text-[11px] text-slate-300">
-              تمامی ابزارهای حسابداری دخل روزانه، باشگاه مشتریان و گزارش‌های مالی پیشرفته برای پنل شما فعال است.
+              سالن شما با اولویت ویژه در نتایج جست‌وجوی شهر نمایش داده می‌شود.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -287,9 +267,9 @@ export const BusinessDashboardPage: React.FC = () => {
                 <span>ثبت دخل روزانه و مالی</span>
               </Button>
             </Link>
-            <Link to="/app/subscription">
+            <Link to="/app/marketing">
               <Button variant="accent" size="sm">
-                <span>مدیریت اشتراک ←</span>
+                <span>مدیریت جایگاه تبلیغاتی ←</span>
               </Button>
             </Link>
           </div>
@@ -4985,6 +4965,8 @@ export const BusinessProfileEditPage: React.FC = () => {
     businesses,
     services,
     gallery,
+    appointments,
+    paymentConfig,
     updateBusinessProfile,
     updateOnboardingDraft,
     settlementRequests,
@@ -5028,13 +5010,11 @@ export const BusinessProfileEditPage: React.FC = () => {
   const [bankAccountHolder, setBankAccountHolder] = useState(
     currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
   );
-  const [depositEnabledRule, setDepositEnabledRule] = useState<boolean>(
-    currentBiz?.depositEnabled !== false
+  const [depositPercentRule, setDepositPercentRule] = useState<number>(() =>
+    normalizeDepositPercent(currentBiz?.depositPercent)
   );
-  const [depositPercentRule, setDepositPercentRule] = useState<number>(
-    currentBiz?.depositPercent && currentBiz.depositPercent > 0
-      ? currentBiz.depositPercent
-      : 30
+  const [contractAccepted, setContractAccepted] = useState<boolean>(
+    Boolean(currentBiz?.contractAccepted)
   );
   const [cancellationDeadlineHours, setCancellationDeadlineHours] =
     useState<number>(currentBiz?.cancellationDeadlineHours ?? 24);
@@ -5063,12 +5043,8 @@ export const BusinessProfileEditPage: React.FC = () => {
     setBankAccountHolder(
       currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
     );
-    setDepositEnabledRule(currentBiz.depositEnabled !== false);
-    setDepositPercentRule(
-      currentBiz.depositPercent && currentBiz.depositPercent > 0
-        ? currentBiz.depositPercent
-        : 30
-    );
+    setDepositPercentRule(normalizeDepositPercent(currentBiz.depositPercent));
+    setContractAccepted(Boolean(currentBiz.contractAccepted));
     setCancellationDeadlineHours(currentBiz.cancellationDeadlineHours ?? 24);
     setLateCancellationPenaltyPercent(
       currentBiz.lateCancellationPenaltyPercent ?? 30
@@ -5098,7 +5074,46 @@ export const BusinessProfileEditPage: React.FC = () => {
     .slice(0, 24);
   const isStep3Done =
     (cleanCardDigits.length === 16 || cleanShebaDigits.length === 24) &&
-    Boolean(bankAccountHolder.trim());
+    Boolean(bankAccountHolder.trim()) &&
+    contractAccepted;
+
+  const commissionMeta = resolveBusinessCommissionMeta(
+    { ...currentBiz, targetGender },
+    paymentConfig
+  );
+  const sampleServiceBreakdown = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: 1_000_000,
+    depositPercent: depositPercentRule,
+    business: { ...currentBiz, targetGender },
+    commissionConfig: paymentConfig,
+  });
+
+  const bizFutureLockedEscrowToman = appointments
+    .filter(
+      (a) =>
+        (a.businessId === currentBiz.id || a.businessSlug === currentBiz.slug) &&
+        a.status !== AppointmentStatus.Cancelled &&
+        (a.depositPaidToman || 0) > 0 &&
+        !isAppointmentEligibleForSettlement(a)
+    )
+    .reduce((sum, a) => {
+      if (typeof a.salonNetDepositCreditedToman === 'number') {
+        return sum + a.salonNetDepositCreditedToman;
+      }
+      const bd = calculateBookingFinancialBreakdown({
+        totalServicePriceToman: a.priceToman || 0,
+        depositPercent: currentBiz.depositPercent || 30,
+        business: currentBiz,
+        commissionConfig: paymentConfig,
+      });
+      return sum + bd.salonNetDepositCreditedToman;
+    }, 0);
+
+  const totalWalletBalanceToman = currentBiz.walletBalanceToman ?? 0;
+  const releasableWalletToman = Math.max(
+    0,
+    totalWalletBalanceToman - bizFutureLockedEscrowToman
+  );
 
   const bizServicesCount = services.filter(
     (s) => s.businessId === currentBiz.id
@@ -5169,23 +5184,16 @@ export const BusinessProfileEditPage: React.FC = () => {
         showToast(msg, 'warning');
         return;
       }
-      if (
-        depositEnabledRule &&
-        (!depositPercentRule ||
-          depositPercentRule < 1 ||
-          depositPercentRule > 100)
-      ) {
+      if (!contractAccepted) {
         const msg =
-          'لطفاً درصد بیعانه آنلاین را عددی بین ۱ تا ۱۰۰ درصد مشخص کنید.';
+          'لطفاً تیک «مفاد قرارداد همکاری، نحوه محاسبه کارمزد از کل مبلغ خدمت و سیکل تسویه هفتگی شبا را می‌پذیرم» را فعال نمایید.';
         setStepValidationError(msg);
         showToast(msg, 'warning');
         return;
       }
     }
 
-    const safeDepositPercent = depositEnabledRule
-      ? Math.max(1, Math.min(100, Number(depositPercentRule) || 30))
-      : 0;
+    const safeDepositPercent = normalizeDepositPercent(depositPercentRule);
     const cleanedInsta = instagramHandle.trim();
     updateBusinessProfile(currentBiz.id, {
       name: name.trim(),
@@ -5202,8 +5210,12 @@ export const BusinessProfileEditPage: React.FC = () => {
       bankCardNumber: cleanCardDigits || undefined,
       bankShebaNumber: cleanShebaDigits ? `IR${cleanShebaDigits}` : undefined,
       bankAccountHolder: bankAccountHolder.trim() || undefined,
-      depositEnabled: depositEnabledRule,
+      depositEnabled: true,
       depositPercent: safeDepositPercent,
+      contractAccepted,
+      contractAcceptedAtJalali: contractAccepted
+        ? currentBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴'
+        : undefined,
       cancellationDeadlineHours,
       lateCancellationPenaltyPercent,
     });
@@ -5643,264 +5655,255 @@ export const BusinessProfileEditPage: React.FC = () => {
                     />
                   </FormField>
 
-                  {/* تعیین مستقیم فعال/غیرفعال بودن بیعانه، درصد بیعانه و قوانین کنسلی در همین بخش شبا و حساب بانکی */}
+                  {/* انتخاب الزامی یکی از ۴ درصد استاندارد بیعانه آنلاین + قوانین کنسلی + قرارداد الکترونیکی کارمزد */}
                   <div className="pt-3 border-t border-[#E2E8F0] space-y-4">
                     <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-4">
-                      {/* سوییچ فعال یا غیرفعال کردن دریافت بیعانه آنلاین */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0]">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0]">
                         <div className="space-y-0.5">
                           <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
-                            وضعیت دریافت بیعانه آنلاین هنگام رزرو نوبت:
+                            تعیین درصد بیعانه آنلاین هنگام رزرو نوبت:{' '}
+                            <span className="text-[#0057FF]">
+                              ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
+                            </span>
                           </span>
                           <span className="text-[11px] text-[#64748B] block">
-                            اگر مایل به دریافت بیعانه آنلاین نیستید، آن را غیرفعال کنید تا مشتری کل مبلغ را حضوری در سالن بپردازد.
+                            دریافت بیعانه آنلاین برای تضمین حضور مشتری و جلوگیری از سوخت شدن وقت سالن در تایم تو الزامی است. یکی از ۴ ضریب استاندارد زیر را انتخاب کنید:
                           </span>
                         </div>
-                        <div className="inline-flex rounded-xl bg-[#F1F5F9] p-1 border border-[#CBD5E1]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextPct =
-                                depositPercentRule && depositPercentRule >= 1
-                                  ? depositPercentRule
-                                  : 30;
-                              setDepositEnabledRule(true);
-                              setDepositPercentRule(nextPct);
+                        <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
+                          بیعانه آنلاین الزامی ✓
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {ALLOWED_DEPOSIT_PERCENTS.map((pct) => {
+                          const isSelected = depositPercentRule === pct;
+                          const labelMap: Record<number, string> = {
+                            20: '۲۰٪ (حداقل بیعانه)',
+                            30: '۳۰٪ (پیشنهادی)',
+                            50: '۵۰٪ (نصف مبلغ)',
+                            100: '۱۰۰٪ (پرداخت کامل)',
+                          };
+                          return (
+                            <button
+                              key={pct}
+                              type="button"
+                              onClick={() => {
+                                setDepositPercentRule(pct);
+                                updateBusinessProfile(currentBiz.id, {
+                                  depositEnabled: true,
+                                  depositPercent: pct,
+                                });
+                              }}
+                              className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
+                                  : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                              }`}
+                            >
+                              {labelMap[pct] || `${toPersianDigits(pct)}٪`}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <FormField
+                          id="wallet-cancel-deadline"
+                          label="مهلت لغو نوبت با بازگشت کامل بیعانه"
+                        >
+                          <Select
+                            id="wallet-cancel-deadline"
+                            value={String(cancellationDeadlineHours)}
+                            onChange={(e) => {
+                              const hrs = Number(e.target.value);
+                              setCancellationDeadlineHours(hrs);
                               updateBusinessProfile(currentBiz.id, {
-                                depositEnabled: true,
-                                depositPercent: nextPct,
+                                cancellationDeadlineHours: hrs,
                               });
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                              depositEnabledRule
-                                ? 'bg-[#0057FF] text-white shadow-xs'
-                                : 'text-[#475569] hover:text-[#061138]'
-                            }`}
-                          >
-                            دریافت بیعانه فعال باشد
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDepositEnabledRule(false);
+                            options={[
+                              { value: '3', label: 'تا ۳ ساعت قبل از نوبت' },
+                              { value: '6', label: 'تا ۶ ساعت قبل از نوبت' },
+                              {
+                                value: '12',
+                                label: 'تا ۱۲ ساعت قبل از نوبت',
+                              },
+                              {
+                                value: '24',
+                                label: 'تا ۲۴ ساعت قبل از نوبت (پیشنهادی)',
+                              },
+                              {
+                                value: '48',
+                                label: 'تا ۴۸ ساعت قبل از نوبت',
+                              },
+                            ]}
+                          />
+                        </FormField>
+
+                        <FormField
+                          id="wallet-late-penalty"
+                          label="قانون کنسلی دیرهنگام (کمتر از مهلت مجاز)"
+                        >
+                          <Select
+                            id="wallet-late-penalty"
+                            value={String(lateCancellationPenaltyPercent)}
+                            onChange={(e) => {
+                              const pen = Number(e.target.value);
+                              setLateCancellationPenaltyPercent(pen);
                               updateBusinessProfile(currentBiz.id, {
-                                depositEnabled: false,
-                                depositPercent: 0,
+                                lateCancellationPenaltyPercent: pen,
                               });
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                              !depositEnabledRule
-                                ? 'bg-[#061138] text-white shadow-xs'
-                                : 'text-[#475569] hover:text-[#061138]'
-                            }`}
-                          >
-                            غیرفعال (بدون بیعانه)
-                          </button>
+                            options={[
+                              {
+                                value: '0',
+                                label: 'بدون جریمه (بازگشت ۱۰۰٪ بیعانه)',
+                              },
+                              {
+                                value: '30',
+                                label: 'کسر ۳۰٪ خسارت دیرکرد برای سالن',
+                              },
+                              {
+                                value: '50',
+                                label: 'کسر ۵۰٪ خسارت دیرکرد برای سالن',
+                              },
+                              {
+                                value: '100',
+                                label: 'عدم بازگشت بیعانه در کنسلی دقیقه نودی',
+                              },
+                            ]}
+                          />
+                        </FormField>
+                      </div>
+                    </div>
+
+                    {/* باکس شفاف مفاد قرارداد همکاری، ماشین‌حساب زنده کارمزد و سیکل تسویه هفتگی پایا */}
+                    <div className="p-4 rounded-2xl bg-[#F5F3FF] border-2 border-[#8B5CF6]/40 space-y-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DDD6FE] pb-2.5">
+                        <div>
+                          <span className="text-[10px] font-black text-[#6D28D9] block">
+                            مدل همکاری رایگان مادام‌العمر پنل · کسر کارمزد هوشمند از بیعانه
+                          </span>
+                          <h4 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
+                            مفاد قرارداد همکاری، نحوه محاسبه کارمزد و سیکل تسویه هفتگی شبا
+                          </h4>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-[#1E1B2E] text-white text-[11px] font-black tabular-nums">
+                          نرخ کارمزد رسته شما ({commissionMeta.segmentTitle}):{' '}
+                          {toPersianDigits(commissionMeta.commissionPercent)}٪ از کل خدمت
+                        </span>
+                      </div>
+
+                      <ul className="space-y-1.5 text-xs text-[#3B0764] leading-relaxed list-disc pr-4">
+                        <li>
+                          <strong>استفاده ۱۰۰٪ رایگان از تمامی ابزارهای نرم‌افزاری پنل:</strong>{' '}
+                          تقویم نوبت‌دهی، حسابداری دوحالته دخل روزانه، ثبت نامحدود پرسنل و پرونده مشتریان بدون هیچ حق اشتراک ماهانه‌ای برای همیشه باز است.
+                        </li>
+                        <li>
+                          <strong>نحوه محاسبه کارمزد پلتفرم بر اساس کل مبلغ خدمت:</strong>{' '}
+                          کارمزد معرفی و رزرو آنلاین معادل{' '}
+                          <strong>
+                            {toPersianDigits(commissionMeta.commissionPercent)}٪ از کل قیمت خدمت
+                          </strong>{' '}
+                          (حداقل ۱۰,۰۰۰ تومان) است که در لحظه رزرو از محل بیعانه پرداختی مشتری کسر شده و مابقی بیعانه عیناً به کیف پول شما واریز می‌گردد. (کارمزد ۳٪ آقایان، ۴٪ مراکز لیزر، ۵٪ سالن‌های بانوان).
+                        </li>
+                        <li>
+                          <strong>پوشش کارمزد درگاه شاپرک (زیبال) و مالیات توسط مشتری:</strong>{' '}
+                          مبلغ ۲٪ (حداقل ۳,۲۰۰ تومان) بابت کارمزد درگاه بانکی زیبال، مالیات و پیامک دوطرفه در فاکتور آنلاین به پرداختی مشتری اضافه می‌شود تا از سهم سالن کسر نگردد.
+                        </li>
+                        <li>
+                          <strong>قفل امنیتی نوبت‌های آینده و سیکل تسویه هفتگی پایا (شنبه‌ها):</strong>{' '}
+                          بیعانه نوبت‌هایی که زمان انجام آن‌ها هنوز فرانرسیده تا موعد نوبت در وضعیت «در انتظار انجام خدمت» نگهداری شده و موجودی آزادشده در{' '}
+                          <strong>سیکل هفتگی پایا (شنبه‌ها)</strong> به شماره شبای ثبت‌شده واریز می‌شود.
+                        </li>
+                      </ul>
+
+                      {/* ماشین‌حساب زنده نمونه برای شفافیت کامل */}
+                      <div className="p-3 rounded-xl bg-white border border-[#DDD6FE] space-y-2 text-xs">
+                        <p className="font-extrabold text-[#1E1B2E] tabular-nums">
+                          🧮 نمونه محاسبه زنده برای خدمت ۱,۰۰۰,۰۰۰ تومانی با بیعانه انتخابی شما ({toPersianDigits(depositPercentRule)}٪):
+                        </p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                          <div className="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                            <span className="text-[10px] text-[#64748B] block">
+                              بیعانه پایه ({toPersianDigits(depositPercentRule)}٪)
+                            </span>
+                            <span className="font-black text-[#061138] tabular-nums">
+                              {formatPriceToman(sampleServiceBreakdown.baseDepositToman)}
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#FEF2F2] border border-[#FECACA]">
+                            <span className="text-[10px] text-[#B91C1C] block">
+                              کمیسیون ({toPersianDigits(commissionMeta.commissionPercent)}٪ کل خدمت)
+                            </span>
+                            <span className="font-black text-[#DC2626] tabular-nums">
+                              {formatPriceToman(
+                                sampleServiceBreakdown.platformCommissionToman
+                              )}
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#ECFDF5] border border-[#A7F3D0]">
+                            <span className="text-[10px] text-[#047857] block">
+                              خالص واریزی به کیف پول شما
+                            </span>
+                            <span className="font-black text-[#059669] tabular-nums">
+                              {formatPriceToman(
+                                sampleServiceBreakdown.salonNetDepositCreditedToman
+                              )}
+                            </span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-[#FFFBEB] border border-[#FDE68A]">
+                            <span className="text-[10px] text-[#B45309] block">
+                              دریافتی حضوری شما در سالن
+                            </span>
+                            <span className="font-black text-[#D97706] tabular-nums">
+                              {formatPriceToman(
+                                sampleServiceBreakdown.remainingInSalonToman
+                              )}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      {!depositEnabledRule ? (
-                        <div className="p-3.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] space-y-1">
-                          <p className="font-extrabold">
-                            ✓ دریافت بیعانه آنلاین برای مرکز شما غیرفعال است
-                          </p>
-                          <p className="text-[11px] leading-relaxed">
-                            مشتریان هنگام رزرو نوبت هیچ مبلغی به‌صورت آنلاین پرداخت نمی‌کنند و کل هزینه خدمت را حضوری در سالن تسویه خواهند کرد. هر زمان تمایل داشتید می‌توانید گزینه «دریافت بیعانه فعال باشد» را بزنید.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3.5">
-                          <div className="space-y-1">
-                            <label
-                              htmlFor="wallet-deposit-custom-input"
-                              className="text-xs sm:text-sm font-extrabold text-[#061138] block"
-                            >
-                              تعیین درصد بیعانه آنلاین هنگام ثبت نوبت:{' '}
-                              <span className="text-[#0057FF]">
-                                ({toPersianDigits(depositPercentRule || 30)}٪ مبلغ خدمت)
-                              </span>
-                            </label>
-                            <p className="text-[11px] text-[#64748B] leading-relaxed">
-                              یکی از درصدهای پیشنهادی را انتخاب کنید یا درصد دلخواه خود (بین ۱ تا ۱۰۰ درصد) را وارد نمایید.
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {[
-                              { pct: 20, label: '۲۰٪ مبلغ خدمت' },
-                              { pct: 30, label: '۳۰٪ (پیشنهادی)' },
-                              { pct: 50, label: '۵۰٪ مبلغ خدمت' },
-                              { pct: 100, label: '۱۰۰٪ پرداخت کامل' },
-                            ].map((preset) => {
-                              const isSelected =
-                                depositPercentRule === preset.pct;
-                              return (
-                                <button
-                                  key={preset.pct}
-                                  type="button"
-                                  onClick={() => {
-                                    setDepositPercentRule(preset.pct);
-                                    updateBusinessProfile(currentBiz.id, {
-                                      depositEnabled: true,
-                                      depositPercent: preset.pct,
-                                    });
-                                  }}
-                                  className={`py-2 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
-                                      : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
-                                  }`}
-                                >
-                                  {preset.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1]">
-                            <div className="space-y-0.5">
-                              <span className="text-xs font-extrabold text-[#061138] block">
-                                درصد دلخواه کارفرما (بین ۱ تا ۱۰۰ درصد):
-                              </span>
-                              <span className="text-[11px] text-[#64748B] block">
-                                هر درصدی وارد کنید (مثلاً ۱۰٪، ۱۵٪، ۲۵٪ یا ۴۰٪) همان در زمان رزرو محاسبه می‌شود
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                id="wallet-deposit-custom-input"
-                                type="number"
-                                min={1}
-                                max={100}
-                                dir="ltr"
-                                value={depositPercentRule || ''}
-                                onChange={(e) => {
-                                  const raw = parseInt(
-                                    toEnglishDigitsClient(e.target.value),
-                                    10
-                                  );
-                                  if (Number.isNaN(raw)) {
-                                    setDepositPercentRule(0);
-                                  } else {
-                                    const clamped = Math.max(
-                                      1,
-                                      Math.min(100, raw)
-                                    );
-                                    setDepositPercentRule(clamped);
-                                    updateBusinessProfile(currentBiz.id, {
-                                      depositEnabled: true,
-                                      depositPercent: clamped,
-                                    });
-                                  }
-                                }}
-                                onBlur={() => {
-                                  if (
-                                    !depositPercentRule ||
-                                    depositPercentRule < 1
-                                  ) {
-                                    setDepositPercentRule(30);
-                                    updateBusinessProfile(currentBiz.id, {
-                                      depositEnabled: true,
-                                      depositPercent: 30,
-                                    });
-                                  }
-                                }}
-                                aria-label="درصد دلخواه بیعانه"
-                                className="w-24 rounded-xl border-2 border-[#0057FF]/40 bg-white px-3 py-1.5 text-center text-sm font-black text-[#061138] tabular-nums focus:border-[#0057FF] focus:outline-none"
-                              />
-                              <span className="text-xs font-extrabold text-[#061138]">
-                                درصد (٪)
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                            <FormField
-                              id="wallet-cancel-deadline"
-                              label="مهلت لغو نوبت با بازگشت کامل بیعانه"
-                            >
-                              <Select
-                                id="wallet-cancel-deadline"
-                                value={String(cancellationDeadlineHours)}
-                                onChange={(e) => {
-                                  const hrs = Number(e.target.value);
-                                  setCancellationDeadlineHours(hrs);
-                                  updateBusinessProfile(currentBiz.id, {
-                                    cancellationDeadlineHours: hrs,
-                                  });
-                                }}
-                                options={[
-                                  { value: '3', label: 'تا ۳ ساعت قبل از نوبت' },
-                                  { value: '6', label: 'تا ۶ ساعت قبل از نوبت' },
-                                  {
-                                    value: '12',
-                                    label: 'تا ۱۲ ساعت قبل از نوبت',
-                                  },
-                                  {
-                                    value: '24',
-                                    label: 'تا ۲۴ ساعت قبل از نوبت (پیشنهادی)',
-                                  },
-                                  {
-                                    value: '48',
-                                    label: 'تا ۴۸ ساعت قبل از نوبت',
-                                  },
-                                ]}
-                              />
-                            </FormField>
-
-                            <FormField
-                              id="wallet-late-penalty"
-                              label="قانون کنسلی دیرهنگام (کمتر از مهلت مجاز)"
-                            >
-                              <Select
-                                id="wallet-late-penalty"
-                                value={String(lateCancellationPenaltyPercent)}
-                                onChange={(e) => {
-                                  const pen = Number(e.target.value);
-                                  setLateCancellationPenaltyPercent(pen);
-                                  updateBusinessProfile(currentBiz.id, {
-                                    lateCancellationPenaltyPercent: pen,
-                                  });
-                                }}
-                                options={[
-                                  {
-                                    value: '0',
-                                    label: 'بدون جریمه (بازگشت ۱۰۰٪ بیعانه)',
-                                  },
-                                  {
-                                    value: '30',
-                                    label: 'کسر ۳۰٪ خسارت دیرکرد برای سالن',
-                                  },
-                                  {
-                                    value: '50',
-                                    label: 'کسر ۵۰٪ خسارت دیرکرد برای سالن',
-                                  },
-                                  {
-                                    value: '100',
-                                    label: 'عدم بازگشت بیعانه در کنسلی دقیقه نودی',
-                                  },
-                                ]}
-                              />
-                            </FormField>
-                          </div>
-                        </div>
-                      )}
+                      <label
+                        htmlFor="prof-contract-accept-checkbox"
+                        className="flex items-start gap-2.5 p-3 rounded-xl bg-white border-2 border-[#8B5CF6] cursor-pointer select-none"
+                      >
+                        <input
+                          id="prof-contract-accept-checkbox"
+                          type="checkbox"
+                          checked={contractAccepted}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setContractAccepted(checked);
+                            updateBusinessProfile(currentBiz.id, {
+                              contractAccepted: checked,
+                              contractAcceptedAtJalali: checked
+                                ? currentBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴'
+                                : undefined,
+                            });
+                          }}
+                          className="mt-0.5 w-4 h-4 accent-[#8B5CF6] rounded cursor-pointer shrink-0"
+                        />
+                        <span className="text-xs font-extrabold text-[#1E1B2E] leading-relaxed">
+                          مفاد قرارداد همکاری، نحوه محاسبه کارمزد ({toPersianDigits(commissionMeta.commissionPercent)}٪ از کل مبلغ خدمت از محل بیعانه) و واریز در سیکل تسویه هفتگی شبا (پایا شنبه‌ها پس از انجام نوبت) را مطالعه کرده و می‌پذیرم.
+                        </span>
+                      </label>
                     </div>
 
-                    {/* کارت موجودی کیف پول بیعانه و ثبت درخواست تسویه شبا (پایا فردا کاری) */}
+                    {/* کارت موجودی کیف پول بیعانه، تفکیک موجودی بلوکه نوبت‌های آینده و ثبت درخواست تسویه هفتگی شبا */}
                     <div className="p-4 rounded-2xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2.5">
                           <CreditCard className="w-5 h-5 text-[#00E5FF] shrink-0" />
                           <div>
                             <p className="text-xs font-bold text-[#BAE6FD]">
-                              موجودی قابل برداشت بیعانه‌های آنلاین سالن
+                              موجودی کل کیف پول (پس از کسر کارمزد پلتفرم)
                             </p>
                             <p className="text-base sm:text-lg font-black text-white tabular-nums mt-0.5">
-                              {(currentBiz.walletBalanceToman ?? 0) > 0
-                                ? formatPriceToman(
-                                    currentBiz.walletBalanceToman ?? 0
-                                  )
+                              {totalWalletBalanceToman > 0
+                                ? formatPriceToman(totalWalletBalanceToman)
                                 : '۰ تومان'}
                             </p>
                           </div>
@@ -5918,9 +5921,23 @@ export const BusinessProfileEditPage: React.FC = () => {
                               );
                               return;
                             }
-                            if ((currentBiz.walletBalanceToman ?? 0) <= 0) {
+                            if (!contractAccepted) {
+                              showToast(
+                                'لطفاً ابتدا تیک تایید «مفاد قرارداد همکاری و قوانین تسویه شبا» را در کادر بنفش بالا فعال کنید.',
+                                'warning'
+                              );
+                              return;
+                            }
+                            if (totalWalletBalanceToman <= 0) {
                               showToast(
                                 'موجودی کیف پول بیعانه در حال حاضر صفر است.',
+                                'warning'
+                              );
+                              return;
+                            }
+                            if (releasableWalletToman <= 0) {
+                              showToast(
+                                `موجودی فعلی شما (${formatPriceToman(totalWalletBalanceToman)}) مربوط به نوبت‌های آینده است و پس از انجام نوبت برای تسویه هفتگی شبا آزاد می‌شود.`,
                                 'warning'
                               );
                               return;
@@ -5932,6 +5949,7 @@ export const BusinessProfileEditPage: React.FC = () => {
                                 : undefined,
                               bankAccountHolder:
                                 bankAccountHolder.trim() || undefined,
+                              contractAccepted: true,
                             });
                             const skipKey = `timeto_skip_sheba_confirm_${currentBiz.id}_${cleanShebaDigits || cleanCardDigits}`;
                             const shouldSkipModal =
@@ -5946,11 +5964,35 @@ export const BusinessProfileEditPage: React.FC = () => {
                           }}
                           className="px-4 py-2 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] text-xs font-black transition-colors cursor-pointer"
                         >
-                          ثبت درخواست تسویه به شبا (واریز پایا فردا) ←
+                          ثبت در سیکل تسویه هفتگی شبا (پایا) ←
                         </button>
                       </div>
-                      <p className="text-[11px] text-[#BAE6FD]/90 leading-relaxed border-t border-white/15 pt-2">
-                        توجه بانکی: درخواست‌های برداشت بیعانه در سیکل شبا (پایا بانک مرکزی) ثبت می‌شوند و مبلغ در روز کاری بعد (فردا) به حساب شبای شما واریز می‌گردد. گزارش کامل روزانه برداشت‌ها در بخش «حسابداری و گزارش‌ها» قابل مشاهده است.
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-white/15 text-xs">
+                        <div className="p-2.5 rounded-xl bg-white/10 border border-white/15 flex items-center justify-between">
+                          <span className="text-[#BAE6FD]">
+                            آزادشده قابل تسویه در سیکل هفتگی:
+                          </span>
+                          <span className="font-black text-[#34D399] tabular-nums">
+                            {releasableWalletToman > 0
+                              ? formatPriceToman(releasableWalletToman)
+                              : '۰ تومان'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-white/10 border border-white/15 flex items-center justify-between">
+                          <span className="text-[#FDE68A]">
+                            در انتظار انجام نوبت آینده (بلوکه):
+                          </span>
+                          <span className="font-black text-[#FBBF24] tabular-nums">
+                            {bizFutureLockedEscrowToman > 0
+                              ? formatPriceToman(bizFutureLockedEscrowToman)
+                              : '۰ تومان'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-[#BAE6FD]/90 leading-relaxed pt-1">
+                        توجه بانکی: تسویه‌حساب کیف پول سالن‌ها در سیکل هفتگی شبا (پایا — شنبه‌ها) برای تمامی نوبت‌های انجام‌شده واریز می‌گردد. گزارش کامل برداشت‌ها در بخش «حسابداری و گزارش‌ها» قابل مشاهده است.
                       </p>
                     </div>
 
@@ -5996,7 +6038,7 @@ export const BusinessProfileEditPage: React.FC = () => {
                                   </span>
                                 ) : (
                                   <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A] text-[11px] font-black">
-                                    ⏳ در سیکل شبا (واریز به حساب در روز کاری بعد / فردا)
+                                    ⏳ در سیکل هفتگی شبا (پایا — شنبه‌ها)
                                   </span>
                                 )}
                               </div>
@@ -6616,10 +6658,16 @@ export const BusinessMarketingPage: React.FC = () => {
     plans.find(
       (p) => p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
     ) || plans[0];
-  const planSmsQuota = activePlanObj?.smsQuotaMonthly ?? 0;
+  // پیامک تبلیغاتی گروهی فقط از محل بسته پیامک خریداری‌شده (extraSms) محاسبه می‌شود تا از ارسال اسپم رایگان جلوگیری گردد
+  const planSmsQuota = isVipSubscriptionPlan(
+    activePlanId,
+    currentBiz?.subscriptionPlan
+  )
+    ? activePlanObj?.smsQuotaMonthly ?? 0
+    : 0;
   const smsSentSoFar = currentBiz?.smsSentCount ?? 0;
   const totalSmsQuota = planSmsQuota + extraSms;
-  const remainingSms = Math.max(0, totalSmsQuota - smsSentSoFar);
+  const remainingSms = Math.max(0, extraSms);
 
   const smsPresets = [
     {
@@ -6912,10 +6960,10 @@ export const BusinessMarketingPage: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3.5 rounded-2xl bg-[#F3F6FC] border border-[#CBD5E1] space-y-1">
             <span className="text-[11px] font-bold text-[#64748B] block">
-              سهمیه ماهانه پلن ({activePlanObj?.name})
+              پیامک تایید نوبت (خط خدماتی)
             </span>
-            <p className="text-lg sm:text-xl font-extrabold text-[#061138] tabular-nums">
-              {toPersianDigits(planSmsQuota)} پیامک
+            <p className="text-sm sm:text-base font-extrabold text-[#059669]">
+              رایگان و خودکار ✓
             </p>
           </div>
           <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-1">
@@ -7651,11 +7699,52 @@ export const BusinessAnalyticsPage: React.FC = () => {
   const activeOrDoneAppointments = bizAppointments.filter(
     (a) => a.status !== AppointmentStatus.Cancelled
   );
-  // فقط مبلغ واقعی بیعانه پرداخت‌شده آنلاین (مثلاً ۶۵,۰۰۰ تومان) و نه کل مبلغ خدمت (۶۵۰,۰۰۰ تومان)
+  // فقط مبلغ واقعی بیعانه پرداخت‌شده آنلاین و تفکیک کمیسیون پلتفرم
   const onlineDepositsTotalToman = activeOrDoneAppointments.reduce(
     (sum, a) => sum + (a.depositPaidToman || 0),
     0
   );
+  const totalPlatformCommissionDeductedToman = activeOrDoneAppointments.reduce(
+    (sum, a) => {
+      if ((a.depositPaidToman || 0) <= 0) return sum;
+      if (typeof a.platformCommissionToman === 'number') {
+        return sum + a.platformCommissionToman;
+      }
+      const bd = calculateBookingFinancialBreakdown({
+        totalServicePriceToman: a.priceToman || 0,
+        depositPercent: currentBiz?.depositPercent || 30,
+        business: currentBiz,
+      });
+      return sum + bd.platformCommissionToman;
+    },
+    0
+  );
+  const netSalonDepositsCreditedToman = Math.max(
+    0,
+    onlineDepositsTotalToman - totalPlatformCommissionDeductedToman
+  );
+  const lockedFutureEscrowToman = activeOrDoneAppointments
+    .filter(
+      (a) =>
+        (a.depositPaidToman || 0) > 0 &&
+        !isAppointmentEligibleForSettlement(a)
+    )
+    .reduce((sum, a) => {
+      if (typeof a.salonNetDepositCreditedToman === 'number') {
+        return sum + a.salonNetDepositCreditedToman;
+      }
+      const bd = calculateBookingFinancialBreakdown({
+        totalServicePriceToman: a.priceToman || 0,
+        depositPercent: currentBiz?.depositPercent || 30,
+        business: currentBiz,
+      });
+      return sum + bd.salonNetDepositCreditedToman;
+    }, 0);
+  const releasableWalletToman = Math.max(
+    0,
+    (currentBiz?.walletBalanceToman ?? 0) - lockedFutureEscrowToman
+  );
+
   // مجموع الباقی هنوز تسویه‌نشده در سالن
   const remainingUnsettledInSalonToman = activeOrDoneAppointments.reduce(
     (sum, a) => {
@@ -7672,7 +7761,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
     (sum, l) => sum + (l.amountToman || 0),
     0
   );
-  const totalRevenueToman = onlineDepositsTotalToman + inPersonTotalToman;
+  const totalRevenueToman = netSalonDepositsCreditedToman + inPersonTotalToman;
 
   // تجمیع برداشت‌های شبا به تفکیک هر روز (برای گزارش روزانه برداشت‌ها)
   const dailyWithdrawalsSummary = React.useMemo(() => {
@@ -7774,8 +7863,22 @@ export const BusinessAnalyticsPage: React.FC = () => {
       );
       return;
     }
+    if (!currentBiz.contractAccepted) {
+      showToast(
+        'لطفاً ابتدا در بخش «پروفایل سالن ← شبا و حساب بانکی» تیک تایید مفاد قرارداد همکاری را بزنید.',
+        'warning'
+      );
+      return;
+    }
     if ((currentBiz.walletBalanceToman ?? 0) <= 0) {
       showToast('موجودی قابل برداشت بیعانه در حال حاضر صفر است.', 'warning');
+      return;
+    }
+    if (releasableWalletToman <= 0) {
+      showToast(
+        'موجودی فعلی مربوط به نوبت‌های آینده است و پس از انجام نوبت برای تسویه هفتگی شبا آزاد می‌شود.',
+        'warning'
+      );
       return;
     }
     const cleanDigits = (
@@ -7798,9 +7901,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · حسابداری دقیق بیعانه، دخل روزانه و گزارش برداشت‌های شبا"
-        title="حسابداری دخل روزانه، بیعانه‌های واقعی و گزارش برداشت‌های شبا"
-        subtitle="در این بخش فقط مبالغ واقعاً دریافت‌شده (بیعانه آنلاین پرداختی + دریافتی حضوری ثبت‌شده) در درآمد شما محاسبه می‌شود و می‌توانید گزارش روزانه برداشت‌های شبا (سیکل پایا فردا کاری) را مشاهده کنید"
+        kicker="مالی · حسابداری خالص بیعانه، دخل روزانه و سیکل تسویه هفتگی شبا"
+        title="حسابداری دخل روزانه، خالص بیعانه‌ها و گزارش تسویه هفتگی شبا"
+        subtitle="تمامی امکانات نرم‌افزاری حسابداری رایگان است. کارمزد پلتفرم از محل بیعانه کسر شده و خالص بیعانه نوبت‌های انجام‌شده در سیکل هفتگی پایا (شنبه‌ها) به شبای شما واریز می‌شود."
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -7808,25 +7911,18 @@ export const BusinessAnalyticsPage: React.FC = () => {
         ]}
       />
 
-      {isFreePlan ? (
-        <PlanUpgradeLockBanner
-          featureTitle="حسابداری دخل روزانه حضوری، گزارش‌های تحلیلی پیشرفته و تفکیک سهم متخصصان"
-          description="در پلن شروع رایگان خلاصه پایه نمایش داده می‌شود. برای باز شدن «ثبت دخل روزانه حضوری»، «تسویه ۱-کلیکی نوبت‌ها» و نمودارهای کامل مالی، پلن سالن خود را به حرفه‌ای یا VIP ارتقا دهید."
-        />
-      ) : null}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            کل دریافتی واقعی (بیعانه آنلاین + دریافتی حضوری)
+            خالص دریافتی واقعی سالن (خالص بیعانه + دریافتی حضوری)
           </p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {totalRevenueToman > 0 ? formatPriceToman(totalRevenueToman) : '۰ تومان'}
           </p>
           <p className="text-xs text-[#64748B] font-semibold tabular-nums">
-            بیعانه آنلاین دریافتی:{' '}
-            {onlineDepositsTotalToman > 0
-              ? formatPriceToman(onlineDepositsTotalToman)
+            خالص بیعانه پس از کسر کارمزد:{' '}
+            {netSalonDepositsCreditedToman > 0
+              ? formatPriceToman(netSalonDepositsCreditedToman)
               : '۰ تومان'}{' '}
             · حضوری:{' '}
             {inPersonTotalToman > 0
@@ -7836,18 +7932,18 @@ export const BusinessAnalyticsPage: React.FC = () => {
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            موجودی کیف پول بیعانه (قابل برداشت به شبا)
+            موجودی آزاد قابل تسویه در سیکل هفتگی شبا
           </p>
           <p className="text-2xl font-extrabold text-[#0057FF] tabular-nums">
-            {(currentBiz?.walletBalanceToman ?? 0) > 0
-              ? formatPriceToman(currentBiz?.walletBalanceToman ?? 0)
+            {releasableWalletToman > 0
+              ? formatPriceToman(releasableWalletToman)
               : '۰ تومان'}
           </p>
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <span className="text-[11px] text-[#6B6480] tabular-nums">
-              مانده حضوری نوبت‌ها:{' '}
-              {remainingUnsettledInSalonToman > 0
-                ? formatPriceToman(remainingUnsettledInSalonToman)
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+            <span className="text-[11px] text-[#B45309] font-bold tabular-nums">
+              بلوکه نوبت آینده:{' '}
+              {lockedFutureEscrowToman > 0
+                ? formatPriceToman(lockedFutureEscrowToman)
                 : '۰ تومان'}
             </span>
             <button
@@ -7855,35 +7951,41 @@ export const BusinessAnalyticsPage: React.FC = () => {
               onClick={triggerAnalyticsShebaPayout}
               className="px-2.5 py-1 rounded-lg bg-[#0057FF] hover:bg-[#0046CC] text-white text-[11px] font-extrabold transition-colors cursor-pointer"
             >
-              تسویه به شبا ←
+              تسویه هفتگی شبا ←
             </button>
           </div>
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            نرخ بازگشت مشتریان و رضایت
+            کل بیعانه پایه مشتریان و سهم کارمزد پلتفرم
           </p>
-          <p className="text-2xl font-extrabold text-[#F59E0B] tabular-nums">
-            {toPersianDigits(repeatRatePct)}٪ بازگشت مجدد
+          <p className="text-2xl font-extrabold text-[#059669] tabular-nums">
+            {onlineDepositsTotalToman > 0
+              ? formatPriceToman(onlineDepositsTotalToman)
+              : '۰ تومان'}
           </p>
           <p className="text-xs text-[#6B6480] tabular-nums">
-            از مجموع {toPersianDigits(bizCustomers.length)} مشتری پرونده‌دار
+            کمیسیون کسرشده پلتفرم:{' '}
+            {totalPlatformCommissionDeductedToman > 0
+              ? formatPriceToman(totalPlatformCommissionDeductedToman)
+              : '۰ تومان'}{' '}
+            · بازگشت مجدد: {toPersianDigits(repeatRatePct)}٪
           </p>
         </Card>
       </div>
 
-      {/* بخش گزارش روزانه برداشت‌ها و تسویه‌های شبا (سیکل پایا فردا کاری) */}
+      {/* بخش گزارش روزانه برداشت‌ها و تسویه‌های شبا (سیکل هفتگی پایا — شنبه‌ها) */}
       <Card className="border-2 border-[#0057FF]/25 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
           <div className="space-y-1">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-black">
-              تسویه بانکی پایا · گزارش روزانه برداشت‌های شبا
+              سیکل هفتگی پایا (شنبه‌ها) · گزارش برداشت‌های شبا
             </span>
             <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              گزارش برداشت‌های شبا به تفکیک روز و وضعیت واریز پایا
+              گزارش تسویه‌های هفتگی شبا و وضعیت واریز پایا
             </h2>
             <p className="text-xs text-[#64748B]">
-              بیعانه‌های پرداختی مشتریان در کیف پول سالن شما جمع می‌شود. با ثبت درخواست تسویه، مبلغ در سیکل پایا ثبت شده و فردا (روز کاری بعد) به حساب شبای شما می‌نشیند.
+              خالص بیعانه نوبت‌های انجام‌شده در کیف پول شما آزاد می‌شود و در سیکل تسویه هفتگی پایا (شنبه‌ها) به شماره شبای ثبت‌شده شما واریز می‌گردد.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -7895,9 +7997,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
             >
               <CreditCard className="w-4 h-4" />
               <span>
-                درخواست تسویه به شبا (
-                {(currentBiz?.walletBalanceToman ?? 0) > 0
-                  ? formatPriceToman(currentBiz?.walletBalanceToman ?? 0)
+                ثبت در سیکل تسویه هفتگی شبا (
+                {releasableWalletToman > 0
+                  ? formatPriceToman(releasableWalletToman)
                   : '۰ تومان'}
                 )
               </span>
@@ -8544,281 +8646,96 @@ export const BusinessAnalyticsPage: React.FC = () => {
   );
 };
 
-/** ۱۲. اشتراک و صورتحساب (/app/subscription) */
+/** ۱۲. شرایط همکاری کمیسیونی و بسته‌های تبلیغاتی (/app/subscription) */
 export const BusinessSubscriptionPage: React.FC = () => {
   const {
-    plans,
-    activePlanId,
-    setActivePlanId,
     currentBusiness,
     businesses,
-    paymentOrders,
-    showToast,
-    dataMode,
+    paymentConfig,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
-  const currentPlan =
-    plans.find(
-      (p) =>
-        p.id === activePlanId || p.name === currentBiz?.subscriptionPlan
-    ) ??
-    plans[0];
-
-  const [checkoutItem, setCheckoutItem] = useState<CheckoutItemPayload | null>(
-    null
-  );
-
-  const planOrders = paymentOrders.filter(
-    (o) => o.businessId === currentBiz?.id && o.itemType === 'PLAN'
-  );
+  const commMeta = resolveBusinessCommissionMeta(currentBiz, paymentConfig);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · اشتراک ماهانه و ارتقای پنل سالن"
-        title="مدیریت اشتراک و ارتقای کسب‌وکار"
-        subtitle="مقایسه شفاف مزایای ارتقا به پلن حرفه‌ای و VIP با امکان تسویه فوری از طریق درگاه آنلاین زیبال"
+        kicker="مالی · پنل نرم‌افزاری ۱۰۰٪ رایگان همیشگی + همکاری کمیسیونی"
+        title="شرایط همکاری مالی، بیعانه و بسته‌های تبلیغاتی"
+        subtitle="در تایم تو هیچ پلن یا حق اشتراک ماهانه‌ای وجود ندارد؛ تمامی امکانات نرم‌افزاری پنل برای همیشه رایگان است و تنها از نوبت‌های آنلاین موفق، کارمزد توافقی کسر می‌گردد."
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'اشتراک و ارتقا' },
+          { label: 'شرایط همکاری و تبلیغات' },
         ]}
       />
 
-      {currentPlan ? (
-        <Card variant="dark" className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <span className="text-xs font-bold text-[#00E5FF]">
-                پلن فعال فعلی کسب‌وکار شما:
-              </span>
-              <h2 className="text-xl font-extrabold text-white">
-                {currentBiz?.subscriptionPlan || currentPlan.name}
-              </h2>
-              <p className="text-xs text-slate-200 tabular-nums">
-                ظرفیت پرسنل: {currentPlan.staffLimit} · سهمیه پیامک یادآور
-                ماهانه: {toPersianDigits(currentPlan.smsQuotaMonthly)} عدد
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {currentBiz?.trialDaysRemaining &&
-              currentBiz.trialDaysRemaining > 0 ? (
-                <span className="px-3.5 py-1.5 rounded-xl bg-amber-400/20 border border-amber-300/40 text-xs font-black text-amber-300 tabular-nums">
-                  ⏳ روزشمار اعتبار فعلی:{' '}
-                  {toPersianDigits(currentBiz.trialDaysRemaining)} روز باقی‌مانده
-                </span>
-              ) : null}
-              <span className="px-3.5 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-bold text-white tabular-nums">
-                {dataMode === 'real'
-                  ? 'درگاه آنلاین زیبال: فعال'
-                  : 'وضعیت اشتراک: فعال'}
-              </span>
-            </div>
+      <Card variant="dark" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-[#00E5FF]">
+              وضعیت حساب کسب‌وکار شما در تایم تو:
+            </span>
+            <h2 className="text-xl font-extrabold text-white">
+              پنل نرم‌افزاری ۱۰۰٪ رایگان همیشگی (بدون حق اشتراک ماهانه) ✓
+            </h2>
+            <p className="text-xs text-slate-200 tabular-nums">
+              رسته کسب‌وکار: {commMeta.segmentTitle} · نرخ کارمزد از نوبت موفق:{' '}
+              {toPersianDigits(commMeta.commissionPercent)}٪ از کل مبلغ خدمت ·
+              سیکل تسویه شبا: هفتگی (پایا — شنبه‌ها)
+            </p>
           </div>
-        </Card>
-      ) : null}
-
-      {/* راهنمای ارزش ارتقا برای صاحب سالن */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
-          <p className="text-xs font-extrabold text-[#059669]">
-            ۱. کاهش ۷۰٪ عدم حضور مشتری
-          </p>
-          <p className="text-xs text-[#334155] leading-relaxed">
-            ارسال خودکار پیامک تایید و یادآور ۲۴ ساعت قبل از نوبت از طریق
-            خط خدماتی.
-          </p>
-        </div>
-        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
-          <p className="text-xs font-extrabold text-[#0057FF]">
-            ۲. اولویت نمایش در جست‌وجوی اصفهان
-          </p>
-          <p className="text-xs text-[#334155] leading-relaxed">
-            درج نشان «سالن برگزیده» و جایگاه بالاتر در لیست جست‌وجوی محله و
-            خدمات.
-          </p>
-        </div>
-        <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-1.5">
-          <p className="text-xs font-extrabold text-[#D97706]">
-            ۳. پرداخت آنی بدون پیچیدگی بانکی
-          </p>
-          <p className="text-xs text-[#334155] leading-relaxed">
-            تسویه مستقیم با لینک بله‌پی یا کارت‌به‌کارت و فعال‌سازی سریع اشتراک
-            توسط مدیریت.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {plans.map((plan) => {
-          const isCurrent = plan.id === activePlanId;
-          return (
-            <Card
-              key={plan.id}
-              className={`space-y-5 flex flex-col justify-between ${
-                isCurrent
-                  ? 'border-2 border-[#0057FF] shadow-sm'
-                  : plan.isRecommended
-                    ? 'border-[#0057FF]/50'
-                    : ''
-              }`}
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-base font-extrabold text-[#061138]">
-                    {plan.name}
-                  </h3>
-                  {isCurrent ? (
-                    <StatusBadge label="پلن فعال شما" tone="success" />
-                  ) : plan.isRecommended ? (
-                    <StatusBadge label="پیشنهاد ویژه" tone="primary" />
-                  ) : null}
-                </div>
-                <p className="text-xl font-extrabold text-[#0057FF] tabular-nums">
-                  {plan.monthlyPriceToman === 0
-                    ? 'رایگان'
-                    : formatPriceToman(plan.monthlyPriceToman)}
-                  <span className="text-xs font-normal text-[#64748B]">
-                    {' '}
-                    {plan.monthlyPriceToman > 0 ? '/ ماهانه' : '(همیشگی)'}
-                  </span>
-                </p>
-                <p className="text-xs text-[#334155] leading-relaxed">
-                  {plan.audience}
-                </p>
-                <div className="pt-2 border-t border-[#E2E8F0] space-y-1.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-[#64748B]">ظرفیت متخصصان:</span>
-                    <span className="font-bold text-[#061138]">
-                      {plan.staffLimit}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#64748B]">سهمیه پیامک ماهانه:</span>
-                    <span className="font-bold text-[#061138] tabular-nums">
-                      {toPersianDigits(plan.smsQuotaMonthly)} پیامک
-                    </span>
-                  </div>
-                </div>
-                <ul className="space-y-2 pt-3 border-t border-[#E2E8F0] text-xs text-[#061138]">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0 mt-0.5" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Button
-                variant={isCurrent ? 'outline' : 'primary'}
-                size="sm"
-                fullWidth
-                disabled={isCurrent}
-                onClick={() => {
-                  if (plan.monthlyPriceToman === 0) {
-                    setActivePlanId(plan.id);
-                    showToast(`پلن کسب‌وکار به «${plan.name}» تغییر یافت.`);
-                  } else {
-                    setCheckoutItem({
-                      itemType: 'PLAN',
-                      itemId: plan.id,
-                      itemTitle: `اشتراک یک‌ماهه ${plan.name}`,
-                      baseAmountToman: plan.monthlyPriceToman,
-                      defaultDurationDays: 30,
-                    });
-                  }
-                }}
-              >
-                {isCurrent
-                  ? 'پلن فعال فعلی شما'
-                  : plan.monthlyPriceToman === 0
-                    ? 'تغییر به پلن پایه رایگان'
-                    : `پرداخت و ارتقا به ${plan.name}`}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/app/profile#financial-section">
+              <Button variant="accent" size="sm">
+                <span>تنظیم شبا و درصد بیعانه ←</span>
               </Button>
-            </Card>
-          );
-        })}
-      </div>
+            </Link>
+            <Link to="/app/marketing">
+              <Button variant="secondary" size="sm">
+                <span>بسته‌های تبلیغات و پیامک ←</span>
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </Card>
 
-      {planOrders.length > 0 ? (
-        <Card className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="space-y-2 border border-[#CBD5E1]">
+          <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[11px] font-black">
+            ۱. امکانات نرم‌افزاری رایگان
+          </span>
           <h3 className="text-sm font-extrabold text-[#061138]">
-            تاریخچه درخواست‌های ارتقای اشتراک شما
+            تقویم، حسابداری دخل روزانه و پرسنل نامحدود
           </h3>
-          <ResponsiveTable
-            keyExtractor={(o) => o.id}
-            data={planOrders}
-            columns={[
-              {
-                key: 'id',
-                header: 'شماره سفارش',
-                render: (o) => (
-                  <span className="font-mono text-xs font-bold text-[#0057FF]">
-                    {o.id}
-                  </span>
-                ),
-              },
-              {
-                key: 'title',
-                header: 'پلن درخواستی',
-                render: (o) => (
-                  <span className="font-extrabold text-[#061138]">
-                    {o.itemTitle}
-                  </span>
-                ),
-              },
-              {
-                key: 'method',
-                header: 'روش پرداخت / کد رهگیری',
-                render: (o) => (
-                  <span className="text-xs">
-                    درگاه آنلاین زیبال ({o.trackingCode})
-                  </span>
-                ),
-              },
-              {
-                key: 'amount',
-                header: 'مبلغ',
-                render: (o) => (
-                  <span className="font-extrabold text-[#0057FF] tabular-nums">
-                    {formatPriceToman(o.amountToman)}
-                  </span>
-                ),
-              },
-              {
-                key: 'status',
-                header: 'وضعیت',
-                render: (o) => (
-                  <StatusBadge
-                    label={
-                      o.status === 'APPROVED'
-                        ? 'تایید و فعال شد'
-                        : o.status === 'REJECTED'
-                          ? 'رد شده'
-                          : 'در انتظار تایید مدیر'
-                    }
-                    tone={
-                      o.status === 'APPROVED'
-                        ? 'success'
-                        : o.status === 'REJECTED'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  />
-                ),
-              },
-            ]}
-          />
+          <p className="text-xs text-[#475569] leading-relaxed">
+            تمامی ابزارهای مدیریت سالن، تعریف نامحدود متخصصان، پرونده مشتریان و حسابداری دوحالته دخل روزانه بدون هیچ محدودیتی باز است.
+          </p>
         </Card>
-      ) : null}
 
-      <EasyCheckoutModal
-        isOpen={Boolean(checkoutItem)}
-        onClose={() => setCheckoutItem(null)}
-        item={checkoutItem}
-        businessId={currentBiz?.id || 'biz-1'}
-        businessName={currentBiz?.name || 'سالن زیبایی شما'}
-      />
+        <Card className="space-y-2 border border-[#CBD5E1]">
+          <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0057FF] text-[11px] font-black">
+            ۲. بیعانه آنلاین و کارمزد منصفانه
+          </span>
+          <h3 className="text-sm font-extrabold text-[#061138]">
+            کارمزد {toPersianDigits(commMeta.commissionPercent)}٪ از کل خدمت (کسر از بیعانه)
+          </h3>
+          <p className="text-xs text-[#475569] leading-relaxed">
+            مشتری هنگام رزرو بیعانه (۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪) را به همراه ۲٪ کارمزد درگاه زیبال و مالیات می‌پردازد و خالص بیعانه در سیکل هفتگی پایا به شبای شما واریز می‌شود.
+          </p>
+        </Card>
+
+        <Card className="space-y-2 border border-[#CBD5E1]">
+          <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#F5F3FF] text-[#7C3AED] text-[11px] font-black">
+            ۳. خدمات تبلیغاتی اختیاری
+          </span>
+          <h3 className="text-sm font-extrabold text-[#061138]">
+            صدرنشینی در جست‌وجو و بسته پیامک تبلیغاتی
+          </h3>
+          <p className="text-xs text-[#475569] leading-relaxed">
+            هر زمان تمایل به دیده شدن در صدر نتایج جست‌وجو، بنر صفحه اول یا ارسال پیامک گروهی به مشتریان داشتید، می‌توانید از بخش «باشگاه و کمپین‌ها» بسته تهیه کنید.
+          </p>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -8980,14 +8897,14 @@ export const BusinessSettingsPage: React.FC = () => {
                 <div className="space-y-1.5">
                   <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
                     <MessageSquare className="w-4 h-4" />
-                    <span>اعتبار پیامک خدماتی سالن شما</span>
+                    <span>اعتبار پیامک سالن شما</span>
                   </span>
                   <h3 className="text-base sm:text-lg font-black text-white">
-                    {toPersianDigits(totalSmsQuota)} پیامک فعال در پلن «
-                    {currentPlan?.name || 'شروع رایگان'}»
+                    پیامک تایید نوبت: خودکار و فعال · شارژ پیامک تبلیغاتی:{' '}
+                    {toPersianDigits(currentBiz?.extraSmsBalance ?? 0)} عدد
                   </h3>
                   <p className="text-xs text-slate-200 leading-relaxed">
-                    پیامک‌های تایید رزرو و یادآوری نوبت به صورت خودکار از خط خدماتی پلتفرم برای مشتریان سالن شما ارسال می‌شود.
+                    پیامک‌های تایید رزرو به صورت خودکار از خط خدماتی پلتفرم ارسال می‌شود. برای ارسال پیامک گروهی و تبلیغاتی به مشتریان می‌توانید بسته پیامک تهیه کنید.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -8995,13 +8912,7 @@ export const BusinessSettingsPage: React.FC = () => {
                     to="/app/marketing"
                     className="px-3.5 py-2 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] font-extrabold text-xs transition-colors"
                   >
-                    پنل پیامک و شارژ بسته
-                  </Link>
-                  <Link
-                    to="/app/subscription"
-                    className="px-3.5 py-2 rounded-xl bg-white/12 hover:bg-white/20 border border-white/20 text-white font-bold text-xs transition-colors"
-                  >
-                    ارتقای پلن
+                    پنل پیامک و شارژ بسته ←
                   </Link>
                 </div>
               </div>

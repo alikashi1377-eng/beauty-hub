@@ -100,8 +100,8 @@ export const BUSINESS_NAV_ITEMS: BusinessSidebarItem[] = [
     group: 'مالی',
   },
   {
-    to: '/app/subscription',
-    label: 'بیعانه و اشتراک',
+    to: '/app/profile#financial-section',
+    label: 'شبا، بیعانه و تسویه',
     icon: <CreditCard className="w-4 h-4" />,
     group: 'مالی',
   },

@@ -49,7 +49,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   },
   {
     to: '/admin/subscriptions',
-    label: 'پلن‌ها و اشتراک‌ها',
+    label: 'تبلیغات ویژه و بسته‌ها',
     icon: <CreditCard className="w-4 h-4" />,
   },
   {
