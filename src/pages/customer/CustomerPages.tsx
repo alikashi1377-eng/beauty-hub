@@ -1121,22 +1121,28 @@ export const BookingConfirmPage: React.FC = () => {
         }
       : undefined);
 
-  // بیعانه آنلاین به صورت پیش‌فرض برای قطعی شدن نوبت فعال است (حداقل ۳۰٪ یا درصد تنظیمی کارفرما)
-  const depositPercent =
-    business?.depositPercent && business.depositPercent > 0
+  const isDepositEnabled = business?.depositEnabled !== false;
+  const depositPercent = !isDepositEnabled
+    ? 0
+    : business?.depositPercent && business.depositPercent > 0
       ? business.depositPercent
       : 30;
-  const depositAmountToman = Math.max(
-    50000,
-    Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100)
-  );
+  const depositAmountToman = !isDepositEnabled
+    ? 0
+    : Math.max(
+        1000,
+        Math.round(
+          (selectedServicesSummary.totalPriceToman * depositPercent) / 100
+        )
+      );
   const remainingInSalonToman = Math.max(
     0,
     selectedServicesSummary.totalPriceToman - depositAmountToman
   );
   const cancellationDeadlineHours = business?.cancellationDeadlineHours ?? 12;
   const latePenaltyPercent = business?.lateCancellationPenaltyPercent ?? 50;
-  const hasEnoughWalletBalance = customerWalletBalanceToman >= depositAmountToman;
+  const hasEnoughWalletBalance =
+    !isDepositEnabled || customerWalletBalanceToman >= depositAmountToman;
 
   // بازیابی و قفل کردن اطلاعات پیش‌نویس نوبت در صورت بازگشت از درگاه پرداخت زیبال با دکمه Back گوشی
   useEffect(() => {
@@ -1422,6 +1428,27 @@ export const BookingConfirmPage: React.FC = () => {
   const handleInitiateCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateCustomerFields()) return;
+
+    if (!isDepositEnabled || depositAmountToman <= 0) {
+      setIsSubmitting(true);
+      try {
+        await submitBooking({
+          depositPaidToman: 0,
+          paymentMethod: 'WALLET',
+          paymentTrackingCode: 'NO-DEPOSIT',
+        });
+        navigate('/booking/result');
+      } catch (err) {
+        setFormError(
+          err instanceof Error
+            ? err.message
+            : 'خطا در ثبت نوبت. لطفاً ساعت یا متخصص دیگری را انتخاب کنید.'
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     if (paymentMethod === 'WALLET') {
       if (!hasEnoughWalletBalance) {
@@ -1787,28 +1814,45 @@ export const BookingConfirmPage: React.FC = () => {
           </div>
 
           <div className="p-4 rounded-2xl bg-white/10 border border-white/25 space-y-2 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-extrabold text-[#00E5FF]">
-                مبلغ بیعانه قابل پرداخت الان ({toPersianDigits(depositPercent)}٪):
-              </span>
-              <span className="font-black text-white text-base tabular-nums">
-                {formatPriceToman(depositAmountToman)}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-slate-200">
-              <span>مانده قابل تسویه حضوری در سالن:</span>
-              <strong className="tabular-nums text-white">
-                {formatPriceToman(remainingInSalonToman)}
-              </strong>
-            </div>
-            <p className="text-[11px] text-[#00E5FF]/95 pt-1 border-t border-white/15 leading-relaxed">
-              ⚖️ قانون کنسلی سالن «{business.name}»: در صورت لغو نوبت تا{' '}
-              <strong>{toPersianDigits(cancellationDeadlineHours)} ساعت قبل از زمان نوبت</strong>،{' '}
-              <strong>۱۰۰٪ مبلغ بیعانه</strong> به صورت خودکار به کیف پول شما بازگردانده می‌شود و قابل برداشت به کارت بانکی است.
-              {latePenaltyPercent > 0
-                ? ` (در صورت لغو دیرهنگام در کمتر از ${toPersianDigits(cancellationDeadlineHours)} ساعت مانده، ${toPersianDigits(latePenaltyPercent)}٪ جریمه کسر و مابقی به کیف پول شما واریز می‌گردد).`
-                : ''}
-            </p>
+            {isDepositEnabled ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-extrabold text-[#00E5FF]">
+                    مبلغ بیعانه قابل پرداخت الان ({toPersianDigits(depositPercent)}٪):
+                  </span>
+                  <span className="font-black text-white text-base tabular-nums">
+                    {formatPriceToman(depositAmountToman)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-slate-200">
+                  <span>مانده قابل تسویه حضوری در سالن:</span>
+                  <strong className="tabular-nums text-white">
+                    {formatPriceToman(remainingInSalonToman)}
+                  </strong>
+                </div>
+                <p className="text-[11px] text-[#00E5FF]/95 pt-1 border-t border-white/15 leading-relaxed">
+                  ⚖️ قانون کنسلی سالن «{business.name}»: در صورت لغو نوبت تا{' '}
+                  <strong>
+                    {toPersianDigits(cancellationDeadlineHours)} ساعت قبل از زمان
+                    نوبت
+                  </strong>
+                  ، <strong>۱۰۰٪ مبلغ بیعانه</strong> به صورت خودکار به کیف پول شما
+                  بازگردانده می‌شود و قابل برداشت به کارت بانکی است.
+                  {latePenaltyPercent > 0
+                    ? ` (در صورت لغو دیرهنگام در کمتر از ${toPersianDigits(cancellationDeadlineHours)} ساعت مانده، ${toPersianDigits(latePenaltyPercent)}٪ جریمه کسر و مابقی به کیف پول شما واریز می‌گردد).`
+                    : ''}
+                </p>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-extrabold text-[#00E5FF]">
+                  وضعیت بیعانه آنلاین:
+                </span>
+                <span className="font-black text-white text-sm">
+                  بدون بیعانه (پرداخت کامل در سالن هنگام مراجعه)
+                </span>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -1879,103 +1923,109 @@ export const BookingConfirmPage: React.FC = () => {
             </FormField>
 
             {/* انتخاب روش پرداخت بیعانه: درگاه بانکی شاپرک یا کیف پول مشتری */}
-            <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
-              <label className="text-sm font-extrabold text-[#061138] block">
-                ۳. انتخاب روش پرداخت بیعانه ({formatPriceToman(depositAmountToman)})
-              </label>
+            {isDepositEnabled ? (
+              <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
+                <label className="text-sm font-extrabold text-[#061138] block">
+                  ۳. انتخاب روش پرداخت بیعانه ({formatPriceToman(depositAmountToman)})
+                </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* گزینه ۱: درگاه پرداخت اینترنتی زیبال (Zibal - شاپرک) */}
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('GATEWAY')}
-                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
-                    paymentMethod === 'GATEWAY'
-                      ? 'border-[#0057FF] bg-[#EFF6FF] shadow-xs'
-                      : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
-                      <CreditCard className="w-4 h-4 text-[#0057FF]" />
-                      <span>درگاه پرداخت اینترنتی زیبال (Zibal)</span>
-                    </span>
-                    <span
-                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        paymentMethod === 'GATEWAY'
-                          ? 'border-[#0057FF] bg-[#0057FF] text-white'
-                          : 'border-[#94A3B8]'
-                      }`}
-                    >
-                      {paymentMethod === 'GATEWAY' ? (
-                        <Check className="w-2.5 h-2.5" />
-                      ) : null}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[#475569] leading-relaxed">
-                    اتصال مستقیم به درگاه امن شاپرک (زیبال - gateway.zibal.ir) با کلیه کارت‌های عضو شبکه شتاب
-                  </p>
-                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* گزینه ۱: درگاه پرداخت اینترنتی زیبال (Zibal - شاپرک) */}
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('GATEWAY')}
+                    className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                      paymentMethod === 'GATEWAY'
+                        ? 'border-[#0057FF] bg-[#EFF6FF] shadow-xs'
+                        : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
+                        <CreditCard className="w-4 h-4 text-[#0057FF]" />
+                        <span>درگاه پرداخت اینترنتی زیبال (Zibal)</span>
+                      </span>
+                      <span
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          paymentMethod === 'GATEWAY'
+                            ? 'border-[#0057FF] bg-[#0057FF] text-white'
+                            : 'border-[#94A3B8]'
+                        }`}
+                      >
+                        {paymentMethod === 'GATEWAY' ? (
+                          <Check className="w-2.5 h-2.5" />
+                        ) : null}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#475569] leading-relaxed">
+                      اتصال مستقیم به درگاه امن شاپرک (زیبال - gateway.zibal.ir) با کلیه کارت‌های عضو شبکه شتاب
+                    </p>
+                  </button>
 
-                {/* گزینه ۲: پرداخت آنی از موجودی کیف پول مشتری */}
-                <div
-                  onClick={() => setPaymentMethod('WALLET')}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      setPaymentMethod('WALLET');
-                    }
-                  }}
-                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
-                    paymentMethod === 'WALLET'
-                      ? 'border-[#10B981] bg-[#ECFDF5] shadow-xs'
-                      : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
-                      <Wallet className="w-4 h-4 text-[#10B981]" />
-                      <span>پرداخت از کیف پول من</span>
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-black tabular-nums ${
-                        hasEnoughWalletBalance
-                          ? 'bg-[#D1FAE5] text-[#065F46]'
-                          : 'bg-[#FEE2E2] text-[#991B1B]'
-                      }`}
-                    >
-                      موجودی: {formatPriceToman(customerWalletBalanceToman)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <span className="text-[11px] text-[#475569]">
-                      {hasEnoughWalletBalance
-                        ? 'کسر آنی بدون نیاز به رمز پویا'
-                        : `کسری موجودی: ${formatPriceToman(Math.max(0, depositAmountToman - customerWalletBalanceToman))}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuickTopUpAmount(
-                          Math.max(
-                            100000,
-                            depositAmountToman - customerWalletBalanceToman
-                          )
-                        );
-                        setQuickTopUpSuccess('');
-                        setIsQuickTopUpOpen(true);
-                      }}
-                      className="px-2.5 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>شارژ با زیبال</span>
-                    </button>
+                  {/* گزینه ۲: پرداخت آنی از موجودی کیف پول مشتری */}
+                  <div
+                    onClick={() => setPaymentMethod('WALLET')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setPaymentMethod('WALLET');
+                      }
+                    }}
+                    className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                      paymentMethod === 'WALLET'
+                        ? 'border-[#10B981] bg-[#ECFDF5] shadow-xs'
+                        : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
+                        <Wallet className="w-4 h-4 text-[#10B981]" />
+                        <span>پرداخت از کیف پول من</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-black tabular-nums ${
+                          hasEnoughWalletBalance
+                            ? 'bg-[#D1FAE5] text-[#065F46]'
+                            : 'bg-[#FEE2E2] text-[#991B1B]'
+                        }`}
+                      >
+                        موجودی: {formatPriceToman(customerWalletBalanceToman)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <span className="text-[11px] text-[#475569]">
+                        {hasEnoughWalletBalance
+                          ? 'کسر آنی بدون نیاز به رمز پویا'
+                          : `کسری موجودی: ${formatPriceToman(Math.max(0, depositAmountToman - customerWalletBalanceToman))}`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuickTopUpAmount(
+                            Math.max(
+                              100000,
+                              depositAmountToman - customerWalletBalanceToman
+                            )
+                          );
+                          setQuickTopUpSuccess('');
+                          setIsQuickTopUpOpen(true);
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>شارژ با زیبال</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#065F46] font-bold leading-relaxed">
+                ✓ این مرکز دریافت بیعانه آنلاین را غیرفعال کرده است. نوبت شما بدون نیاز به پرداخت آنلاین ثبت قطعی می‌شود و هزینه خدمت را در زمان مراجعه حضوری پرداخت خواهید کرد.
+              </div>
+            )}
 
             {isVerifyingZibal ? (
               <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex items-center gap-3 text-xs font-extrabold text-[#1E40AF]">
@@ -2035,7 +2085,7 @@ export const BookingConfirmPage: React.FC = () => {
             ) : null}
 
             {/* هشدار مهم خاموش کردن VPN پیش از ورود به درگاه بانکی */}
-            {paymentMethod === 'GATEWAY' ? (
+            {isDepositEnabled && paymentMethod === 'GATEWAY' ? (
               <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] flex items-start gap-2.5 text-xs text-[#92400E] leading-relaxed">
                 <span className="text-base leading-none shrink-0 mt-0.5">⚠️</span>
                 <div>
@@ -2049,12 +2099,14 @@ export const BookingConfirmPage: React.FC = () => {
               </div>
             ) : null}
 
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
-              <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-              <span>
-                نوبت شما <strong>تنها پس از تکمیل پرداخت در درگاه زیبال (یا کیف پول)</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه بلافاصله به کیف پول شما بازمی‌گردد.
-              </span>
-            </div>
+            {isDepositEnabled ? (
+              <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
+                <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
+                <span>
+                  نوبت شما <strong>تنها پس از تکمیل پرداخت در درگاه زیبال (یا کیف پول)</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه بلافاصله به کیف پول شما بازمی‌گردد.
+                </span>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               <Link to={`/booking/${business.slug}`}>
@@ -2069,7 +2121,12 @@ export const BookingConfirmPage: React.FC = () => {
                 size="lg"
                 isLoading={isSubmitting || isVerifyingZibal}
               >
-                {paymentMethod === 'GATEWAY' ? (
+                {!isDepositEnabled ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>ثبت قطعی نوبت (بدون بیعانه)</span>
+                  </>
+                ) : paymentMethod === 'GATEWAY' ? (
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>

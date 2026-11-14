@@ -3995,29 +3995,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
-    // در صورت تایید نوبت آنلاین، اگر قبلاً در لحظه پرداخت اضافه نشده بود
-    if (
-      status === AppointmentStatus.Confirmed &&
-      targetApt &&
-      targetApt.status !== AppointmentStatus.Confirmed &&
-      !targetApt.depositPaidToman
-    ) {
-      const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
-      if (targetBiz) {
-        const depositPct =
-          targetBiz.depositPercent && targetBiz.depositPercent > 0
-            ? targetBiz.depositPercent
-            : 30;
-        const depositAmount = Math.round(
-          (targetApt.priceToman || 300000) * (depositPct / 100)
-        );
-        updateBusinessProfile(targetBiz.id, {
-          walletBalanceToman:
-            (targetBiz.walletBalanceToman ?? 0) + depositAmount,
-        });
-      }
-    }
-
     if (dataMode === 'real') {
       void realApiClient
         .updateAppointmentStatus(id, status)
@@ -4161,20 +4138,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
-    const depositPct =
-      targetBiz?.depositEnabled &&
-      targetBiz.depositPercent &&
-      targetBiz.depositPercent > 0
-        ? targetBiz.depositPercent
-        : 0;
-    const defaultRemaining =
-      depositPct > 0
-        ? Math.max(
-            0,
-            Math.round((targetApt.priceToman || 0) * ((100 - depositPct) / 100))
-          )
-        : targetApt.priceToman || 0;
+    const alreadyPaidDeposit = Math.max(
+      0,
+      Number(targetApt.depositPaidToman) || 0
+    );
+    const defaultRemaining = Math.max(
+      0,
+      (targetApt.priceToman || 0) - alreadyPaidDeposit
+    );
     const resolvedAmount =
       customAmountToman && customAmountToman > 0
         ? customAmountToman
@@ -4208,8 +4179,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       serviceTitle: targetApt.serviceTitle,
       specialistName: targetApt.specialistName,
       note:
-        depositPct > 0
-          ? `تسویه الباقی حضوری نوبت (${toPersianDigits(100 - depositPct)}٪ مبلغ خدمت)`
+        alreadyPaidDeposit > 0
+          ? `تسویه الباقی حضوری نوبت (پس از کسر ${formatPriceToman(alreadyPaidDeposit)} بیعانه آنلاین)`
           : 'تسویه کامل حضوری نوبت در سالن',
     });
   };
@@ -4316,9 +4287,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return null;
     }
 
-    const commissionPct = paymentConfig.platformCommissionPercent ?? 5;
+    const commissionPct = paymentConfig.platformCommissionPercent ?? 0;
     const commissionToman = Math.round(balance * (commissionPct / 100));
     const netPayoutToman = Math.max(0, balance - commissionToman);
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
 
     const newItem: SettlementRequestItem = {
       id: `STL-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -4332,7 +4304,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       amountToman: balance,
       commissionToman,
       netPayoutToman,
-      createdAtJalali: 'امروز',
+      createdAtJalali: todayJalali,
       status: 'PENDING',
     };
 
@@ -4354,7 +4326,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     showToast(
-      `درخواست تسویه شبا به مبلغ خالص ${netPayoutToman.toLocaleString('fa-IR')} تومان ثبت شد و در صف پایا شبانه قرار گرفت.`
+      `درخواست تسویه شبا به مبلغ ${netPayoutToman.toLocaleString('fa-IR')} تومان ثبت شد و در سیکل پایا (واریز به حساب در روز کاری بعد / فردا) قرار گرفت ✓`
     );
     return newItem;
   };
