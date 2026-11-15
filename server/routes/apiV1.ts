@@ -2463,9 +2463,75 @@ export function createApiV1Router(
       }
 
       let syncedBusinesses: unknown[] | undefined;
+      let syncedAppointments: unknown[] | undefined;
       try {
         const bootstrapPayload = await getBootstrapPayload(pool);
         syncedBusinesses = bootstrapPayload.businesses;
+        const bizByIdMap = new Map(
+          (bootstrapPayload.businesses || []).map((b) => [b.id, b])
+        );
+        const aptRes = await pool.query(`
+          SELECT
+            COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+            a.reference_code,
+            COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+            COALESCE(b.slug, '') AS business_slug,
+            COALESCE(b.name, 'سالن زیبایی') AS business_name,
+            COALESCE(s.legacy_demo_id, s.id::text, '') AS service_external_id,
+            a.service_title_snapshot,
+            COALESCE(sp.legacy_demo_id, sp.id::text, '') AS specialist_external_id,
+            a.specialist_name_snapshot,
+            a.customer_name,
+            a.customer_phone,
+            a.customer_phone_masked,
+            a.date_jalali,
+            a.time_slot_label,
+            a.duration_minutes_snapshot,
+            a.service_price_toman_snapshot,
+            a.status,
+            a.notes
+          FROM appointments a
+          LEFT JOIN businesses b ON b.id = a.business_id
+          LEFT JOIN services s ON s.id = a.service_id
+          LEFT JOIN specialists sp ON sp.id = a.specialist_id
+          WHERE COALESCE(b.legacy_demo_id, '') NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+            AND COALESCE(a.legacy_demo_id, '') NOT IN ('apt-1','apt-2','apt-3','apt-4','apt-5','apt-6','apt-7','apt-8','apt-9','apt-10','apt-11','apt-12')
+          ORDER BY a.service_starts_at DESC, a.created_at DESC
+          LIMIT 300
+        `);
+        syncedAppointments = aptRes.rows.map((r: Record<string, unknown>) => {
+          const rowPrice = Number(r.service_price_toman_snapshot) || 0;
+          const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+          const matchedBiz = bizByIdMap.get(String(r.business_external_id));
+          const depPct =
+            matchedBiz?.depositPercent &&
+            [20, 30, 50, 100].includes(Number(matchedBiz.depositPercent))
+              ? Number(matchedBiz.depositPercent)
+              : 30;
+          return {
+            id: String(r.external_id),
+            referenceCode: String(r.reference_code),
+            businessId: String(r.business_external_id),
+            businessSlug: String(r.business_slug),
+            businessName: String(r.business_name),
+            serviceId: String(r.service_external_id),
+            serviceTitle: String(r.service_title_snapshot),
+            specialistId: String(r.specialist_external_id),
+            specialistName: String(r.specialist_name_snapshot),
+            customerName: String(r.customer_name),
+            customerPhoneMasked: String(r.customer_phone_masked || r.customer_phone || ''),
+            dateJalali: String(r.date_jalali),
+            timeSlot: String(r.time_slot_label),
+            durationMinutes: Number(r.duration_minutes_snapshot),
+            priceToman: rowPrice,
+            depositPaidToman: Math.max(
+              20_000,
+              Math.round((effectivePrice * depPct) / 100)
+            ),
+            status: String(r.status),
+            notes: r.notes ? String(r.notes) : undefined,
+          };
+        });
       } catch {
         // ignore fallback
       }
@@ -2475,6 +2541,7 @@ export function createApiV1Router(
         mode: 'real',
         registeredUsers: result.registeredUsers,
         businesses: syncedBusinesses,
+        appointments: syncedAppointments,
         sessionToken: result.sessionToken,
         expiresAt: result.expiresAt,
         user: result.user,

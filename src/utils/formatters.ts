@@ -4,6 +4,7 @@ import {
   BusinessType,
   ServiceItem,
   SubscriptionStatus,
+  TimeSlotAvailabilityItem,
   WorkingHourItem,
 } from '../types';
 
@@ -39,26 +40,10 @@ export function isValidIranMobile(phone: string): boolean {
 }
 
 /**
- * سقف مجاز ثبت متخصص بر اساس پلن انتخابی یا فعال سالن:
- * - پلن رایگان (plan-free-start): ۱ متخصص (فقط خود مدیر/متخصص)
- * - پلن حرفه‌ای (plan-professional): تا ۳ متخصص
- * - پلن VIP (plan-vip-brand): تا ۸ متخصص
+ * در مدل جدید کارمزدی تایم تو، محدودیتی برای تعداد متخصصان ثبت‌شده در سالن وجود ندارد
  */
-export function getPlanStaffLimitCount(planIdOrName?: string): number {
-  const val = (planIdOrName || '').toLowerCase();
-  if (val.includes('vip') || val.includes('برند') || val.includes('8') || val.includes('۸')) {
-    return 8;
-  }
-  if (
-    val.includes('pro') ||
-    val.includes('حرفه‌ای') ||
-    val.includes('حرفه ای') ||
-    val.includes('3') ||
-    val.includes('۳')
-  ) {
-    return 3;
-  }
-  return 1;
+export function getPlanStaffLimitCount(_planIdOrName?: string): number {
+  return 50;
 }
 
 export function formatPriceToman(amount: number): string {
@@ -101,14 +86,6 @@ export function formatServicePriceShort(
   return formatPriceToman(base);
 }
 
-export function formatWorkingHourDisplay(wh: WorkingHourItem): string {
-  if (!wh || !wh.isOpen) return 'تعطیل';
-  if (wh.hasBreak && wh.secondOpenTime && wh.secondCloseTime) {
-    return `شیفت ۱: ${wh.openTime} تا ${wh.closeTime} | شیفت ۲: ${wh.secondOpenTime} تا ${wh.secondCloseTime}`;
-  }
-  return `${wh.openTime} تا ${wh.closeTime}`;
-}
-
 export function parseTimeToMinutes(rawTime?: string): number {
   if (!rawTime) return -1;
   const clean = toEnglishDigitsClient(rawTime).trim();
@@ -120,30 +97,203 @@ export function parseTimeToMinutes(rawTime?: string): number {
   return h * 60 + m;
 }
 
+export function formatMinutesToPersianTime(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, Math.floor(totalMinutes)));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return toPersianDigits(`${hh}:${mm}`);
+}
+
+/**
+ * استخراج ساعت کاری واقعی روز (با پشتیبانی از شیفت صبح و عصر و همچنین بازیابی خودکار
+ * سالن‌هایی که قبلاً حالت دو شیفته را فعال کرده‌اند و پایان شیفت اول آن‌ها روی ۱۲:۰۰ تا ۱۴:۳۰ ذخیره شده است)
+ */
+export function resolveEffectiveWorkingHour(
+  wh?: WorkingHourItem
+): WorkingHourItem | undefined {
+  if (!wh) return undefined;
+  if (!wh.isOpen) return wh;
+
+  const s1CloseMin = parseTimeToMinutes(wh.closeTime);
+  const inferredTwoShift =
+    wh.hasBreak === undefined &&
+    s1CloseMin >= 11 * 60 + 30 &&
+    s1CloseMin <= 14 * 60 + 30;
+
+  if (wh.hasBreak || inferredTwoShift) {
+    const s2Open = wh.secondOpenTime || '۱۶:۰۰';
+    const s2Close = wh.secondCloseTime || '۲۱:۰۰';
+    const s2OpenMin = parseTimeToMinutes(s2Open);
+    const s2CloseMin = parseTimeToMinutes(s2Close);
+    if (s2OpenMin >= s1CloseMin && s2CloseMin > s2OpenMin) {
+      return {
+        ...wh,
+        openTime: toPersianDigits(wh.openTime),
+        closeTime: toPersianDigits(wh.closeTime),
+        hasBreak: true,
+        secondOpenTime: toPersianDigits(s2Open),
+        secondCloseTime: toPersianDigits(s2Close),
+      };
+    }
+  }
+
+  return {
+    ...wh,
+    openTime: toPersianDigits(wh.openTime),
+    closeTime: toPersianDigits(wh.closeTime),
+  };
+}
+
+export function formatWorkingHourDisplay(wh: WorkingHourItem): string {
+  const effective = resolveEffectiveWorkingHour(wh);
+  if (!effective || !effective.isOpen) return 'تعطیل';
+  if (effective.hasBreak && effective.secondOpenTime && effective.secondCloseTime) {
+    return `شیفت صبح: ${effective.openTime} تا ${effective.closeTime} | شیفت عصر: ${effective.secondOpenTime} تا ${effective.secondCloseTime}`;
+  }
+  return `${effective.openTime} تا ${effective.closeTime}`;
+}
+
 export function isTimeSlotWithinWorkingHours(
   timeSlot: string,
-  wh?: WorkingHourItem
+  wh?: WorkingHourItem,
+  durationMinutes = 30
 ): boolean {
-  if (!wh) return true;
-  if (!wh.isOpen) return false;
+  const effective = resolveEffectiveWorkingHour(wh);
+  if (!effective) return true;
+  if (!effective.isOpen) return false;
   const slotMin = parseTimeToMinutes(timeSlot);
   if (slotMin < 0) return true;
+  const dur = Math.max(15, Number(durationMinutes) || 30);
 
-  const s1Start = parseTimeToMinutes(wh.openTime);
-  const s1End = parseTimeToMinutes(wh.closeTime);
+  const s1Start = parseTimeToMinutes(effective.openTime);
+  const s1End = parseTimeToMinutes(effective.closeTime);
   const inShift1 =
-    s1Start >= 0 && s1End > s1Start ? slotMin >= s1Start && slotMin < s1End : true;
+    s1Start >= 0 && s1End > s1Start
+      ? slotMin >= s1Start && slotMin + Math.min(dur, 30) <= s1End
+      : true;
 
-  if (!wh.hasBreak || !wh.secondOpenTime || !wh.secondCloseTime) {
+  if (!effective.hasBreak || !effective.secondOpenTime || !effective.secondCloseTime) {
     return inShift1;
   }
 
-  const s2Start = parseTimeToMinutes(wh.secondOpenTime);
-  const s2End = parseTimeToMinutes(wh.secondCloseTime);
+  const s2Start = parseTimeToMinutes(effective.secondOpenTime);
+  const s2End = parseTimeToMinutes(effective.secondCloseTime);
   const inShift2 =
-    s2Start >= 0 && s2End > s2Start ? slotMin >= s2Start && slotMin < s2End : false;
+    s2Start >= 0 && s2End > s2Start
+      ? slotMin >= s2Start && slotMin + Math.min(dur, 30) <= s2End
+      : false;
 
   return inShift1 || inShift2;
+}
+
+/**
+ * تولید یکپارچه اسلات‌های رزرو مشتری برای هر دو شیفت صبح و عصر (حذف خودکار بازه استراحت ظهر و حفظ کامل نوبت‌های عصر)
+ */
+export function buildCustomerBookingTimeSlots(params: {
+  dayWorkingHour?: WorkingHourItem;
+  serverSlots?: TimeSlotAvailabilityItem[] | null;
+  durationMinutes?: number;
+}): {
+  allSlots: TimeSlotAvailabilityItem[];
+  morningSlots: TimeSlotAvailabilityItem[];
+  afternoonSlots: TimeSlotAvailabilityItem[];
+  effectiveWorkingHour?: WorkingHourItem;
+} {
+  const effective = resolveEffectiveWorkingHour(params.dayWorkingHour);
+  const duration = Math.max(15, Number(params.durationMinutes) || 30);
+  const serverByTime = new Map<string, TimeSlotAvailabilityItem>();
+
+  for (const s of params.serverSlots ?? []) {
+    const key = toPersianDigits(String(s.time || '').trim());
+    if (key) {
+      serverByTime.set(key, { ...s, time: key });
+    }
+  }
+
+  if (effective && !effective.isOpen) {
+    return {
+      allSlots: [],
+      morningSlots: [],
+      afternoonSlots: [],
+      effectiveWorkingHour: effective,
+    };
+  }
+
+  const s1Start = effective ? parseTimeToMinutes(effective.openTime) : 9 * 60 + 30;
+  const s1End = effective ? parseTimeToMinutes(effective.closeTime) : 19 * 60 + 30;
+  const validS1Start = s1Start >= 0 ? s1Start : 9 * 60 + 30;
+  const validS1End = s1End > validS1Start ? s1End : 19 * 60 + 30;
+
+  const makeSlotItem = (
+    mins: number,
+    shiftEndMins: number
+  ): TimeSlotAvailabilityItem => {
+    const label = formatMinutesToPersianTime(mins);
+    const fitsDuration =
+      mins + duration <= shiftEndMins || mins + 30 <= shiftEndMins;
+    const srvMatch = serverByTime.get(label);
+
+    if (!fitsDuration) {
+      return {
+        time: label,
+        available: false,
+        reason: 'خارج از ساعت کاری',
+      };
+    }
+
+    if (srvMatch) {
+      // اگر سرور اسلات شیفت عصر را صرفاً به دلیل ثبت قبلی تک‌شیفت «خارج از ساعت کاری» علامت زده بود اما در شیفت دوم سالن است، آن را آزاد کن
+      if (
+        !srvMatch.available &&
+        srvMatch.reason === 'خارج از ساعت کاری' &&
+        isTimeSlotWithinWorkingHours(label, effective, duration)
+      ) {
+        return {
+          time: label,
+          available: true,
+        };
+      }
+      return srvMatch;
+    }
+
+    return {
+      time: label,
+      available: true,
+    };
+  };
+
+  const morningSlots: TimeSlotAvailabilityItem[] = [];
+  const afternoonSlots: TimeSlotAvailabilityItem[] = [];
+
+  if (effective?.hasBreak && effective.secondOpenTime && effective.secondCloseTime) {
+    for (let m = validS1Start; m < validS1End; m += 30) {
+      morningSlots.push(makeSlotItem(m, validS1End));
+    }
+    const s2Start = parseTimeToMinutes(effective.secondOpenTime);
+    const s2End = parseTimeToMinutes(effective.secondCloseTime);
+    if (s2Start >= validS1End && s2End > s2Start) {
+      for (let m = s2Start; m < s2End; m += 30) {
+        afternoonSlots.push(makeSlotItem(m, s2End));
+      }
+    }
+  } else {
+    for (let m = validS1Start; m < validS1End; m += 30) {
+      const item = makeSlotItem(m, validS1End);
+      if (m < 14 * 60) {
+        morningSlots.push(item);
+      } else {
+        afternoonSlots.push(item);
+      }
+    }
+  }
+
+  const allSlots = [...morningSlots, ...afternoonSlots];
+  return {
+    allSlots,
+    morningSlots,
+    afternoonSlots,
+    effectiveWorkingHour: effective,
+  };
 }
 
 export function formatDurationMinutes(minutes: number): string {

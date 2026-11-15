@@ -178,13 +178,15 @@ interface PrototypeDataContextValue {
   adminReviewedBizIds: string[];
   grantBusinessPlanOrAdByAdmin: (input: {
     businessId: string;
-    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH';
+    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR';
     planId?: string;
     durationDays: number;
     isTrialGift?: boolean;
     sponsoredPlacement?: SponsoredPlacementSlot;
     sponsoredLabel?: string;
     bonusSmsCount?: number;
+    isVipPartner?: boolean;
+    vipCommissionPercent?: number;
   }) => void;
   permanentlyDeleteBusiness: (businessId: string) => void;
   platformBusinessNotices: PlatformBusinessNoticeItem[];
@@ -309,6 +311,10 @@ interface PrototypeDataContextValue {
   settlementRequests: SettlementRequestItem[];
   requestWalletSettlement: (businessId?: string) => SettlementRequestItem | null;
   markSettlementPaid: (settlementId: string, trackingCode?: string) => void;
+  settleBusinessDossierByAdmin: (
+    businessId: string,
+    trackingCode?: string
+  ) => SettlementRequestItem | null;
   runNightlyBatchSettlement: () => number;
   recordSponsoredClick: (businessId: string) => void;
   sendAppointmentReminders: (businessId?: string) => Promise<number>;
@@ -1662,7 +1668,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setPlans(response.data.plans);
         }
 
-        setAppointments([]);
+        setAppointments((prev) => mergeSavedAppointments(prev));
         setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
         setAdminUsers(response.data.registeredUsers ?? []);
@@ -1769,13 +1775,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             localPersistedUser?.phone &&
             !syncPayloadAccounts.some((a) => a.phone === localPersistedUser.phone)
           ) {
+            const isSuperAdminPhone =
+              localPersistedUser.phone === '09138201042' ||
+              localPersistedUser.isPlatformAdmin ||
+              localPersistedUser.roles.includes('PLATFORM_ADMIN');
             syncPayloadAccounts.push({
               phone: localPersistedUser.phone,
               fullName: localPersistedUser.fullName || 'کاربر تایم تو',
               city: localPersistedUser.defaultCity || 'اصفهان',
-              role: localPersistedUser.roles.includes('BUSINESS_OWNER')
-                ? 'owner'
-                : 'customer',
+              role: (isSuperAdminPhone
+                ? 'admin'
+                : localPersistedUser.roles.includes('BUSINESS_OWNER')
+                  ? 'owner'
+                  : 'customer') as 'customer' | 'owner',
               password: '',
               businessId: localOwnedBizId || undefined,
               businessName: undefined,
@@ -1795,7 +1807,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           }
           if (syncPayloadAccounts.length > 0) {
             void realApiClient
-              .syncRegisteredAccounts({ accounts: syncPayloadAccounts })
+              .syncRegisteredAccounts({
+                accounts: syncPayloadAccounts,
+                issueSessionForPhone: localPersistedUser?.phone || undefined,
+              })
               .then((syncRes) => {
                 if (Array.isArray(syncRes.registeredUsers)) {
                   setAdminUsers(syncRes.registeredUsers);
@@ -1809,6 +1824,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                       syncRes.businesses,
                       syncRes.registeredUsers
                     )
+                  );
+                }
+                if (
+                  Array.isArray(syncRes.appointments) &&
+                  syncRes.appointments.length > 0
+                ) {
+                  const syncedApts = syncRes.appointments;
+                  setAppointments((prev) =>
+                    mergeSavedAppointments([...syncedApts, ...prev])
                   );
                 }
               })
@@ -1867,6 +1891,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             await loadAuthenticatedRoleData(effectiveUser);
           } catch {
             setAuthUser(localPersistedUser);
+            await loadAuthenticatedRoleData(localPersistedUser);
           }
         } else {
           setAuthUser(null);
@@ -2294,11 +2319,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           smsSentCount: 0,
           workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
           workingHoursConfigured: false,
+          contractAccepted: false,
           visualTheme: 'violet',
           featured: false,
           isSampleShowcase: false,
           avatarUrl: payload.avatarUrl,
         };
+
+        sendPlatformBusinessNotice({
+          targetBusinessId: newBizId,
+          targetBusinessName: salonName,
+          title: '⚠️ خوش آمدید! تکمیل پروفایل و تایید قرارداد جهت نمایش عمومی سالن الزامی است',
+          message:
+            'کسب‌وکار شما ثبت اولیه شد. توجه: تا زمان تکمیل گام‌های الزامی (۱. آدرس و موقعیت نقشه، ۲. حداقل یک خدمت، ۳. ساعت کاری، ۴. معرفی متخصص، و ۵. ثبت شبا + تیک تایید مفاد قرارداد همکاری)، پروفایل سالن شما در ویترین عمومی نمایش داده نمی‌شود. (بخش گالری تصاویر کاملاً اختیاری است).',
+        });
 
         try {
           const localOnbRaw =
@@ -2876,6 +2910,29 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
+    // اگر صاحب سالن تصویر پروفایل سالن را تغییر دهد و تنها متخصص سالن باشد (یا هنوز عکس جدایی برای متخصص نگذاشته باشد)، عکس متخصص هم همگام شود
+    if (patch.avatarUrl && patch.avatarUrl.trim()) {
+      setSpecialists((prev) => {
+        const bizSpecs = prev.filter((sp) => sp.businessId === businessId);
+        const next = prev.map((sp) => {
+          if (sp.businessId !== businessId) return sp;
+          if (bizSpecs.length === 1 || !sp.avatarUrl) {
+            return { ...sp, avatarUrl: patch.avatarUrl };
+          }
+          return sp;
+        });
+        try {
+          window.localStorage.setItem(
+            'timeto_local_specialists_v1',
+            JSON.stringify(next)
+          );
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    }
+
     if (dataMode === 'real') {
       void realApiClient
         .updateBusinessProfile(businessId, patch)
@@ -3327,16 +3384,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const grantBusinessPlanOrAdByAdmin = (input: {
     businessId: string;
-    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH';
+    grantType: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR';
     planId?: string;
     durationDays: number;
     isTrialGift?: boolean;
     sponsoredPlacement?: SponsoredPlacementSlot;
     sponsoredLabel?: string;
     bonusSmsCount?: number;
+    isVipPartner?: boolean;
+    vipCommissionPercent?: number;
   }) => {
     const targetBiz = businesses.find((b) => b.id === input.businessId);
-    const days = Math.max(1, Math.min(365, Number(input.durationDays) || 7));
+    const days = Math.max(1, Math.min(365, Number(input.durationDays) || 30));
     const expiresAtMs = Date.now() + days * 24 * 60 * 60 * 1000;
     const expiresJalali = (() => {
       try {
@@ -3355,53 +3414,92 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const patch: Partial<BusinessItem> = {};
     const grantedSummaryParts: string[] = [];
 
-    if (input.grantType === 'PLAN' || input.grantType === 'BOTH') {
-      const foundPlan =
-        plans.find((p) => p.id === input.planId) ??
-        plans.find((p) => p.id === 'plan-professional') ??
-        plans[1] ??
-        plans[0];
-      patch.subscriptionPlan = foundPlan?.name || 'حرفه‌ای (پرفروش)';
-      patch.subscriptionStatus = input.isTrialGift
-        ? SubscriptionStatus.Trial
-        : SubscriptionStatus.Active;
+    if (input.grantType === 'VIP_AMBASSADOR' || input.isVipPartner) {
+      const vipRate =
+        typeof input.vipCommissionPercent === 'number' &&
+        input.vipCommissionPercent >= 0
+          ? input.vipCommissionPercent
+          : 0;
+      patch.isVipPartner = true;
+      patch.verifiedBadge = true;
+      patch.vipCommissionPercent = vipRate;
+      patch.subscriptionPlan = '👑 سفیر برند و سالن منتخب تایم‌تو (VIP)';
+      patch.subscriptionStatus = SubscriptionStatus.Active;
       patch.trialDaysRemaining = days;
       patch.planExpiresAtMs = expiresAtMs;
-      grantedSummaryParts.push(
-        `پلن «${patch.subscriptionPlan}» (${input.isTrialGift ? 'تست هدیه' : 'فعال'})`
-      );
-    }
-
-    if (input.grantType === 'SPONSORED_AD' || input.grantType === 'BOTH') {
-      const placement = input.sponsoredPlacement || 'SEARCH_TOP';
       patch.isSponsored = true;
       patch.featured = true;
-      patch.sponsoredPlacement = placement;
-      patch.sponsoredOrder = placement === 'HERO_SPOTLIGHT' ? 1 : 2;
+      patch.sponsoredPlacement = input.sponsoredPlacement || 'HERO_SPOTLIGHT';
+      patch.sponsoredOrder = 1;
       patch.sponsoredDaysRemaining = days;
       patch.sponsoredExpiresAtMs = expiresAtMs;
       patch.sponsoredExpiresJalali = expiresJalali;
       patch.sponsoredLabel =
-        input.sponsoredLabel?.trim() ||
-        (input.isTrialGift
-          ? '★ پیشنهاد ویژه (تست هدیه مدیریت)'
-          : '★ پیشنهاد ویژه رزرو آنلاین');
+        input.sponsoredLabel?.trim() || '👑 سالن منتخب تایم‌تو (سفیر برند)';
       grantedSummaryParts.push(
-        `جایگاه تبلیغاتی ویژه (${
-          placement === 'HERO_SPOTLIGHT'
-            ? 'ویترین اول هیرو'
-            : placement === 'HOME_BANNER'
-              ? 'بنر صفحه اول'
-              : 'صدر نتایج جست‌وجو'
-        })`
+        `بسته ویژه «👑 سفیر برند / سالن منتخب تایم‌تو» با کارمزد اختصاصی ${toPersianDigits(vipRate)}٪${vipRate === 0 ? ' (معافیت کامل کارمزد)' : ''}`
       );
+      grantedSummaryParts.push('جایگاه اول ویترین هیرو و نشان تایید طلایی');
+    } else {
+      if (input.grantType === 'PLAN' || input.grantType === 'BOTH') {
+        const foundPlan =
+          plans.find((p) => p.id === input.planId) ??
+          plans.find((p) => p.id === 'plan-professional') ??
+          plans[1] ??
+          plans[0];
+        patch.subscriptionPlan = foundPlan?.name || 'حرفه‌ای (پرفروش)';
+        patch.subscriptionStatus = input.isTrialGift
+          ? SubscriptionStatus.Trial
+          : SubscriptionStatus.Active;
+        patch.trialDaysRemaining = days;
+        patch.planExpiresAtMs = expiresAtMs;
+        grantedSummaryParts.push(
+          `پلن «${patch.subscriptionPlan}» (${input.isTrialGift ? 'تست هدیه' : 'فعال'})`
+        );
+      }
+
+      if (input.grantType === 'SPONSORED_AD' || input.grantType === 'BOTH') {
+        const placement = input.sponsoredPlacement || 'SEARCH_TOP';
+        patch.isSponsored = true;
+        patch.featured = true;
+        patch.sponsoredPlacement = placement;
+        patch.sponsoredOrder = placement === 'HERO_SPOTLIGHT' ? 1 : 2;
+        patch.sponsoredDaysRemaining = days;
+        patch.sponsoredExpiresAtMs = expiresAtMs;
+        patch.sponsoredExpiresJalali = expiresJalali;
+        patch.sponsoredLabel =
+          input.sponsoredLabel?.trim() ||
+          (input.isTrialGift
+            ? '★ پیشنهاد ویژه (تست هدیه مدیریت)'
+            : '★ پیشنهاد ویژه رزرو آنلاین');
+        grantedSummaryParts.push(
+          `جایگاه تبلیغاتی ویژه (${
+            placement === 'HERO_SPOTLIGHT'
+              ? 'ویترین اول هیرو'
+              : placement === 'HOME_BANNER'
+                ? 'بنر صفحه اول'
+                : 'صدر نتایج جست‌وجو'
+          })`
+        );
+      }
+
+      if (
+        typeof input.vipCommissionPercent === 'number' &&
+        input.vipCommissionPercent >= 0
+      ) {
+        patch.vipCommissionPercent = input.vipCommissionPercent;
+        patch.isVipPartner = true;
+        grantedSummaryParts.push(
+          `تعرفه کارمزد اختصاصی ${toPersianDigits(input.vipCommissionPercent)}٪`
+        );
+      }
     }
 
     if (input.bonusSmsCount && input.bonusSmsCount > 0) {
       patch.extraSmsBalance =
         (targetBiz?.extraSmsBalance ?? 0) + Number(input.bonusSmsCount);
       grantedSummaryParts.push(
-        `${toPersianDigits(input.bonusSmsCount)} پیامک هدیه`
+        `${toPersianDigits(input.bonusSmsCount)} پیامک هدیه باشگاه مشتریان`
       );
     }
 
@@ -3410,9 +3508,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     sendPlatformBusinessNotice({
       targetBusinessId: input.businessId,
       targetBusinessName: targetBiz?.name || 'کسب‌وکار شما',
-      title: input.isTrialGift
-        ? `🎁 فعال‌سازی تست هدیه ${toPersianDigits(days)} روزه توسط مدیریت تایم‌تو`
-        : `✅ فعال‌سازی اشتراک و جایگاه ویژه (${toPersianDigits(days)} روزه)`,
+      title:
+        input.grantType === 'VIP_AMBASSADOR' || input.isVipPartner
+          ? `👑 تبریک! سالن شما به عنوان «سفیر برند و سالن منتخب تایم‌تو (VIP)» برگزیده شد`
+          : input.isTrialGift
+            ? `🎁 فعال‌سازی تست هدیه ${toPersianDigits(days)} روزه توسط مدیریت تایم‌تو`
+            : `✅ فعال‌سازی اشتراک و جایگاه ویژه (${toPersianDigits(days)} روزه)`,
       message: `${grantedSummaryParts.join(' + ')} به مدت ${toPersianDigits(
         days
       )} روز (تا تاریخ ${expiresJalali}) برای کسب‌وکار شما فعال گردید. روزشمار اعتبار در بالای پنل شما قابل مشاهده است.`,
@@ -3783,8 +3884,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       void realApiClient
         .createSpecialist(item)
         .then((res) => {
+          const mergedSpc: SpecialistItem = {
+            ...res.item,
+            avatarUrl: item.avatarUrl || res.item.avatarUrl,
+          };
           setSpecialists((prev) => {
-            const next = [res.item, ...prev];
+            const next = [mergedSpc, ...prev];
             persistLocalSpecialists(next);
             return next;
           });
@@ -3815,11 +3920,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .updateSpecialist(id, patch)
         .then((res) => {
           setSpecialists((prev) => {
-            const next = prev.map((sp) => (sp.id === id ? res.item : sp));
+            const next = prev.map((sp) =>
+              sp.id === id
+                ? {
+                    ...res.item,
+                    avatarUrl:
+                      patch.avatarUrl !== undefined
+                        ? patch.avatarUrl
+                        : res.item.avatarUrl ?? sp.avatarUrl,
+                  }
+                : sp
+            );
             persistLocalSpecialists(next);
             return next;
           });
-          showToast('اطلاعات متخصص در پایگاه داده بروزرسانی شد.');
+          showToast('اطلاعات و تصویر متخصص در پایگاه داده بروزرسانی شد.');
         })
         .catch(() => {
           setSpecialists((prev) => {
@@ -4509,9 +4624,180 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     return newItem;
   };
 
+  const computeBusinessBookingDossierNumbers = (targetBiz: BusinessItem) => {
+    const bizApts = appointments.filter(
+      (a) =>
+        (a.businessId === targetBiz.id ||
+          a.businessSlug === targetBiz.slug ||
+          (a.businessName && a.businessName.trim() === targetBiz.name.trim())) &&
+        a.status !== AppointmentStatus.Cancelled &&
+        a.status !== AppointmentStatus.NoShow
+    );
+    let totalServicePriceToman = 0;
+    let totalDepositToman = 0;
+    let totalCommissionToman = 0;
+    let totalSalonNetToman = 0;
+
+    for (const apt of bizApts) {
+      const srvPrice = Math.max(0, Number(apt.priceToman) || 350_000);
+      const breakdown = calculateBookingFinancialBreakdown({
+        totalServicePriceToman: srvPrice,
+        depositPercent: targetBiz.depositPercent,
+        business: targetBiz,
+        commissionConfig: paymentConfig,
+      });
+      const dep =
+        typeof apt.depositPaidToman === 'number' && apt.depositPaidToman > 0
+          ? apt.depositPaidToman
+          : breakdown.baseDepositToman;
+      const comm =
+        typeof apt.platformCommissionToman === 'number' &&
+        apt.platformCommissionToman >= 0
+          ? apt.platformCommissionToman
+          : breakdown.platformCommissionToman;
+      const net =
+        typeof apt.salonNetDepositCreditedToman === 'number' &&
+        apt.salonNetDepositCreditedToman >= 0
+          ? apt.salonNetDepositCreditedToman
+          : Math.max(0, dep - comm);
+
+      totalServicePriceToman += srvPrice;
+      totalDepositToman += dep;
+      totalCommissionToman += comm;
+      totalSalonNetToman += net;
+    }
+
+    const paidSettlementsTotal = settlementRequests
+      .filter((s) => s.businessId === targetBiz.id && s.status === 'PAID')
+      .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+
+    const pendingPayoutToman = Math.max(
+      targetBiz.walletBalanceToman ?? 0,
+      Math.max(0, totalSalonNetToman - paidSettlementsTotal)
+    );
+
+    return {
+      bookingsCount: bizApts.length,
+      totalServicePriceToman,
+      totalDepositToman,
+      totalCommissionToman,
+      totalSalonNetToman,
+      paidSettlementsTotal,
+      pendingPayoutToman,
+    };
+  };
+
+  const settleBusinessDossierByAdmin = (
+    businessId: string,
+    trackingCode?: string
+  ): SettlementRequestItem | null => {
+    const targetBiz = businesses.find((b) => b.id === businessId);
+    if (!targetBiz) {
+      showToast('کسب‌وکار مورد نظر یافت نشد.', 'warning');
+      return null;
+    }
+
+    const dossier = computeBusinessBookingDossierNumbers(targetBiz);
+    const payoutAmount = dossier.pendingPayoutToman;
+    if (payoutAmount <= 0 && dossier.bookingsCount === 0) {
+      showToast(
+        `برای سالن «${targetBiz.name}» در حال حاضر مانده تسویه‌نشده‌ای وجود ندارد.`,
+        'info'
+      );
+      return null;
+    }
+
+    const code =
+      trackingCode?.trim() ||
+      `PAYA-${Math.floor(100000 + Math.random() * 899999)}`;
+    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const rawSheba = (targetBiz.bankShebaNumber || '').trim();
+    const formattedSheba = rawSheba
+      ? rawSheba.startsWith('IR')
+        ? rawSheba
+        : `IR${rawSheba}`
+      : 'ثبت‌نشده (واریز به کارت/حساب سالن)';
+
+    const settledRecord: SettlementRequestItem = {
+      id: `STL-${Date.now().toString().slice(-5)}`,
+      businessId: targetBiz.id,
+      businessName: targetBiz.name,
+      ownerName:
+        targetBiz.bankAccountHolder || targetBiz.ownerName || 'مدیر سالن',
+      ownerPhone: targetBiz.ownerPhone || targetBiz.phoneDisplay || '',
+      shebaNumber: formattedSheba,
+      cardNumber: targetBiz.bankCardNumber,
+      amountToman: dossier.totalDepositToman || payoutAmount,
+      commissionToman: dossier.totalCommissionToman,
+      netPayoutToman: payoutAmount > 0 ? payoutAmount : dossier.totalSalonNetToman,
+      bookingsCount: dossier.bookingsCount,
+      totalServiceAmountToman: dossier.totalServicePriceToman,
+      totalDepositCollectedToman: dossier.totalDepositToman,
+      createdAtJalali: todayJalali,
+      status: 'PAID',
+      paidTrackingCode: code,
+      paidAtJalali: todayJalali,
+    };
+
+    setSettlementRequests((prev) => {
+      const updatedPrev = prev.map((s) =>
+        s.businessId === targetBiz.id && s.status === 'PENDING'
+          ? {
+              ...s,
+              status: 'PAID' as const,
+              paidTrackingCode: code,
+              paidAtJalali: todayJalali,
+            }
+          : s
+      );
+      const next = [settledRecord, ...updatedPrev];
+      try {
+        window.localStorage.setItem(
+          'timeto_settlement_requests_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+
+    updateBusinessProfile(targetBiz.id, { walletBalanceToman: 0 });
+
+    sendPlatformBusinessNotice({
+      targetBusinessId: targetBiz.id,
+      targetBusinessName: targetBiz.name,
+      title: `📊 صورتحساب و تاییدیه واریز هفتگی شبا (کد پایا: ${code})`,
+      message: `مدیریت محترم «${targetBiz.name}»؛ صورتحساب کارکرد دوره شما شامل ${toPersianDigits(
+        dossier.bookingsCount
+      )} رزرو ثبت‌شده با مجموع ارزش کل خدمات ${toPersianDigits(
+        dossier.totalServicePriceToman.toLocaleString('fa-IR')
+      )} تومان و جمع کل بیعانه دریافتی آنلاین ${toPersianDigits(
+        dossier.totalDepositToman.toLocaleString('fa-IR')
+      )} تومان محاسبه گردید. پس از کسر کارمزد پلتفرم (${toPersianDigits(
+        dossier.totalCommissionToman.toLocaleString('fa-IR')
+      )} تومان)، مبلغ خالص ${toPersianDigits(
+        settledRecord.netPayoutToman.toLocaleString('fa-IR')
+      )} تومان با کد رهگیری پایا ${code} به شبای شما واریز و تسویه شد.`,
+    });
+
+    showToast(
+      `واریز خالص ${toPersianDigits(settledRecord.netPayoutToman.toLocaleString('fa-IR'))} تومان برای «${targetBiz.name}» ثبت شد و صورتحساب کامل برای صاحب سالن ارسال گردید ✓`
+    );
+    return settledRecord;
+  };
+
   const markSettlementPaid = (settlementId: string, trackingCode?: string) => {
     const code =
       trackingCode?.trim() || `PAYA-${Math.floor(100000 + Math.random() * 899999)}`;
+    const matchedReq = settlementRequests.find((s) => s.id === settlementId);
+    const targetBiz = matchedReq
+      ? businesses.find((b) => b.id === matchedReq.businessId)
+      : undefined;
+    const dossier = targetBiz
+      ? computeBusinessBookingDossierNumbers(targetBiz)
+      : null;
+
     setSettlementRequests((prev) => {
       const next = prev.map((item) =>
         item.id === settlementId
@@ -4520,6 +4806,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               status: 'PAID' as const,
               paidTrackingCode: code,
               paidAtJalali: 'امروز',
+              bookingsCount: item.bookingsCount ?? dossier?.bookingsCount,
+              totalServiceAmountToman:
+                item.totalServiceAmountToman ?? dossier?.totalServicePriceToman,
+              totalDepositCollectedToman:
+                item.totalDepositCollectedToman ?? dossier?.totalDepositToman,
+              commissionToman:
+                item.commissionToman || dossier?.totalCommissionToman || 0,
             }
           : item
       );
@@ -4533,23 +4826,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       return next;
     });
-    showToast(`واریز شبا با کد رهگیری پایا ${code} ثبت و تسویه شد.`);
+
+    if (matchedReq) {
+      sendPlatformBusinessNotice({
+        targetBusinessId: matchedReq.businessId,
+        targetBusinessName: matchedReq.businessName,
+        title: `📊 صورتحساب واریز هفتگی شبا (کد رهگیری پایا: ${code})`,
+        message: `مدیریت محترم «${matchedReq.businessName}»؛ بابت ${toPersianDigits(
+          dossier?.bookingsCount || 1
+        )} رزرو ثبت‌شده (مجموع ارزش کل خدمات: ${toPersianDigits(
+          (dossier?.totalServicePriceToman || matchedReq.amountToman).toLocaleString('fa-IR')
+        )} تومان | بیعانه دریافتی آنلاین: ${toPersianDigits(
+          (dossier?.totalDepositToman || matchedReq.amountToman).toLocaleString('fa-IR')
+        )} تومان)، پس از کسر کارمزد پلتفرم (${toPersianDigits(
+          (dossier?.totalCommissionToman || matchedReq.commissionToman || 0).toLocaleString('fa-IR')
+        )} تومان)، مبلغ خالص ${toPersianDigits(
+          matchedReq.netPayoutToman.toLocaleString('fa-IR')
+        )} تومان با کد رهگیری پایا ${code} به حساب شبای شما واریز گردید.`,
+      });
+    }
+
+    showToast(
+      `واریز شبا با کد رهگیری پایا ${code} ثبت شد و صورتحساب کامل به پنل صاحب کسب‌وکار ارسال گردید.`
+    );
   };
 
   const runNightlyBatchSettlement = (): number => {
-    const commissionPct = paymentConfig.platformCommissionPercent ?? 5;
-    const eligibleBusinesses = businesses.filter(
-      (b) =>
-        (b.walletBalanceToman ?? 0) > 0 &&
-        (b.bankShebaNumber || '').replace(/\D/g, '').length >= 24
-    );
+    const eligibleBusinesses = businesses.filter((b) => {
+      if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) return false;
+      const dossier = computeBusinessBookingDossierNumbers(b);
+      return dossier.pendingPayoutToman > 0;
+    });
     const pendingItems = settlementRequests.filter(
       (s) => s.status === 'PENDING'
     );
 
     if (eligibleBusinesses.length === 0 && pendingItems.length === 0) {
       showToast(
-        'در حال حاضر درخواست تسویه باز یا کیف پول دارای موجودی با شبای ثبت‌شده وجود ندارد.',
+        'در حال حاضر درخواست تسویه باز یا پرونده سالنی با مانده تسویه‌نشده وجود ندارد.',
         'info'
       );
       return 0;
@@ -4558,23 +4872,48 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const batchTimeCode = `PAYA-BATCH-${Math.floor(10000 + Math.random() * 89999)}`;
     const newlyCreated: SettlementRequestItem[] = eligibleBusinesses.map(
       (b, idx) => {
-        const bal = b.walletBalanceToman ?? 0;
-        const comm = Math.round(bal * (commissionPct / 100));
+        const dossier = computeBusinessBookingDossierNumbers(b);
         const rawSheba = (b.bankShebaNumber || '').trim();
+        const code = `${batchTimeCode}-${idx + 1}`;
+
+        sendPlatformBusinessNotice({
+          targetBusinessId: b.id,
+          targetBusinessName: b.name,
+          title: `📊 صورتحساب تسویه هفتگی شبا (کد پایا: ${code})`,
+          message: `مدیریت محترم «${b.name}»؛ بابت ${toPersianDigits(
+            dossier.bookingsCount
+          )} رزرو ثبت‌شده (جمع کل خدمات: ${toPersianDigits(
+            dossier.totalServicePriceToman.toLocaleString('fa-IR')
+          )} تومان | بیعانه دریافتی آنلاین: ${toPersianDigits(
+            dossier.totalDepositToman.toLocaleString('fa-IR')
+          )} تومان)، پس از کسر کارمزد اختصاصی پلتفرم (${toPersianDigits(
+            dossier.totalCommissionToman.toLocaleString('fa-IR')
+          )} تومان)، مبلغ خالص ${toPersianDigits(
+            dossier.pendingPayoutToman.toLocaleString('fa-IR')
+          )} تومان به شبای شما واریز گردید.`,
+        });
+
         return {
           id: `STL-${Date.now()}-${idx}`,
           businessId: b.id,
           businessName: b.name,
           ownerName: b.bankAccountHolder || b.ownerName || 'مدیر سالن',
           ownerPhone: b.ownerPhone || b.phoneDisplay || '',
-          shebaNumber: rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`,
+          shebaNumber: rawSheba
+            ? rawSheba.startsWith('IR')
+              ? rawSheba
+              : `IR${rawSheba}`
+            : 'واریز به حساب ثبت‌شده سالن',
           cardNumber: b.bankCardNumber,
-          amountToman: bal,
-          commissionToman: comm,
-          netPayoutToman: Math.max(0, bal - comm),
-          createdAtJalali: 'امروز (تسویه شبانه)',
+          amountToman: dossier.totalDepositToman,
+          commissionToman: dossier.totalCommissionToman,
+          netPayoutToman: dossier.pendingPayoutToman,
+          bookingsCount: dossier.bookingsCount,
+          totalServiceAmountToman: dossier.totalServicePriceToman,
+          totalDepositCollectedToman: dossier.totalDepositToman,
+          createdAtJalali: 'امروز (تسویه هفتگی پایا)',
           status: 'PAID',
-          paidTrackingCode: `${batchTimeCode}-${idx + 1}`,
+          paidTrackingCode: code,
           paidAtJalali: 'امروز',
         };
       }
@@ -4609,7 +4948,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const totalCount = eligibleBusinesses.length + pendingItems.length;
     showToast(
-      `تسویه شبانه پایا (شبا) برای ${totalCount} سالن با موفقیت انجام و ثبت شد.`
+      `تسویه هفتگی پایا (شبا) برای ${toPersianDigits(totalCount)} سالن انجام شد و صورتحساب تفکیکی برای صاحبان کسب‌وکار ارسال گردید.`
     );
     return totalCount;
   };
@@ -6445,6 +6784,63 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return todayFormatted;
     };
 
+    // ۰. نقشه نام‌های واقعی مشتریان از نوبت‌ها و باشگاه مشتریان برای جلوگیری از نمایش «کاربر BeautyHub» یا «کاربر تایم تو»
+    const knownCustomerNameByPhone = new Map<string, string>();
+    for (const apt of appointments) {
+      const p = normalizeIranMobile(apt.customerPhoneMasked || '');
+      const n = (apt.customerName || '').trim();
+      if (
+        /^09\d{9}$/.test(p) &&
+        n.length >= 2 &&
+        !n.includes('BeautyHub') &&
+        !n.includes('کاربر تایم')
+      ) {
+        knownCustomerNameByPhone.set(p, n);
+      }
+    }
+    for (const cus of customers) {
+      const p = normalizeIranMobile(cus.phone || cus.phoneMasked || '');
+      const n = (cus.fullName || '').trim();
+      if (
+        /^09\d{9}$/.test(p) &&
+        n.length >= 2 &&
+        !n.includes('BeautyHub') &&
+        !n.includes('کاربر تایم')
+      ) {
+        knownCustomerNameByPhone.set(p, n);
+      }
+    }
+
+    const sanitizeUserName = (
+      rawName: string | undefined,
+      cleanPhone: string
+    ): string => {
+      const trimmed = (rawName || '').trim();
+      if (
+        trimmed &&
+        !trimmed.includes('BeautyHub') &&
+        !trimmed.includes('بیوتی') &&
+        trimmed !== 'کاربر تایم تو' &&
+        trimmed !== 'کاربر تایم‌تو' &&
+        trimmed !== 'کاربر Timeto'
+      ) {
+        return trimmed;
+      }
+      return knownCustomerNameByPhone.get(cleanPhone) || 'کاربر تایم تو';
+    };
+
+    const sanitizeUserCity = (
+      rawCity: string | undefined,
+      explicitOverrideCity?: string
+    ): string => {
+      if (explicitOverrideCity && explicitOverrideCity.trim()) {
+        return explicitOverrideCity.trim();
+      }
+      const c = (rawCity || '').trim();
+      if (!c || c === 'تهران') return 'اصفهان';
+      return c;
+    };
+
     // ۱. کاربران دریافت‌شده از سرور
     let userIdx = 0;
     for (const u of rawAdminUsers) {
@@ -6457,11 +6853,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       byPhone.set(cleanPhone, {
         ...u,
         id: u.id || `usr-${cleanPhone}`,
-        fullName: ov?.fullName || u.fullName || 'کاربر تایم تو',
+        fullName: sanitizeUserName(ov?.fullName || u.fullName, cleanPhone),
         phone: cleanPhone,
         phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
-        city: ov?.city || u.city || 'اصفهان',
-        roleLabel: ov?.roleLabel || u.roleLabel || 'مشتری',
+        city: sanitizeUserCity(u.city, ov?.city),
+        roleLabel: ov?.roleLabel || u.roleLabel || 'مشتری عادی',
         joinedJalali: resolveUserJoinedJalali(
           cleanPhone,
           u.joinedJalali,
@@ -6522,8 +6918,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       byPhone.set(cleanPhone, {
         id: existing?.id || `usr-mem-${cleanPhone}`,
-        fullName:
-          ov?.fullName || acc.fullName || existing?.fullName || 'کاربر تایم تو',
+        fullName: sanitizeUserName(
+          ov?.fullName || acc.fullName || existing?.fullName,
+          cleanPhone
+        ),
         roleLabel:
           ov?.roleLabel ||
           (isBizOwner
@@ -6535,7 +6933,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               : 'مشتری عادی'),
         phone: cleanPhone,
         phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
-        city: ov?.city || acc.city || matchedBiz?.city || existing?.city || 'اصفهان',
+        city: sanitizeUserCity(
+          acc.city || matchedBiz?.city || existing?.city,
+          ov?.city
+        ),
         joinedJalali: resolveUserJoinedJalali(
           cleanPhone,
           existing?.joinedJalali,
@@ -6558,11 +6959,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const isBiz = authUser.roles.includes('BUSINESS_OWNER');
         byPhone.set(cleanPhone, {
           id: existing?.id || authUser.userId || `usr-${cleanPhone}`,
-          fullName:
-            ov?.fullName ||
-            authUser.fullName ||
-            existing?.fullName ||
-            'کاربر تایم تو',
+          fullName: sanitizeUserName(
+            ov?.fullName || authUser.fullName || existing?.fullName,
+            cleanPhone
+          ),
           roleLabel:
             ov?.roleLabel ||
             existing?.roleLabel ||
@@ -6573,8 +6973,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 : 'مشتری عادی'),
           phone: cleanPhone,
           phoneMasked: formatMaskedPhoneDisplay(cleanPhone),
-          city:
-            ov?.city || authUser.defaultCity || existing?.city || 'اصفهان',
+          city: sanitizeUserCity(
+            authUser.defaultCity || existing?.city,
+            ov?.city
+          ),
           joinedJalali: resolveUserJoinedJalali(
             cleanPhone,
             existing?.joinedJalali,
@@ -6598,7 +7000,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     return Array.from(byPhone.values());
-  }, [rawAdminUsers, businesses, authUser, accountsRevision]);
+  }, [rawAdminUsers, businesses, authUser, accountsRevision, appointments, customers]);
 
   const updateAdminUserRecord = (
     phone: string,
@@ -6889,6 +7291,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           settlementRequests,
           requestWalletSettlement,
           markSettlementPaid,
+          settleBusinessDossierByAdmin,
           runNightlyBatchSettlement,
           recordSponsoredClick,
           sendAppointmentReminders,

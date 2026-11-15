@@ -33,6 +33,9 @@ import {
   Phone,
   Instagram,
   Headphones,
+  Wallet,
+  FileText,
+  Crown,
 } from 'lucide-react';
 import {
   AdPackageItem,
@@ -49,6 +52,12 @@ import {
   resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../../utils/formatters';
+import {
+  calculateBookingFinancialBreakdown,
+  resolveAppointmentFinancialBreakdown,
+  resolveBusinessCommissionMeta,
+} from '../../utils/financialEngine';
+import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -76,25 +85,333 @@ const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType<{ className?:
   HeartHandshake,
 };
 
-/** مودال بررسی کامل پنل ایجادشده توسط صاحب کسب‌وکار (نمایش تمام جزئیات، خدمات، متخصصان، ساعات کاری و زمان ثبت درخواست) */
+/** محاسبه خلاصه پرونده مالی و کارکرد یک کسب‌وکار بر اساس نوبت‌های واقعی ثبت‌شده */
+function computeBusinessDossierMetrics(
+  business: BusinessItem,
+  appointments: ReturnType<typeof usePrototypeData>['appointments'],
+  services: ReturnType<typeof usePrototypeData>['services'],
+  paymentConfig: ReturnType<typeof usePrototypeData>['paymentConfig']
+) {
+  const bizApts = appointments.filter(
+    (a) =>
+      (a.businessId === business.id ||
+        a.businessId === business.slug ||
+        (a.businessName && a.businessName.trim() === business.name.trim())) &&
+      a.status !== 'CANCELLED'
+  );
+  const commMeta = resolveBusinessCommissionMeta(business, paymentConfig);
+
+  let totalServiceToman = 0;
+  let totalDepositCollectedToman = 0;
+  let totalCommissionToman = 0;
+  let totalNetToSalonToman = 0;
+
+  for (const apt of bizApts) {
+    const srv = services.find((s) => s.id === apt.serviceId);
+    const servicePrice = Math.max(
+      0,
+      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
+    );
+    const breakdown = resolveAppointmentFinancialBreakdown({
+      appointment: {
+        ...apt,
+        priceToman: servicePrice,
+      },
+      business,
+      commissionConfig: paymentConfig,
+    });
+
+    totalServiceToman += breakdown.totalServicePriceToman;
+    totalDepositCollectedToman += breakdown.baseDepositToman;
+    totalCommissionToman += breakdown.platformCommissionToman;
+    totalNetToSalonToman += breakdown.salonNetDepositCreditedToman;
+  }
+
+  const currentPayableToman = Math.max(
+    Number(business.walletBalanceToman) || 0,
+    totalNetToSalonToman
+  );
+
+  return {
+    bookingsCount: bizApts.length,
+    completedCount: bizApts.filter((a) => a.status === 'COMPLETED').length,
+    confirmedCount: bizApts.filter((a) => a.status === 'CONFIRMED').length,
+    commissionPercent: commMeta.commissionPercent,
+    commissionCategoryLabel: commMeta.categoryLabel,
+    totalServiceToman,
+    totalDepositCollectedToman,
+    totalCommissionToman,
+    totalNetToSalonToman,
+    currentPayableToman,
+  };
+}
+
+/** جدول جامع پرونده مالی و کارکرد هر کسب‌وکار + دکمه تسویه هفتگی و ارسال صورتحساب به سالن‌دار */
+const BusinessFinancialDossierTable: React.FC<{
+  businesses: BusinessItem[];
+  onInspectBusiness?: (biz: BusinessItem) => void;
+}> = ({ businesses, onInspectBusiness }) => {
+  const {
+    appointments,
+    services,
+    specialists,
+    paymentConfig,
+    settlementRequests,
+    settleBusinessDossierByAdmin,
+  } = usePrototypeData();
+
+  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+
+  const rows = realBusinesses.map((biz) => {
+    const dossier = computeBusinessDossierMetrics(
+      biz,
+      appointments,
+      services,
+      paymentConfig
+    );
+    const paidSettlements = settlementRequests.filter(
+      (s) => s.businessId === biz.id && s.status === 'PAID'
+    );
+    const totalAlreadySettledToman = paidSettlements.reduce(
+      (sum, s) => sum + (Number(s.netPayoutToman) || 0),
+      0
+    );
+    const bizServices = services.filter((s) => s.businessId === biz.id);
+    const bizSpecialists = specialists.filter((sp) => sp.businessId === biz.id);
+    const isPublicReady = isBusinessReadyForPublicDisplay({
+      business: biz,
+      services: bizServices,
+      specialists: bizSpecialists,
+    });
+
+    return {
+      biz,
+      dossier,
+      totalAlreadySettledToman,
+      paidSettlementsCount: paidSettlements.length,
+      isPublicReady,
+    };
+  });
+
+  return (
+    <Card className="rounded-3xl p-5 sm:p-6 space-y-4 border-2 border-[#0057FF]/20 bg-gradient-to-br from-[#F8FAFC] to-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3.5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-[#0057FF]" />
+            <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+              پرونده مالی و کارکرد هر کسب‌وکار (تعداد رزرو، جمع خدمات، بیعانه، کسر کارمزد و تسویه هفتگی)
+            </h2>
+          </div>
+          <p className="text-xs text-[#475569] leading-relaxed">
+            در این جدول ریز کارکرد واقعی هر سالن (تعداد رزروها، ارزش کل خدمات ارائه‌شده، بیعانه دریافتی آنلاین، کارمزد اختصاصی کسرشده و خالص قابل واریز به شبا) مشخص است. با کلیک روی <strong>«ثبت واریز هفتگی + ارسال صورتحساب»</strong>، تسویه ثبت شده و گزارش کامل به پنل صاحب کسب‌وکار ارسال می‌شود.
+          </p>
+        </div>
+        <Link
+          to="/admin/payments"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#061138] text-white text-xs font-extrabold hover:bg-[#0057FF] transition-colors"
+        >
+          <CreditCard className="w-4 h-4" />
+          <span>تنظیمات کارمزدها و تسویه دسته‌ای شبا</span>
+        </Link>
+      </div>
+
+      <ResponsiveTable
+        keyExtractor={(r) => r.biz.id}
+        data={rows}
+        emptyMessage="هنوز کسب‌وکار واقعی ثبت‌نام نکرده است."
+        columns={[
+          {
+            key: 'biz',
+            header: 'کسب‌وکار، مالک و وضعیت تکمیل / قرارداد',
+            render: ({ biz, isPublicReady }) => (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-extrabold text-[#061138]">
+                    {biz.name}
+                  </span>
+                  {biz.isVipPartner ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                      👑 سفیر برند VIP
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-[#475569]">
+                  {biz.ownerName || 'صاحب کسب‌وکار'} ·{' '}
+                  <span dir="ltr" className="font-mono font-bold text-[#0057FF]">
+                    {biz.ownerPhone || biz.phoneDisplay}
+                  </span>
+                </p>
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  {biz.contractAccepted ? (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
+                      ✓ قرارداد تایید شده
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-extrabold">
+                      ⏳ در انتظار تایید قرارداد
+                    </span>
+                  )}
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                      isPublicReady
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    }`}
+                  >
+                    {isPublicReady ? 'ویترین عمومی فعال' : 'مخفی تا تکمیل پروفایل'}
+                  </span>
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: 'bookings',
+            header: 'تعداد رزرو و جمع خدمات ارائه‌شده',
+            render: ({ dossier }) => (
+              <div className="space-y-0.5 tabular-nums text-xs">
+                <span className="font-extrabold text-[#061138] block">
+                  {toPersianDigits(dossier.bookingsCount)} رزرو ثبت‌شده
+                </span>
+                <span className="text-[#475569] block">
+                  جمع کل خدمات:{' '}
+                  <strong className="text-[#061138]">
+                    {formatPriceToman(dossier.totalServiceToman)}
+                  </strong>
+                </span>
+              </div>
+            ),
+          },
+          {
+            key: 'deposit',
+            header: 'بیعانه دریافتی آنلاین',
+            render: ({ dossier }) => (
+              <div className="space-y-0.5 tabular-nums text-xs">
+                <span className="font-extrabold text-[#0057FF] block">
+                  {formatPriceToman(dossier.totalDepositCollectedToman)}
+                </span>
+                <span className="text-[10px] text-[#64748B] block">
+                  دریافتی در درگاه پلتفرم
+                </span>
+              </div>
+            ),
+          },
+          {
+            key: 'commission',
+            header: 'کارمزد اختصاصی کسرشده',
+            render: ({ dossier }) => (
+              <div className="space-y-0.5 tabular-nums text-xs">
+                <span className="font-extrabold text-rose-600 block">
+                  {dossier.totalCommissionToman > 0
+                    ? `${formatPriceToman(dossier.totalCommissionToman)} کسر کارمزد`
+                    : '۰ تومان (معاف VIP)'}
+                </span>
+                <span className="text-[10px] text-[#64748B] block">
+                  نرخ: {toPersianDigits(dossier.commissionPercent)}٪ از کل خدمت
+                </span>
+              </div>
+            ),
+          },
+          {
+            key: 'netPayable',
+            header: 'خالص قابل واریز به سالن (شبا/کارت)',
+            render: ({ biz, dossier, totalAlreadySettledToman }) => (
+              <div className="space-y-0.5 tabular-nums text-xs">
+                <span className="text-sm font-black text-emerald-700 block">
+                  {formatPriceToman(Number(biz.walletBalanceToman) || dossier.totalNetToSalonToman)}
+                </span>
+                {biz.bankShebaNumber ? (
+                  <span
+                    dir="ltr"
+                    className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
+                  >
+                    {biz.bankShebaNumber}
+                  </span>
+                ) : biz.bankCardNumber ? (
+                  <span
+                    dir="ltr"
+                    className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
+                  >
+                    {biz.bankCardNumber}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-700 block">
+                    شبا/کارت هنوز ثبت نشده
+                  </span>
+                )}
+                {totalAlreadySettledToman > 0 ? (
+                  <span className="text-[10px] text-emerald-600 block font-bold">
+                    تسویه‌شده قبلی: {formatPriceToman(totalAlreadySettledToman)}
+                  </span>
+                ) : null}
+              </div>
+            ),
+          },
+          {
+            key: 'actions',
+            header: 'تسویه هفتگی و ارسال صورتحساب به سالن‌دار',
+            render: ({ biz }) => (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => settleBusinessDossierByAdmin(biz.id)}
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>ثبت واریز هفتگی + ارسال صورتحساب</span>
+                </Button>
+                {onInspectBusiness ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onInspectBusiness(biz)}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>جزئیات پرونده</span>
+                  </Button>
+                ) : null}
+              </div>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+};
+
+/** مودال بررسی کامل پنل ایجادشده توسط صاحب کسب‌وکار (نمایش تمام جزئیات، خدمات، متخصصان، ساعات کاری، پرونده مالی و زمان ثبت درخواست) */
 const BusinessFullInspectModal: React.FC<{
   business: BusinessItem | null;
   onClose: () => void;
   onApprove: (businessId: string) => void;
   onReject: (businessId: string) => void;
 }> = ({ business, onClose, onApprove, onReject }) => {
-  const { services, specialists } = usePrototypeData();
+  const {
+    services,
+    specialists,
+    appointments,
+    paymentConfig,
+    settleBusinessDossierByAdmin,
+  } = usePrototypeData();
   if (!business) return null;
 
   const bizServices = services.filter((s) => s.businessId === business.id);
   const bizSpecialists = specialists.filter((sp) => sp.businessId === business.id);
   const bizHours = business.workingHours || [];
+  const dossier = computeBusinessDossierMetrics(
+    business,
+    appointments,
+    services,
+    paymentConfig
+  );
 
   return (
     <Modal
       isOpen={Boolean(business)}
       onClose={onClose}
-      title={`بررسی کامل پنل سالن: ${business.name}`}
+      title={`بررسی کامل پنل و پرونده مالی سالن: ${business.name}`}
       description={`زمان ثبت درخواست: ${business.createdAtJalali || 'ثبت‌شده در سامانه'} · وضعیت فعلی: ${
         business.approvalStatus === 'APPROVED'
           ? 'تاییدشده'
@@ -105,6 +422,72 @@ const BusinessFullInspectModal: React.FC<{
       size="lg"
     >
       <div className="space-y-5 text-xs">
+        {/* پرونده مالی و کارکرد اختصاصی این کسب‌وکار */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-[#EFF6FF] to-[#F8FAFC] border-2 border-[#0057FF]/25 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="font-extrabold text-[#061138] text-sm flex items-center gap-1.5">
+              <Wallet className="w-4 h-4 text-[#0057FF]" />
+              <span>پرونده مالی و کارکرد رزروهای «{business.name}»</span>
+            </h4>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => settleBusinessDossierByAdmin(business.id)}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>ثبت واریز هفتگی و ارسال صورتحساب به سالن‌دار</span>
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 tabular-nums">
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">تعداد کل رزروها:</span>
+              <strong className="text-sm font-black text-[#061138]">
+                {toPersianDigits(dossier.bookingsCount)} نوبت
+              </strong>
+              <span className="text-[10px] text-[#475569] block">
+                ارزش خدمات: {formatPriceToman(dossier.totalServiceToman)}
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">بیعانه دریافتی آنلاین:</span>
+              <strong className="text-sm font-black text-[#0057FF]">
+                {formatPriceToman(dossier.totalDepositCollectedToman)}
+              </strong>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">
+                کسر کارمزد ({toPersianDigits(dossier.commissionPercent)}٪):
+              </span>
+              <strong className="text-sm font-black text-rose-600">
+                {formatPriceToman(dossier.totalCommissionToman)}
+              </strong>
+            </div>
+            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <span className="text-[11px] text-emerald-800 block">خالص قابل واریز به سالن:</span>
+              <strong className="text-sm font-black text-emerald-700">
+                {formatPriceToman(Number(business.walletBalanceToman) || dossier.totalNetToSalonToman)}
+              </strong>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#334155] pt-1 border-t border-[#CBD5E1]/70">
+            <span>
+              شماره شبا / کارت سالن:{' '}
+              <strong dir="ltr" className="font-mono text-[#0057FF]">
+                {business.bankShebaNumber || business.bankCardNumber || 'ثبت نشده'}
+              </strong>
+            </span>
+            <span>
+              وضعیت تعهدنامه و قرارداد:{' '}
+              <strong className={business.contractAccepted ? 'text-emerald-700' : 'text-amber-700'}>
+                {business.contractAccepted
+                  ? `تایید شده (${business.contractAcceptedAtJalali || 'ثبت در سامانه'})`
+                  : 'هنوز تیک قرارداد زده نشده'}
+              </strong>
+            </span>
+          </div>
+        </div>
+
         {/* ۱. خلاصه اطلاعات مالک، تماس، موقعیت و پلن */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
           <div className="space-y-1.5">
@@ -325,7 +708,10 @@ export const AdminDashboardPage: React.FC = () => {
     businesses,
     categories,
     appointments,
+    services,
     paymentOrders,
+    paymentConfig,
+    settlementRequests,
     updateBusinessApproval,
     adminReviewedBizIds,
     adminNotifications,
@@ -370,13 +756,58 @@ export const AdminDashboardPage: React.FC = () => {
       b.subscriptionStatus === 'ACTIVE' || b.subscriptionStatus === 'TRIAL'
   ).length;
 
-  const realAppointments = appointments.filter((a) =>
-    realBusinesses.some((b) => b.id === a.businessId)
+  // تمام رزروهای واقعی دیتابیس (بدون نمونه‌های نمایشی)
+  const realAppointments = appointments.filter(
+    (a) =>
+      !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
+      !/^biz-[1-8]$/.test(a.businessId) &&
+      a.status !== 'CANCELLED'
   );
 
-  const approvedRevenueToman = paymentOrders
+  // محاسبه دقیق بیعانه‌های آنلاین، کارمزد پلتفرم و ارزش کل خدمات از روی نوبت‌های واقعی
+  let totalServiceVolumeToman = 0;
+  let totalOnlineDepositsToman = 0;
+  let totalPlatformCommissionToman = 0;
+  let totalSalonNetShareToman = 0;
+
+  for (const apt of realAppointments) {
+    const biz =
+      realBusinesses.find(
+        (b) =>
+          b.id === apt.businessId ||
+          b.slug === apt.businessId ||
+          (apt.businessName && b.name.trim() === apt.businessName.trim())
+      ) || realBusinesses[0];
+    const srv = services.find((s) => s.id === apt.serviceId);
+    const servicePrice = Math.max(
+      0,
+      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
+    );
+    const breakdown = resolveAppointmentFinancialBreakdown({
+      appointment: {
+        ...apt,
+        priceToman: servicePrice,
+      },
+      business: biz,
+      commissionConfig: paymentConfig,
+    });
+
+    totalServiceVolumeToman += breakdown.totalServicePriceToman;
+    totalOnlineDepositsToman += breakdown.baseDepositToman;
+    totalPlatformCommissionToman += breakdown.platformCommissionToman;
+    totalSalonNetShareToman += breakdown.salonNetDepositCreditedToman;
+  }
+
+  const approvedOrdersToman = paymentOrders
     .filter((o) => o.status === 'APPROVED')
     .reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
+
+  const paidSettlementsToman = settlementRequests
+    .filter((s) => s.status === 'PAID')
+    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+
+  const approvedRevenueToman =
+    totalOnlineDepositsToman + approvedOrdersToman + paidSettlementsToman;
 
   // فقط اعلان‌های خوانده‌نشده در نوار بالا نمایش داده می‌شوند تا به‌محض تایید/رد یا بستن، از صفحه جمع شوند
   const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
@@ -386,7 +817,7 @@ export const AdminDashboardPage: React.FC = () => {
       <PageHeader
         kicker="پنل مدیریت کلان · Timeto (تایم تو)"
         title="داشبورد مدیریت پلتفرم"
-        subtitle="بررسی کسب‌وکارهای واقعی ثبت‌نام‌شده، مشاهده کامل پنل هر سالن، پایش آمار واقعی رزروها و مدیریت اشتراک‌ها"
+        subtitle="بررسی کسب‌وکارهای واقعی ثبت‌نام‌شده، پرونده مالی و تسویه هفتگی هر سالن، پایش آمار واقعی رزروها و مدیریت اشتراک‌ها"
         routePattern="/admin"
         breadcrumbs={[
           { label: 'پنل مدیریت پلتفرم' },
@@ -569,18 +1000,18 @@ export const AdminDashboardPage: React.FC = () => {
 
       {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (فقط بر اساس آمار واقعی دیتابیس) */}
       <div className="rounded-3xl bg-white border border-[#E6E0F5] p-5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-[#E6E0F5] shadow-2xs">
-        {/* ستون ۱: کل رزروهای واقعی و دسته‌بندی‌ها */}
+        {/* ستون ۱: کل رزروهای واقعی و ارزش خدمات */}
         <div className="flex items-start justify-between gap-4 pt-2 md:pt-0">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              کل رزروهای واقعی و دسته‌بندی‌های فعال
+              کل رزروهای واقعی و حجم خدمات ارائه‌شده
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
               {toPersianDigits(realAppointments.length)} رزرو ثبت‌شده
             </p>
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                آمار واقعی سامانه
+                جمع کل خدمات: {formatPriceToman(totalServiceVolumeToman)}
               </span>
               <span className="text-[#6B6480] tabular-nums">
                 ({toPersianDigits(categories.length)} سرفصل فعال)
@@ -615,11 +1046,11 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۳: درآمد واقعی اشتراک‌ها و تبلیغات */}
+        {/* ستون ۳: مجموع بیعانه‌های دریافتی، کارمزد پلتفرم و واریزی‌ها */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              مجموع واریزی‌های تاییدشده ({toPersianDigits(activeSubscriptionsCount)}{' '}
+              مجموع بیعانه‌ها و واریزی‌های تاییدشده ({toPersianDigits(activeSubscriptionsCount)}{' '}
               سالن فعال)
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
@@ -627,14 +1058,13 @@ export const AdminDashboardPage: React.FC = () => {
                 ? formatPriceToman(approvedRevenueToman)
                 : '۰ تومان'}
             </p>
-            <div className="flex items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                {toPersianDigits(
-                  paymentOrders.filter((o) => o.status === 'APPROVED').length
-                )}{' '}
-                تراکنش موفق
+                سهم خالص سالن‌ها: {formatPriceToman(totalSalonNetShareToman)}
               </span>
-              <span className="text-[#6B6480]">بدون احتساب نمونه‌ها</span>
+              <span className="text-[#6B6480] tabular-nums font-bold">
+                کارمزد پلتفرم: {formatPriceToman(totalPlatformCommissionToman)}
+              </span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] flex items-center justify-center shrink-0">
@@ -642,6 +1072,12 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ۱.۵ پرونده مالی و کارکرد هر کسب‌وکار و تسویه هفتگی */}
+      <BusinessFinancialDossierTable
+        businesses={realBusinesses}
+        onInspectBusiness={(biz) => setInspectingBusiness(biz)}
+      />
 
       {/* ۲. نمودار تحلیلی رزروها و عملکرد واقعی پلتفرم */}
       <Card className="rounded-3xl p-6 space-y-5">
@@ -1037,30 +1473,47 @@ export const AdminBusinessesPage: React.FC = () => {
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
-  // مودال فعال‌سازی زمان‌دار (روزشمار تستی/هدیه) پلن اشتراک یا تبلیغات ویژه توسط مدیر کل
+  // مودال فعال‌سازی زمان‌دار (روزشمار تستی/هدیه) پلن اشتراک یا تبلیغات ویژه یا بسته سفیر برند VIP توسط مدیر کل
   const [grantModalBiz, setGrantModalBiz] = useState<BusinessItem | null>(null);
   const [grantTargetType, setGrantTargetType] = useState<
-    'PLAN' | 'SPONSORED_AD' | 'BOTH'
-  >('PLAN');
-  const [grantPlanName, setGrantPlanName] = useState<'حرفه‌ای' | 'VIP'>('حرفه‌ای');
+    'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR'
+  >('VIP_AMBASSADOR');
+  const [grantPlanName, setGrantPlanName] = useState<'حرفه‌ای' | 'VIP'>('VIP');
   const [grantPlacement, setGrantPlacement] = useState<
     'SEARCH_TOP' | 'HOME_BANNER' | 'HERO_SPOTLIGHT'
-  >('SEARCH_TOP');
-  const [grantLabel, setGrantLabel] = useState('پیشنهاد ویژه · تست هدیه');
-  const [grantDurationDays, setGrantDurationDays] = useState<number>(7);
-  const [grantExtraSms, setGrantExtraSms] = useState<number>(30);
+  >('HERO_SPOTLIGHT');
+  const [grantLabel, setGrantLabel] = useState('👑 سالن منتخب و سفیر برند تایم‌تو');
+  const [grantDurationDays, setGrantDurationDays] = useState<number>(30);
+  const [grantExtraSms, setGrantExtraSms] = useState<number>(200);
   const [grantIsTrial, setGrantIsTrial] = useState<boolean>(true);
+  const [grantVipCommission, setGrantVipCommission] = useState<number>(0);
 
-  const openGrantModal = (biz: BusinessItem) => {
+  const openGrantModal = (
+    biz: BusinessItem,
+    defaultMode: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR' = 'VIP_AMBASSADOR'
+  ) => {
     setGrantModalBiz(biz);
-    setGrantTargetType('PLAN');
+    setGrantTargetType(defaultMode);
     setGrantPlanName(
-      biz.subscriptionPlan === 'VIP' ? 'VIP' : 'حرفه‌ای'
+      defaultMode === 'VIP_AMBASSADOR' || biz.subscriptionPlan === 'VIP'
+        ? 'VIP'
+        : 'حرفه‌ای'
     );
-    setGrantPlacement(biz.sponsoredPlacement || 'SEARCH_TOP');
-    setGrantLabel(biz.sponsoredLabel || 'پیشنهاد ویژه · رزرو آنلاین');
-    setGrantDurationDays(7);
-    setGrantExtraSms(30);
+    setGrantPlacement(
+      defaultMode === 'VIP_AMBASSADOR'
+        ? 'HERO_SPOTLIGHT'
+        : biz.sponsoredPlacement || 'SEARCH_TOP'
+    );
+    setGrantLabel(
+      defaultMode === 'VIP_AMBASSADOR'
+        ? '👑 سالن منتخب و سفیر برند تایم‌تو'
+        : biz.sponsoredLabel || 'پیشنهاد ویژه · رزرو آنلاین'
+    );
+    setGrantDurationDays(defaultMode === 'VIP_AMBASSADOR' ? 30 : 7);
+    setGrantExtraSms(defaultMode === 'VIP_AMBASSADOR' ? 200 : 30);
+    setGrantVipCommission(
+      biz.vipCommissionPercent !== undefined ? biz.vipCommissionPercent : 0
+    );
     setGrantIsTrial(true);
   };
 
@@ -1070,12 +1523,18 @@ export const AdminBusinessesPage: React.FC = () => {
     grantBusinessPlanOrAdByAdmin({
       businessId: grantModalBiz.id,
       grantType: grantTargetType,
-      planId: grantPlanName === 'VIP' ? 'plan-vip-brand' : 'plan-professional',
+      planId:
+        grantTargetType === 'VIP_AMBASSADOR' || grantPlanName === 'VIP'
+          ? 'plan-vip-brand'
+          : 'plan-professional',
       sponsoredPlacement: grantPlacement,
       sponsoredLabel: grantLabel,
       durationDays: Math.max(1, Number(grantDurationDays) || 7),
       bonusSmsCount: Math.max(0, Number(grantExtraSms) || 0),
       isTrialGift: grantIsTrial,
+      isVipPartner: grantTargetType === 'VIP_AMBASSADOR' ? true : undefined,
+      vipCommissionPercent:
+        grantTargetType === 'VIP_AMBASSADOR' ? grantVipCommission : undefined,
     });
     setGrantModalBiz(null);
   };
@@ -1151,9 +1610,9 @@ export const AdminBusinessesPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="نظارت، ارتباط با سالن‌داران و زباله‌دان · مراکز زیبایی واقعی"
-        title="بررسی، تایید، ارسال پیام و زباله‌دان کسب‌وکارها"
-        subtitle="کسب‌وکارهای رد صلاحیت‌شده بلافاصله از نمایش عمومی حذف شده و به «زباله‌دان» منتقل می‌شوند تا در صورت نیاز برای همیشه حذف شوند. همچنین می‌توانید به هر سالن‌دار یا همه سالن‌ها اعلان مستقیم بفرستید."
+        kicker="نظارت، جذب سالن‌های شاخص (VIP)، پرونده مالی و زباله‌دان · مراکز زیبایی واقعی"
+        title="بررسی، تایید، بسته سفیر برند (VIP) و پرونده کسب‌وکارها"
+        subtitle="در این بخش می‌توانید برای سالن‌های معتبر بسته «👑 سفیر برند تایم‌تو (معافیت کارمزد ۰٪ + جایگاه طلایی + ۲۰۰ پیامک هدیه)» فعال کنید، پرونده مالی هر سالن را تسویه نمایید یا به سالن‌داران پیام مستقیم بفرستید."
         routePattern="/admin/businesses"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -1213,6 +1672,12 @@ export const AdminBusinessesPage: React.FC = () => {
           </div>
         </Card>
       ) : null}
+
+      {/* جدول پرونده مالی و تسویه هفتگی کسب‌وکارها */}
+      <BusinessFinancialDossierTable
+        businesses={sourceBusinesses}
+        onInspectBusiness={(biz) => setInspectingBusiness(biz)}
+      />
 
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
@@ -1325,16 +1790,32 @@ export const AdminBusinessesPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار، پلن و روزشمار اعتبار',
+            header: 'عنوان کسب‌وکار، پلن، قرارداد و روزشمار اعتبار',
             render: (b) => (
               <div className="space-y-1">
-                <span className="font-extrabold text-[#1E1B2E] block">
-                  {b.name}
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-extrabold text-[#1E1B2E]">
+                    {b.name}
+                  </span>
+                  {b.isVipPartner ? (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                      👑 سفیر برند VIP (کارمزد {toPersianDigits(b.vipCommissionPercent ?? 0)}٪)
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[11px] text-[#0057FF] font-bold">
                     پلن: {b.subscriptionPlan} · ثبت: {b.createdAtJalali || 'جدید'}
                   </span>
+                  {b.contractAccepted ? (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
+                      ✓ قرارداد تایید شده
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
+                      ⚠️ قرارداد تایید نشده
+                    </span>
+                  )}
                   {b.trialDaysRemaining && b.trialDaysRemaining > 0 ? (
                     <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black tabular-nums">
                       ⏳ {toPersianDigits(b.trialDaysRemaining)} روز اعتبار پلن
@@ -1406,7 +1887,7 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'عملیات مدیر، فعال‌سازی اشتراک زمان‌دار و مدیریت',
+            header: 'عملیات مدیر، بسته سفیر برند (VIP) و مدیریت',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
                 {b.approvalStatus !== 'REJECTED' ? (
@@ -1424,17 +1905,27 @@ export const AdminBusinessesPage: React.FC = () => {
                   onClick={() => setInspectingBusiness(b)}
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  <span>مشاهده پنل</span>
+                  <span>مشاهده پنل و پرونده مالی</span>
                 </Button>
 
                 {b.approvalStatus !== 'REJECTED' ? (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => openGrantModal(b)}
-                  >
-                    <span>🎁 فعال‌سازی پلن / تبلیغ زمان‌دار</span>
-                  </Button>
+                  <>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => openGrantModal(b, 'VIP_AMBASSADOR')}
+                    >
+                      <Crown className="w-3.5 h-3.5" />
+                      <span>👑 اعطای بسته سفیر برند VIP</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openGrantModal(b, 'PLAN')}
+                    >
+                      <span>🎁 پلن / تبلیغ زمان‌دار</span>
+                    </Button>
+                  </>
                 ) : null}
 
                 <Button
@@ -1512,20 +2003,24 @@ export const AdminBusinessesPage: React.FC = () => {
         ]}
       />
 
-      {/* مودال فعال‌سازی زمان‌دار (روزشمار تستی یا رسمی) پلن اشتراک و تبلیغات ویژه برای کسب‌وکار */}
+      {/* مودال فعال‌سازی بسته سفیر برند VIP، پلن اشتراک و تبلیغات ویژه برای کسب‌وکار */}
       <Modal
         isOpen={Boolean(grantModalBiz)}
         onClose={() => setGrantModalBiz(null)}
-        title={`فعال‌سازی پلن یا تبلیغ زمان‌دار برای «${grantModalBiz?.name || ''}»`}
-        description="می‌توانید برای این کسب‌وکار پلن حرفه‌ای/VIP یا جایگاه تبلیغاتی ویژه را به صورت تست هدیه یا اشتراک زمان‌دار با روزشمار خودکار فعال کنید."
+        title={`فعال‌سازی بسته سفیر برند (VIP) یا تبلیغ زمان‌دار برای «${grantModalBiz?.name || ''}»`}
+        description="برای جذب سالن‌های شاخص و معتبر، می‌توانید بسته ویژه «👑 سفیر برند تایم‌تو» (شامل معافیت کارمزد ۰٪، نشان طلایی، جایگاه اول صفحه اصلی و ۲۰۰ پیامک هدیه) یا پلن/تبلیغ زمان‌دار فعال کنید."
       >
         <form onSubmit={handleGrantSubmit} className="space-y-4 text-xs">
           <div className="space-y-1.5">
             <label className="font-extrabold text-[#061138] block">
-              ۱. چه قابلیتی برای این کسب‌وکار فعال شود؟
+              ۱. چه بسته یا قابلیتی برای این کسب‌وکار فعال شود؟
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
+                {
+                  id: 'VIP_AMBASSADOR' as const,
+                  label: '👑 سفیر برند VIP (پیشنهادی)',
+                },
                 { id: 'PLAN' as const, label: 'فقط پلن اشتراک' },
                 { id: 'SPONSORED_AD' as const, label: 'فقط تبلیغ ویژه' },
                 { id: 'BOTH' as const, label: 'پلن + تبلیغ ویژه' },
@@ -1533,10 +2028,21 @@ export const AdminBusinessesPage: React.FC = () => {
                 <button
                   key={opt.id}
                   type="button"
-                  onClick={() => setGrantTargetType(opt.id)}
+                  onClick={() => {
+                    setGrantTargetType(opt.id);
+                    if (opt.id === 'VIP_AMBASSADOR') {
+                      setGrantPlanName('VIP');
+                      setGrantPlacement('HERO_SPOTLIGHT');
+                      setGrantLabel('👑 سالن منتخب و سفیر برند تایم‌تو');
+                      setGrantDurationDays(30);
+                      setGrantExtraSms(200);
+                    }
+                  }}
                   className={`py-2 px-2.5 rounded-xl font-extrabold border transition-all cursor-pointer ${
                     grantTargetType === opt.id
-                      ? 'bg-[#0057FF] text-white border-[#0057FF]'
+                      ? opt.id === 'VIP_AMBASSADOR'
+                        ? 'bg-amber-500 text-[#061138] border-amber-600 shadow-xs'
+                        : 'bg-[#0057FF] text-white border-[#0057FF]'
                       : 'bg-[#F8FAFC] text-[#334155] border-[#CBD5E1]'
                   }`}
                 >
@@ -1545,6 +2051,48 @@ export const AdminBusinessesPage: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {grantTargetType === 'VIP_AMBASSADOR' ? (
+            <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300">
+              <div className="flex items-center gap-2 text-amber-950 font-black text-xs">
+                <Crown className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  مزایای رقابتی بسته «سفیر برند و سالن منتخب تایم‌تو» برای جذب سالن‌های شاخص:
+                </span>
+              </div>
+              <ul className="space-y-1 text-[11px] text-amber-900 font-bold list-disc pr-4">
+                <li>معافیت کامل کارمزد پلتفرم (۰٪ کارمزد) یا کارمزد ویژه توافقی در کل دوره</li>
+                <li>نشان طلایی «👑 سالن منتخب و سفیر برند تایم‌تو» در بالای کارت و پروفایل سالن</li>
+                <li>قرارگیری مستقیم در ویترین طلایی بالای صفحه اول و صدر نتایج جست‌وجوی اصفهان</li>
+                <li>شارژ فوری ۲۰۰ پیامک هدیه اختصاصی + ارسال پیام تبریک رسمی به پنل سالن‌دار</li>
+              </ul>
+              <div className="space-y-1.5 pt-2 border-t border-amber-200">
+                <label className="font-extrabold text-[#061138] block">
+                  نرخ کارمزد اختصاصی این سالن شاخص (در محاسبات مالی و تسویه شبا):
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { rate: 0, label: '۰٪ (معافیت کامل کارمزد)' },
+                    { rate: 2, label: '۲٪ (کارمزد ویژه سفیر)' },
+                    { rate: 3, label: '۳٪ (کارمزد ترجیحی)' },
+                  ].map((item) => (
+                    <button
+                      key={item.rate}
+                      type="button"
+                      onClick={() => setGrantVipCommission(item.rate)}
+                      className={`py-2 px-2 rounded-xl font-extrabold border text-center cursor-pointer transition-all ${
+                        grantVipCommission === item.rate
+                          ? 'bg-[#061138] text-amber-300 border-[#061138]'
+                          : 'bg-white text-[#061138] border-amber-300'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {grantTargetType === 'PLAN' || grantTargetType === 'BOTH' ? (
             <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
@@ -1579,7 +2127,9 @@ export const AdminBusinessesPage: React.FC = () => {
             </div>
           ) : null}
 
-          {grantTargetType === 'SPONSORED_AD' || grantTargetType === 'BOTH' ? (
+          {grantTargetType === 'SPONSORED_AD' ||
+          grantTargetType === 'BOTH' ||
+          grantTargetType === 'VIP_AMBASSADOR' ? (
             <div className="space-y-3 p-3 rounded-2xl bg-[#ECFDF5]/60 border border-[#A7F3D0]">
               <FormField id="grant-ad-slot" label="جایگاه تبلیغاتی ویژه">
                 <Select
@@ -1609,12 +2159,12 @@ export const AdminBusinessesPage: React.FC = () => {
                   ]}
                 />
               </FormField>
-              <FormField id="grant-ad-label" label="برچسب تبلیغاتی روی کارت">
+              <FormField id="grant-ad-label" label="برچسب طلایی روی کارت سالن">
                 <Input
                   id="grant-ad-label"
                   value={grantLabel}
                   onChange={(e) => setGrantLabel(e.target.value)}
-                  placeholder="مثلاً: پیشنهاد ویژه · تست هدیه"
+                  placeholder="مثلاً: 👑 سالن منتخب و سفیر برند تایم‌تو"
                 />
               </FormField>
             </div>
@@ -3983,6 +4533,9 @@ export const AdminPaymentsPage: React.FC = () => {
         </form>
       </Card>
 
+      {/* پرونده مالی و کارکرد هر کسب‌وکار و ثبت واریز هفتگی + ارسال صورتحساب */}
+      <BusinessFinancialDossierTable businesses={businesses} />
+
       {/* کارت ۲: تسویه‌حساب هفتگی شبا (پایا) با سالن‌داران */}
       <Card className="space-y-4 border-2 border-[#059669]/30 bg-gradient-to-br from-[#ECFDF5]/60 to-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A7F3D0] pb-3">
@@ -4303,18 +4856,58 @@ export const AdminPaymentsPage: React.FC = () => {
 
 /** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) — فقط بر اساس آمار واقعی دیتابیس (بدون نمونه‌های نمایشی) */
 export const AdminReportsPage: React.FC = () => {
-  const { businesses, appointments, paymentOrders, supportTickets } =
-    usePrototypeData();
+  const {
+    businesses,
+    appointments,
+    services,
+    paymentOrders,
+    paymentConfig,
+    settlementRequests,
+    supportTickets,
+  } = usePrototypeData();
 
   const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
-  const realAppointments = appointments.filter((a) =>
-    realBusinesses.some((b) => b.id === a.businessId)
+  const realAppointments = appointments.filter(
+    (a) =>
+      !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
+      !/^biz-[1-8]$/.test(a.businessId) &&
+      a.status !== 'CANCELLED'
   );
   const approvedOrders = paymentOrders.filter((o) => o.status === 'APPROVED');
-  const totalRevenueToman = approvedOrders.reduce(
-    (sum, o) => sum + (Number(o.amountToman) || 0),
-    0
-  );
+
+  let onlineDepositsToman = 0;
+  for (const apt of realAppointments) {
+    const biz =
+      realBusinesses.find(
+        (b) =>
+          b.id === apt.businessId ||
+          b.slug === apt.businessId ||
+          (apt.businessName && b.name.trim() === apt.businessName.trim())
+      ) || realBusinesses[0];
+    const srv = services.find((s) => s.id === apt.serviceId);
+    const servicePrice = Math.max(
+      0,
+      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
+    );
+    const breakdown = resolveAppointmentFinancialBreakdown({
+      appointment: {
+        ...apt,
+        priceToman: servicePrice,
+      },
+      business: biz,
+      commissionConfig: paymentConfig,
+    });
+    onlineDepositsToman += breakdown.baseDepositToman;
+  }
+
+  const paidSettlementsToman = settlementRequests
+    .filter((s) => s.status === 'PAID')
+    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+
+  const totalRevenueToman =
+    onlineDepositsToman +
+    paidSettlementsToman +
+    approvedOrders.reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
 
   // محاسبه واقعی توزیع کسب‌وکارها بر اساس شهر و محله
   const locationMap: Record<string, number> = {};

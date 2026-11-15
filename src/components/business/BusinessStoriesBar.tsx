@@ -616,6 +616,28 @@ export const BusinessStoriesBar: React.FC = () => {
               </div>
             ) : null}
 
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-gradient-to-l from-[#FAF5FF] via-[#EFF6FF] to-white border border-[#DDD6FE] px-3.5 py-2.5">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#7C3AED] to-[#EC4899] text-white inline-flex items-center justify-center font-black shrink-0">
+                  +
+                </span>
+                <p className="font-bold text-[#1E1B4B]">
+                  می‌خواهید در بالای صفحه عمومی سالن خود برای مشتریان{' '}
+                  <strong className="text-[#7C3AED]">
+                    استوری و هایلایت (نوبت خالی، تخفیف یا نمونه‌کار)
+                  </strong>{' '}
+                  بگذارید؟
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/app/gallery#story-publisher-section')}
+                className="px-3 py-1.5 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white text-[11px] font-extrabold cursor-pointer transition-colors shrink-0"
+              >
+                + افزودن استوری پروفایل سالن
+              </button>
+            </div>
+
             <div className="flex items-center gap-3.5 sm:gap-5 overflow-x-auto no-scrollbar py-1">
               {BUSINESS_DASHBOARD_STORIES.map((story, idx) => {
                 const isSeen = seenIds.includes(story.id);

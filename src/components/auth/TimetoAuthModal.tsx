@@ -723,7 +723,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
           neighborhood: salonNeighborhood.trim() || 'چهارباغ بالا',
         },
       });
-      finishWithWelcomeRedirect('/app');
+      finishWithWelcomeRedirect('/app/profile?setup=1');
     } finally {
       setIsSubmitting(false);
     }

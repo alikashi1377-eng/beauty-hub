@@ -35,6 +35,7 @@ import {
   BusinessCard,
   ProfessionalCard,
 } from '../../components/ui/MarketplaceComponents';
+import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
 
 const TIMETO_HERO_SPA_WEBP_URL = '/assets/beauty/timeto-hero-spa.webp';
 
@@ -52,6 +53,7 @@ const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
 export const HomePage: React.FC = () => {
   const {
     businesses,
+    services,
     specialists,
     categories,
     favoriteBusinessIds,
@@ -66,9 +68,14 @@ export const HomePage: React.FC = () => {
   >('ALL');
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
 
-  const approvedSalons = businesses.filter(
-    (b) => b.approvalStatus !== 'REJECTED'
+  const nonRejectedSalons = businesses.filter(
+    (b) => b.approvalStatus !== 'REJECTED' && b.contractAccepted !== false
   );
+  const fullyCompletedSalons = nonRejectedSalons.filter((b) =>
+    isBusinessReadyForPublicDisplay({ business: b, services, specialists })
+  );
+  const approvedSalons =
+    fullyCompletedSalons.length > 0 ? fullyCompletedSalons : nonRejectedSalons;
   const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
     const aSpon = Number(Boolean(a.isSponsored));
     const bSpon = Number(Boolean(b.isSponsored));

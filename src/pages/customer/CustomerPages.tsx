@@ -36,6 +36,7 @@ import {
   TimeSlotAvailabilityItem,
 } from '../../types';
 import {
+  buildCustomerBookingTimeSlots,
   computeSelectedServicesSummary,
   formatDurationMinutes,
   formatPriceToman,
@@ -43,7 +44,6 @@ import {
   formatServicePriceShort,
   formatWorkingHourDisplay,
   getUpcomingJalaliDays,
-  isTimeSlotWithinWorkingHours,
   isValidIranMobile,
   normalizeIranMobileInput,
   toEnglishDigitsClient,
@@ -455,43 +455,39 @@ export const BookingStepPage: React.FC = () => {
     (w) => w.dayName === selectedDayObj?.dayName
   );
 
-  const mockTimeSlotOptions: TimeSlotAvailabilityItem[] = [
-    { time: '۰۹:۳۰', available: true },
-    { time: '۱۰:۳۰', available: true },
-    { time: '۱۱:۳۰', available: true },
-    { time: '۱۲:۳۰', available: true },
-    { time: '۱۳:۳۰', available: true },
-    { time: '۱۴:۳۰', available: true },
-    { time: '۱۵:۳۰', available: true },
-    { time: '۱۶:۳۰', available: true },
-    { time: '۱۷:۳۰', available: true },
-    { time: '۱۸:۳۰', available: true },
-    { time: '۱۹:۳۰', available: true },
-  ];
+  const slotSchedule = buildCustomerBookingTimeSlots({
+    dayWorkingHour,
+    serverSlots:
+      dataMode === 'real' && realSlots && realSlots.length > 0
+        ? realSlots
+        : null,
+    durationMinutes: primarySelectedService?.durationMinutes || 30,
+  });
+  const timeSlotOptions = slotSchedule.allSlots;
+  const effectiveDayWorkingHour = slotSchedule.effectiveWorkingHour;
 
-  const rawTimeSlotOptions: TimeSlotAvailabilityItem[] =
-    dataMode === 'real' && realSlots && realSlots.length > 0
-      ? realSlots
-      : mockTimeSlotOptions;
-
-  const timeSlotOptions: TimeSlotAvailabilityItem[] = rawTimeSlotOptions.map(
-    (slot) => {
-      if (dayWorkingHour && !dayWorkingHour.isOpen) {
-        return { ...slot, available: false, reason: 'تعطیل' };
+  // اگر ساعت پیش‌فرض انتخاب‌شده در زمان استراحت بین روز یا خارج از ساعت کاری افتاده باشد، اولین ساعت آزاد را انتخاب کن
+  useEffect(() => {
+    if (isLoadingSlots || timeSlotOptions.length === 0) return;
+    const currentSelected = timeSlotOptions.find(
+      (s) => s.time === bookingDraft.timeSlot && s.available
+    );
+    if (!currentSelected) {
+      const firstAvail = timeSlotOptions.find((s) => s.available);
+      if (firstAvail && firstAvail.time !== bookingDraft.timeSlot) {
+        updateBookingDraft({ timeSlot: firstAvail.time });
       }
-      if (
-        dayWorkingHour &&
-        !isTimeSlotWithinWorkingHours(slot.time, dayWorkingHour)
-      ) {
-        return {
-          ...slot,
-          available: false,
-          reason: dayWorkingHour.hasBreak ? 'استراحت بین روز' : 'خارج از ساعت کاری',
-        };
-      }
-      return slot;
     }
-  );
+  }, [
+    isLoadingSlots,
+    bookingDraft.dateJalali,
+    bookingDraft.timeSlot,
+    effectiveDayWorkingHour?.openTime,
+    effectiveDayWorkingHour?.closeTime,
+    effectiveDayWorkingHour?.hasBreak,
+    effectiveDayWorkingHour?.secondOpenTime,
+    effectiveDayWorkingHour?.secondCloseTime,
+  ]);
 
   const salonAvatar =
     business.avatarUrl && business.avatarUrl.trim()
@@ -760,7 +756,9 @@ export const BookingStepPage: React.FC = () => {
               const spAvatar =
                 sp.avatarUrl && sp.avatarUrl.trim()
                   ? sp.avatarUrl
-                  : getSpecialistAvatarUrl(sp.fullName, sp.roleTitle);
+                  : business.avatarUrl && business.avatarUrl.trim()
+                    ? business.avatarUrl
+                    : getSpecialistAvatarUrl(sp.fullName, sp.roleTitle);
               return (
                 <button
                   key={sp.id}
@@ -933,6 +931,119 @@ export const BookingStepPage: React.FC = () => {
             ) : timeSlotOptions.length === 0 ? (
               <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-center text-xs text-[#475569]">
                 در این تاریخ ظرفیت خالی وجود ندارد. لطفاً روز دیگری را انتخاب کنید.
+              </div>
+            ) : effectiveDayWorkingHour?.hasBreak &&
+              slotSchedule.afternoonSlots.length > 0 ? (
+              <div className="space-y-3.5">
+                {/* شیفت اول (صبح) */}
+                {slotSchedule.morningSlots.length > 0 ? (
+                  <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-extrabold text-[#061138] inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        <span>نوبت‌های شیفت صبح</span>
+                      </span>
+                      <span className="text-[11px] font-bold text-[#0057FF] tabular-nums">
+                        {effectiveDayWorkingHour.openTime} تا{' '}
+                        {effectiveDayWorkingHour.closeTime}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {slotSchedule.morningSlots.map((slot) => {
+                        const isSelected =
+                          slot.available && bookingDraft.timeSlot === slot.time;
+                        return (
+                          <button
+                            key={`m-${slot.time}`}
+                            type="button"
+                            disabled={!slot.available}
+                            onClick={() => {
+                              if (slot.available) {
+                                updateBookingDraft({ timeSlot: slot.time });
+                              }
+                            }}
+                            className={`px-3 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
+                              !slot.available
+                                ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
+                                : isSelected
+                                  ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
+                                  : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
+                            }`}
+                          >
+                            <span>ساعت {slot.time}</span>
+                            {!slot.available ? (
+                              <span className="text-[10px] no-underline font-normal">
+                                {slot.reason || 'پر'}
+                              </span>
+                            ) : isSelected ? (
+                              <Check className="w-3.5 h-3.5" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* نوار اطلاع‌رسانی بازه استراحت بین روز */}
+                <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold flex items-center justify-between gap-2 tabular-nums">
+                  <span>
+                    ☕ استراحت بین روز مجموعه (عدم پذیرش از ساعت{' '}
+                    {effectiveDayWorkingHour.closeTime} تا{' '}
+                    {effectiveDayWorkingHour.secondOpenTime || '۱۶:۰۰'})
+                  </span>
+                  <span className="text-[10px] font-extrabold text-amber-700 shrink-0">
+                    دو شیفته
+                  </span>
+                </div>
+
+                {/* شیفت دوم (عصر) */}
+                <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-extrabold text-[#061138] inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#0057FF]" />
+                      <span>نوبت‌های شیفت عصر</span>
+                    </span>
+                    <span className="text-[11px] font-bold text-[#0057FF] tabular-nums">
+                      {effectiveDayWorkingHour.secondOpenTime || '۱۶:۰۰'} تا{' '}
+                      {effectiveDayWorkingHour.secondCloseTime || '۲۱:۰۰'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {slotSchedule.afternoonSlots.map((slot) => {
+                      const isSelected =
+                        slot.available && bookingDraft.timeSlot === slot.time;
+                      return (
+                        <button
+                          key={`a-${slot.time}`}
+                          type="button"
+                          disabled={!slot.available}
+                          onClick={() => {
+                            if (slot.available) {
+                              updateBookingDraft({ timeSlot: slot.time });
+                            }
+                          }}
+                          className={`px-3 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
+                            !slot.available
+                              ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
+                              : isSelected
+                                ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
+                                : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
+                          }`}
+                        >
+                          <span>ساعت {slot.time}</span>
+                          {!slot.available ? (
+                            <span className="text-[10px] no-underline font-normal">
+                              {slot.reason || 'پر'}
+                            </span>
+                          ) : isSelected ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">

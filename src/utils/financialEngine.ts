@@ -43,17 +43,30 @@ export interface ResolvedCommissionMeta {
   segment: 'MEN' | 'LASER' | 'WOMEN';
   commissionPercent: number;
   segmentTitle: string;
+  categoryLabel: string;
   minServicePriceToman: number;
 }
 
-/** تشخیص هوشمند حوزه کسب‌وکار (آقایان ۳٪، لیزر ۴٪، بانوان ۵٪ از کل مبلغ خدمت) */
+/** تشخیص هوشمند حوزه کسب‌وکار (آقایان ۳٪، لیزر ۴٪، بانوان ۵٪ از کل مبلغ خدمت + پشتیبانی از تعرفه ویژه سفیر برند VIP) */
 export function resolveBusinessCommissionMeta(
   business?: Pick<
     BusinessItem,
-    'type' | 'typeLabel' | 'categorySlug' | 'targetGender' | 'name'
+    | 'type'
+    | 'typeLabel'
+    | 'categorySlug'
+    | 'targetGender'
+    | 'name'
+    | 'isVipPartner'
+    | 'vipCommissionPercent'
   > | null,
   config?: CategoryCommissionConfig
 ): ResolvedCommissionMeta {
+  const hasVipRate =
+    typeof business?.vipCommissionPercent === 'number' &&
+    Number.isFinite(business.vipCommissionPercent) &&
+    business.vipCommissionPercent >= 0 &&
+    business.vipCommissionPercent <= 20;
+
   const malePct =
     typeof config?.maleCommissionPercent === 'number' &&
     config.maleCommissionPercent > 0
@@ -78,10 +91,14 @@ export function resolveBusinessCommissionMeta(
     combinedText.includes('لیزر') ||
     combinedText.includes('laser')
   ) {
+    const title = hasVipRate
+      ? 'مرکز لیزر (تعرفه ویژه سفیر برند VIP)'
+      : 'مرکز لیزر موهای زائد';
     return {
       segment: 'LASER',
-      commissionPercent: laserPct,
-      segmentTitle: 'مرکز لیزر موهای زائد',
+      commissionPercent: hasVipRate ? Number(business!.vipCommissionPercent) : laserPct,
+      segmentTitle: title,
+      categoryLabel: title,
       minServicePriceToman: MIN_SERVICE_PRICE_GENERAL_TOMAN,
     };
   }
@@ -95,19 +112,27 @@ export function resolveBusinessCommissionMeta(
     combinedText.includes('آقایان') ||
     combinedText.includes('پیرایش')
   ) {
+    const title = hasVipRate
+      ? 'پیرایش آقایان (تعرفه ویژه سفیر برند VIP)'
+      : 'پیرایش و خدمات آقایان';
     return {
       segment: 'MEN',
-      commissionPercent: malePct,
-      segmentTitle: 'پیرایش و خدمات آقایان',
+      commissionPercent: hasVipRate ? Number(business!.vipCommissionPercent) : malePct,
+      segmentTitle: title,
+      categoryLabel: title,
       minServicePriceToman: MIN_SERVICE_PRICE_MEN_TOMAN,
     };
   }
 
   // ۳. سالن‌های زیبایی و متخصصان بانوان (پیش‌فرض)
+  const title = hasVipRate
+    ? 'سالن زیبایی (تعرفه ویژه سفیر برند VIP)'
+    : 'سالن زیبایی و خدمات بانوان';
   return {
     segment: 'WOMEN',
-    commissionPercent: femalePct,
-    segmentTitle: 'سالن زیبایی و خدمات بانوان',
+    commissionPercent: hasVipRate ? Number(business!.vipCommissionPercent) : femalePct,
+    segmentTitle: title,
+    categoryLabel: title,
     minServicePriceToman: MIN_SERVICE_PRICE_GENERAL_TOMAN,
   };
 }
@@ -119,6 +144,7 @@ export interface BookingFinancialBreakdown {
   depositPercent: AllowedDepositPercent;
   /** مبلغ پایه بیعانه از کل خدمت (مثلاً ۲۰۰,۰۰۰ تومان از ۱,۰۰۰,۰۰۰ تومان) */
   baseDepositToman: number;
+  depositBaseToman: number;
   /** مبلغ الباقی که مشتری حضوری در سالن می‌پردازد (مثلاً ۸۰۰,۰۰۰ تومان) */
   remainingInSalonToman: number;
   /** کارمزد ۱٪ درگاه زیبال (با کف ۲,۲۰۰ تومان) */
@@ -144,17 +170,27 @@ export interface BookingFinancialBreakdown {
  * و خالص واریزی به کیف پول سالن‌دار
  */
 export function calculateBookingFinancialBreakdown(params: {
-  totalServicePriceToman: number;
+  totalServicePriceToman?: number;
+  servicePriceToman?: number;
   depositPercent?: number | null;
   business?: Pick<
     BusinessItem,
-    'type' | 'typeLabel' | 'categorySlug' | 'targetGender' | 'name'
+    | 'type'
+    | 'typeLabel'
+    | 'categorySlug'
+    | 'targetGender'
+    | 'name'
+    | 'isVipPartner'
+    | 'vipCommissionPercent'
   > | null;
   commissionConfig?: CategoryCommissionConfig;
+  config?: CategoryCommissionConfig;
 }): BookingFinancialBreakdown {
   const safeTotalServicePrice = Math.max(
     0,
-    Math.round(Number(params.totalServicePriceToman) || 0)
+    Math.round(
+      Number(params.totalServicePriceToman ?? params.servicePriceToman) || 0
+    )
   );
   const depositPercent = normalizeDepositPercent(params.depositPercent);
   const baseDepositToman = Math.max(
@@ -184,13 +220,14 @@ export function calculateBookingFinancialBreakdown(params: {
   // محاسبه کمیسیون پلتفرم بر اساس «کل قیمت خدمت»
   const commMeta = resolveBusinessCommissionMeta(
     params.business,
-    params.commissionConfig
+    params.commissionConfig ?? params.config
   );
   const rawCommissionFromTotal = Math.round(
     (safeTotalServicePrice * commMeta.commissionPercent) / 100
   );
+  const isZeroVipWaiver = commMeta.commissionPercent === 0;
   const platformCommissionToman =
-    baseDepositToman > 0
+    baseDepositToman > 0 && !isZeroVipWaiver
       ? Math.min(
           baseDepositToman,
           Math.max(MIN_PLATFORM_COMMISSION_TOMAN, rawCommissionFromTotal)
@@ -206,6 +243,7 @@ export function calculateBookingFinancialBreakdown(params: {
     totalServicePriceToman: safeTotalServicePrice,
     depositPercent,
     baseDepositToman,
+    depositBaseToman: baseDepositToman,
     remainingInSalonToman,
     zibalGatewayFeeToman,
     valueAddedTaxFeeToman,
@@ -341,6 +379,8 @@ export function resolveAppointmentFinancialBreakdown(params: {
     | 'targetGender'
     | 'name'
     | 'depositPercent'
+    | 'isVipPartner'
+    | 'vipCommissionPercent'
   > | null;
   commissionConfig?: CategoryCommissionConfig;
 }): BookingFinancialBreakdown {
@@ -370,14 +410,17 @@ export function resolveAppointmentFinancialBreakdown(params: {
   );
 
   const platformCommissionToman =
-    typeof params.appointment.platformCommissionToman === 'number' &&
-    params.appointment.platformCommissionToman > 0
-      ? Math.min(baseDepositToman, params.appointment.platformCommissionToman)
-      : Math.min(baseDepositToman, standard.platformCommissionToman);
+    standard.platformCommissionPercent === 0
+      ? 0
+      : typeof params.appointment.platformCommissionToman === 'number' &&
+          params.appointment.platformCommissionToman > 0
+        ? Math.min(baseDepositToman, params.appointment.platformCommissionToman)
+        : Math.min(baseDepositToman, standard.platformCommissionToman);
 
   const salonNetDepositCreditedToman =
     typeof params.appointment.salonNetDepositCreditedToman === 'number' &&
-    params.appointment.salonNetDepositCreditedToman > 0
+    params.appointment.salonNetDepositCreditedToman > 0 &&
+    standard.platformCommissionPercent !== 0
       ? Math.min(baseDepositToman, params.appointment.salonNetDepositCreditedToman)
       : Math.max(0, baseDepositToman - platformCommissionToman);
 
@@ -385,6 +428,7 @@ export function resolveAppointmentFinancialBreakdown(params: {
     ...standard,
     totalServicePriceToman: effectiveServicePrice,
     baseDepositToman,
+    depositBaseToman: baseDepositToman,
     remainingInSalonToman,
     platformCommissionToman,
     salonNetDepositCreditedToman,

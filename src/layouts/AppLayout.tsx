@@ -23,6 +23,10 @@ import {
   toPersianDigits,
 } from '../utils/formatters';
 import { AppointmentStatus } from '../types';
+import {
+  BusinessProfileCompletionBanner,
+  computeBusinessProfileCompletion,
+} from '../components/business/BusinessProfileCompletionWidget';
 
 const BusinessSidebar = React.lazy(() =>
   import('../components/navigation/BusinessSidebar').then((m) => ({
@@ -60,6 +64,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     authUser,
     isLoadingInitialData,
     currentBusiness,
+    services,
+    specialists,
+    gallery,
+    plans,
     appointments,
     updateAppointmentStatus,
     platformBusinessNotices,
@@ -71,6 +79,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     openAuthModal,
     isAuthModalOpen,
   } = usePrototypeData();
+
+  const businessProfileCompletion = React.useMemo(
+    () =>
+      computeBusinessProfileCompletion({
+        business: currentBusiness,
+        services,
+        specialists,
+        gallery,
+        plans,
+      }),
+    [currentBusiness, services, specialists, gallery, plans]
+  );
 
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
   const isAdminPanel = pathname === '/admin' || pathname.startsWith('/admin/');
@@ -322,6 +342,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               }
               className="flex-1 w-full px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-12 min-w-0"
             >
+              {pathname !== '/app' ? (
+                <div className="mb-4">
+                  <BusinessProfileCompletionBanner
+                    summary={businessProfileCompletion}
+                  />
+                </div>
+              ) : null}
               {children}
               <div className="h-20 shrink-0 lg:hidden" aria-hidden="true" />
             </main>

@@ -213,3 +213,108 @@ test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit eve
   assert.equal(dbAptWithoutDeposit.salonNetDepositCreditedToman, 175_500);
 });
 
+import {
+  buildCustomerBookingTimeSlots,
+  formatWorkingHourDisplay,
+  resolveEffectiveWorkingHour,
+} from './formatters';
+
+test('buildCustomerBookingTimeSlots generates both morning and afternoon shift slots when midday break is active', () => {
+  // حالت ۱: دو شیفته صریح (۰۹:۳۰ تا ۱۳:۳۰ و ۱۶:۰۰ تا ۲۱:۰۰)
+  const twoShiftDay = {
+    dayName: 'شنبه',
+    isOpen: true,
+    openTime: '۰۹:۳۰',
+    closeTime: '۱۳:۳۰',
+    hasBreak: true,
+    secondOpenTime: '۱۶:۰۰',
+    secondCloseTime: '۲۱:۰۰',
+  };
+  const schedule = buildCustomerBookingTimeSlots({
+    dayWorkingHour: twoShiftDay,
+    serverSlots: [
+      { time: '۰۹:۳۰', available: true },
+      { time: '۱۰:۰۰', available: true },
+      { time: '۱۰:۳۰', available: true },
+      { time: '۱۱:۰۰', available: true },
+      { time: '۱۱:۳۰', available: true },
+      { time: '۱۲:۰۰', available: true },
+      { time: '۱۲:۳۰', available: true },
+      { time: '۱۳:۰۰', available: true },
+    ],
+    durationMinutes: 30,
+  });
+
+  assert.equal(schedule.morningSlots.length > 0, true);
+  assert.equal(schedule.afternoonSlots.length > 0, true);
+  assert.equal(
+    schedule.morningSlots.some((s) => s.time === '۰۹:۳۰' && s.available),
+    true
+  );
+  assert.equal(
+    schedule.afternoonSlots.some((s) => s.time === '۱۶:۰۰' && s.available),
+    true
+  );
+  assert.equal(
+    schedule.afternoonSlots.some((s) => s.time === '۲۰:۳۰' && s.available),
+    true
+  );
+  // ساعت ۱۴:۳۰ در تایم استراحت بین روز نباید جزو نوبت‌ها باشد
+  assert.equal(
+    schedule.allSlots.some((s) => s.time === '۱۴:۳۰'),
+    false
+  );
+
+  // حالت ۲: بازیابی خودکار شیفت عصر وقتی در دیتابیس فقط closeTime = ۱۳:۳۰ بدون فیلد hasBreak برگشته باشد
+  const dbTruncatedDay = {
+    dayName: 'یکشنبه',
+    isOpen: true,
+    openTime: '۰۹:۳۰',
+    closeTime: '۱۳:۳۰',
+  };
+  const recovered = resolveEffectiveWorkingHour(dbTruncatedDay);
+  assert.equal(recovered?.hasBreak, true);
+  assert.equal(recovered?.secondOpenTime, '۱۶:۰۰');
+  assert.equal(recovered?.secondCloseTime, '۲۱:۰۰');
+  assert.equal(
+    formatWorkingHourDisplay(dbTruncatedDay),
+    'شیفت صبح: ۰۹:۳۰ تا ۱۳:۳۰ | شیفت عصر: ۱۶:۰۰ تا ۲۱:۰۰'
+  );
+});
+
+test('calculateBookingFinancialBreakdown honors VIP Ambassador 0% commission waiver and custom 2% VIP rate', () => {
+  const zeroWaiver = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: 1_000_000,
+    depositPercent: 30,
+    business: {
+      type: BusinessType.WomenSalon,
+      typeLabel: 'سالن زیبایی بانوان',
+      categorySlug: 'hair-color',
+      targetGender: 'FEMALE',
+      name: 'سالن VIP رویال',
+      isVipPartner: true,
+      vipCommissionPercent: 0,
+    },
+  });
+  assert.equal(zeroWaiver.baseDepositToman, 300_000);
+  assert.equal(zeroWaiver.platformCommissionPercent, 0);
+  assert.equal(zeroWaiver.platformCommissionToman, 0);
+  assert.equal(zeroWaiver.salonNetDepositCreditedToman, 300_000);
+
+  const customTwoPct = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: 1_000_000,
+    depositPercent: 30,
+    business: {
+      type: BusinessType.WomenSalon,
+      typeLabel: 'سالن زیبایی بانوان',
+      categorySlug: 'hair-color',
+      targetGender: 'FEMALE',
+      name: 'سالن VIP رویال',
+      isVipPartner: true,
+      vipCommissionPercent: 2,
+    },
+  });
+  assert.equal(customTwoPct.platformCommissionPercent, 2);
+  assert.equal(customTwoPct.platformCommissionToman, 20_000);
+  assert.equal(customTwoPct.salonNetDepositCreditedToman, 280_000);
+});

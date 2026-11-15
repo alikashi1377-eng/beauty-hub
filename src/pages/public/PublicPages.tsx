@@ -153,7 +153,14 @@ export const SearchPage: React.FC = () => {
     return ids;
   }, [categoryFilter, services, specialists]);
 
-  const baseFiltered = filterBusinesses(businesses, {
+  const publicReadyBusinesses = React.useMemo(() => {
+    const nonRejected = businesses.filter(
+      (b) => b.approvalStatus !== 'REJECTED' && b.contractAccepted !== false
+    );
+    return nonRejected;
+  }, [businesses]);
+
+  const baseFiltered = filterBusinesses(publicReadyBusinesses, {
     query: '',
     type: typeFilter,
     city: 'ALL',

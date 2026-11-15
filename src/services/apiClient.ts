@@ -731,6 +731,7 @@ export const realApiClient = {
   }): Promise<{
     registeredUsers: AdminUserRecord[];
     businesses?: BusinessItem[];
+    appointments?: AppointmentItem[];
     sessionToken?: string;
     expiresAt?: string;
     user?: AuthenticatedSessionUser;
@@ -739,6 +740,7 @@ export const realApiClient = {
       ok: boolean;
       registeredUsers: AdminUserRecord[];
       businesses?: BusinessItem[];
+      appointments?: AppointmentItem[];
       sessionToken?: string;
       expiresAt?: string;
       user?: AuthenticatedSessionUser;

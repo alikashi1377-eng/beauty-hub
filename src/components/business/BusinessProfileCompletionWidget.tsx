@@ -36,6 +36,9 @@ export interface ProfileCompletionStep {
 
 export interface BusinessProfileCompletionSummary {
   totalPercent: number;
+  isReadyForPublicShowcase: boolean;
+  contractAccepted: boolean;
+  hasBankInfo: boolean;
   planName: string;
   planStaffLimitCount: number;
   recommendedServicesMin: number;
@@ -51,12 +54,12 @@ export function computeBusinessProfileCompletion(params: {
   business: BusinessItem | null | undefined;
   services: ServiceItem[];
   specialists: SpecialistItem[];
-  gallery: GalleryItem[];
+  gallery?: GalleryItem[];
   plans?: SubscriptionPlanItem[];
 }): BusinessProfileCompletionSummary {
-  const { business, services, specialists, gallery, plans = [] } = params;
+  const { business, services, specialists, plans = [] } = params;
 
-  const planName = business?.subscriptionPlan || 'شروع رایگان';
+  const planName = business?.subscriptionPlan || 'پلن جامع و رایگان (کارمزدی)';
   const matchedPlan = plans.find((p) => p.name === planName);
 
   const isVipPlan =
@@ -69,12 +72,15 @@ export function computeBusinessProfileCompletion(params: {
       planName.includes('حرفه ای') ||
       matchedPlan?.id.includes('pro'));
 
-  const planStaffLimitCount = isVipPlan ? 8 : isProPlan ? 3 : 1;
-  const recommendedServicesMin = isVipPlan ? 3 : isProPlan ? 2 : 1;
+  const planStaffLimitCount = isVipPlan ? 15 : isProPlan ? 8 : 10;
+  const recommendedServicesMin = 1;
 
   if (!business) {
     return {
       totalPercent: 0,
+      isReadyForPublicShowcase: false,
+      contractAccepted: false,
+      hasBankInfo: false,
       planName,
       planStaffLimitCount,
       recommendedServicesMin,
@@ -93,10 +99,9 @@ export function computeBusinessProfileCompletion(params: {
   const bizSpecialists = specialists.filter(
     (sp) => sp.businessId === business.id && sp.isActive !== false
   );
-  const bizGallery = gallery.filter((g) => g.businessId === business.id);
   const openDays = (business.workingHours || []).filter((h) => h.isOpen);
 
-  // ۱. اطلاعات پایه، آدرس و لوکیشن نقشه (۱۵٪)
+  // ۱. مشخصات پایه، آدرس، بیوگرافی کوتاه و لوکیشن نقشه (۲۰٪ - الزامی)
   const hasBasicAndLocation = Boolean(
     business.name?.trim() &&
       business.address?.trim() &&
@@ -105,86 +110,74 @@ export function computeBusinessProfileCompletion(params: {
       business.mapLng
   );
 
-  // ۲. تعریف خدمات قابل رزرو و تعرفه‌ها متناسب با پلن (۲۵٪)
+  // ۲. تعریف خدمات قابل رزرو و تعرفه‌ها (۲۵٪ - الزامی)
   const hasServices = bizServices.length >= 1;
 
-  // ۳. تنظیم دقیق روزها و ساعات کاری (۲۰٪)
+  // ۳. تنظیم دقیق روزها و ساعات کاری هفتگی (۲۰٪ - الزامی)
   const hasWorkingHours =
     openDays.length > 0 && Boolean(business.workingHoursConfigured);
 
-  // ۴. معرفی متخصصان متناسب با ظرفیت پلن (۱۵٪)
+  // ۴. معرفی متخصص سالن (۱۵٪ - الزامی)
   const hasSpecialists = bizSpecialists.length >= 1;
 
-  // ۵. اطلاعات مالی و تسویه حساب: شماره کارت یا شبا (۱۵٪)
+  // ۵. اطلاعات مالی (شماره کارت/شبا) + مطالعه و تیک تایید مفاد قرارداد همکاری (۲۰٪ - الزامی)
+  // نکته: گالری تصاویر کاملاً اختیاری است و مانع نمایش عمومی سالن نمی‌شود.
   const cleanCard = (business.bankCardNumber || '').replace(/\D/g, '');
   const cleanSheba = (business.bankShebaNumber || '')
     .replace(/^IR/i, '')
     .replace(/\D/g, '');
-  const hasFinancialInfo = cleanCard.length >= 16 || cleanSheba.length >= 24;
-
-  // ۶. تصویر پروفایل، بیوگرافی، اینستاگرام و نمونه کار (۱۰٪)
-  const hasMediaAndBio = Boolean(
-    business.avatarUrl &&
-      business.instagramHandle?.trim() &&
-      business.aboutText &&
-      business.aboutText.trim().length >= 25 &&
-      bizGallery.length > 0
-  );
+  const hasBankInfo = cleanCard.length >= 16 || cleanSheba.length >= 24;
+  const contractAccepted = Boolean(business.contractAccepted);
+  const hasFinancialInfo = hasBankInfo && contractAccepted;
 
   const steps: ProfileCompletionStep[] = [
     {
       id: 'basic_location',
-      title: 'اطلاعات پایه، آدرس و لوکیشن نقشه',
-      shortLabel: 'آدرس و لوکیشن',
-      weightPercent: 15,
+      title: 'گام ۱: مشخصات سالن، آدرس، عکس پروفایل و موقعیت نقشه',
+      shortLabel: '۱. مشخصات و لوکیشن نقشه',
+      weightPercent: 20,
       completed: hasBasicAndLocation,
-      href: '/app/profile',
-      statusHint: 'ثبت موقعیت روی نقشه و آدرس دقیق',
+      href: '/app/profile?setup=1',
+      statusHint: 'ثبت آدرس دقیق، توضیحات و موقعیت روی نقشه (گالری اختیاری است)',
     },
     {
       id: 'services',
-      title: 'تعریف خدمات قابل رزرو و تعرفه‌ها',
-      shortLabel: 'خدمات سالن',
+      title: 'گام ۲: تعریف حداقل ۱ خدمت قابل رزرو و تعرفه',
+      shortLabel: '۲. تعریف خدمات و تعرفه',
       weightPercent: 25,
       completed: hasServices,
-      href: '/app/services',
-      statusHint: 'تعریف خدمات و تعرفه‌های قابل رزرو',
+      href: '/app/services?setup=1',
+      statusHint: 'تعریف حداقل یک خدمت فعال با قیمت واقعی جهت رزرو آنلاین',
     },
     {
       id: 'working_hours',
-      title: 'تنظیم دقیق روزها و ساعات کاری',
-      shortLabel: 'روزها و ساعات کاری',
+      title: 'گام ۳: تنظیم دقیق روزها و ساعات کاری (تک‌شیفت یا دوشیفت)',
+      shortLabel: '۳. روزها و ساعات کاری',
       weightPercent: 20,
       completed: hasWorkingHours,
-      href: '/app/working-hours',
-      statusHint: 'تعیین و ذخیره روزهای کاری و ساعات پذیرش',
+      href: '/app/working-hours?setup=1',
+      statusHint: 'تعیین و ذخیره روزهای کاری و ساعات پذیرش صبح و عصر',
     },
     {
       id: 'specialists',
-      title: `معرفی متخصصان سالن (ظرفیت پلن: تا ${toPersianDigits(planStaffLimitCount)} نفر)`,
-      shortLabel: 'متخصصان سالن',
+      title: 'گام ۴: معرفی حداقل ۱ متخصص فعال سالن',
+      shortLabel: '۴. معرفی متخصص',
       weightPercent: 15,
       completed: hasSpecialists,
-      href: '/app/staff',
-      statusHint: `ثبت متخصص (سقف پلن شما: ${toPersianDigits(planStaffLimitCount)} نفر)`,
+      href: '/app/staff?setup=1',
+      statusHint: 'ثبت حداقل یک متخصص و عکس پروفایل جهت نوبت‌دهی',
     },
     {
       id: 'financial_info',
-      title: 'ثبت شماره کارت و شبا (تسویه حساب سالن)',
-      shortLabel: 'شماره کارت و شبا',
-      weightPercent: 15,
+      title: 'گام ۵: ثبت شماره شبا/کارت و تیک تایید مفاد قرارداد همکاری',
+      shortLabel: !hasBankInfo
+        ? '۵. شماره شبا و تایید قرارداد'
+        : '۵. تیک تایید مفاد قرارداد',
+      weightPercent: 20,
       completed: hasFinancialInfo,
-      href: '/app/subscription',
-      statusHint: 'تکمیل شماره کارت ۱۶ رقمی یا شبا جهت تسویه بیعانه و نوبت‌ها',
-    },
-    {
-      id: 'media_bio',
-      title: 'تصویر سالن، اینستاگرام و نمونه‌کار',
-      shortLabel: 'تصویر و نمونه‌کار',
-      weightPercent: 10,
-      completed: hasMediaAndBio,
-      href: bizGallery.length === 0 ? '/app/gallery' : '/app/profile',
-      statusHint: 'تکمیل عکس پروفایل، اینستاگرام و گالری نمونه‌کار',
+      href: '/app/subscription?setup=1',
+      statusHint:
+        'ثبت شماره شبا/کارت جهت واریز هفتگی + مطالعه و تیک تایید مفاد قرارداد همکاری',
     },
   ];
 
@@ -195,9 +188,13 @@ export function computeBusinessProfileCompletion(params: {
 
   const incompleteSteps = steps.filter((s) => !s.completed);
   const nextIncompleteStep = incompleteSteps[0] ?? null;
+  const isReadyForPublicShowcase = incompleteSteps.length === 0;
 
   return {
     totalPercent,
+    isReadyForPublicShowcase,
+    contractAccepted,
+    hasBankInfo,
     planName,
     planStaffLimitCount,
     recommendedServicesMin,
@@ -208,6 +205,41 @@ export function computeBusinessProfileCompletion(params: {
     incompleteSteps,
     nextIncompleteStep,
   };
+}
+
+/**
+ * بررسی اینکه آیا کسب‌وکار شرایط نمایش عمومی در ویترین مشتریان را دارد یا خیر.
+ * (گالری تصاویر اختیاری است؛ اما مشخصات پایه، حداقل ۱ خدمت، ساعت کاری و شبا/تایید قرارداد یا تایید مدیریت الزامی است)
+ */
+export function isBusinessReadyForPublicDisplay(params: {
+  business: BusinessItem;
+  services: ServiceItem[];
+  specialists?: SpecialistItem[];
+}): boolean {
+  const { business, services, specialists = [] } = params;
+  if (business.approvalStatus !== 'APPROVED') return false;
+  if (business.isSampleShowcase || /^biz-[1-8]$/.test(business.id)) return false;
+
+  const summary = computeBusinessProfileCompletion({
+    business,
+    services,
+    specialists,
+  });
+  if (summary.isReadyForPublicShowcase) return true;
+
+  // سالن‌های منتخب/تاییدشده قبلی که حداقل ۱ خدمت فعال و آدرس دارند یا سفیر برند هستند
+  const bizServices = services.filter(
+    (s) => s.businessId === business.id && s.isActive !== false
+  );
+  if (
+    (business.verifiedBadge || business.isVipPartner || business.isSponsored) &&
+    bizServices.length >= 1 &&
+    Boolean(business.address?.trim())
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -229,7 +261,7 @@ export const SidebarProfileCompletionRing: React.FC<{
     circumference - (summary.totalPercent / 100) * circumference;
 
   return (
-    <div className="mt-2.5 rounded-xl border border-white/15 bg-white/10 p-2">
+    <div className="mt-2.5 rounded-xl border border-amber-400/30 bg-amber-500/15 p-2.5">
       <div className="flex items-center gap-2">
         <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
           <svg
@@ -255,7 +287,7 @@ export const SidebarProfileCompletionRing: React.FC<{
               strokeDasharray={circumference}
               strokeDashoffset={strokeDashoffset}
               strokeLinecap="round"
-              className="text-[#00E5FF] transition-all duration-500"
+              className="text-amber-300 transition-all duration-500"
             />
           </svg>
           <span className="absolute text-[9px] font-black text-white tabular-nums">
@@ -265,17 +297,17 @@ export const SidebarProfileCompletionRing: React.FC<{
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-[10px] font-bold text-white">
-              تکمیل پروفایل
+            <span className="truncate text-[10px] font-bold text-amber-200">
+              عدم نمایش در ویترین تا تکمیل
             </span>
-            <span className="shrink-0 text-[9px] font-bold text-[#00E5FF]">
-              {toPersianDigits(summary.incompleteSteps.length)} مورد باقی‌مانده
+            <span className="shrink-0 text-[9px] font-bold text-white">
+              {toPersianDigits(summary.incompleteSteps.length)} گام مانده
             </span>
           </div>
 
           <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/20">
             <div
-              className="h-full rounded-full bg-[#00E5FF] transition-all duration-500"
+              className="h-full rounded-full bg-amber-300 transition-all duration-500"
               style={{ width: `${summary.totalPercent}%` }}
             />
           </div>
@@ -283,11 +315,10 @@ export const SidebarProfileCompletionRing: React.FC<{
           {summary.nextIncompleteStep ? (
             <Link
               to={summary.nextIncompleteStep.href}
-              className="mt-1 flex items-center justify-between text-[10px] font-bold text-amber-300 hover:text-white"
+              className="mt-1 flex items-center justify-between text-[10px] font-bold text-white hover:text-amber-200"
             >
               <span className="truncate">
-                + {summary.nextIncompleteStep.shortLabel} (
-                {toPersianDigits(summary.nextIncompleteStep.weightPercent)}٪)
+                ادامه: {summary.nextIncompleteStep.shortLabel}
               </span>
               <ChevronLeft className="h-3 w-3 shrink-0" />
             </Link>
@@ -299,9 +330,8 @@ export const SidebarProfileCompletionRing: React.FC<{
 };
 
 /**
- * نوار و حلقه پیشرفت فوق‌العاده جمع‌وجور در بالای داشبورد کسب‌وکار (/app)
- * فقط موارد ناقص را نشان می‌دهد و هر مورد که کامل شود حذف می‌گردد؛
- * پس از تکمیل ۱۰۰٪ نیز کل این نوار به صورت خودکار مخفی می‌شود.
+ * نوار و حلقه پیشرفت مرحله‌به‌مرحله در بالای پنل کسب‌وکار (/app)
+ * به کسب‌وکار اعلام می‌کند که تکمیل این گام‌ها (به ویژه تیک مفاد قرارداد) برای نمایش در ویترین عمومی الزامی است و گالری اختیاری است.
  */
 export const BusinessProfileCompletionBanner: React.FC<{
   summary: BusinessProfileCompletionSummary;
@@ -310,8 +340,8 @@ export const BusinessProfileCompletionBanner: React.FC<{
     return null;
   }
 
-  const size = 38;
-  const strokeWidth = 3.5;
+  const size = 44;
+  const strokeWidth = 4;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
@@ -320,28 +350,27 @@ export const BusinessProfileCompletionBanner: React.FC<{
   const getStepIcon = (id: ProfileCompletionStep['id']) => {
     switch (id) {
       case 'basic_location':
-        return <MapPin className="h-3 w-3" />;
+        return <MapPin className="h-3.5 w-3.5" />;
       case 'services':
-        return <Scissors className="h-3 w-3" />;
+        return <Scissors className="h-3.5 w-3.5" />;
       case 'working_hours':
-        return <Clock className="h-3 w-3" />;
+        return <Clock className="h-3.5 w-3.5" />;
       case 'specialists':
-        return <Users className="h-3 w-3" />;
+        return <Users className="h-3.5 w-3.5" />;
       case 'financial_info':
-        return <CreditCard className="h-3 w-3" />;
+        return <CreditCard className="h-3.5 w-3.5" />;
       case 'media_bio':
-        return <Sparkles className="h-3 w-3" />;
+        return <Sparkles className="h-3.5 w-3.5" />;
     }
   };
 
   return (
-    <div className="rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 shadow-2xs">
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
-        {/* سمت راست: دایره کوچک درصد + نوار باریک */}
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex h-9.5 w-9.5 shrink-0 items-center justify-center">
+    <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-l from-amber-50 via-white to-blue-50/60 p-3.5 sm:p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center">
             <svg
-              className="h-9.5 w-9.5 -rotate-90 transform"
+              className="h-11 w-11 -rotate-90 transform"
               viewBox={`0 0 ${size} ${size}`}
             >
               <circle
@@ -351,7 +380,7 @@ export const BusinessProfileCompletionBanner: React.FC<{
                 fill="transparent"
                 stroke="currentColor"
                 strokeWidth={strokeWidth}
-                className="text-slate-200"
+                className="text-amber-200/70"
               />
               <circle
                 cx={size / 2}
@@ -366,52 +395,73 @@ export const BusinessProfileCompletionBanner: React.FC<{
                 className="text-[#0057FF] transition-all duration-500"
               />
             </svg>
-            <span className="absolute text-[10px] font-black text-[#061138] tabular-nums">
+            <span className="absolute text-[11px] font-black text-[#061138] tabular-nums">
               {toPersianDigits(summary.totalPercent)}٪
             </span>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-extrabold text-[#061138]">
-                تکمیل پروفایل سالن
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs sm:text-sm font-black text-[#061138]">
+                ⚠️ تکمیل مرحله‌به‌مرحله پروفایل جهت نمایش سالن در ویترین عمومی تایم‌تو الزامی است
               </span>
-              <span className="rounded-md bg-[#ECFDF5] px-1.5 py-0.5 text-[10px] font-bold text-[#059669]">
-                پنل رایگان همیشگی ✓
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-28 sm:w-36 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className="h-full rounded-full bg-[#0057FF] transition-all duration-500"
-                  style={{ width: `${summary.totalPercent}%` }}
-                />
-              </div>
-              <span className="text-[10px] font-bold text-[#334155]">
-                فقط موارد باقی‌مانده:
+              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-black text-amber-900">
+                گالری تصاویر اختیاری است ✓
               </span>
             </div>
+            <p className="text-[11px] sm:text-xs font-bold leading-5 text-slate-700">
+              تا زمان تکمیل موارد زیر (به‌ویژه{' '}
+              <span className="font-black text-rose-700">
+                مطالعه و تیک تایید مفاد قرارداد همکاری و ثبت شبا
+              </span>
+              )، پروفایل سالن شما برای مشتریان عادی نمایش داده نمی‌شود. روی گام بعدی کلیک کنید:
+            </p>
           </div>
         </div>
 
-        {/* سمت چپ: فقط آیتم‌های تکمیل‌نشده (هر آیتم کامل شود، خودکار حذف می‌شود) */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {summary.incompleteSteps.map((step) => (
-            <Link
-              key={step.id}
-              to={step.href}
-              title={step.statusHint}
-              className="inline-flex items-center gap-1 rounded-full border border-[#0057FF]/30 bg-[#F3F6FC] px-2.5 py-1 text-[11px] font-extrabold text-[#061138] transition hover:border-[#0057FF] hover:bg-[#E0ECFF]"
+        {summary.nextIncompleteStep ? (
+          <Link
+            to={summary.nextIncompleteStep.href}
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#0057FF] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#0046CC]"
+          >
+            <span>تکمیل گام فعلی: {summary.nextIncompleteStep.shortLabel}</span>
+            <ChevronLeft className="h-4 w-4" />
+          </Link>
+        ) : null}
+      </div>
+
+      {/* نمایش گام‌ها به صورت استپر مرحله‌به‌مرحله */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-amber-200/70 pt-2.5">
+        {summary.steps.map((step) => (
+          <Link
+            key={step.id}
+            to={step.href}
+            title={step.statusHint}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-extrabold transition ${
+              step.completed
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                : summary.nextIncompleteStep?.id === step.id
+                  ? 'border-[#0057FF] bg-[#E8F1FF] text-[#061138] ring-2 ring-[#0057FF]/20'
+                  : 'border-slate-300 bg-white text-slate-700 hover:border-[#0057FF]'
+            }`}
+          >
+            <span className={step.completed ? 'text-emerald-600' : 'text-[#0057FF]'}>
+              {getStepIcon(step.id)}
+            </span>
+            <span>{step.shortLabel}</span>
+            <span
+              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
+                step.completed
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#0057FF] text-white'
+              }`}
             >
-              <span className="text-[#0057FF]">{getStepIcon(step.id)}</span>
-              <span>+ {step.shortLabel}</span>
-              <span className="rounded-full bg-[#0057FF] px-1.5 py-0.2 text-[10px] font-black text-white tabular-nums">
-                +{toPersianDigits(step.weightPercent)}٪
-              </span>
-            </Link>
-          ))}
-        </div>
+              {step.completed ? 'تکمیل ✓' : `+${toPersianDigits(step.weightPercent)}٪`}
+            </span>
+          </Link>
+        ))}
       </div>
     </div>
   );
 };
+

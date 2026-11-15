@@ -114,20 +114,12 @@ const isFreeSubscriptionPlan = (
   return false;
 };
 
-/** بررسی فعال بودن پلن VIP (شامل خرید مستقیم یا فعال‌سازی تستی زمان‌دار VIP توسط مدیر کل) */
+/** در مدل جدید کمیسیونی، انتشار استوری بالای پروفایل برای تمام کسب‌وکارها آزاد و فعال است */
 const isVipSubscriptionPlan = (
-  planId?: string,
-  planName?: string
+  _planId?: string,
+  _planName?: string
 ): boolean => {
-  const id = (planId || '').toLowerCase();
-  const name = (planName || '').trim();
-  return (
-    id === 'plan-vip-brand' ||
-    id === 'plan-vip-multi' ||
-    id === 'plan-vip' ||
-    id === 'plan-enterprise' ||
-    name.includes('VIP')
-  );
+  return true;
 };
 
 /** بنر قفل امکانات ویژه پلن‌های بالاتر (حرفه‌ای / VIP) */
@@ -3358,6 +3350,9 @@ export const BusinessStaffPage: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [roleTitle, setRoleTitle] = useState('');
   const [specialtiesText, setSpecialtiesText] = useState('');
+  const [staffAvatarUrl, setStaffAvatarUrl] = useState('');
+  const [staffBio, setStaffBio] = useState('');
+  const [staffExperienceYears, setStaffExperienceYears] = useState('4');
   const [upgradeModalPlan, setUpgradeModalPlan] =
     useState<CheckoutItemPayload | null>(null);
 
@@ -3375,29 +3370,13 @@ export const BusinessStaffPage: React.FC = () => {
   );
 
   const openAdd = () => {
-    if (isLimitReached) {
-      showToast(
-        `ظرفیت متخصصان در پلن فعلی شما (${toPersianDigits(
-          staffLimitCount
-        )} نفر) تکمیل است. برای افزودن متخصص جدید، پلن خود را به حرفه‌ای یا VIP ارتقا دهید.`,
-        'warning'
-      );
-      const nextPlan =
-        plans.find((p) => p.id === 'plan-professional') || plans[1];
-      if (nextPlan) {
-        setUpgradeModalPlan({
-          itemType: 'PLAN',
-          itemId: nextPlan.id,
-          itemTitle: `ارتقا به پلن «${nextPlan.name}»`,
-          baseAmountToman: nextPlan.monthlyPriceToman,
-        });
-      }
-      return;
-    }
     setEditingStaff(null);
     setFullName('');
     setRoleTitle('');
     setSpecialtiesText('کوتاهی ژورنالی، براشینگ');
+    setStaffAvatarUrl(currentBiz?.avatarUrl || '');
+    setStaffBio('عضو تیم تخصصی مجموعه.');
+    setStaffExperienceYears('4');
     setModalOpen(true);
   };
 
@@ -3406,6 +3385,9 @@ export const BusinessStaffPage: React.FC = () => {
     setFullName(sp.fullName);
     setRoleTitle(sp.roleTitle);
     setSpecialtiesText(sp.specialties.join('، '));
+    setStaffAvatarUrl(sp.avatarUrl || currentBiz?.avatarUrl || '');
+    setStaffBio(sp.bio || '');
+    setStaffExperienceYears(String(sp.experienceYears || 4));
     setModalOpen(true);
   };
 
@@ -3416,11 +3398,20 @@ export const BusinessStaffPage: React.FC = () => {
       .split(/[,،]/)
       .map((s) => s.trim())
       .filter(Boolean);
+    const parsedExp = Math.max(
+      1,
+      Math.min(60, Number(toEnglishDigitsClient(staffExperienceYears)) || 4)
+    );
+    const resolvedAvatar =
+      staffAvatarUrl.trim() || currentBiz?.avatarUrl?.trim() || undefined;
 
     if (editingStaff) {
       updateSpecialist(editingStaff.id, {
         fullName: fullName.trim(),
         roleTitle: roleTitle.trim(),
+        avatarUrl: resolvedAvatar,
+        experienceYears: parsedExp,
+        bio: staffBio.trim() || editingStaff.bio,
         specialties: specs.length ? specs : editingStaff.specialties,
       });
     } else {
@@ -3429,11 +3420,12 @@ export const BusinessStaffPage: React.FC = () => {
         slug: `staff-${Date.now()}`,
         fullName: fullName.trim(),
         roleTitle: roleTitle.trim(),
-        experienceYears: 4,
-        rating: 4.8,
+        avatarUrl: resolvedAvatar,
+        experienceYears: parsedExp,
+        rating: 4.9,
         reviewCount: 12,
         specialties: specs.length ? specs : ['خدمات تخصصی زیبایی'],
-        bio: 'عضو تیم تخصصی سالن زیبایی.',
+        bio: staffBio.trim() || 'عضو تیم تخصصی مجموعه.',
         isIndependent: false,
         isActive: true,
       });
@@ -3446,9 +3438,9 @@ export const BusinessStaffPage: React.FC = () => {
       <PageHeader
         kicker="کسب‌وکار · اعضای تیم"
         title="مدیریت متخصصان و پرسنل"
-        subtitle={`ظرفیت مجاز پلن فعلی شما: حداکثر ${toPersianDigits(
-          staffLimitCount
-        )} متخصص (${toPersianDigits(effectiveStaffList.length)} نفر ثبت‌شده)`}
+        subtitle={`تعداد متخصصان فعال ثبت‌شده در مجموعه شما: ${toPersianDigits(
+          effectiveStaffList.length
+        )} نفر (امکان تعیین تصویر پروفایل اختصاصی یا همگام‌سازی با لوگوی سالن)`}
         routePattern="/app/staff"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -3457,11 +3449,7 @@ export const BusinessStaffPage: React.FC = () => {
         actions={
           <Button variant="primary" size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4" />
-            <span>
-              {isLimitReached
-                ? 'ارتقای پلن برای افزودن متخصص جدید'
-                : 'افزودن متخصص جدید'}
-            </span>
+            <span>افزودن متخصص جدید</span>
           </Button>
         }
       />
@@ -3496,61 +3484,71 @@ export const BusinessStaffPage: React.FC = () => {
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {effectiveStaffList.map((sp) => (
-            <Card key={sp.id} className="space-y-4 flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3.5">
-                    <Avatar name={sp.fullName} size="lg" tone="violet" />
-                    <div>
-                      <h2 className="text-base font-extrabold text-[#1E1B2E]">
-                        {sp.fullName}
-                      </h2>
-                      <p className="text-xs text-[#8B5CF6] font-bold mt-0.5">
-                        {sp.roleTitle}
-                      </p>
+          {effectiveStaffList.map((sp) => {
+            const effectiveAvatar =
+              sp.avatarUrl?.trim() || currentBiz?.avatarUrl?.trim() || undefined;
+            return (
+              <Card key={sp.id} className="space-y-4 flex flex-col justify-between">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3.5">
+                      <Avatar
+                        name={sp.fullName}
+                        imageUrl={effectiveAvatar}
+                        showPhoto
+                        size="lg"
+                        tone="violet"
+                      />
+                      <div>
+                        <h2 className="text-base font-extrabold text-[#1E1B2E]">
+                          {sp.fullName}
+                        </h2>
+                        <p className="text-xs text-[#0057FF] font-bold mt-0.5">
+                          {sp.roleTitle}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateSpecialist(sp.id, {
-                        isActive: !(sp.isActive ?? true),
-                      })
-                    }
-                    className="cursor-pointer"
-                  >
-                    <StatusBadge
-                      label={sp.isActive !== false ? 'تقویم فعال' : 'غیرفعال'}
-                      tone={sp.isActive !== false ? 'success' : 'neutral'}
-                    />
-                  </button>
-                </div>
-                <p className="text-xs text-[#6B6480] leading-relaxed">{sp.bio}</p>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {sp.specialties.map((skill) => (
-                    <span
-                      key={skill}
-                      className="px-2.5 py-1 rounded-lg bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateSpecialist(sp.id, {
+                          isActive: !(sp.isActive ?? true),
+                        })
+                      }
+                      className="cursor-pointer"
                     >
-                      {skill}
-                    </span>
-                  ))}
+                      <StatusBadge
+                        label={sp.isActive !== false ? 'تقویم فعال' : 'غیرفعال'}
+                        tone={sp.isActive !== false ? 'success' : 'neutral'}
+                      />
+                    </button>
+                  </div>
+                  <p className="text-xs text-[#6B6480] leading-relaxed">{sp.bio}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {sp.specialties.map((skill) => (
+                      <span
+                        key={skill}
+                        className="px-2.5 py-1 rounded-lg bg-[#FAF8FF] border border-[#E6E0F5] text-[11px] font-semibold text-[#6B6480]"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div className="pt-3.5 border-t border-[#E6E0F5] flex items-center justify-between text-xs">
-                <span className="text-[#6B6480] font-semibold tabular-nums">
-                  سابقه: {toPersianDigits(sp.experienceYears)} سال · امتیاز: ★{' '}
-                  {toPersianDigits(sp.rating)}
-                </span>
-                <Button variant="outline" size="sm" onClick={() => openEdit(sp)}>
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>ویرایش</span>
-                </Button>
-              </div>
-            </Card>
-          ))}
+                <div className="pt-3.5 border-t border-[#E6E0F5] flex items-center justify-between text-xs">
+                  <span className="text-[#6B6480] font-semibold tabular-nums">
+                    سابقه: {toPersianDigits(sp.experienceYears)} سال · امتیاز: ★{' '}
+                    {toPersianDigits(sp.rating)}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => openEdit(sp)}>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>ویرایش مشخصات و عکس</span>
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -3558,34 +3556,84 @@ export const BusinessStaffPage: React.FC = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={
-          editingStaff ? 'ویرایش اطلاعات متخصص' : 'افزودن متخصص جدید'
+          editingStaff
+            ? 'ویرایش مشخصات و عکس پروفایل متخصص'
+            : 'افزودن متخصص جدید'
         }
       >
         <form onSubmit={handleSaveStaff} className="space-y-4">
-          <FormField id="stf-name" label="نام و نام خانوادگی متخصص" required>
-            <Input
-              id="stf-name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
+          <div className="space-y-2">
+            <ProfilePhotoUploader
+              value={staffAvatarUrl}
+              businessName={fullName || currentBiz?.name}
+              label="عکس پروفایل متخصص (نمایش در مرحله انتخاب متخصص رزرو آنلاین)"
+              onChange={(url) => setStaffAvatarUrl(url)}
+            />
+            {currentBiz?.avatarUrl &&
+            staffAvatarUrl !== currentBiz.avatarUrl ? (
+              <button
+                type="button"
+                onClick={() => setStaffAvatarUrl(currentBiz.avatarUrl || '')}
+                className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer inline-flex items-center gap-1"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>استفاده از همان عکس پروفایل اصلی سالن</span>
+              </button>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField id="stf-name" label="نام و نام خانوادگی متخصص" required>
+              <Input
+                id="stf-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            </FormField>
+            <FormField id="stf-role" label="عنوان تخصصی / سمت" required>
+              <Input
+                id="stf-role"
+                value={roleTitle}
+                onChange={(e) => setRoleTitle(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <FormField id="stf-exp" label="سابقه کار (سال)">
+              <Input
+                id="stf-exp"
+                type="number"
+                min={1}
+                max={60}
+                value={staffExperienceYears}
+                onChange={(e) => setStaffExperienceYears(e.target.value)}
+              />
+            </FormField>
+            <div className="sm:col-span-2">
+              <FormField
+                id="stf-specs"
+                label="مهارت‌ها و خدمات (با ویرگول جدا کنید)"
+              >
+                <Input
+                  id="stf-specs"
+                  value={specialtiesText}
+                  onChange={(e) => setSpecialtiesText(e.target.value)}
+                />
+              </FormField>
+            </div>
+          </div>
+
+          <FormField id="stf-bio" label="معرفی کوتاه متخصص (اختیاری)">
+            <Textarea
+              id="stf-bio"
+              rows={2}
+              value={staffBio}
+              onChange={(e) => setStaffBio(e.target.value)}
+              placeholder="توضیح کوتاه درباره تخصص و تجربه کاری..."
             />
           </FormField>
-          <FormField id="stf-role" label="عنوان تخصصی / سمت" required>
-            <Input
-              id="stf-role"
-              value={roleTitle}
-              onChange={(e) => setRoleTitle(e.target.value)}
-            />
-          </FormField>
-          <FormField
-            id="stf-specs"
-            label="مهارت‌ها و خدمات (با ویرگول جدا کنید)"
-          >
-            <Input
-              id="stf-specs"
-              value={specialtiesText}
-              onChange={(e) => setSpecialtiesText(e.target.value)}
-            />
-          </FormField>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button
               variant="outline"
@@ -3595,7 +3643,7 @@ export const BusinessStaffPage: React.FC = () => {
               انصراف
             </Button>
             <Button type="submit" variant="primary" size="sm">
-              ذخیره اطلاعات
+              ذخیره اطلاعات و عکس متخصص
             </Button>
           </div>
         </form>
@@ -4951,24 +4999,19 @@ export const BusinessGalleryPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* بخش ۲: مدیریت استوری و هایلایت روزانه بالای پروفایل (اختصاصی پلن VIP) */}
-      <Card className="border-2 border-[#8B5CF6]/35 bg-gradient-to-br from-[#FAF8FF] via-white to-[#FDF4FF] space-y-4">
+      {/* بخش ۲: مدیریت استوری و هایلایت روزانه بالای پروفایل */}
+      <Card
+        id="story-publisher-section"
+        className="border-2 border-[#8B5CF6]/35 bg-gradient-to-br from-[#FAF8FF] via-white to-[#FDF4FF] space-y-4"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-l from-[#061138] to-[#7C3AED] text-[#00E5FF] text-xs font-black">
-                ✨ ۲. استوری و هایلایت ویژه بالای پروفایل سالن (اختصاصی پلن VIP)
+                ✨ ۲. استوری و هایلایت ویژه بالای پروفایل سالن
               </span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                  isVipPlanActive
-                    ? 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]'
-                    : 'bg-amber-100 text-amber-900 border border-amber-300'
-                }`}
-              >
-                {isVipPlanActive
-                  ? 'فعال روی حساب VIP شما ✓'
-                  : '🔒 نیازمند پلن VIP'}
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                فعال و رایگان برای سالن شما ✓
               </span>
             </div>
             <p className="text-xs text-[#475569] leading-relaxed">

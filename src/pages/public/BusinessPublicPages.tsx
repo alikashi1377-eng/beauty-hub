@@ -264,6 +264,7 @@ export const BusinessPublicProfileView: React.FC<{
   const proAvatarUrl =
     mode === 'pro' && matchedSpecialist
       ? matchedSpecialist.avatarUrl ||
+        business.avatarUrl ||
         getSpecialistAvatarUrl(
           matchedSpecialist.fullName,
           matchedSpecialist.roleTitle

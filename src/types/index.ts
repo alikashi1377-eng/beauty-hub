@@ -177,6 +177,8 @@ export interface BusinessItem {
   laserDeviceModel?: string;
   contractAccepted?: boolean;
   contractAcceptedAtJalali?: string;
+  isVipPartner?: boolean;
+  vipCommissionPercent?: number;
 }
 
 export interface CustomerWalletTransactionItem {
@@ -321,6 +323,9 @@ export interface SettlementRequestItem {
   amountToman: number;
   commissionToman: number;
   netPayoutToman: number;
+  bookingsCount?: number;
+  totalServiceAmountToman?: number;
+  totalDepositCollectedToman?: number;
   createdAtJalali: string;
   status: 'PENDING' | 'PAID';
   paidTrackingCode?: string;

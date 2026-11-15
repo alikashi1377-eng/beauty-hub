@@ -616,6 +616,7 @@ export const ProfessionalCard: React.FC<{
   const {
     authUser,
     openAuthModal,
+    businesses,
     favoriteSpecialistIds,
     toggleFavoriteSpecialist,
   } = usePrototypeData();
@@ -626,12 +627,14 @@ export const ProfessionalCard: React.FC<{
       : favoriteSpecialistIds.includes(specialist.id);
   const handleToggleFavorite = onToggleFavorite ?? toggleFavoriteSpecialist;
 
+  const parentBusiness = businesses.find((b) => b.id === specialist.businessId);
   const targetUrl = `/pro/${specialist.slug}`;
   const bookingUrl = businessSlug
     ? `/booking/${businessSlug}?specialist=${specialist.id}`
     : targetUrl;
   const portraitUrl =
-    specialist.avatarUrl ||
+    specialist.avatarUrl?.trim() ||
+    parentBusiness?.avatarUrl?.trim() ||
     getSpecialistAvatarUrl(specialist.fullName, specialist.roleTitle);
 
   return (
