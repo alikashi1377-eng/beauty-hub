@@ -215,6 +215,7 @@ test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit eve
 
 import {
   buildCustomerBookingTimeSlots,
+  formatPriceToman,
   formatWorkingHourDisplay,
   resolveEffectiveWorkingHour,
 } from './formatters';
@@ -318,3 +319,35 @@ test('calculateBookingFinancialBreakdown honors VIP Ambassador 0% commission wai
   assert.equal(customTwoPct.platformCommissionToman, 20_000);
   assert.equal(customTwoPct.salonNetDepositCreditedToman, 280_000);
 });
+
+test('formatPriceToman never returns رایگان and 1M/10M service with 20% deposit & 3% commission yields 170K / 1.7M net payout', () => {
+  assert.equal(formatPriceToman(0), '۰ تومان');
+  assert.equal(formatPriceToman(-500), '۰ تومان');
+
+  const singleBooking = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: 1_000_000,
+    depositPercent: 20,
+    business: {
+      type: BusinessType.MenBarbershop,
+      typeLabel: 'پیرایش آقایان',
+      categorySlug: 'mens-barbershop',
+      targetGender: 'MALE',
+      name: 'پیرایش تخصصی',
+    },
+  });
+  assert.equal(singleBooking.totalServicePriceToman, 1_000_000);
+  assert.equal(singleBooking.baseDepositToman, 200_000);
+  assert.equal(singleBooking.remainingInSalonToman, 800_000);
+  assert.equal(singleBooking.platformCommissionPercent, 3);
+  assert.equal(singleBooking.platformCommissionToman, 30_000);
+  assert.equal(singleBooking.salonNetDepositCreditedToman, 170_000);
+
+  // برای ۱۰ نوبت ۱ میلیونی (جمع کل خدمات ۱۰,۰۰۰,۰۰۰ تومان):
+  // بیعانه آنلاین ۲,۰۰۰,۰۰۰ تومان، حضوری در سالن ۸,۰۰۰,۰۰۰ تومان، کارمزد پلتفرم ۳۰۰,۰۰۰ تومان، خالص واریزی به سالن ۱,۷۰۰,۰۰۰ تومان
+  assert.equal(singleBooking.totalServicePriceToman * 10, 10_000_000);
+  assert.equal(singleBooking.remainingInSalonToman * 10, 8_000_000);
+  assert.equal(singleBooking.baseDepositToman * 10, 2_000_000);
+  assert.equal(singleBooking.platformCommissionToman * 10, 300_000);
+  assert.equal(singleBooking.salonNetDepositCreditedToman * 10, 1_700_000);
+});
+

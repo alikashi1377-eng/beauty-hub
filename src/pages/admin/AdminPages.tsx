@@ -54,6 +54,7 @@ import {
 } from '../../utils/formatters';
 import {
   calculateBookingFinancialBreakdown,
+  normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
 } from '../../utils/financialEngine';
@@ -127,6 +128,16 @@ function computeBusinessDossierMetrics(
     totalNetToSalonToman += breakdown.salonNetDepositCreditedToman;
   }
 
+  const depositPercent = normalizeDepositPercent(business.depositPercent);
+  const hasCustomDiscountRate = Boolean(
+    business.isVipPartner &&
+      typeof business.vipCommissionPercent === 'number' &&
+      Number.isFinite(business.vipCommissionPercent)
+  );
+  const totalRemainingInSalonToman = Math.max(
+    0,
+    totalServiceToman - totalDepositCollectedToman
+  );
   const currentPayableToman = Math.max(
     Number(business.walletBalanceToman) || 0,
     totalNetToSalonToman
@@ -136,9 +147,12 @@ function computeBusinessDossierMetrics(
     bookingsCount: bizApts.length,
     completedCount: bizApts.filter((a) => a.status === 'COMPLETED').length,
     confirmedCount: bizApts.filter((a) => a.status === 'CONFIRMED').length,
+    depositPercent,
     commissionPercent: commMeta.commissionPercent,
     commissionCategoryLabel: commMeta.categoryLabel,
+    hasCustomDiscountRate,
     totalServiceToman,
+    totalRemainingInSalonToman,
     totalDepositCollectedToman,
     totalCommissionToman,
     totalNetToSalonToman,
@@ -204,7 +218,7 @@ const BusinessFinancialDossierTable: React.FC<{
             </h2>
           </div>
           <p className="text-xs text-[#475569] leading-relaxed">
-            در این جدول ریز کارکرد واقعی هر سالن (تعداد رزروها، ارزش کل خدمات ارائه‌شده، بیعانه دریافتی آنلاین، کارمزد اختصاصی کسرشده و خالص قابل واریز به شبا) مشخص است. با کلیک روی <strong>«ثبت واریز هفتگی + ارسال صورتحساب»</strong>، تسویه ثبت شده و گزارش کامل به پنل صاحب کسب‌وکار ارسال می‌شود.
+            در این جدول ریز کارکرد واقعی هر سالن طبق مفاد قرارداد و تنظیمات مدیریت محاسبه می‌شود: کارمزد پلتفرم بر اساس <strong>کل قیمت خدمات ارائه‌شده</strong> محاسبه شده و از محل <strong>بیعانه دریافتی آنلاین</strong> کسر می‌گردد و الباقی بیعانه به شبای صاحب کسب‌وکار واریز می‌شود.
           </p>
         </div>
         <Link
@@ -214,6 +228,19 @@ const BusinessFinancialDossierTable: React.FC<{
           <CreditCard className="w-4 h-4" />
           <span>تنظیمات کارمزدها و تسویه دسته‌ای شبا</span>
         </Link>
+      </div>
+
+      {/* راهنمای شفاف فرمول محاسبه بیعانه، کارمزد از کل خدمات و خالص واریزی */}
+      <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] text-xs text-[#1E3A8A] space-y-1.5 leading-relaxed">
+        <p className="font-extrabold text-[#061138]">
+          📌 فرمول دقیق محاسبه مالی و تسویه با سالن‌داران (مطابق مفاد قرارداد):
+        </p>
+        <p>
+          • <strong>مثال تک‌نوبت:</strong> اگر قیمت خدمت <strong>۱,۰۰۰,۰۰۰ تومان</strong> و بیعانه سالن <strong>۲۰٪</strong> باشد ← <strong>۲۰۰,۰۰۰ تومان</strong> بیعانه آنلاین در درگاه دریافت می‌شود و <strong>۸۰۰,۰۰۰ تومان</strong> را مشتری حضوری در سالن می‌پردازد. کارمزد پلتفرم (مثلاً <strong>۳٪ از کل ۱ میلیون تومان = ۳۰,۰۰۰ تومان</strong>) از ۲۰۰ هزار تومان بیعانه کسر شده و <strong>۱۷۰,۰۰۰ تومان خالص</strong> برای صاحب سالن واریز می‌گردد.
+        </p>
+        <p>
+          • <strong>مثال صورتحساب تسویه هفتگی:</strong> بابت <strong>۱۰,۰۰۰,۰۰۰ تومان</strong> کل خدمات ارائه‌شده (با بیعانه ۲۰٪ و کارمزد ۳٪) ← <strong>۸,۰۰۰,۰۰۰ تومان</strong> دریافتی حضوری سالن + <strong>۲,۰۰۰,۰۰۰ تومان</strong> بیعانه آنلاین منهای <strong>۳۰۰,۰۰۰ تومان</strong> سهم کارمزد پلتفرم (۳٪ از ۱۰ میلیون) = <strong>۱,۷۰۰,۰۰۰ تومان خالص قابل واریز به شبای سالن‌دار</strong>.
+        </p>
       </div>
 
       <ResponsiveTable
@@ -267,7 +294,7 @@ const BusinessFinancialDossierTable: React.FC<{
           },
           {
             key: 'bookings',
-            header: 'تعداد رزرو و جمع خدمات ارائه‌شده',
+            header: 'تعداد رزرو، جمع کل خدمات و دریافتی حضوری',
             render: ({ dossier }) => (
               <div className="space-y-0.5 tabular-nums text-xs">
                 <span className="font-extrabold text-[#061138] block">
@@ -279,73 +306,94 @@ const BusinessFinancialDossierTable: React.FC<{
                     {formatPriceToman(dossier.totalServiceToman)}
                   </strong>
                 </span>
+                <span className="text-[11px] text-[#64748B] block">
+                  دریافتی حضوری سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):{' '}
+                  <strong className="text-[#334155]">
+                    {formatPriceToman(dossier.totalRemainingInSalonToman)}
+                  </strong>
+                </span>
               </div>
             ),
           },
           {
             key: 'deposit',
-            header: 'بیعانه دریافتی آنلاین',
+            header: 'بیعانه الزامی و دریافتی آنلاین',
             render: ({ dossier }) => (
-              <div className="space-y-0.5 tabular-nums text-xs">
+              <div className="space-y-1 tabular-nums text-xs">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
+                  بیعانه الزامی سالن: {toPersianDigits(dossier.depositPercent)}٪
+                </span>
                 <span className="font-extrabold text-[#0057FF] block">
                   {formatPriceToman(dossier.totalDepositCollectedToman)}
                 </span>
                 <span className="text-[10px] text-[#64748B] block">
-                  دریافتی در درگاه پلتفرم
+                  {dossier.bookingsCount > 0
+                    ? `جمع ${toPersianDigits(dossier.depositPercent)}٪ بیعانه دریافتی آنلاین`
+                    : 'هنوز نوبتی ثبت نشده است'}
                 </span>
               </div>
             ),
           },
           {
             key: 'commission',
-            header: 'کارمزد اختصاصی کسرشده',
+            header: 'کارمزد پلتفرم (از کل قیمت خدمات)',
             render: ({ dossier }) => (
-              <div className="space-y-0.5 tabular-nums text-xs">
+              <div className="space-y-1 tabular-nums text-xs">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
+                  نرخ کارمزد: {toPersianDigits(dossier.commissionPercent)}٪ از کل خدمت
+                </span>
                 <span className="font-extrabold text-rose-600 block">
-                  {dossier.totalCommissionToman > 0
-                    ? `${formatPriceToman(dossier.totalCommissionToman)} کسر کارمزد`
-                    : '۰ تومان (معاف VIP)'}
+                  {formatPriceToman(dossier.totalCommissionToman)}
                 </span>
                 <span className="text-[10px] text-[#64748B] block">
-                  نرخ: {toPersianDigits(dossier.commissionPercent)}٪ از کل خدمت
+                  {dossier.hasCustomDiscountRate
+                    ? 'نرخ تخفیف دستی مدیریت کل'
+                    : `طبق قرارداد (${dossier.commissionCategoryLabel})`}
                 </span>
               </div>
             ),
           },
           {
             key: 'netPayable',
-            header: 'خالص قابل واریز به سالن (شبا/کارت)',
-            render: ({ biz, dossier, totalAlreadySettledToman }) => (
-              <div className="space-y-0.5 tabular-nums text-xs">
-                <span className="text-sm font-black text-emerald-700 block">
-                  {formatPriceToman(Number(biz.walletBalanceToman) || dossier.totalNetToSalonToman)}
-                </span>
-                {biz.bankShebaNumber ? (
-                  <span
-                    dir="ltr"
-                    className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
-                  >
-                    {biz.bankShebaNumber}
+            header: 'خالص قابل واریز به سالن (بیعانه منهای کارمزد)',
+            render: ({ biz, dossier, totalAlreadySettledToman }) => {
+              const netPayable =
+                Number(biz.walletBalanceToman) || dossier.totalNetToSalonToman;
+              return (
+                <div className="space-y-0.5 tabular-nums text-xs">
+                  <span className="text-sm font-black text-emerald-700 block">
+                    {formatPriceToman(netPayable)}
                   </span>
-                ) : biz.bankCardNumber ? (
-                  <span
-                    dir="ltr"
-                    className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
-                  >
-                    {biz.bankCardNumber}
+                  <span className="text-[10px] text-[#475569] block">
+                    بیعانه آنلاین منهای {toPersianDigits(dossier.commissionPercent)}٪ کارمزد کل خدمت
                   </span>
-                ) : (
-                  <span className="text-[10px] text-amber-700 block">
-                    شبا/کارت هنوز ثبت نشده
-                  </span>
-                )}
-                {totalAlreadySettledToman > 0 ? (
-                  <span className="text-[10px] text-emerald-600 block font-bold">
-                    تسویه‌شده قبلی: {formatPriceToman(totalAlreadySettledToman)}
-                  </span>
-                ) : null}
-              </div>
-            ),
+                  {biz.bankShebaNumber ? (
+                    <span
+                      dir="ltr"
+                      className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
+                    >
+                      {biz.bankShebaNumber}
+                    </span>
+                  ) : biz.bankCardNumber ? (
+                    <span
+                      dir="ltr"
+                      className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
+                    >
+                      {biz.bankCardNumber}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-700 block">
+                      شبا/کارت هنوز ثبت نشده
+                    </span>
+                  )}
+                  {totalAlreadySettledToman > 0 ? (
+                    <span className="text-[10px] text-emerald-600 block font-bold">
+                      تسویه‌شده قبلی: {formatPriceToman(totalAlreadySettledToman)}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            },
           },
           {
             key: 'actions',
@@ -439,35 +487,59 @@ const BusinessFullInspectModal: React.FC<{
               <span>ثبت واریز هفتگی و ارسال صورتحساب به سالن‌دار</span>
             </Button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 tabular-nums">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 tabular-nums">
             <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
-              <span className="text-[11px] text-[#64748B] block">تعداد کل رزروها:</span>
-              <strong className="text-sm font-black text-[#061138]">
-                {toPersianDigits(dossier.bookingsCount)} نوبت
+              <span className="text-[11px] text-[#64748B] block">۱. تعداد و جمع کل خدمات:</span>
+              <strong className="text-sm font-black text-[#061138] block">
+                {formatPriceToman(dossier.totalServiceToman)}
               </strong>
               <span className="text-[10px] text-[#475569] block">
-                ارزش خدمات: {formatPriceToman(dossier.totalServiceToman)}
+                از {toPersianDigits(dossier.bookingsCount)} نوبت ثبت‌شده
               </span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
-              <span className="text-[11px] text-[#64748B] block">بیعانه دریافتی آنلاین:</span>
-              <strong className="text-sm font-black text-[#0057FF]">
-                {formatPriceToman(dossier.totalDepositCollectedToman)}
-              </strong>
             </div>
             <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
               <span className="text-[11px] text-[#64748B] block">
-                کسر کارمزد ({toPersianDigits(dossier.commissionPercent)}٪):
+                ۲. دریافتی حضوری سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):
               </span>
-              <strong className="text-sm font-black text-rose-600">
+              <strong className="text-sm font-black text-[#334155] block">
+                {formatPriceToman(dossier.totalRemainingInSalonToman)}
+              </strong>
+              <span className="text-[10px] text-[#64748B] block">
+                پرداخت مستقیم مشتری در سالن
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">
+                ۳. بیعانه آنلاین ({toPersianDigits(dossier.depositPercent)}٪):
+              </span>
+              <strong className="text-sm font-black text-[#0057FF] block">
+                {formatPriceToman(dossier.totalDepositCollectedToman)}
+              </strong>
+              <span className="text-[10px] text-[#64748B] block">
+                دریافتی در درگاه پلتفرم
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">
+                ۴. کارمزد پلتفرم ({toPersianDigits(dossier.commissionPercent)}٪ کل خدمت):
+              </span>
+              <strong className="text-sm font-black text-rose-600 block">
                 {formatPriceToman(dossier.totalCommissionToman)}
               </strong>
+              <span className="text-[10px] text-[#64748B] block">
+                کسرشده از محل بیعانه
+              </span>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
-              <span className="text-[11px] text-emerald-800 block">خالص قابل واریز به سالن:</span>
-              <strong className="text-sm font-black text-emerald-700">
+              <span className="text-[11px] text-emerald-800 block">
+                ۵. خالص قابل واریز به سالن:
+              </span>
+              <strong className="text-sm font-black text-emerald-700 block">
                 {formatPriceToman(Number(business.walletBalanceToman) || dossier.totalNetToSalonToman)}
               </strong>
+              <span className="text-[10px] text-emerald-800 block">
+                بیعانه منهای کارمزد کل خدمت
+              </span>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#334155] pt-1 border-t border-[#CBD5E1]/70">
@@ -1486,12 +1558,13 @@ export const AdminBusinessesPage: React.FC = () => {
   const [grantDurationDays, setGrantDurationDays] = useState<number>(30);
   const [grantExtraSms, setGrantExtraSms] = useState<number>(200);
   const [grantIsTrial, setGrantIsTrial] = useState<boolean>(true);
-  const [grantVipCommission, setGrantVipCommission] = useState<number>(0);
+  const [grantVipCommission, setGrantVipCommission] = useState<number>(3);
 
   const openGrantModal = (
     biz: BusinessItem,
     defaultMode: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR' = 'VIP_AMBASSADOR'
   ) => {
+    const standardComm = resolveBusinessCommissionMeta(biz).commissionPercent;
     setGrantModalBiz(biz);
     setGrantTargetType(defaultMode);
     setGrantPlanName(
@@ -1512,7 +1585,9 @@ export const AdminBusinessesPage: React.FC = () => {
     setGrantDurationDays(defaultMode === 'VIP_AMBASSADOR' ? 30 : 7);
     setGrantExtraSms(defaultMode === 'VIP_AMBASSADOR' ? 200 : 30);
     setGrantVipCommission(
-      biz.vipCommissionPercent !== undefined ? biz.vipCommissionPercent : 0
+      biz.isVipPartner && typeof biz.vipCommissionPercent === 'number'
+        ? biz.vipCommissionPercent
+        : standardComm
     );
     setGrantIsTrial(true);
   };

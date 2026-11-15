@@ -48,7 +48,7 @@ export function getPlanStaffLimitCount(_planIdOrName?: string): number {
 
 export function formatPriceToman(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
-    return 'رایگان';
+    return '۰ تومان';
   }
   const formatted = Math.round(amount).toLocaleString('en-US');
   return `${toPersianDigits(formatted)} تومان`;

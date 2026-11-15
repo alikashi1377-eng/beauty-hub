@@ -1137,15 +1137,11 @@ export function createApiV1Router(
           effectiveSms.bookingOwnerTemplate ||
           process.env.SMS_BOOKING_OWNER_TEMPLATE ||
           undefined;
-        const customerPatternId =
-          effectiveSms.bookingCustomerTemplate ||
-          process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
-          undefined;
 
         const custLabel = String(params.customerName || 'مشتری').trim();
         const srvLabel = String(params.serviceTitle || 'خدمات زیبایی').trim();
 
-        // ۱. پیامک به صاحب کسب‌وکار / متخصص
+        // ۱. در لحظه ثبت اولیه نوبت (وضعیت در انتظار تایید سالن‌دار)، پیامک فقط برای صاحب کسب‌وکار / متخصص ارسال می‌شود
         if (/^09\d{9}$/.test(resolvedOwnerPhone)) {
           const ownerDelivery = await sendPatternSmsViaGateway({
             phone: resolvedOwnerPhone,
@@ -1158,29 +1154,125 @@ export function createApiV1Router(
           ownerSmsSent = Boolean(ownerDelivery.sent);
         }
 
-        // ۲. پیامک رسید ثبت نوبت به مشتری
-        if (/^09\d{9}$/.test(cleanCustPhone)) {
-          const custDelivery = await sendPatternSmsViaGateway({
-            phone: cleanCustPhone,
-            args: [
-              custLabel || 'مراجع عزیز',
-              resolvedBizName,
-              dateStr,
-              timeStr,
-            ],
-            fallbackSingleArg: `ثبت نوبت ${resolvedBizName} ${dateStr} ساعت ${timeStr}`,
-            customTemplateId: customerPatternId,
-            config: effectiveSms,
-            nodeEnv: config.nodeEnv,
-          }).catch(() => ({ sent: false }));
-          customerSmsSent = Boolean(custDelivery.sent);
-        }
+        // ۲. پیامک به مشتری در لحظه ثبت اولیه ارسال نمی‌شود تا قبل از تایید سالن‌دار پیام تایید برای مشتری نرود
+        customerSmsSent = false;
       }
     } catch {
       // خطای ارسال پیامک جانبی مانع ثبت نوبت نشود
     }
 
     return { ownerSmsSent, customerSmsSent };
+  };
+
+  const recentStatusSmsDispatchMap = new Map<string, number>();
+
+  /**
+   * ارسال پیامک نتیجه بررسی نوبت (تایید یا رد/لغو توسط صاحب سالن) به شماره موبایل مشتری
+   */
+  const dispatchCustomerAppointmentStatusSms = async (params: {
+    appointmentId?: string;
+    status: AppointmentStatus | string;
+    customerName?: string;
+    customerPhone?: string;
+    businessName?: string;
+    serviceTitle?: string;
+    dateJalali?: string;
+    timeSlot?: string;
+  }): Promise<{ customerSmsSent: boolean }> => {
+    const normalizedStatus = String(params.status || '').toUpperCase();
+    if (normalizedStatus !== 'CONFIRMED' && normalizedStatus !== 'CANCELLED') {
+      return { customerSmsSent: false };
+    }
+
+    let custPhone = normalizeIranMobile(params.customerPhone);
+    let custName = String(params.customerName || 'مراجع عزیز').trim();
+    let bizName = String(params.businessName || 'سالن زیبایی').trim();
+    let dateStr = String(params.dateJalali || '').trim();
+    let timeStr = String(params.timeSlot || '').trim();
+
+    try {
+      const config = customEnv ?? loadServerEnv();
+      const dbPool =
+        customPool ??
+        (config.dataMode === 'real' ? getOrCreatePool(config) : null);
+      if (dbPool && params.appointmentId && (!custPhone || !dateStr)) {
+        const aptRes = await dbPool.query(
+          `
+          SELECT a.customer_name, a.customer_phone, a.date_jalali, a.time_slot_label, b.name AS business_name
+          FROM appointments a
+          LEFT JOIN businesses b ON b.id = a.business_id
+          WHERE a.id::text = $1 OR a.legacy_demo_id = $1 OR a.reference_code = $1
+          LIMIT 1
+          `,
+          [params.appointmentId]
+        );
+        const aptRow = aptRes.rows[0];
+        if (aptRow) {
+          custPhone = custPhone || normalizeIranMobile(aptRow.customer_phone);
+          custName = String(aptRow.customer_name || custName).trim();
+          bizName = String(aptRow.business_name || bizName).trim();
+          dateStr = String(aptRow.date_jalali || dateStr).trim();
+          timeStr = String(aptRow.time_slot_label || timeStr).trim();
+        }
+      }
+    } catch {
+      // ignore db lookup failure
+    }
+
+    if (!/^09\d{9}$/.test(custPhone)) {
+      return { customerSmsSent: false };
+    }
+
+    const statusDedupKey = `${custPhone}|${bizName}|${dateStr}|${timeStr}|${normalizedStatus}`;
+    const now = Date.now();
+    for (const [k, ts] of recentStatusSmsDispatchMap.entries()) {
+      if (now - ts > 90_000) {
+        recentStatusSmsDispatchMap.delete(k);
+      }
+    }
+    if (recentStatusSmsDispatchMap.has(statusDedupKey)) {
+      return { customerSmsSent: true };
+    }
+    recentStatusSmsDispatchMap.set(statusDedupKey, now);
+
+    try {
+      const config = customEnv ?? loadServerEnv();
+      const effectiveSms = customEnv
+        ? config.sms
+        : resolveEffectiveSmsConfig(config.sms);
+      if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+        const customerPatternId =
+          effectiveSms.bookingCustomerTemplate ||
+          process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
+          undefined;
+        const statusWord =
+          normalizedStatus === 'CONFIRMED'
+            ? 'تایید شد'
+            : 'توسط سالن لغو/رد شد (بیعانه به کیف پول شما برگشت داده شد)';
+        const bizWithStatus =
+          normalizedStatus === 'CONFIRMED'
+            ? `${bizName} (تایید نهایی شد)`
+            : `${bizName} (لغو شد)`;
+        const delivery = await sendPatternSmsViaGateway({
+          phone: custPhone,
+          args: [
+            custName || 'مراجع عزیز',
+            bizWithStatus,
+            dateStr,
+            timeStr,
+          ],
+          fallbackSingleArg: `نوبت شما در ${bizName} مورخ ${dateStr} ساعت ${timeStr} ${statusWord}`,
+          customTemplateId: customerPatternId,
+          config: effectiveSms,
+          nodeEnv: config.nodeEnv,
+        }).catch(() => ({ sent: false }));
+        return { customerSmsSent: Boolean(delivery.sent) };
+      }
+    } catch {
+      // ignore
+    }
+
+    return { customerSmsSent: false };
   };
 
   /**
@@ -1217,6 +1309,33 @@ export function createApiV1Router(
   );
 
   router.post(
+    '/appointments/notify-status',
+    async (req: Request, res: Response) => {
+      try {
+        const result = await dispatchCustomerAppointmentStatusSms({
+          appointmentId: req.body?.appointmentId,
+          status: req.body?.status,
+          customerName: req.body?.customerName,
+          customerPhone: req.body?.customerPhone,
+          businessName: req.body?.businessName,
+          serviceTitle: req.body?.serviceTitle,
+          dateJalali: req.body?.dateJalali,
+          timeSlot: req.body?.timeSlot,
+        });
+        res.status(200).json({
+          ok: true,
+          ...result,
+        });
+      } catch {
+        res.status(200).json({
+          ok: true,
+          customerSmsSent: false,
+        });
+      }
+    }
+  );
+
+  router.post(
     '/appointments',
     requireAuth,
     async (req: Request, res: Response) => {
@@ -1226,7 +1345,7 @@ export function createApiV1Router(
       try {
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
 
-        // واریز آنی بیعانه به کیف پول کسب‌وکار دقیقِ انتخاب‌شده در دیتابیس و ارسال پیامک اطلاع‌رسانی
+        // واریز آنی بیعانه به کیف پول کسب‌وکار دقیقِ انتخاب‌شده در دیتابیس و ارسال پیامک اطلاع‌رسانی فقط به صاحب سالن
         void dispatchBookingSmsAndWalletCredit({
           businessSlug: item.businessSlug || req.body?.businessSlug,
           businessId: item.businessId || req.body?.businessId,
@@ -1272,50 +1391,18 @@ export function createApiV1Router(
           cancelledReason
         );
 
-        // ارسال پیامک اطلاع‌رسانی تایید یا لغو نوبت به مشتری (با پشتیبانی از پترن چندپارامتری SMS_BOOKING_CUSTOMER_TEMPLATE)
+        // ارسال پیامک اطلاع‌رسانی تایید یا رد/لغو نوبت به مشتری صرفاً پس از تعیین وضعیت توسط صاحب سالن
         if (status === 'CONFIRMED' || status === 'CANCELLED') {
-          try {
-            const config = customEnv ?? loadServerEnv();
-            const effectiveSms = customEnv
-              ? config.sms
-              : resolveEffectiveSmsConfig(config.sms);
-            if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
-              const aptRes = await pool.query(
-                `
-                SELECT a.customer_name, a.customer_phone, a.date_jalali, a.time_slot_label, b.name AS business_name
-                FROM appointments a
-                LEFT JOIN businesses b ON b.id = a.business_id
-                WHERE a.id::text = $1 OR a.legacy_demo_id = $1 OR a.reference_code = $1
-                LIMIT 1
-                `,
-                [req.params.id]
-              );
-              const aptRow = aptRes.rows[0];
-              const custPhone = String(aptRow?.customer_phone || '').replace(
-                /\D/g,
-                ''
-              );
-              if (/^09\d{9}$/.test(custPhone)) {
-                const statusWord =
-                  status === 'CONFIRMED' ? 'تایید شد' : 'لغو شد';
-                void sendPatternSmsViaGateway({
-                  phone: custPhone,
-                  args: [
-                    String(aptRow?.customer_name || 'مراجع عزیز'),
-                    String(aptRow?.business_name || 'سالن زیبایی'),
-                    String(aptRow?.date_jalali || ''),
-                    String(aptRow?.time_slot_label || ''),
-                  ],
-                  fallbackSingleArg: `نوبت ${aptRow.date_jalali} ساعت ${aptRow.time_slot_label} ${statusWord}`,
-                  customTemplateId: process.env.SMS_BOOKING_CUSTOMER_TEMPLATE,
-                  config: effectiveSms,
-                  nodeEnv: config.nodeEnv,
-                }).catch(() => {});
-              }
-            }
-          } catch {
-            // ignore
-          }
+          void dispatchCustomerAppointmentStatusSms({
+            appointmentId: req.params.id,
+            status,
+            customerName: req.body?.customerName,
+            customerPhone: req.body?.customerPhone,
+            businessName: req.body?.businessName,
+            serviceTitle: req.body?.serviceTitle,
+            dateJalali: req.body?.dateJalali,
+            timeSlot: req.body?.timeSlot,
+          });
         }
 
         res.status(200).json({

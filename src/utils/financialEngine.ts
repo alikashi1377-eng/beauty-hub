@@ -62,6 +62,7 @@ export function resolveBusinessCommissionMeta(
   config?: CategoryCommissionConfig
 ): ResolvedCommissionMeta {
   const hasVipRate =
+    Boolean(business?.isVipPartner) &&
     typeof business?.vipCommissionPercent === 'number' &&
     Number.isFinite(business.vipCommissionPercent) &&
     business.vipCommissionPercent >= 0 &&

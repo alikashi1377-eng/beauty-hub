@@ -64,7 +64,9 @@ import { validateReviewContent } from '../utils/reviewModeration';
 import {
   calculateBookingFinancialBreakdown,
   isAppointmentEligibleForSettlement,
+  normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
+  resolveBusinessCommissionMeta,
   validateServiceAntiFraud,
 } from '../utils/financialEngine';
 import {
@@ -4246,24 +4248,46 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
+    // ارسال پیامک به مشتری صرفاً پس از تایید یا رد/لغو توسط صاحب کسب‌وکار
+    if (
+      targetApt &&
+      (status === AppointmentStatus.Confirmed ||
+        status === AppointmentStatus.Cancelled)
+    ) {
+      void fetch('/api/v1/appointments/notify-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: id,
+          status,
+          customerName: targetApt.customerName,
+          customerPhone: targetApt.customerPhoneMasked,
+          businessName: targetApt.businessName,
+          serviceTitle: targetApt.serviceTitle,
+          dateJalali: targetApt.dateJalali,
+          timeSlot: targetApt.timeSlot,
+        }),
+      }).catch(() => {});
+    }
+
     if (dataMode === 'real') {
       void realApiClient
         .updateAppointmentStatus(id, status)
         .then(() => {
           showToast(
             status === AppointmentStatus.Cancelled && refundedAmount > 0
-              ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+              ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
               : status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید.'
+              ? 'نوبت با موفقیت تایید شد و پیامک تایید نوبت برای مشتری ارسال گردید ✓'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         })
         .catch(() => {
           showToast(
             status === AppointmentStatus.Cancelled && refundedAmount > 0
-              ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+              ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
               : status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد.'
+              ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید ✓'
               : 'وضعیت نوبت بروزرسانی شد.'
           );
         });
@@ -4272,9 +4296,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     showToast(
       status === AppointmentStatus.Cancelled && refundedAmount > 0
-        ? `نوبت لغو شد و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز گردید ✓`
+        ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
         : status === AppointmentStatus.Confirmed
-        ? 'نوبت با موفقیت تایید شد.'
+        ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید ✓'
         : 'وضعیت نوبت بروزرسانی شد.'
     );
   };
@@ -4667,6 +4691,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       totalSalonNetToman += net;
     }
 
+    const commMeta = resolveBusinessCommissionMeta(targetBiz, paymentConfig);
+    const depositPercent = normalizeDepositPercent(targetBiz.depositPercent);
+    const totalRemainingInSalonToman = Math.max(
+      0,
+      totalServicePriceToman - totalDepositToman
+    );
+
     const paidSettlementsTotal = settlementRequests
       .filter((s) => s.businessId === targetBiz.id && s.status === 'PAID')
       .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
@@ -4678,7 +4709,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return {
       bookingsCount: bizApts.length,
+      depositPercent,
+      commissionPercent: commMeta.commissionPercent,
       totalServicePriceToman,
+      totalRemainingInSalonToman,
       totalDepositToman,
       totalCommissionToman,
       totalSalonNetToman,
@@ -4701,7 +4735,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const payoutAmount = dossier.pendingPayoutToman;
     if (payoutAmount <= 0 && dossier.bookingsCount === 0) {
       showToast(
-        `برای سالن «${targetBiz.name}» در حال حاضر مانده تسویه‌نشده‌ای وجود ندارد.`,
+        `برای سالن «${targetBiz.name}» هنوز رزروی ثبت نشده و مانده تسویه‌نشده‌ای وجود ندارد.`,
         'info'
       );
       return null;
@@ -4768,21 +4802,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       targetBusinessId: targetBiz.id,
       targetBusinessName: targetBiz.name,
       title: `📊 صورتحساب و تاییدیه واریز هفتگی شبا (کد پایا: ${code})`,
-      message: `مدیریت محترم «${targetBiz.name}»؛ صورتحساب کارکرد دوره شما شامل ${toPersianDigits(
+      message: `مدیریت محترم «${targetBiz.name}»؛ جزئیات کامل تسویه هفتگی شما به شرح زیر است: ۱) تعداد کل نوبت‌ها: ${toPersianDigits(
         dossier.bookingsCount
-      )} رزرو ثبت‌شده با مجموع ارزش کل خدمات ${toPersianDigits(
+      )} رزرو با ارزش کل خدمات ارائه‌شده ${toPersianDigits(
         dossier.totalServicePriceToman.toLocaleString('fa-IR')
-      )} تومان و جمع کل بیعانه دریافتی آنلاین ${toPersianDigits(
+      )} تومان | ۲) مبلغ دریافتی حضوری توسط سالن از مشتریان: ${toPersianDigits(
+        dossier.totalRemainingInSalonToman.toLocaleString('fa-IR')
+      )} تومان | ۳) جمع کل بیعانه دریافتی آنلاین (${toPersianDigits(
+        dossier.depositPercent
+      )}٪): ${toPersianDigits(
         dossier.totalDepositToman.toLocaleString('fa-IR')
-      )} تومان محاسبه گردید. پس از کسر کارمزد پلتفرم (${toPersianDigits(
+      )} تومان | ۴) کسر سهم کارمزد پلتفرم (${toPersianDigits(
+        dossier.commissionPercent
+      )}٪ از کل ارزش خدمات): ${toPersianDigits(
         dossier.totalCommissionToman.toLocaleString('fa-IR')
-      )} تومان)، مبلغ خالص ${toPersianDigits(
+      )} تومان | ۵) خالص واریزشده به شبای شما (بیعانه منهای کارمزد کل خدمات): ${toPersianDigits(
         settledRecord.netPayoutToman.toLocaleString('fa-IR')
-      )} تومان با کد رهگیری پایا ${code} به شبای شما واریز و تسویه شد.`,
+      )} تومان (کد رهگیری پایا: ${code}).`,
     });
 
     showToast(
-      `واریز خالص ${toPersianDigits(settledRecord.netPayoutToman.toLocaleString('fa-IR'))} تومان برای «${targetBiz.name}» ثبت شد و صورتحساب کامل برای صاحب سالن ارسال گردید ✓`
+      `واریز خالص ${toPersianDigits(settledRecord.netPayoutToman.toLocaleString('fa-IR'))} تومان برای «${targetBiz.name}» ثبت شد و صورتحساب ۵ بخشی کامل برای صاحب سالن ارسال گردید ✓`
     );
     return settledRecord;
   };
@@ -4828,21 +4868,30 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     if (matchedReq) {
+      const totalSrv = dossier?.totalServicePriceToman || matchedReq.amountToman;
+      const totalDep = dossier?.totalDepositToman || matchedReq.amountToman;
+      const totalInPerson = Math.max(0, totalSrv - totalDep);
+      const totalComm =
+        dossier?.totalCommissionToman || matchedReq.commissionToman || 0;
       sendPlatformBusinessNotice({
         targetBusinessId: matchedReq.businessId,
         targetBusinessName: matchedReq.businessName,
         title: `📊 صورتحساب واریز هفتگی شبا (کد رهگیری پایا: ${code})`,
         message: `مدیریت محترم «${matchedReq.businessName}»؛ بابت ${toPersianDigits(
           dossier?.bookingsCount || 1
-        )} رزرو ثبت‌شده (مجموع ارزش کل خدمات: ${toPersianDigits(
-          (dossier?.totalServicePriceToman || matchedReq.amountToman).toLocaleString('fa-IR')
-        )} تومان | بیعانه دریافتی آنلاین: ${toPersianDigits(
-          (dossier?.totalDepositToman || matchedReq.amountToman).toLocaleString('fa-IR')
-        )} تومان)، پس از کسر کارمزد پلتفرم (${toPersianDigits(
-          (dossier?.totalCommissionToman || matchedReq.commissionToman || 0).toLocaleString('fa-IR')
-        )} تومان)، مبلغ خالص ${toPersianDigits(
+        )} رزرو ثبت‌شده: ۱) ارزش کل خدمات ارائه‌شده: ${toPersianDigits(
+          totalSrv.toLocaleString('fa-IR')
+        )} تومان | ۲) دریافتی حضوری شما در سالن: ${toPersianDigits(
+          totalInPerson.toLocaleString('fa-IR')
+        )} تومان | ۳) بیعانه دریافتی آنلاین: ${toPersianDigits(
+          totalDep.toLocaleString('fa-IR')
+        )} تومان | ۴) کسر کارمزد پلتفرم (${toPersianDigits(
+          dossier?.commissionPercent ?? 3
+        )}٪ از کل خدمات): ${toPersianDigits(
+          totalComm.toLocaleString('fa-IR')
+        )} تومان | ۵) خالص واریزی به شبا (بیعانه منهای کارمزد): ${toPersianDigits(
           matchedReq.netPayoutToman.toLocaleString('fa-IR')
-        )} تومان با کد رهگیری پایا ${code} به حساب شبای شما واریز گردید.`,
+        )} تومان (کد پایا: ${code}).`,
       });
     }
 
@@ -4882,15 +4931,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           title: `📊 صورتحساب تسویه هفتگی شبا (کد پایا: ${code})`,
           message: `مدیریت محترم «${b.name}»؛ بابت ${toPersianDigits(
             dossier.bookingsCount
-          )} رزرو ثبت‌شده (جمع کل خدمات: ${toPersianDigits(
+          )} رزرو ثبت‌شده: ۱) جمع کل خدمات ارائه‌شده: ${toPersianDigits(
             dossier.totalServicePriceToman.toLocaleString('fa-IR')
-          )} تومان | بیعانه دریافتی آنلاین: ${toPersianDigits(
+          )} تومان | ۲) دریافتی حضوری شما در سالن: ${toPersianDigits(
+            dossier.totalRemainingInSalonToman.toLocaleString('fa-IR')
+          )} تومان | ۳) بیعانه دریافتی آنلاین (${toPersianDigits(
+            dossier.depositPercent
+          )}٪): ${toPersianDigits(
             dossier.totalDepositToman.toLocaleString('fa-IR')
-          )} تومان)، پس از کسر کارمزد اختصاصی پلتفرم (${toPersianDigits(
+          )} تومان | ۴) کسر کارمزد پلتفرم (${toPersianDigits(
+            dossier.commissionPercent
+          )}٪ از کل خدمات): ${toPersianDigits(
             dossier.totalCommissionToman.toLocaleString('fa-IR')
-          )} تومان)، مبلغ خالص ${toPersianDigits(
+          )} تومان | ۵) خالص واریزشده به شبای شما (بیعانه منهای کارمزد): ${toPersianDigits(
             dossier.pendingPayoutToman.toLocaleString('fa-IR')
-          )} تومان به شبای شما واریز گردید.`,
+          )} تومان.`,
         });
 
         return {
