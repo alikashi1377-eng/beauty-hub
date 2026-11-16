@@ -27,6 +27,7 @@ import {
   formatPriceToman,
   formatServicePriceDisplay,
   formatServicePriceShort,
+  formatStartingTariff,
   getAppointmentStatusMeta,
   resolveAdjacentTabBySwipe,
   toPersianDigits,
@@ -243,8 +244,26 @@ export const BusinessCard: React.FC<{
   compact?: boolean;
 }> = ({ business, isFavorite, onToggleFavorite, compact = false }) => {
   const [imgErr, setImgErr] = useState(false);
-  const { authUser, openAuthModal, favoriteBusinessIds, toggleFavoriteBusiness } =
-    usePrototypeData();
+  const {
+    authUser,
+    services,
+    openAuthModal,
+    favoriteBusinessIds,
+    toggleFavoriteBusiness,
+  } = usePrototypeData();
+
+  const pricedServices = services
+    .filter(
+      (s) =>
+        s.isActive !== false &&
+        Number(s.priceToman) > 0 &&
+        (s.businessId === business.id || s.businessId === business.slug)
+    )
+    .map((s) => Number(s.priceToman));
+  const effectiveStartingPriceToman =
+    pricedServices.length > 0
+      ? Math.min(...pricedServices)
+      : Number(business.startingPriceToman) || 0;
 
   const resolvedFavorite =
     typeof isFavorite === 'boolean'
@@ -405,7 +424,7 @@ export const BusinessCard: React.FC<{
           <div className="text-xs tabular-nums min-w-0">
             <span className="text-[10px] text-[#64748B] ml-1">شروع از:</span>
             <span className="font-extrabold text-[#061138]">
-              {formatPriceToman(business.startingPriceToman)}
+              {formatStartingTariff(effectiveStartingPriceToman)}
             </span>
           </div>
 
@@ -568,7 +587,7 @@ export const BusinessCard: React.FC<{
           <div className="text-xs text-[#334155] tabular-nums min-w-0">
             <span className="text-[10px] text-[#475569] font-semibold block">شروع تعرفه از</span>
             <span className="font-extrabold text-[#061138] text-sm">
-              {formatPriceToman(business.startingPriceToman)}
+              {formatStartingTariff(effectiveStartingPriceToman)}
             </span>
           </div>
 

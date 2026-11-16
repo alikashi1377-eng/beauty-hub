@@ -54,6 +54,14 @@ export function formatPriceToman(amount: number): string {
   return `${toPersianDigits(formatted)} تومان`;
 }
 
+export function formatStartingTariff(priceToman?: number | null): string {
+  const num = Number(priceToman) || 0;
+  if (!Number.isFinite(num) || num <= 0) {
+    return 'تعیین پس از انتخاب خدمت';
+  }
+  return formatPriceToman(num);
+}
+
 export function formatServicePriceDisplay(
   service: Pick<ServiceItem, 'priceToman' | 'pricingType' | 'maxPriceToman'>
 ): string {

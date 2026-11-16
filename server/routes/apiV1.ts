@@ -30,15 +30,18 @@ import {
   deleteBusinessPermanentlyInDb,
   deleteGalleryItemInDb,
   deleteReviewInDb,
+  ensureAppointmentFromNotifyBookingInDb,
   getAdminOverviewPayloadInDb,
   getBootstrapPayload,
   getBusinessAvailabilityInDb,
   getBusinessWorkspacePayloadInDb,
   getCustomerPrivatePayloadInDb,
+  getSharedPlatformState,
   onboardBusinessInDb,
   replyToReviewInDb,
   reportReviewInDb,
   requestOtpInDb,
+  saveSharedPlatformStateInDb,
   softDeleteServiceInDb,
   syncRegisteredAccountsInDb,
   toggleFavoriteBusinessInDb,
@@ -55,6 +58,7 @@ import {
 } from '../repositories/beautyhubRepository';
 import {
   resolveEffectiveSmsConfig,
+  sendCancellationNoticeSmsViaGateway,
   sendOtpSmsViaGateway,
   sendPatternSmsViaGateway,
 } from '../services/smsGateway';
@@ -287,7 +291,7 @@ function handleRealModeRouteError(res: Response, err: unknown): void {
       mode: 'real',
       errorCode: errMsg,
       message:
-        'ارسال پیامک از طریق سرویس‌دهنده پیامکی تایید نشد؛ لطفاً لاگ کنسول سرور (BeautyHub SMS Gateway) و تنظیمات پنل پیامک را بررسی کنید.',
+        'ارسال پیامک از طریق سرویس‌دهنده پیامکی تایید نشد؛ لطفاً لاگ کنسول سرور (Timeto SMS Gateway) و تنظیمات پنل پیامک را بررسی کنید.',
     });
     return;
   }
@@ -1017,9 +1021,12 @@ export function createApiV1Router(
     customerName?: string;
     customerPhone?: string;
     serviceTitle?: string;
+    priceToman?: number;
+    durationMinutes?: number;
     dateJalali?: string;
     timeSlot?: string;
     depositPaidToman?: number;
+    referenceCode?: string;
     dedupKey?: string;
   }): Promise<{ ownerSmsSent: boolean; customerSmsSent: boolean }> => {
     const cleanCustPhone = normalizeIranMobile(params.customerPhone);
@@ -1053,6 +1060,19 @@ export function createApiV1Router(
         customPool ??
         (config.dataMode === 'real' ? getOrCreatePool(config) : null);
       if (dbPool && slugOrId) {
+        await ensureAppointmentFromNotifyBookingInDb(dbPool, {
+          businessSlug: params.businessSlug,
+          businessId: params.businessId,
+          customerName: params.customerName,
+          customerPhone: cleanCustPhone || params.customerPhone,
+          serviceTitle: params.serviceTitle,
+          priceToman: params.priceToman,
+          durationMinutes: params.durationMinutes,
+          dateJalali: dateStr,
+          timeSlot: timeStr,
+          referenceCode: params.referenceCode,
+        });
+
         const bizRes = await dbPool.query(
           `
           SELECT b.id, b.name, b.slug, b.phone_display, bme.extra_json
@@ -1071,27 +1091,6 @@ export function createApiV1Router(
 
         if (row?.name) {
           resolvedBizName = String(row.name);
-        }
-
-        const depositPaidToman = Math.max(
-          0,
-          Number(params.depositPaidToman) || 0
-        );
-        if (row?.id && depositPaidToman > 0) {
-          const prevBalance = Math.max(
-            0,
-            Number(extra.walletBalanceToman) || 0
-          );
-          extra.walletBalanceToman = prevBalance + depositPaidToman;
-          await dbPool.query(
-            `
-            INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
-            VALUES ($1::uuid, $2::jsonb, NOW())
-            ON CONFLICT (business_id)
-            DO UPDATE SET extra_json = EXCLUDED.extra_json, updated_at = NOW()
-            `,
-            [row.id, JSON.stringify(extra)]
-          );
         }
 
         const dbOwnerCandidate = normalizeIranMobile(
@@ -1241,27 +1240,41 @@ export function createApiV1Router(
         ? config.sms
         : resolveEffectiveSmsConfig(config.sms);
       if (effectiveSms.provider !== 'disabled' && effectiveSms.apiKey) {
+        if (normalizedStatus === 'CANCELLED') {
+          const cancelPatternId =
+            effectiveSms.bookingCancelTemplate ||
+            process.env.SMS_BOOKING_CANCEL_TEMPLATE ||
+            undefined;
+          const cancelMessageText = `${custName || 'مراجع عزیز'} عزیز، نوبت شما در ${bizName} برای تاریخ ${dateStr} ساعت ${timeStr} لغو شد. در صورت پرداخت بیعانه، مبلغ به کیف پول شما بازگشت داده شد.`;
+          const cancelDelivery = await sendCancellationNoticeSmsViaGateway({
+            phone: custPhone,
+            args: [
+              custName || 'مراجع عزیز',
+              bizName,
+              dateStr,
+              timeStr,
+            ],
+            messageText: cancelMessageText,
+            cancelTemplateId: cancelPatternId,
+            config: effectiveSms,
+            nodeEnv: config.nodeEnv,
+          }).catch(() => ({ sent: false }));
+          return { customerSmsSent: Boolean(cancelDelivery.sent) };
+        }
+
         const customerPatternId =
           effectiveSms.bookingCustomerTemplate ||
           process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
           undefined;
-        const statusWord =
-          normalizedStatus === 'CONFIRMED'
-            ? 'تایید شد'
-            : 'توسط سالن لغو/رد شد (بیعانه به کیف پول شما برگشت داده شد)';
-        const bizWithStatus =
-          normalizedStatus === 'CONFIRMED'
-            ? `${bizName} (تایید نهایی شد)`
-            : `${bizName} (لغو شد)`;
         const delivery = await sendPatternSmsViaGateway({
           phone: custPhone,
           args: [
             custName || 'مراجع عزیز',
-            bizWithStatus,
+            `${bizName} (تایید نهایی شد)`,
             dateStr,
             timeStr,
           ],
-          fallbackSingleArg: `نوبت شما در ${bizName} مورخ ${dateStr} ساعت ${timeStr} ${statusWord}`,
+          fallbackSingleArg: `نوبت شما در ${bizName} مورخ ${dateStr} ساعت ${timeStr} تایید شد`,
           customTemplateId: customerPatternId,
           config: effectiveSms,
           nodeEnv: config.nodeEnv,
@@ -1290,9 +1303,12 @@ export function createApiV1Router(
           customerName: req.body?.customerName,
           customerPhone: req.body?.customerPhone || req.authUser?.phone,
           serviceTitle: req.body?.serviceTitle,
+          priceToman: Number(req.body?.priceToman) || 0,
+          durationMinutes: Number(req.body?.durationMinutes) || 0,
           dateJalali: req.body?.dateJalali,
           timeSlot: req.body?.timeSlot,
           depositPaidToman: Number(req.body?.depositPaidToman) || 0,
+          referenceCode: req.body?.referenceCode,
         });
         res.status(200).json({
           ok: true,
@@ -1345,7 +1361,6 @@ export function createApiV1Router(
       try {
         const item = await createAppointmentInDb(pool, req.authUser!, req.body);
 
-        // واریز آنی بیعانه به کیف پول کسب‌وکار دقیقِ انتخاب‌شده در دیتابیس و ارسال پیامک اطلاع‌رسانی فقط به صاحب سالن
         void dispatchBookingSmsAndWalletCredit({
           businessSlug: item.businessSlug || req.body?.businessSlug,
           businessId: item.businessId || req.body?.businessId,
@@ -1354,9 +1369,13 @@ export function createApiV1Router(
           customerName: item.customerName || req.body?.customerName,
           customerPhone: req.body?.customerPhone || req.authUser?.phone,
           serviceTitle: item.serviceTitle || req.body?.serviceTitle,
+          priceToman: item.priceToman || Number(req.body?.priceToman) || 0,
+          durationMinutes:
+            item.durationMinutes || Number(req.body?.durationMinutes) || 0,
           dateJalali: item.dateJalali,
           timeSlot: item.timeSlot,
           depositPaidToman: Number(req.body?.depositPaidToman) || 0,
+          referenceCode: item.referenceCode,
         });
 
         res.status(201).json({
@@ -2551,9 +2570,18 @@ export function createApiV1Router(
 
       let syncedBusinesses: unknown[] | undefined;
       let syncedAppointments: unknown[] | undefined;
+      let syncedSettlementRequests: Array<Record<string, unknown>> | undefined;
+      let syncedPaymentConfig: Record<string, unknown> | undefined;
+      let syncedNotices: Array<Record<string, unknown>> | undefined;
       try {
-        const bootstrapPayload = await getBootstrapPayload(pool);
+        const [bootstrapPayload, sharedState] = await Promise.all([
+          getBootstrapPayload(pool),
+          getSharedPlatformState(pool),
+        ]);
         syncedBusinesses = bootstrapPayload.businesses;
+        syncedSettlementRequests = sharedState.settlementRequests;
+        syncedPaymentConfig = sharedState.paymentConfig;
+        syncedNotices = sharedState.platformBusinessNotices;
         const bizByIdMap = new Map(
           (bootstrapPayload.businesses || []).map((b) => [b.id, b])
         );
@@ -2590,11 +2618,15 @@ export function createApiV1Router(
           const rowPrice = Number(r.service_price_toman_snapshot) || 0;
           const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
           const matchedBiz = bizByIdMap.get(String(r.business_external_id));
+          const rawDepPct = Number(matchedBiz?.depositPercent);
           const depPct =
-            matchedBiz?.depositPercent &&
-            [20, 30, 50, 100].includes(Number(matchedBiz.depositPercent))
-              ? Number(matchedBiz.depositPercent)
+            Number.isFinite(rawDepPct) && rawDepPct >= 1 && rawDepPct <= 100
+              ? Math.min(100, Math.max(20, Math.round(rawDepPct)))
               : 30;
+          const exactDeposit =
+            matchedBiz?.depositEnabled === false
+              ? 0
+              : Math.max(0, Math.round((effectivePrice * depPct) / 100));
           return {
             id: String(r.external_id),
             referenceCode: String(r.reference_code),
@@ -2611,10 +2643,7 @@ export function createApiV1Router(
             timeSlot: String(r.time_slot_label),
             durationMinutes: Number(r.duration_minutes_snapshot),
             priceToman: rowPrice,
-            depositPaidToman: Math.max(
-              20_000,
-              Math.round((effectivePrice * depPct) / 100)
-            ),
+            depositPaidToman: exactDeposit,
             status: String(r.status),
             notes: r.notes ? String(r.notes) : undefined,
           };
@@ -2629,10 +2658,63 @@ export function createApiV1Router(
         registeredUsers: result.registeredUsers,
         businesses: syncedBusinesses,
         appointments: syncedAppointments,
+        settlementRequests: syncedSettlementRequests,
+        paymentConfig: syncedPaymentConfig,
+        platformBusinessNotices: syncedNotices,
         sessionToken: result.sessionToken,
         expiresAt: result.expiresAt,
         user: result.user,
       });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  /**
+   * ۱۶-الف. وضعیت مشترک پلتفرم در پایگاه داده (درخواست‌های تسویه، تنظیمات کارمزد و اطلاعیه‌های کسب‌وکارها)
+   * GET /api/v1/platform/shared-state
+   * POST /api/v1/platform/shared-state
+   */
+  router.get('/platform/shared-state', async (_req: Request, res: Response) => {
+    const { mode, pool } = await resolvePoolOrFail(res);
+    if (mode === 'mock' || !pool) {
+      res.status(200).json({ ok: true, mode: 'mock', data: {} });
+      return;
+    }
+    try {
+      const data = await getSharedPlatformState(pool);
+      res.status(200).json({ ok: true, mode: 'real', data });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  router.post('/platform/shared-state', async (req: Request, res: Response) => {
+    const { mode, pool } = await resolvePoolOrFail(res);
+    if (mode === 'mock' || !pool) {
+      res.status(200).json({ ok: true, mode: 'mock', data: req.body || {} });
+      return;
+    }
+    try {
+      const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+        settlementRequests?: Array<Record<string, unknown>>;
+        paymentConfig?: Record<string, unknown>;
+        platformBusinessNotices?: Array<Record<string, unknown>>;
+      };
+      await saveSharedPlatformStateInDb(pool, {
+        settlementRequests: Array.isArray(body.settlementRequests)
+          ? body.settlementRequests
+          : undefined,
+        paymentConfig:
+          body.paymentConfig && typeof body.paymentConfig === 'object'
+            ? body.paymentConfig
+            : undefined,
+        platformBusinessNotices: Array.isArray(body.platformBusinessNotices)
+          ? body.platformBusinessNotices
+          : undefined,
+      });
+      const data = await getSharedPlatformState(pool);
+      res.status(200).json({ ok: true, mode: 'real', data });
     } catch (err) {
       handleRealModeRouteError(res, err);
     }

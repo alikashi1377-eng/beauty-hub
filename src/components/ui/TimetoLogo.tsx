@@ -46,7 +46,11 @@ export const TimetoLogo: React.FC<{
   const resolvedTheme = theme ?? variant ?? 'light';
 
   const brandTextSize =
-    size === 'sm' ? 'text-lg' : size === 'lg' ? 'text-2xl' : 'text-xl';
+    size === 'sm'
+      ? 'text-base sm:text-lg'
+      : size === 'lg'
+        ? 'text-xl sm:text-2xl'
+        : 'text-lg sm:text-xl';
 
   const textColor = resolvedTheme === 'dark' ? 'text-white' : 'text-[#061138]';
   const badgeBg =
@@ -55,13 +59,13 @@ export const TimetoLogo: React.FC<{
       : 'bg-[#061138] text-[#4DF0FF] border-[#0057FF]/30';
 
   return (
-    <div className="inline-flex items-center gap-2.5 select-none shrink-0">
+    <div className="inline-flex items-center gap-1.5 sm:gap-2.5 select-none shrink-0">
       {/* لوگوی وکتور باکیفیت Timeto */}
       <TimetoIconMark size={size} />
 
       {/* تایپوگرافی برند Timeto | تایم تو */}
       <div className="flex flex-col justify-center leading-none">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <span
             dir="ltr"
             style={{ fontFamily: "'Plus Jakarta Sans', 'Estedad', sans-serif" }}
@@ -71,7 +75,7 @@ export const TimetoLogo: React.FC<{
           </span>
           {showPersianSubtitle ? (
             <span
-              className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border ${badgeBg}`}
+              className={`hidden sm:inline-block px-2 py-0.5 rounded-full text-[11px] font-extrabold border ${badgeBg}`}
             >
               تایم تو
             </span>

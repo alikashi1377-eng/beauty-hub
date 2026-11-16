@@ -17,8 +17,11 @@ import {
   GalleryItem,
   MarketingCampaignItem,
   OnboardingDraft,
+  PaymentGatewayConfig,
+  PlatformBusinessNoticeItem,
   ReviewItem,
   ServiceItem,
+  SettlementRequestItem,
   SpecialistItem,
   SubscriptionPlanItem,
   TimeSlotAvailabilityItem,
@@ -60,6 +63,9 @@ export interface ApiBootstrapResponse {
     campaigns?: MarketingCampaignItem[];
     favoriteBusinessIds?: string[];
     registeredUsers?: AdminUserRecord[];
+    settlementRequests?: SettlementRequestItem[];
+    paymentConfig?: Partial<PaymentGatewayConfig>;
+    platformBusinessNotices?: PlatformBusinessNoticeItem[];
   } | null;
 }
 
@@ -726,12 +732,24 @@ export const realApiClient = {
       avatarUrl?: string;
       instagramHandle?: string;
       shortDescription?: string;
+      depositEnabled?: boolean;
+      depositPercent?: number;
+      bankShebaNumber?: string;
+      bankCardNumber?: string;
+      bankAccountHolder?: string;
+      contractAccepted?: boolean;
+      contractAcceptedAtJalali?: string;
+      isVipPartner?: boolean;
+      vipCommissionPercent?: number;
     }>;
     issueSessionForPhone?: string;
   }): Promise<{
     registeredUsers: AdminUserRecord[];
     businesses?: BusinessItem[];
     appointments?: AppointmentItem[];
+    settlementRequests?: SettlementRequestItem[];
+    paymentConfig?: Partial<PaymentGatewayConfig>;
+    platformBusinessNotices?: PlatformBusinessNoticeItem[];
     sessionToken?: string;
     expiresAt?: string;
     user?: AuthenticatedSessionUser;
@@ -741,6 +759,9 @@ export const realApiClient = {
       registeredUsers: AdminUserRecord[];
       businesses?: BusinessItem[];
       appointments?: AppointmentItem[];
+      settlementRequests?: SettlementRequestItem[];
+      paymentConfig?: Partial<PaymentGatewayConfig>;
+      platformBusinessNotices?: PlatformBusinessNoticeItem[];
       sessionToken?: string;
       expiresAt?: string;
       user?: AuthenticatedSessionUser;
@@ -752,6 +773,47 @@ export const realApiClient = {
       saveSessionTokenToStorage(res.sessionToken);
     }
     return res;
+  },
+
+  async fetchPlatformSharedState(): Promise<{
+    data?: {
+      settlementRequests?: SettlementRequestItem[];
+      paymentConfig?: Partial<PaymentGatewayConfig>;
+      platformBusinessNotices?: PlatformBusinessNoticeItem[];
+    };
+  }> {
+    return requestJson<{
+      ok: boolean;
+      data?: {
+        settlementRequests?: SettlementRequestItem[];
+        paymentConfig?: Partial<PaymentGatewayConfig>;
+        platformBusinessNotices?: PlatformBusinessNoticeItem[];
+      };
+    }>('/api/v1/platform/shared-state');
+  },
+
+  async savePlatformSharedState(patch: {
+    settlementRequests?: SettlementRequestItem[];
+    paymentConfig?: PaymentGatewayConfig;
+    platformBusinessNotices?: PlatformBusinessNoticeItem[];
+  }): Promise<{
+    data?: {
+      settlementRequests?: SettlementRequestItem[];
+      paymentConfig?: Partial<PaymentGatewayConfig>;
+      platformBusinessNotices?: PlatformBusinessNoticeItem[];
+    };
+  }> {
+    return requestJson<{
+      ok: boolean;
+      data?: {
+        settlementRequests?: SettlementRequestItem[];
+        paymentConfig?: Partial<PaymentGatewayConfig>;
+        platformBusinessNotices?: PlatformBusinessNoticeItem[];
+      };
+    }>('/api/v1/platform/shared-state', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    });
   },
 
   async updateAdminUser(

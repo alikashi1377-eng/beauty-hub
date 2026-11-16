@@ -6,9 +6,9 @@ import {
 } from '../types';
 import { getUpcomingJalaliDays, toEnglishDigitsClient } from './formatters';
 
-/** درصدهای مجاز و استاندارد بیعانه آنلاین (بدون امکان غیرفعال‌سازی و بدون درصد دستی) */
+/** ۴ ضریب استاندارد و پیشنهادی بیعانه آنلاین (حداقل الزامی ۲۰٪ تا ۱۰۰٪) */
 export const ALLOWED_DEPOSIT_PERCENTS = [20, 30, 50, 100] as const;
-export type AllowedDepositPercent = (typeof ALLOWED_DEPOSIT_PERCENTS)[number];
+export type AllowedDepositPercent = (typeof ALLOWED_DEPOSIT_PERCENTS)[number] | number;
 
 /** کف کارمزد پلتفرم در هر نوبت آنلاین (ضدتقلب قیمت‌گذاری صوری) */
 export const MIN_PLATFORM_COMMISSION_TOMAN = 10_000;
@@ -23,14 +23,11 @@ export const MIN_TAX_AND_INFRA_FEE_TOMAN = 1_000;
 export const MIN_SERVICE_PRICE_MEN_TOMAN = 80_000;
 export const MIN_SERVICE_PRICE_GENERAL_TOMAN = 100_000;
 
-/** نرمال‌سازی درصد بیعانه به یکی از ۴ گزینه استاندارد ۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪ */
-export function normalizeDepositPercent(raw?: number | null): AllowedDepositPercent {
+/** نرمال‌سازی درصد بیعانه واقعی سالن (حفظ دقیق هر ضریب انتخابی بین حداقل ۲۰٪ تا ۱۰۰٪؛ پیش‌فرض ۳۰٪ فقط در صورت نبود مقدار معتبر) */
+export function normalizeDepositPercent(raw?: number | null): number {
   const num = Number(raw);
   if (!Number.isFinite(num) || num <= 0) return 30;
-  if (num <= 24) return 20;
-  if (num <= 39) return 30;
-  if (num <= 74) return 50;
-  return 100;
+  return Math.min(100, Math.max(20, Math.round(num)));
 }
 
 export interface CategoryCommissionConfig {
@@ -141,8 +138,8 @@ export function resolveBusinessCommissionMeta(
 export interface BookingFinancialBreakdown {
   /** قیمت کل خدمات انتخابی مشتری */
   totalServicePriceToman: number;
-  /** درصد بیعانه استاندارد انتخابی سالن (۲۰، ۳۰، ۵۰ یا ۱۰۰) */
-  depositPercent: AllowedDepositPercent;
+  /** درصد بیعانه واقعی انتخابی سالن (۱ تا ۱۰۰٪) */
+  depositPercent: number;
   /** مبلغ پایه بیعانه از کل خدمت (مثلاً ۲۰۰,۰۰۰ تومان از ۱,۰۰۰,۰۰۰ تومان) */
   baseDepositToman: number;
   depositBaseToman: number;

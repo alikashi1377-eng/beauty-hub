@@ -27,6 +27,7 @@ export interface SmsConfig {
   template: string | null;
   bookingOwnerTemplate?: string | null;
   bookingCustomerTemplate?: string | null;
+  bookingCancelTemplate?: string | null;
   apiUrl: string | null;
 }
 
@@ -146,7 +147,7 @@ function logSmsGatewayFailure(params: {
     : undefined;
 
   console.error(
-    '[BeautyHub SMS Gateway] خطا در ارسال پیامک OTP:',
+    '[Timeto SMS Gateway] خطا در ارسال پیامک:',
     JSON.stringify({
       provider: params.provider,
       errorCode: params.errorCode,
@@ -286,6 +287,9 @@ export function resolveSmsConfig(
   const rawBookingCustomerTemplate = normalizeDigitsToEnglish(
     stripSurroundingQuotes(envSource.SMS_BOOKING_CUSTOMER_TEMPLATE)
   );
+  const rawBookingCancelTemplate = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(envSource.SMS_BOOKING_CANCEL_TEMPLATE)
+  );
   const rawApiUrl = stripSurroundingQuotes(envSource.SMS_API_URL);
 
   if (provider === 'melipayamak') {
@@ -298,6 +302,7 @@ export function resolveSmsConfig(
       template: rawTemplate || null,
       bookingOwnerTemplate: rawBookingOwnerTemplate || null,
       bookingCustomerTemplate: rawBookingCustomerTemplate || null,
+      bookingCancelTemplate: rawBookingCancelTemplate || null,
       apiUrl: rawApiUrl || extractedEndpoint || null,
     };
   }
@@ -309,6 +314,7 @@ export function resolveSmsConfig(
     template: rawTemplate || null,
     bookingOwnerTemplate: rawBookingOwnerTemplate || null,
     bookingCustomerTemplate: rawBookingCustomerTemplate || null,
+    bookingCancelTemplate: rawBookingCancelTemplate || null,
     apiUrl: rawApiUrl || null,
   };
 }
@@ -332,6 +338,7 @@ function readPersistedSmsConfig(): SmsConfig | null {
           template: parsed.template || null,
           bookingOwnerTemplate: parsed.bookingOwnerTemplate || null,
           bookingCustomerTemplate: parsed.bookingCustomerTemplate || null,
+          bookingCancelTemplate: parsed.bookingCancelTemplate || null,
           apiUrl: parsed.apiUrl || null,
         };
       }
@@ -370,6 +377,7 @@ export function setRuntimeSmsOverride(input: {
   template?: string | null;
   bookingOwnerTemplate?: string | null;
   bookingCustomerTemplate?: string | null;
+  bookingCancelTemplate?: string | null;
   apiUrl?: string | null;
 } | null): SmsConfig | null {
   if (!input) {
@@ -396,6 +404,13 @@ export function setRuntimeSmsOverride(input: {
         ''
     )
   );
+  const rawBookingCancel = normalizeDigitsToEnglish(
+    stripSurroundingQuotes(
+      input.bookingCancelTemplate ??
+        runtimeSmsOverride?.bookingCancelTemplate ??
+        ''
+    )
+  );
   const rawUrl = stripSurroundingQuotes(input.apiUrl ?? '');
 
   if (provider === 'melipayamak') {
@@ -408,6 +423,7 @@ export function setRuntimeSmsOverride(input: {
       template: rawTemplate || null,
       bookingOwnerTemplate: rawBookingOwner || null,
       bookingCustomerTemplate: rawBookingCustomer || null,
+      bookingCancelTemplate: rawBookingCancel || null,
       apiUrl: rawUrl || extractedEndpoint || null,
     };
     writePersistedSmsConfig(runtimeSmsOverride);
@@ -421,6 +437,7 @@ export function setRuntimeSmsOverride(input: {
     template: rawTemplate || null,
     bookingOwnerTemplate: rawBookingOwner || null,
     bookingCustomerTemplate: rawBookingCustomer || null,
+    bookingCancelTemplate: rawBookingCancel || null,
     apiUrl: rawUrl || null,
   };
   writePersistedSmsConfig(runtimeSmsOverride);
@@ -453,6 +470,10 @@ export function resolveEffectiveSmsConfig(baseConfig: SmsConfig): SmsConfig {
     bookingCustomerTemplate:
       runtimeSmsOverride.bookingCustomerTemplate ||
       baseConfig.bookingCustomerTemplate ||
+      null,
+    bookingCancelTemplate:
+      runtimeSmsOverride.bookingCancelTemplate ||
+      baseConfig.bookingCancelTemplate ||
       null,
     apiUrl: runtimeSmsOverride.apiUrl || baseConfig.apiUrl,
   };
@@ -510,7 +531,7 @@ export async function sendOtpSmsViaGateway(
     if (config.provider === 'console') {
       if (nodeEnv === 'development') {
         console.info(
-          `[BeautyHub Dev SMS] OTP generated for ${maskPhoneForLog(phone)} (dev console mode)`
+          `[Timeto Dev SMS] OTP generated for ${maskPhoneForLog(phone)} (dev console mode)`
         );
       }
       return {
@@ -533,7 +554,7 @@ export async function sendOtpSmsViaGateway(
 
   try {
     if (config.provider === 'kavenegar') {
-      const template = config.template || 'beautyhub-verify';
+      const template = config.template || 'timeto-verify';
       const url = new URL(
         `https://api.kavenegar.com/v1/${encodeURIComponent(
           config.apiKey!
@@ -1083,5 +1104,226 @@ export async function sendPatternSmsViaGateway(params: {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * ارسال پیامک لغو نوبت به مشتری:
+ * ۱) هرگز از الگوی تایید نوبت (SMS_BOOKING_CUSTOMER_TEMPLATE که حاوی عبارت «تایید شد» است) استفاده نمی‌کند.
+ * ۲) در صورت تعریف الگوی اختصاصی لغو نوبت (SMS_BOOKING_CANCEL_TEMPLATE)، فقط با همان الگو ارسال می‌کند.
+ * ۳) در غیر این صورت، اگر شماره خط ارسال‌کننده در ملی‌پیامک تنظیم شده باشد (یا درگاه webhook/console باشد)، متن دقیق و شفاف لغو نوبت را می‌فرستد.
+ */
+export async function sendCancellationNoticeSmsViaGateway(params: {
+  phone: string;
+  args: string[];
+  messageText: string;
+  cancelTemplateId?: string | null;
+  config: SmsConfig;
+  nodeEnv: 'development' | 'production' | 'test';
+}): Promise<SmsDeliveryResult> {
+  const { phone, args, messageText, cancelTemplateId, config, nodeEnv } = params;
+
+  const trimmedCancelTemplate = stripSurroundingQuotes(
+    cancelTemplateId ?? config.bookingCancelTemplate ?? undefined
+  );
+  const hasDedicatedCancelPattern =
+    Boolean(trimmedCancelTemplate) &&
+    /^\d+$/.test(normalizeDigitsToEnglish(trimmedCancelTemplate));
+
+  if (config.provider === 'disabled') {
+    return {
+      sent: false,
+      provider: 'disabled',
+      errorCode: 'SMS_GATEWAY_NOT_CONFIGURED',
+    };
+  }
+
+  if (config.provider === 'console') {
+    if (nodeEnv === 'development') {
+      console.info(
+        `[Timeto Dev SMS] Cancellation notice for ${maskPhoneForLog(phone)}: ${messageText}`
+      );
+    }
+    return {
+      sent: true,
+      provider: 'console',
+      providerMessageId: `dev-cancel-${Date.now()}`,
+    };
+  }
+
+  if (hasDedicatedCancelPattern && config.provider === 'melipayamak') {
+    const { extractedKey, extractedEndpoint } = normalizeMelipayamakApiKey(
+      config.apiKey || ''
+    );
+    if (!extractedKey) {
+      return {
+        sent: false,
+        provider: 'melipayamak',
+        errorCode: 'SMS_GATEWAY_NOT_CONFIGURED',
+      };
+    }
+    const endpoint =
+      config.apiUrl ||
+      extractedEndpoint ||
+      `https://console.melipayamak.com/api/send/shared/${encodeURIComponent(
+        extractedKey
+      )}`;
+    const bodyId = Number.parseInt(
+      normalizeDigitsToEnglish(trimmedCancelTemplate),
+      10
+    );
+    const cleanRecipient = normalizeDigitsToEnglish(phone).replace(/\D/g, '');
+    const cleanArgs = args.map((a) => String(a ?? '').trim());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          bodyId,
+          to: cleanRecipient,
+          args: cleanArgs,
+        }),
+        signal: controller.signal,
+      });
+      const rawText = await res.text();
+      let parsed: { recId?: number | string } | null = null;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        parsed = null;
+      }
+      const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
+      const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
+      if (
+        res.ok &&
+        recIdStr &&
+        (Number.isNaN(numericRecId) || numericRecId > 100)
+      ) {
+        return {
+          sent: true,
+          provider: 'melipayamak',
+          providerMessageId: recIdStr,
+          httpStatus: res.status,
+        };
+      }
+    } catch {
+      // ادامه به ارسال متن مستقیم در صورت نبود خطا یا داشتن شماره خط
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (config.provider === 'melipayamak') {
+    const { extractedKey } = normalizeMelipayamakApiKey(config.apiKey || '');
+    const senderNum = normalizeDigitsToEnglish(config.sender || '').trim();
+    if (!extractedKey || !senderNum) {
+      // هرگز به پترن تایید نوبت یا OTP برنگردد تا متن اشتباه «تایید شد» ارسال نشود
+      return {
+        sent: false,
+        provider: 'melipayamak',
+        errorCode: 'SMS_TEMPLATE_INVALID_OR_UNAPPROVED',
+      };
+    }
+    const cleanRecipient = normalizeDigitsToEnglish(phone).replace(/\D/g, '');
+    const simpleEndpoint = `https://console.melipayamak.com/api/send/simple/${encodeURIComponent(
+      extractedKey
+    )}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(simpleEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          from: senderNum,
+          to: cleanRecipient,
+          text: messageText,
+        }),
+        signal: controller.signal,
+      });
+      const rawText = await res.text();
+      let parsed: { recId?: number | string } | null = null;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        parsed = null;
+      }
+      const recIdStr = parsed?.recId ? String(parsed.recId).trim() : '';
+      const numericRecId = recIdStr ? Number(recIdStr) : Number.NaN;
+      if (
+        res.ok &&
+        recIdStr &&
+        (Number.isNaN(numericRecId) || numericRecId > 100)
+      ) {
+        return {
+          sent: true,
+          provider: 'melipayamak',
+          providerMessageId: recIdStr,
+          httpStatus: res.status,
+        };
+      }
+      return {
+        sent: false,
+        provider: 'melipayamak',
+        errorCode: 'SMS_PROVIDER_REJECTED',
+        httpStatus: res.status,
+      };
+    } catch {
+      return {
+        sent: false,
+        provider: 'melipayamak',
+        errorCode: 'SMS_NETWORK_OR_TIMEOUT_ERROR',
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (config.provider === 'webhook' && config.apiUrl && config.apiKey) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(config.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          phone,
+          text: messageText,
+          sender: config.sender,
+          type: 'APPOINTMENT_CANCELLED',
+        }),
+        signal: controller.signal,
+      });
+      return {
+        sent: res.ok,
+        provider: 'webhook',
+        httpStatus: res.status,
+      };
+    } catch {
+      return {
+        sent: false,
+        provider: 'webhook',
+        errorCode: 'SMS_NETWORK_OR_TIMEOUT_ERROR',
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return {
+    sent: false,
+    provider: config.provider,
+    errorCode: 'SMS_GATEWAY_NOT_CONFIGURED',
+  };
 }
 

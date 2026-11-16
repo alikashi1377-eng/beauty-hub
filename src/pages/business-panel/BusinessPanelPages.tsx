@@ -28,6 +28,7 @@ import {
   GripVertical,
   ArrowUp,
   ArrowDown,
+  Sparkles,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -362,6 +363,42 @@ export const BusinessDashboardPage: React.FC = () => {
           </span>
         </Link>
       </section>
+
+      {/* ۳.۵ خلاصه باشگاه مشتریان و امتیاز وفاداری مراجعان */}
+      {(() => {
+        const bronzeCount = bizCustomers.filter((c) => (c.totalVisits || 0) <= 2).length;
+        const silverCount = bizCustomers.filter((c) => (c.totalVisits || 0) >= 3 && (c.totalVisits || 0) <= 4).length;
+        const goldCount = bizCustomers.filter((c) => (c.totalVisits || 0) >= 5).length;
+        return (
+          <Card className="rounded-3xl border border-[#DDD6FE] bg-gradient-to-l from-[#FAF8FF] via-white to-[#EFF6FF] p-4 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-black">
+                  🏆 باشگاه مشتریان و امتیاز وفاداری
+                </span>
+                <span className="text-[11px] font-bold text-[#64748B]">
+                  هر نوبت در پنل مشتری = ۱۵۰ امتیاز وفاداری خودکار
+                </span>
+              </div>
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                سطح‌بندی خودکار مشتریان سالن: 🥉 برنزی ({toPersianDigits(bronzeCount)}) · 🥈 نقره‌ای ({toPersianDigits(silverCount)}) · 🥇 طلایی VIP ({toPersianDigits(goldCount)})
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Link to="/app/customers">
+                <Button variant="outline" size="sm">
+                  مدیریت باشگاه مشتریان
+                </Button>
+              </Link>
+              <Link to="/app/marketing">
+                <Button variant="primary" size="sm">
+                  ارسال پیامک هدیه به وفادارها ←
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ۴. اولویت اول سالن‌دار: نوبت‌های در انتظار تایید + برنامه نوبت‌های امروز */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -4149,6 +4186,93 @@ export const BusinessCustomersPage: React.FC = () => {
         </Card>
       </div>
 
+      {/* باشگاه مشتریان و سیستم امتیاز وفاداری تایم تو */}
+      {(() => {
+        const bronzeCustomers = mergedBusinessCustomers.filter(
+          (c) => (c.totalVisits || 0) <= 2
+        );
+        const silverCustomers = mergedBusinessCustomers.filter(
+          (c) => (c.totalVisits || 0) >= 3 && (c.totalVisits || 0) <= 4
+        );
+        const goldCustomers = mergedBusinessCustomers.filter(
+          (c) => (c.totalVisits || 0) >= 5
+        );
+        const totalLoyaltyPoints = mergedBusinessCustomers.reduce(
+          (sum, c) => sum + (c.totalVisits || 0) * 150,
+          0
+        );
+        return (
+          <Card className="border-2 border-[#8B5CF6]/25 bg-gradient-to-br from-[#FAF8FF] via-white to-[#EFF6FF] space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-black">
+                  🏆 باشگاه مشتریان و سیستم امتیاز وفاداری تایم تو
+                </span>
+                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                  چگونه امتیاز وفاداری مشتریان محاسبه و تبدیل به بازگشت مشتری می‌شود؟
+                </h2>
+                <p className="text-xs text-[#475569] leading-relaxed">
+                  مشتریان با هر رزرو آنلاین یا ثبت مراجعه، به‌صورت خودکار <strong>۱۵۰ امتیاز وفاداری</strong> و نشان <strong>«عضو باشگاه مشتریان»</strong> در حساب شخصی خود دریافت می‌کنند و در سالن شما به ۳ سطح برنزی، نقره‌ای و طلایی VIP دسته‌بندی می‌شوند.
+                </p>
+              </div>
+              <Link to="/app/marketing" className="shrink-0">
+                <Button variant="primary" size="sm">
+                  <Sparkles className="w-4 h-4" />
+                  <span>ارسال پیامک کد تخفیف به مشتریان وفادار ←</span>
+                </Button>
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] space-y-1">
+                <span className="font-extrabold text-[#B45309] block">
+                  🥉 سطح برنزی (۱ تا ۲ نوبت)
+                </span>
+                <p className="text-lg font-black text-[#061138] tabular-nums">
+                  {toPersianDigits(bronzeCustomers.length)} نفر
+                </p>
+                <span className="text-[10px] text-[#64748B] block">
+                  مشتریان جدید و در حال آشنایی
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-white border border-[#CBD5E1] space-y-1">
+                <span className="font-extrabold text-[#475569] block">
+                  🥈 سطح نقره‌ای (۳ تا ۴ نوبت)
+                </span>
+                <p className="text-lg font-black text-[#061138] tabular-nums">
+                  {toPersianDigits(silverCustomers.length)} نفر
+                </p>
+                <span className="text-[10px] text-[#64748B] block">
+                  مراجعان منظم (۴۵۰ تا ۶۰۰ امتیاز)
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 space-y-1">
+                <span className="font-extrabold text-amber-900 block">
+                  🥇 سطح طلایی VIP (۵+ نوبت)
+                </span>
+                <p className="text-lg font-black text-amber-950 tabular-nums">
+                  {toPersianDigits(goldCustomers.length)} نفر
+                </p>
+                <span className="text-[10px] text-amber-800 block">
+                  مشتریان دائمی (۷۵۰+ امتیاز)
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-1">
+                <span className="font-extrabold text-[#0057FF] block">
+                  ⭐ مجموع امتیاز باشگاه سالن
+                </span>
+                <p className="text-lg font-black text-[#0057FF] tabular-nums">
+                  {toPersianDigits(totalLoyaltyPoints)} امتیاز
+                </p>
+                <span className="text-[10px] text-[#1E40AF] block">
+                  آماده دعوت به کمپین هدیه
+                </span>
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
+
       {filtered.length === 0 ? (
         <EmptyState
           title="مشتری با این مشخصات یافت نشد"
@@ -7064,6 +7188,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
     addDailyIncomeLog,
     deleteDailyIncomeLog,
     settleAppointmentInPerson,
+    paymentConfig,
     settlementRequests,
     requestWalletSettlement,
     showToast,
@@ -7125,6 +7250,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
     const bd = resolveAppointmentFinancialBreakdown({
       appointment: a,
       business: currentBiz,
+      commissionConfig: paymentConfig,
     });
     return sum + bd.baseDepositToman;
   }, 0);
@@ -7133,6 +7259,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
       const bd = resolveAppointmentFinancialBreakdown({
         appointment: a,
         business: currentBiz,
+        commissionConfig: paymentConfig,
       });
       return sum + bd.platformCommissionToman;
     },
@@ -7142,18 +7269,26 @@ export const BusinessAnalyticsPage: React.FC = () => {
     0,
     onlineDepositsTotalToman - totalPlatformCommissionDeductedToman
   );
+  const totalPaidSettlementsToman = bizSettlements
+    .filter((s) => s.status === 'PAID')
+    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+  const computedWalletBalanceToman = Math.max(
+    0,
+    netSalonDepositsCreditedToman - totalPaidSettlementsToman
+  );
   const lockedFutureEscrowToman = activeOrDoneAppointments
     .filter((a) => !isAppointmentEligibleForSettlement(a))
     .reduce((sum, a) => {
       const bd = resolveAppointmentFinancialBreakdown({
         appointment: a,
         business: currentBiz,
+        commissionConfig: paymentConfig,
       });
       return sum + bd.salonNetDepositCreditedToman;
     }, 0);
   const releasableWalletToman = Math.max(
     0,
-    (currentBiz?.walletBalanceToman ?? 0) - lockedFutureEscrowToman
+    computedWalletBalanceToman - lockedFutureEscrowToman
   );
 
   // مجموع الباقی هنوز تسویه‌نشده در سالن
@@ -7163,6 +7298,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
       const bd = resolveAppointmentFinancialBreakdown({
         appointment: a,
         business: currentBiz,
+        commissionConfig: paymentConfig,
       });
       return sum + bd.remainingInSalonToman;
     },
@@ -7288,7 +7424,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
       );
       return;
     }
-    if ((currentBiz.walletBalanceToman ?? 0) <= 0) {
+    if (computedWalletBalanceToman <= 0) {
       showToast('موجودی قابل برداشت بیعانه در حال حاضر صفر است.', 'warning');
       return;
     }
@@ -7743,7 +7879,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
                   مبلغ قابل واریز به شبا:
                 </span>
                 <span className="font-black text-[#059669] text-sm tabular-nums">
-                  {formatPriceToman(currentBiz.walletBalanceToman ?? 0)}
+                  {formatPriceToman(releasableWalletToman)}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -8155,13 +8291,26 @@ export const BusinessSubscriptionPage: React.FC = () => {
     commissionConfig: paymentConfig,
   });
 
-  const bizFutureLockedEscrowToman = appointments
-    .filter(
-      (a) =>
-        (a.businessId === currentBiz.id || a.businessSlug === currentBiz.slug) &&
-        a.status !== AppointmentStatus.Cancelled &&
-        !isAppointmentEligibleForSettlement(a)
-    )
+  const bizNonCancelledApts = appointments.filter(
+    (a) =>
+      (a.businessId === currentBiz.id ||
+        a.businessSlug === currentBiz.slug ||
+        a.businessName === currentBiz.name) &&
+      a.status !== AppointmentStatus.Cancelled
+  );
+  const bizTotalNetCreditedToman = bizNonCancelledApts.reduce((sum, a) => {
+    const bd = resolveAppointmentFinancialBreakdown({
+      appointment: a,
+      business: currentBiz,
+      commissionConfig: paymentConfig,
+    });
+    return sum + bd.salonNetDepositCreditedToman;
+  }, 0);
+  const bizPaidSettlementsToman = settlementRequests
+    .filter((s) => s.businessId === currentBiz.id && s.status === 'PAID')
+    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+  const bizFutureLockedEscrowToman = bizNonCancelledApts
+    .filter((a) => !isAppointmentEligibleForSettlement(a))
     .reduce((sum, a) => {
       const bd = resolveAppointmentFinancialBreakdown({
         appointment: a,
@@ -8171,7 +8320,10 @@ export const BusinessSubscriptionPage: React.FC = () => {
       return sum + bd.salonNetDepositCreditedToman;
     }, 0);
 
-  const totalWalletBalanceToman = currentBiz.walletBalanceToman ?? 0;
+  const totalWalletBalanceToman = Math.max(
+    0,
+    bizTotalNetCreditedToman - bizPaidSettlementsToman
+  );
   const releasableWalletToman = Math.max(
     0,
     totalWalletBalanceToman - bizFutureLockedEscrowToman
@@ -8339,44 +8491,47 @@ export const BusinessSubscriptionPage: React.FC = () => {
                       </span>
                     </span>
                     <span className="text-[11px] text-[#64748B] block">
-                      دریافت بیعانه آنلاین برای تضمین حضور مشتری و جلوگیری از سوخت شدن وقت سالن در تایم تو الزامی است. یکی از ۴ ضریب استاندارد زیر را انتخاب کنید:
+                      دریافت بیعانه آنلاین (حداقل ۲۰٪) برای تضمین حضور مشتری و جلوگیری از سوخت شدن وقت سالن در تایم تو الزامی است. یکی از ۴ ضریب پیشنهادی زیر را انتخاب کنید:
                     </span>
                   </div>
                   <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
-                    بیعانه آنلاین الزامی ✓
+                    بیعانه آنلاین الزامی: {toPersianDigits(depositPercentRule)}٪ ✓
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {ALLOWED_DEPOSIT_PERCENTS.map((pct) => {
-                    const isSelected = depositPercentRule === pct;
-                    const labelMap: Record<number, string> = {
-                      20: '۲۰٪ (حداقل بیعانه)',
-                      30: '۳۰٪ (پیشنهادی)',
-                      50: '۵۰٪ (نصف مبلغ)',
-                      100: '۱۰۰٪ (پرداخت کامل)',
-                    };
-                    return (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => {
-                          setDepositPercentRule(pct);
-                          updateBusinessProfile(currentBiz.id, {
-                            depositEnabled: true,
-                            depositPercent: pct,
-                          });
-                        }}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
-                            : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
-                        }`}
-                      >
-                        {labelMap[pct] || `${toPersianDigits(pct)}٪`}
-                      </button>
-                    );
-                  })}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {ALLOWED_DEPOSIT_PERCENTS.map((pct) => {
+                      const isSelected = depositPercentRule === pct;
+                      const labelMap: Record<number, string> = {
+                        20: '۲۰٪ (حداقل پیشنهاد)',
+                        30: '۳۰٪ (متعادل)',
+                        50: '۵۰٪ (نصف مبلغ)',
+                        100: '۱۰۰٪ (پرداخت کامل)',
+                      };
+                      return (
+                        <button
+                          key={pct}
+                          id={`sub-deposit-preset-${pct}`}
+                          type="button"
+                          onClick={() => {
+                            setDepositPercentRule(pct);
+                            updateBusinessProfile(currentBiz.id, {
+                              depositEnabled: true,
+                              depositPercent: pct,
+                            });
+                          }}
+                          className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
+                              : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                          }`}
+                        >
+                          {labelMap[pct] || `${toPersianDigits(pct)}٪`}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -8886,9 +9041,7 @@ export const BusinessSettingsPage: React.FC = () => {
   const [lateCancellationPenaltyPercent, setLateCancellationPenaltyPercent] =
     useState<number>(currentBiz?.lateCancellationPenaltyPercent ?? 30);
   const [depositPercentRule, setDepositPercentRule] = useState<number>(
-    currentBiz?.depositPercent && currentBiz.depositPercent > 0
-      ? currentBiz.depositPercent
-      : 30
+    normalizeDepositPercent(currentBiz?.depositPercent)
   );
 
   useEffect(() => {
@@ -8897,11 +9050,7 @@ export const BusinessSettingsPage: React.FC = () => {
     setLateCancellationPenaltyPercent(
       currentBiz.lateCancellationPenaltyPercent ?? 30
     );
-    setDepositPercentRule(
-      currentBiz.depositPercent && currentBiz.depositPercent > 0
-        ? currentBiz.depositPercent
-        : 30
-    );
+    setDepositPercentRule(normalizeDepositPercent(currentBiz.depositPercent));
   }, [
     currentBiz?.id,
     currentBiz?.depositPercent,
@@ -9131,30 +9280,36 @@ export const BusinessSettingsPage: React.FC = () => {
             </div>
 
             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
-              <div className="space-y-1">
-                <label
-                  htmlFor="set-deposit-custom-input"
-                  className="text-xs sm:text-sm font-extrabold text-[#061138] block"
-                >
-                  درصد بیعانه آنلاین هنگام ثبت نوبت توسط مشتری
-                </label>
-                <p className="text-[11px] text-[#64748B] leading-relaxed">
-                  می‌توانید یکی از درصدهای پیشنهادی را انتخاب کنید یا هر درصد دلخواهی (بین ۱ تا ۱۰۰ درصد) را مستقیماً وارد نمایید. مبلغ بیعانه از صورت‌حساب حضوری مشتری کسر می‌شود.
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
+                    درصد بیعانه آنلاین هنگام ثبت نوبت توسط مشتری:{' '}
+                    <span className="text-[#0057FF]">
+                      ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
+                    </span>
+                  </span>
+                  <p className="text-[11px] text-[#64748B] leading-relaxed">
+                    لطفاً یکی از ۴ ضریب پیشنهادی تایم تو (حداقل ۲۰٪ مبلغ کل خدمت) را انتخاب کنید. مبلغ بیعانه از صورت‌حساب حضوری مشتری کسر می‌شود.
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
+                  بیعانه آنلاین الزامی: {toPersianDigits(depositPercentRule)}٪ ✓
+                </span>
               </div>
 
-              {/* دکمه‌های پیشنهادی سریع */}
+              {/* ضرایب پیشنهادی استاندارد */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { pct: 20, label: '۲۰٪ مبلغ خدمت' },
-                  { pct: 30, label: '۳۰٪ (پیشنهادی)' },
-                  { pct: 50, label: '۵۰٪ مبلغ خدمت' },
+                  { pct: 20, label: '۲۰٪ (حداقل پیشنهاد)' },
+                  { pct: 30, label: '۳۰٪ (متعادل)' },
+                  { pct: 50, label: '۵۰٪ (نصف مبلغ)' },
                   { pct: 100, label: '۱۰۰٪ پرداخت کامل' },
                 ].map((preset) => {
                   const isSelected = depositPercentRule === preset.pct;
                   return (
                     <button
                       key={preset.pct}
+                      id={`set-deposit-preset-${preset.pct}`}
                       type="button"
                       onClick={() => setDepositPercentRule(preset.pct)}
                       className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
@@ -9167,51 +9322,6 @@ export const BusinessSettingsPage: React.FC = () => {
                     </button>
                   );
                 })}
-              </div>
-
-              {/* فیلد ورود عدد دلخواه توسط کارفرما */}
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-[#CBD5E1]">
-                <div className="space-y-0.5">
-                  <span className="text-xs font-extrabold text-[#061138] block">
-                    تعیین درصد دلخواه کارفرما (بین ۱ تا ۱۰۰ درصد):
-                  </span>
-                  <span className="text-[11px] text-[#64748B] block">
-                    هر عددی وارد کنید (مثلاً ۱۵٪، ۲۵٪ یا ۴۰٪) دقیقاً همان درصد در زمان رزرو محاسبه می‌شود
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="set-deposit-custom-input"
-                    type="number"
-                    min={1}
-                    max={100}
-                    dir="ltr"
-                    value={depositPercentRule || ''}
-                    onChange={(e) => {
-                      const raw = parseInt(
-                        toEnglishDigitsClient(e.target.value),
-                        10
-                      );
-                      if (Number.isNaN(raw)) {
-                        setDepositPercentRule(0);
-                      } else {
-                        setDepositPercentRule(
-                          Math.max(1, Math.min(100, raw))
-                        );
-                      }
-                    }}
-                    onBlur={() => {
-                      if (!depositPercentRule || depositPercentRule < 1) {
-                        setDepositPercentRule(30);
-                      }
-                    }}
-                    aria-label="درصد دلخواه بیعانه"
-                    className="w-24 rounded-xl border-2 border-[#0057FF]/40 bg-[#F8FAFC] px-3 py-1.5 text-center text-sm font-black text-[#061138] tabular-nums focus:border-[#0057FF] focus:bg-white focus:outline-none"
-                  />
-                  <span className="text-xs font-extrabold text-[#061138]">
-                    درصد (٪)
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -9291,21 +9401,7 @@ export const BusinessSettingsPage: React.FC = () => {
               <Button
                 variant="primary"
                 onClick={() => {
-                  if (
-                    !depositPercentRule ||
-                    depositPercentRule < 1 ||
-                    depositPercentRule > 100
-                  ) {
-                    showToast(
-                      'کادر «درصد بیعانه» خالی یا نامعتبر است! لطفاً عددی بین ۱ تا ۱۰۰ درصد وارد کنید.',
-                      'warning'
-                    );
-                    return;
-                  }
-                  const safePercent = Math.max(
-                    1,
-                    Math.min(100, depositPercentRule)
-                  );
+                  const safePercent = normalizeDepositPercent(depositPercentRule);
                   setDepositPercentRule(safePercent);
                   if (currentBiz) {
                     updateBusinessProfile(currentBiz.id, {

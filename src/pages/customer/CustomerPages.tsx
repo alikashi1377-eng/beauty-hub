@@ -50,7 +50,10 @@ import {
   toPersianDigits,
 } from '../../utils/formatters';
 import { realApiClient } from '../../services/apiClient';
-import { calculateBookingFinancialBreakdown } from '../../utils/financialEngine';
+import {
+  calculateBookingFinancialBreakdown,
+  normalizeDepositPercent,
+} from '../../utils/financialEngine';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -1476,24 +1479,9 @@ export const BookingConfirmPage: React.FC = () => {
           }
         );
 
-        const finalSalonNetCredit =
-          resolvedSalonNetCredit > 0
-            ? resolvedSalonNetCredit
-            : createdApt?.salonNetDepositCreditedToman ??
-              createdApt?.depositPaidToman ??
-              0;
-
-        const targetBiz = businesses.find(
-          (b) =>
-            (resolvedBizId && b.id === resolvedBizId) ||
-            (resolvedBizSlug && b.slug === resolvedBizSlug)
-        );
-        if (targetBiz && finalSalonNetCredit > 0) {
-          updateBusinessProfile(targetBiz.id, {
-            walletBalanceToman:
-              (targetBiz.walletBalanceToman ?? 0) + finalSalonNetCredit,
-          });
-        }
+        void resolvedBizId;
+        void resolvedBizSlug;
+        void resolvedBizName;
         navigate('/booking/result');
       } catch {
         if (!cancelled) {
@@ -1580,10 +1568,6 @@ export const BookingConfirmPage: React.FC = () => {
           depositPaidToman: depositAmountToman,
           paymentMethod: 'WALLET',
           paymentTrackingCode: walletRes.trackingCode,
-        });
-        updateBusinessProfile(business.id, {
-          walletBalanceToman:
-            (business.walletBalanceToman ?? 0) + salonNetDepositCreditedToman,
         });
         navigate('/booking/result');
       } catch (err) {
@@ -2359,7 +2343,7 @@ export const BookingResultPage: React.FC = () => {
     business?.ownerName ||
     business?.name ||
     '—';
-  const depositPercent = business?.depositPercent || 30;
+  const depositPercent = normalizeDepositPercent(business?.depositPercent);
   const paidDepositToman =
     latestAppointment?.depositPaidToman ??
     Math.round((selectedServicesSummary.totalPriceToman * depositPercent) / 100);
@@ -3468,7 +3452,9 @@ export const CustomerAppointmentsPage: React.FC = () => {
                 matchedBiz?.cancellationDeadlineHours ?? 12;
               const penaltyPercent =
                 matchedBiz?.lateCancellationPenaltyPercent ?? 50;
-              const depositPercent = matchedBiz?.depositPercent || 30;
+              const depositPercent = normalizeDepositPercent(
+                matchedBiz?.depositPercent
+              );
               const paidDeposit =
                 cancelTarget.depositPaidToman &&
                 cancelTarget.depositPaidToman > 0

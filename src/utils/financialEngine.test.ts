@@ -11,15 +11,37 @@ import {
 } from './financialEngine';
 import { AppointmentStatus, BusinessType } from '../types';
 
-test('normalizeDepositPercent strictly maps to [20, 30, 50, 100] and never allows 0 or arbitrary values', () => {
+test('normalizeDepositPercent enforces 20..100% deposit range (preserving presets 20, 30, 50, 100) and defaults invalid/0 to 30', () => {
   assert.deepEqual(ALLOWED_DEPOSIT_PERCENTS, [20, 30, 50, 100]);
   assert.equal(normalizeDepositPercent(0), 30);
   assert.equal(normalizeDepositPercent(undefined), 30);
   assert.equal(normalizeDepositPercent(10), 20);
   assert.equal(normalizeDepositPercent(20), 20);
+  assert.equal(normalizeDepositPercent(25), 25);
   assert.equal(normalizeDepositPercent(30), 30);
+  assert.equal(normalizeDepositPercent(35), 35);
+  assert.equal(normalizeDepositPercent(40), 40);
   assert.equal(normalizeDepositPercent(50), 50);
   assert.equal(normalizeDepositPercent(100), 100);
+  assert.equal(normalizeDepositPercent(150), 100);
+
+  const custom25 = calculateBookingFinancialBreakdown({
+    totalServicePriceToman: 400_000,
+    depositPercent: 25,
+    business: {
+      type: BusinessType.MenBarbershop,
+      typeLabel: 'پیرایش مردانه',
+      categorySlug: 'mens-barbershop',
+      targetGender: 'MALE',
+      name: 'سالن امیرحسین جزینی',
+    },
+  });
+  assert.equal(custom25.depositPercent, 25);
+  assert.equal(custom25.baseDepositToman, 100_000);
+  assert.equal(custom25.remainingInSalonToman, 300_000);
+  assert.equal(custom25.platformCommissionPercent, 3);
+  assert.equal(custom25.platformCommissionToman, 12_000);
+  assert.equal(custom25.salonNetDepositCreditedToman, 88_000);
 });
 
 test('resolveBusinessCommissionMeta differentiates Men (3%), Laser (4%), and Women (5%) accurately', () => {

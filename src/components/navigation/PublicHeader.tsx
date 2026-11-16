@@ -95,9 +95,9 @@ export const PublicHeader: React.FC = () => {
 
   return (
     <header className="bg-[#061138] text-white border-b border-[#1E293B] relative md:sticky md:top-0 z-30 shadow-[0_4px_20px_-6px_rgba(6,17,56,0.45)]">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-12 xl:px-16 py-2.5 sm:py-3">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 lg:px-12 xl:px-16 py-2.5 sm:py-3">
         {/* برند و هویت بصری Timeto */}
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <Link to="/" className="inline-flex items-center shrink-0">
             <TimetoLogo size="md" theme="dark" />
           </Link>
@@ -140,7 +140,7 @@ export const PublicHeader: React.FC = () => {
         {/* بخش کاربری و آواتار پروفایل (بدون منوی همبرگری در موبایل چون منوی چسبان پایین وجود دارد) */}
         <div
           ref={menuContainerRef}
-          className="relative flex items-center gap-2 shrink-0"
+          className="relative flex items-center gap-1.5 sm:gap-2 shrink-0"
         >
           {isPlatformAdmin ? (
             <Link
@@ -177,7 +177,7 @@ export const PublicHeader: React.FC = () => {
                   redirectTo: '/app',
                 })
               }
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-[0_4px_12px_-3px_rgba(0,87,255,0.5)]"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-xs font-extrabold text-white bg-gradient-to-r from-[#0057FF] to-[#00A3FF] rounded-full hover:opacity-95 transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-[0_4px_12px_-3px_rgba(0,87,255,0.5)]"
             >
               <Store className="w-3.5 h-3.5 shrink-0" />
               <span>ثبت سالن</span>
@@ -218,12 +218,12 @@ export const PublicHeader: React.FC = () => {
                 })
               }
               aria-label="ورود یا ثبت‌نام حساب کاربری"
-              className="inline-flex items-center gap-2 pl-3 pr-1.5 py-1 rounded-full bg-white/10 hover:bg-white/18 border border-[#00E5FF]/35 transition-all cursor-pointer"
+              className="inline-flex items-center gap-1.5 sm:gap-2 pl-2.5 pr-1 sm:pl-3 sm:pr-1.5 py-1 rounded-full bg-white/10 hover:bg-white/18 border border-[#00E5FF]/35 transition-all cursor-pointer shrink-0"
             >
-              <span className="w-8 h-8 rounded-full bg-[#0057FF]/30 border border-[#00E5FF]/40 text-[#00E5FF] inline-flex items-center justify-center shrink-0">
-                <User className="w-4 h-4" />
+              <span className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#0057FF]/30 border border-[#00E5FF]/40 text-[#00E5FF] inline-flex items-center justify-center shrink-0">
+                <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
-              <span className="text-xs font-extrabold text-white whitespace-nowrap">
+              <span className="text-[11px] sm:text-xs font-extrabold text-white whitespace-nowrap">
                 ورود / ثبت‌نام
               </span>
             </button>

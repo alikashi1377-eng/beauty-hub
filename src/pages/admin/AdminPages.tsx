@@ -138,10 +138,7 @@ function computeBusinessDossierMetrics(
     0,
     totalServiceToman - totalDepositCollectedToman
   );
-  const currentPayableToman = Math.max(
-    Number(business.walletBalanceToman) || 0,
-    totalNetToSalonToman
-  );
+  const currentPayableToman = totalNetToSalonToman;
 
   return {
     bookingsCount: bizApts.length,
@@ -230,17 +227,13 @@ const BusinessFinancialDossierTable: React.FC<{
         </Link>
       </div>
 
-      {/* راهنمای شفاف فرمول محاسبه بیعانه، کارمزد از کل خدمات و خالص واریزی */}
-      <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] text-xs text-[#1E3A8A] space-y-1.5 leading-relaxed">
-        <p className="font-extrabold text-[#061138]">
-          📌 فرمول دقیق محاسبه مالی و تسویه با سالن‌داران (مطابق مفاد قرارداد):
-        </p>
-        <p>
-          • <strong>مثال تک‌نوبت:</strong> اگر قیمت خدمت <strong>۱,۰۰۰,۰۰۰ تومان</strong> و بیعانه سالن <strong>۲۰٪</strong> باشد ← <strong>۲۰۰,۰۰۰ تومان</strong> بیعانه آنلاین در درگاه دریافت می‌شود و <strong>۸۰۰,۰۰۰ تومان</strong> را مشتری حضوری در سالن می‌پردازد. کارمزد پلتفرم (مثلاً <strong>۳٪ از کل ۱ میلیون تومان = ۳۰,۰۰۰ تومان</strong>) از ۲۰۰ هزار تومان بیعانه کسر شده و <strong>۱۷۰,۰۰۰ تومان خالص</strong> برای صاحب سالن واریز می‌گردد.
-        </p>
-        <p>
-          • <strong>مثال صورتحساب تسویه هفتگی:</strong> بابت <strong>۱۰,۰۰۰,۰۰۰ تومان</strong> کل خدمات ارائه‌شده (با بیعانه ۲۰٪ و کارمزد ۳٪) ← <strong>۸,۰۰۰,۰۰۰ تومان</strong> دریافتی حضوری سالن + <strong>۲,۰۰۰,۰۰۰ تومان</strong> بیعانه آنلاین منهای <strong>۳۰۰,۰۰۰ تومان</strong> سهم کارمزد پلتفرم (۳٪ از ۱۰ میلیون) = <strong>۱,۷۰۰,۰۰۰ تومان خالص قابل واریز به شبای سالن‌دار</strong>.
-        </p>
+      {/* راهنمای فرمول پویا محاسبه مالی بر اساس اطلاعات واقعی هر سالن */}
+      <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] text-xs text-[#1E3A8A] leading-relaxed">
+        <strong className="text-[#061138]">فرمول پویا و واقعی:</strong>{' '}
+        خالص قابل واریز به شبای هر کسب‌وکار به‌صورت خودکار برابر است با{' '}
+        <strong>«بیعانه واقعی دریافتی آنلاین»</strong> منهای{' '}
+        <strong>«کارمزد پلتفرم روی کل مبلغ خدمات»</strong> و منهای{' '}
+        <strong>«تسویه‌های پرداخت‌شده قبلی»</strong> (متناسب با درصد بیعانه و نرخ کارمزد اختصاصی همان سالن).
       </div>
 
       <ResponsiveTable
@@ -357,8 +350,10 @@ const BusinessFinancialDossierTable: React.FC<{
             key: 'netPayable',
             header: 'خالص قابل واریز به سالن (بیعانه منهای کارمزد)',
             render: ({ biz, dossier, totalAlreadySettledToman }) => {
-              const netPayable =
-                Number(biz.walletBalanceToman) || dossier.totalNetToSalonToman;
+              const netPayable = Math.max(
+                0,
+                dossier.totalNetToSalonToman - totalAlreadySettledToman
+              );
               return (
                 <div className="space-y-0.5 tabular-nums text-xs">
                   <span className="text-sm font-black text-emerald-700 block">
@@ -441,7 +436,10 @@ const BusinessFullInspectModal: React.FC<{
     specialists,
     appointments,
     paymentConfig,
+    settlementRequests,
+    updateBusinessProfile,
     settleBusinessDossierByAdmin,
+    showToast,
   } = usePrototypeData();
   if (!business) return null;
 
@@ -453,6 +451,13 @@ const BusinessFullInspectModal: React.FC<{
     appointments,
     services,
     paymentConfig
+  );
+  const paidSettlementsTotal = settlementRequests
+    .filter((s) => s.businessId === business.id && s.status === 'PAID')
+    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+  const netPayableToman = Math.max(
+    0,
+    dossier.totalNetToSalonToman - paidSettlementsTotal
   );
 
   return (
@@ -535,7 +540,7 @@ const BusinessFullInspectModal: React.FC<{
                 ۵. خالص قابل واریز به سالن:
               </span>
               <strong className="text-sm font-black text-emerald-700 block">
-                {formatPriceToman(Number(business.walletBalanceToman) || dossier.totalNetToSalonToman)}
+                {formatPriceToman(netPayableToman)}
               </strong>
               <span className="text-[10px] text-emerald-800 block">
                 بیعانه منهای کارمزد کل خدمت
@@ -549,14 +554,40 @@ const BusinessFullInspectModal: React.FC<{
                 {business.bankShebaNumber || business.bankCardNumber || 'ثبت نشده'}
               </strong>
             </span>
-            <span>
-              وضعیت تعهدنامه و قرارداد:{' '}
-              <strong className={business.contractAccepted ? 'text-emerald-700' : 'text-amber-700'}>
-                {business.contractAccepted
-                  ? `تایید شده (${business.contractAcceptedAtJalali || 'ثبت در سامانه'})`
-                  : 'هنوز تیک قرارداد زده نشده'}
-              </strong>
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVip = !business.isVipPartner;
+                  updateBusinessProfile(business.id, {
+                    isVipPartner: nextVip,
+                    vipCommissionPercent: nextVip ? 0 : undefined,
+                  });
+                  showToast(
+                    nextVip
+                      ? `نشان «👑 سفیر برند VIP» و کارمزد ۰٪ برای «${business.name}» فعال شد.`
+                      : `نشان سفیر برند VIP از «${business.name}» برداشته شد و کارمزد به تعرفه عادی رسته بازگشت.`
+                  );
+                }}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border cursor-pointer transition-colors ${
+                  business.isVipPartner
+                    ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                    : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                }`}
+              >
+                {business.isVipPartner
+                  ? '✓ سفیر VIP فعال (لغو یا تغییر)'
+                  : '👑 فعال‌سازی فوری سفیر VIP (۰٪ کارمزد)'}
+              </button>
+              <span>
+                وضعیت تعهدنامه و قرارداد:{' '}
+                <strong className={business.contractAccepted ? 'text-emerald-700' : 'text-amber-700'}>
+                  {business.contractAccepted
+                    ? `تایید شده (${business.contractAcceptedAtJalali || 'ثبت در سامانه'})`
+                    : 'هنوز تیک قرارداد زده نشده'}
+                </strong>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -843,13 +874,12 @@ export const AdminDashboardPage: React.FC = () => {
   let totalSalonNetShareToman = 0;
 
   for (const apt of realAppointments) {
-    const biz =
-      realBusinesses.find(
-        (b) =>
-          b.id === apt.businessId ||
-          b.slug === apt.businessId ||
-          (apt.businessName && b.name.trim() === apt.businessName.trim())
-      ) || realBusinesses[0];
+    const biz = realBusinesses.find(
+      (b) =>
+        b.id === apt.businessId ||
+        b.slug === apt.businessId ||
+        (apt.businessName && b.name.trim() === apt.businessName.trim())
+    );
     const srv = services.find((s) => s.id === apt.serviceId);
     const servicePrice = Math.max(
       0,
@@ -1535,9 +1565,9 @@ export const AdminBusinessesPage: React.FC = () => {
     showToast,
   } = usePrototypeData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ApprovalStatus | 'ALL'>(
-    'ALL'
-  );
+  const [statusFilter, setStatusFilter] = useState<
+    ApprovalStatus | 'ALL' | 'VIP'
+  >('ALL');
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [permDeleteTargetId, setPermDeleteTargetId] = useState<string | null>(
     null
@@ -1644,6 +1674,8 @@ export const AdminBusinessesPage: React.FC = () => {
     const matchStatus =
       statusFilter === 'ALL'
         ? b.approvalStatus !== 'REJECTED'
+        : statusFilter === 'VIP'
+        ? b.approvalStatus !== 'REJECTED' && Boolean(b.isVipPartner)
         : b.approvalStatus === statusFilter;
     return matchQuery && matchStatus;
   });
@@ -1748,12 +1780,6 @@ export const AdminBusinessesPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* جدول پرونده مالی و تسویه هفتگی کسب‌وکارها */}
-      <BusinessFinancialDossierTable
-        businesses={sourceBusinesses}
-        onInspectBusiness={(biz) => setInspectingBusiness(biz)}
-      />
-
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
           <div className="flex flex-wrap items-center gap-2">
@@ -1763,6 +1789,14 @@ export const AdminBusinessesPage: React.FC = () => {
                 label: 'مراکز فعال (بدون ردشده‌ها)',
                 count: activeBusinesses.length,
                 isTrash: false,
+                isVipTab: false,
+              },
+              {
+                id: 'VIP',
+                label: '👑 سفیران برند VIP',
+                count: activeBusinesses.filter((b) => Boolean(b.isVipPartner)).length,
+                isTrash: false,
+                isVipTab: true,
               },
               {
                 id: 'PENDING_REVIEW',
@@ -1771,6 +1805,7 @@ export const AdminBusinessesPage: React.FC = () => {
                   (b) => b.approvalStatus === 'PENDING_REVIEW'
                 ).length,
                 isTrash: false,
+                isVipTab: false,
               },
               {
                 id: 'APPROVED',
@@ -1779,12 +1814,14 @@ export const AdminBusinessesPage: React.FC = () => {
                   (b) => b.approvalStatus === 'APPROVED'
                 ).length,
                 isTrash: false,
+                isVipTab: false,
               },
               {
                 id: 'REJECTED',
                 label: '🗑️ زباله‌دان (رد صلاحیت‌شده)',
                 count: trashedBusinesses.length,
                 isTrash: true,
+                isVipTab: false,
               },
             ].map((tab) => {
               const active = statusFilter === tab.id;
@@ -1793,15 +1830,19 @@ export const AdminBusinessesPage: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() =>
-                    setStatusFilter(tab.id as ApprovalStatus | 'ALL')
+                    setStatusFilter(tab.id as ApprovalStatus | 'ALL' | 'VIP')
                   }
                   className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
                     active
                       ? tab.isTrash
                         ? 'bg-rose-600 text-white shadow-xs'
+                        : tab.isVipTab
+                        ? 'bg-amber-500 text-[#061138] shadow-xs'
                         : 'bg-[#0057FF] text-white shadow-xs'
                       : tab.isTrash
                       ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      : tab.isVipTab
+                      ? 'bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100'
                       : 'bg-[#F8FAFC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF]'
                   }`}
                 >
@@ -1838,10 +1879,11 @@ export const AdminBusinessesPage: React.FC = () => {
               id="adm-biz-status"
               value={statusFilter}
               onChange={(e) =>
-                setStatusFilter(e.target.value as ApprovalStatus | 'ALL')
+                setStatusFilter(e.target.value as ApprovalStatus | 'ALL' | 'VIP')
               }
               options={[
                 { value: 'ALL', label: 'همه مراکز فعال (بدون زباله‌دان)' },
+                { value: 'VIP', label: '👑 فقط سالن‌های سفیر برند VIP' },
                 { value: 'APPROVED', label: 'تاییدشده' },
                 { value: 'PENDING_REVIEW', label: 'در انتظار بررسی' },
                 {
@@ -3370,6 +3412,8 @@ export const AdminSubscriptionsPage: React.FC = () => {
     updateAdPackage,
     businesses,
     updateBusinessProfile,
+    grantBusinessPlanOrAdByAdmin,
+    paymentConfig,
     paymentOrders,
     reviewPaymentOrder,
     showToast,
@@ -3520,18 +3564,185 @@ export const AdminSubscriptionsPage: React.FC = () => {
     HERO_SPOTLIGHT: 'ویترین طلایی بالای صفحه اول',
   };
 
+  const realActiveBusinesses = businesses.filter(
+    (b) => !b.isSampleShowcase && b.approvalStatus !== 'REJECTED'
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی و تبلیغات · کنترل کامل بسته‌های تبلیغاتی (Boost) و شارژ پیامک"
-        title="مدیریت جایگاه‌های تبلیغاتی ویژه (صدر جست‌وجو / بنر اول) و بسته‌های پیامک"
-        subtitle="ویرایش مستقیم تعرفه بسته‌های تبلیغاتی، تایید سفارش‌های خرید سالن‌ها و تنظیم نحوه قرارگیری، مدت زمان تبلیغ و شارژ پیامک هر کسب‌وکار"
+        kicker="سفیر برند VIP، کارمزد اختصاصی و بسته‌های تبلیغاتی (Boost)"
+        title="مدیریت نشان «سفیر برند VIP»، کارمزد اختصاصی سالن‌ها و تبلیغات ویژه"
+        subtitle="اعطای مستقیم نشان 👑 سفیر برند VIP و تعیین نرخ کارمزد اختصاصی (۰٪ تا ۴٪) برای هر کسب‌وکار، به همراه تنظیم جایگاه بنرها و بسته‌های پیامک"
         routePattern="/admin/subscriptions"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'تبلیغات ویژه و بسته‌ها' },
+          { label: 'سفیر برند VIP و تبلیغات' },
         ]}
       />
+
+      {/* بخش ۱ (جدید و اصلی): مدیریت مستقیم نشان سفیر برند VIP و نرخ کارمزد اختصاصی هر سالن */}
+      <Card className="border-2 border-amber-400/70 bg-gradient-to-br from-amber-50/70 via-white to-[#FFFBEB] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 pb-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-amber-600" />
+              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+                مدیریت مستقیم نشان «👑 سفیر برند VIP» و نرخ کارمزد اختصاصی سالن‌ها
+              </h2>
+            </div>
+            <p className="text-xs text-[#475569] leading-relaxed">
+              به هر سالن شاخصی که مایل هستید با ۱ کلیک نشان <strong>👑 سفیر برند VIP</strong> اعطا کنید یا نرخ کارمزد پلتفرم آن را به‌صورت اختصاصی (۰٪ معافیت کامل، ۲٪، ۳٪، ۴٪ یا نرخ عادی رسته) در دیتابیس ذخیره نمایید.
+            </p>
+          </div>
+          <Link to="/admin/payments">
+            <Button variant="outline" size="sm">
+              <span>مشاهده تسویه شبا و نرخ پایه رسته‌ها ←</span>
+            </Button>
+          </Link>
+        </div>
+
+        {realActiveBusinesses.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-white border border-amber-200 text-xs text-[#64748B] text-center">
+            هنوز کسب‌وکار فعالی ثبت‌نام نکرده است.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {realActiveBusinesses.map((biz) => {
+              const commMeta = resolveBusinessCommissionMeta(biz, paymentConfig);
+              const isVip = Boolean(biz.isVipPartner);
+              const currentRate = isVip
+                ? biz.vipCommissionPercent ?? 0
+                : commMeta.commissionPercent;
+              return (
+                <div
+                  key={biz.id}
+                  className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                    isVip
+                      ? 'bg-white border-amber-400 ring-2 ring-amber-200/60 shadow-xs'
+                      : 'bg-white border-[#CBD5E1]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h3 className="text-sm font-extrabold text-[#061138] truncate">
+                          {biz.name}
+                        </h3>
+                        {isVip ? (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                            👑 سفیر برند VIP
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-[11px] text-[#475569]">
+                        {biz.ownerName || 'صاحب کسب‌وکار'} · {biz.city} ({biz.neighborhood}) ·{' '}
+                        <span className="font-bold text-[#0057FF]">
+                          بیعانه: {toPersianDigits(normalizeDepositPercent(biz.depositPercent))}٪
+                        </span>
+                      </p>
+                      <p className="text-[11px] font-extrabold text-[#061138]">
+                        کارمزد فعلی در تسویه:{' '}
+                        <span className={isVip ? 'text-amber-700' : 'text-[#0057FF]'}>
+                          {toPersianDigits(currentRate)}٪ از کل خدمت
+                        </span>{' '}
+                        ({commMeta.segmentTitle})
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isVip) {
+                          updateBusinessProfile(biz.id, {
+                            isVipPartner: false,
+                            vipCommissionPercent: undefined,
+                            sponsoredLabel: undefined,
+                          });
+                          showToast(
+                            `نشان سفیر برند VIP از «${biz.name}» برداشته شد و به تعرفه عادی رسته بازگشت.`
+                          );
+                        } else {
+                          grantBusinessPlanOrAdByAdmin({
+                            businessId: biz.id,
+                            grantType: 'VIP_AMBASSADOR',
+                            planId: 'plan-vip-brand',
+                            sponsoredPlacement: 'HERO_SPOTLIGHT',
+                            sponsoredLabel: '👑 سالن منتخب و سفیر برند تایم‌تو',
+                            durationDays: 30,
+                            bonusSmsCount: 200,
+                            isTrialGift: true,
+                            isVipPartner: true,
+                            vipCommissionPercent: 0,
+                          });
+                        }
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border shrink-0 cursor-pointer transition-colors ${
+                        isVip
+                          ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                          : 'bg-amber-500 text-[#061138] border-amber-600 hover:bg-amber-400'
+                      }`}
+                    >
+                      {isVip ? 'لغو نشان VIP' : '👑 اعطای بسته VIP + ۰٪'}
+                    </button>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-[#E2E8F0] space-y-1.5">
+                    <span className="text-[10px] font-bold text-[#64748B] block">
+                      تعیین سریع نرخ کارمزد اختصاصی این سالن:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { label: '۰٪ (رایگان VIP)', vip: true, rate: 0 },
+                        { label: '۲٪ ویژه', vip: true, rate: 2 },
+                        { label: '۳٪ ترجیحی', vip: true, rate: 3 },
+                        { label: '۴٪ توافقی', vip: true, rate: 4 },
+                        { label: 'نرخ عادی رسته', vip: false, rate: undefined },
+                      ].map((opt) => {
+                        const selected = opt.vip
+                          ? isVip && (biz.vipCommissionPercent ?? 0) === opt.rate
+                          : !isVip;
+                        return (
+                          <button
+                            key={opt.label}
+                            type="button"
+                            onClick={() => {
+                              updateBusinessProfile(biz.id, {
+                                isVipPartner: opt.vip,
+                                vipCommissionPercent: opt.rate,
+                                ...(opt.vip && !biz.sponsoredLabel
+                                  ? {
+                                      sponsoredLabel:
+                                        '👑 سالن منتخب و سفیر برند تایم‌تو',
+                                    }
+                                  : {}),
+                              });
+                              showToast(
+                                opt.vip
+                                  ? `کارمزد اختصاصی «${biz.name}» روی ${toPersianDigits(
+                                      opt.rate ?? 0
+                                    )}٪ با نشان سفیر برند VIP ذخیره شد.`
+                                  : `نرخ کارمزد «${biz.name}» به تعرفه عادی رسته بازگشت.`
+                              );
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer transition-colors ${
+                              selected
+                                ? 'bg-[#061138] text-amber-300 border-[#061138]'
+                                : 'bg-[#F8FAFC] text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       {/* راهنمای عملی مدیر کل: دقیقاً کجا چیکار کنم؟ */}
       <Card className="bg-[#F3F6FC] border-2 border-[#0057FF]/25 space-y-3">
@@ -3540,11 +3751,6 @@ export const AdminSubscriptionsPage: React.FC = () => {
             <Sparkles className="w-4 h-4 shrink-0" />
             <span>راهنمای سریع مدیر کل: کجا چیکار کنم؟</span>
           </p>
-          <Link to="/admin/payments">
-            <Button variant="outline" size="sm">
-              <span>مشاهده صورتحساب‌ها، نرخ کارمزدها و تسویه شبا ←</span>
-            </Button>
-          </Link>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#061138]">
           <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
@@ -4359,6 +4565,8 @@ export const AdminPaymentsPage: React.FC = () => {
     paymentOrders,
     reviewPaymentOrder,
     businesses,
+    appointments,
+    services,
     settlementRequests,
     markSettlementPaid,
     runNightlyBatchSettlement,
@@ -4414,9 +4622,19 @@ export const AdminPaymentsPage: React.FC = () => {
     });
   };
 
-  const salonsWithWalletBalance = businesses.filter(
-    (b) => !b.isSampleShowcase && (Number(b.walletBalanceToman) || 0) > 0
-  );
+  const salonsWithWalletBalance = businesses.filter((b) => {
+    if (b.isSampleShowcase) return false;
+    const dossier = computeBusinessDossierMetrics(
+      b,
+      appointments,
+      services,
+      paymentConfig
+    );
+    const paidSum = settlementRequests
+      .filter((s) => s.businessId === b.id && s.status === 'PAID')
+      .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
+    return Math.max(0, dossier.totalNetToSalonToman - paidSum) > 0;
+  });
 
   return (
     <div className="space-y-6">
@@ -4952,13 +5170,12 @@ export const AdminReportsPage: React.FC = () => {
 
   let onlineDepositsToman = 0;
   for (const apt of realAppointments) {
-    const biz =
-      realBusinesses.find(
-        (b) =>
-          b.id === apt.businessId ||
-          b.slug === apt.businessId ||
-          (apt.businessName && b.name.trim() === apt.businessName.trim())
-      ) || realBusinesses[0];
+    const biz = realBusinesses.find(
+      (b) =>
+        b.id === apt.businessId ||
+        b.slug === apt.businessId ||
+        (apt.businessName && b.name.trim() === apt.businessName.trim())
+    );
     const srv = services.find((s) => s.id === apt.serviceId);
     const servicePrice = Math.max(
       0,
@@ -5368,6 +5585,7 @@ export const AdminSettingsPage: React.FC = () => {
   const [bookingOwnerBodyIdInput, setBookingOwnerBodyIdInput] = useState('');
   const [bookingCustomerBodyIdInput, setBookingCustomerBodyIdInput] =
     useState('');
+  const [bookingCancelBodyIdInput, setBookingCancelBodyIdInput] = useState('');
   const [senderInput, setSenderInput] = useState('');
   const [smsConfigured, setSmsConfigured] = useState(false);
   const [smsSaving, setSmsSaving] = useState(false);
@@ -5400,6 +5618,9 @@ export const AdminSettingsPage: React.FC = () => {
           setBookingCustomerBodyIdInput(
             String(data.bookingCustomerTemplate || '')
           );
+        }
+        if (data.bookingCancelTemplate !== undefined) {
+          setBookingCancelBodyIdInput(String(data.bookingCancelTemplate || ''));
         }
         if (data.sender) setSenderInput(String(data.sender));
       })
@@ -5466,6 +5687,7 @@ export const AdminSettingsPage: React.FC = () => {
           template: bodyIdInput.trim(),
           bookingOwnerTemplate: bookingOwnerBodyIdInput.trim(),
           bookingCustomerTemplate: bookingCustomerBodyIdInput.trim(),
+          bookingCancelTemplate: bookingCancelBodyIdInput.trim(),
           sender: senderInput.trim(),
         }),
       });
@@ -5655,7 +5877,7 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                   <code dir="ltr">{'{3}'}</code>) در ملی‌پیامک ثبت کرده‌اید، کد آن‌ها را در زیر وارد نمایید:
                 </p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <FormField
                   id="mp-booking-owner-id"
                   label="کد الگوی پیامک نوبت جدید برای سالن‌دار (اختیاری)"
@@ -5672,8 +5894,8 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
 
                 <FormField
                   id="mp-booking-customer-id"
-                  label="کد الگوی پیامک رسید نوبت برای مشتری (اختیاری)"
-                  hint="پترن ۴ متغیره رسید رزرو برای مشتری"
+                  label="کد الگوی پیامک تایید نوبت برای مشتری (اختیاری)"
+                  hint="پترن ۴ متغیره تایید رزرو برای مشتری"
                 >
                   <Input
                     id="mp-booking-customer-id"
@@ -5683,6 +5905,22 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                       setBookingCustomerBodyIdInput(e.target.value)
                     }
                     placeholder="خالی = استفاده از الگوی اصلی"
+                  />
+                </FormField>
+
+                <FormField
+                  id="mp-booking-cancel-id"
+                  label="کد الگوی پیامک لغو نوبت برای مشتری (اختیاری)"
+                  hint="پترن ۴ متغیره لغو رزرو (هرگز از الگوی تایید استفاده نمی‌کند)"
+                >
+                  <Input
+                    id="mp-booking-cancel-id"
+                    dir="ltr"
+                    value={bookingCancelBodyIdInput}
+                    onChange={(e) =>
+                      setBookingCancelBodyIdInput(e.target.value)
+                    }
+                    placeholder="خالی = ارسال پیامک متنی لغو"
                   />
                 </FormField>
               </div>

@@ -207,6 +207,7 @@ export function createApiApp(
       template: effective.template ?? '',
       bookingOwnerTemplate: effective.bookingOwnerTemplate ?? '',
       bookingCustomerTemplate: effective.bookingCustomerTemplate ?? '',
+      bookingCancelTemplate: effective.bookingCancelTemplate ?? '',
       sender: effective.sender ?? '',
       apiUrl: effective.apiUrl ?? '',
     });
@@ -235,6 +236,10 @@ export function createApiApp(
         req.body?.bookingCustomerTemplate !== undefined
           ? String(req.body.bookingCustomerTemplate).trim()
           : undefined;
+      const bookingCancelTemplateRaw =
+        req.body?.bookingCancelTemplate !== undefined
+          ? String(req.body.bookingCancelTemplate).trim()
+          : undefined;
       const senderRaw = String(req.body?.sender ?? '').trim();
 
       const config = customEnv ?? loadServerEnv();
@@ -255,6 +260,10 @@ export function createApiApp(
         bookingCustomerTemplateRaw !== undefined
           ? bookingCustomerTemplateRaw || null
           : currentEffective.bookingCustomerTemplate ?? null;
+      const finalBookingCancelTemplate =
+        bookingCancelTemplateRaw !== undefined
+          ? bookingCancelTemplateRaw || null
+          : currentEffective.bookingCancelTemplate ?? null;
 
       if (providerRaw === 'melipayamak' && (!finalApiKey || !finalTemplate)) {
         res.status(400).json({
@@ -272,6 +281,7 @@ export function createApiApp(
         template: finalTemplate,
         bookingOwnerTemplate: finalBookingOwnerTemplate,
         bookingCustomerTemplate: finalBookingCustomerTemplate,
+        bookingCancelTemplate: finalBookingCancelTemplate,
         sender: senderRaw || currentEffective.sender || null,
       });
 
@@ -283,6 +293,7 @@ export function createApiApp(
         template: updated?.template ?? '',
         bookingOwnerTemplate: updated?.bookingOwnerTemplate ?? '',
         bookingCustomerTemplate: updated?.bookingCustomerTemplate ?? '',
+        bookingCancelTemplate: updated?.bookingCancelTemplate ?? '',
         sender: updated?.sender ?? '',
         message:
           'تنظیمات درگاه ملی‌پیامک با موفقیت ذخیره و به صورت آنی روی سرور فعال شد.',
@@ -474,7 +485,7 @@ export function createApiApp(
           .status(403)
           .type('html')
           .send(
-            `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>۴۰۳ - عدم مجوز دسترسی | BeautyHub</title><style>body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#FAF9FC;color:#120F1D;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}main{max-width:460px;width:100%;background:#fff;border:1px solid #E6E3EE;border-radius:16px;padding:32px;text-align:center;box-shadow:0 4px 20px rgba(18,15,29,.05)}h1{font-size:20px;margin:0 0 12px;color:#9D174D}p{font-size:14px;line-height:1.8;color:#4A4458;margin:0 0 24px}a{display:inline-block;padding:10px 20px;background:#2A0F54;color:#fff;text-decoration:none;border-radius:12px;font-size:13px;font-weight:600}</style></head><body><main><h1>۴۰۳ — عدم مجوز دسترسی (Forbidden)</h1><p>حساب کاربری شما دارای نقش مدیر کل سامانه (PLATFORM_ADMIN) نیست و مجوز ورود به کنسول مدیریت را ندارد.</p><a href="/">بازگشت به صفحه اصلی</a></main></body></html>`
+            `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>۴۰۳ - عدم مجوز دسترسی | Timeto (تایم تو)</title><style>body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:#FAF9FC;color:#120F1D;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}main{max-width:460px;width:100%;background:#fff;border:1px solid #E6E3EE;border-radius:16px;padding:32px;text-align:center;box-shadow:0 4px 20px rgba(18,15,29,.05)}h1{font-size:20px;margin:0 0 12px;color:#9D174D}p{font-size:14px;line-height:1.8;color:#4A4458;margin:0 0 24px}a{display:inline-block;padding:10px 20px;background:#2A0F54;color:#fff;text-decoration:none;border-radius:12px;font-size:13px;font-weight:600}</style></head><body><main><h1>۴۰۳ — عدم مجوز دسترسی (Forbidden)</h1><p>حساب کاربری شما دارای نقش مدیر کل سامانه (PLATFORM_ADMIN) نیست و مجوز ورود به کنسول مدیریت را ندارد.</p><a href="/">بازگشت به صفحه اصلی</a></main></body></html>`
           );
       };
 

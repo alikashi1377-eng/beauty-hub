@@ -116,12 +116,23 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [otpTimerSeconds, setOtpTimerSeconds] = useState<number>(110);
   const otpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
+  const isLegacyPlaceholderName = (raw?: string | null): boolean => {
+    const s = String(raw || '').trim();
+    if (!s) return true;
+    const lower = s.toLowerCase().replace(/\s+/g, '');
+    return (
+      lower.includes('beautyhub') ||
+      lower.includes('beutyhub') ||
+      s.includes('بیوتی') ||
+      s === 'کاربر تایم تو' ||
+      s === 'کاربر تایم‌تو'
+    );
+  };
+
   // فیلدهای گام ۳ (پروفایل: عکس اختیاری + نام + نام خانوادگی)
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [firstName, setFirstName] = useState<string>(
-    authUser?.fullName &&
-      authUser.fullName !== 'کاربر تایم تو' &&
-      authUser.fullName !== 'کاربر BeautyHub'
+    authUser?.fullName && !isLegacyPlaceholderName(authUser.fullName)
       ? authUser.fullName
       : ''
   );
@@ -162,11 +173,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         initialScreen === 'REGISTER_STEP_4_SALON')
     ) {
       setPhone(authUser.phone || '');
-      if (
-        authUser.fullName &&
-        authUser.fullName !== 'کاربر تایم تو' &&
-        authUser.fullName !== 'کاربر BeautyHub'
-      ) {
+      if (authUser.fullName && !isLegacyPlaceholderName(authUser.fullName)) {
         setFirstName(authUser.fullName);
       }
       setScreen('REGISTER_STEP_4_SALON');
@@ -560,12 +567,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         const existingAcc = accounts[normalizedPhone];
         const isSuperAdmin = normalizedPhone === '09138201042';
         const hasRealProfileName =
-          Boolean(existingAcc?.fullName) ||
-          Boolean(
-            user.fullName &&
-              user.fullName !== 'کاربر تایم تو' &&
-              user.fullName !== 'کاربر BeautyHub'
-          );
+          Boolean(existingAcc?.fullName && !isLegacyPlaceholderName(existingAcc.fullName)) ||
+          Boolean(user.fullName && !isLegacyPlaceholderName(user.fullName));
 
         if (!hasRealProfileName && !isSuperAdmin) {
           setScreen('REGISTER_STEP_3_PROFILE');

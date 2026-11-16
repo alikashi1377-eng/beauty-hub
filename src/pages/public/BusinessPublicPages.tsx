@@ -27,6 +27,7 @@ import {
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import {
   formatPriceToman,
+  formatStartingTariff,
   formatWorkingHourDisplay,
   normalizeIranMobileInput,
   toPersianDigits,
@@ -131,6 +132,13 @@ export const BusinessPublicProfileView: React.FC<{
   const bizServices = services.filter(
     (s) => s.businessId === business.id && s.isActive !== false
   );
+  const pricedServiceValues = bizServices
+    .map((s) => Number(s.priceToman) || 0)
+    .filter((p) => p > 0);
+  const effectiveStartingPriceToman =
+    pricedServiceValues.length > 0
+      ? Math.min(...pricedServiceValues)
+      : Number(business.startingPriceToman) || 0;
   const popularServices = bizServices.slice(0, 3);
   const serviceCategories = Array.from(
     new Set(bizServices.map((s) => s.category))
@@ -519,7 +527,7 @@ export const BusinessPublicProfileView: React.FC<{
                 <div className="text-xs">
                   <span className="text-[#6B6480] block">شروع تعرفه خدمات</span>
                   <strong className="text-sm font-extrabold text-[#8B5CF6] tabular-nums">
-                    {formatPriceToman(business.startingPriceToman)}
+                    {formatStartingTariff(effectiveStartingPriceToman)}
                   </strong>
                 </div>
                 {business.isSampleShowcase ? (
@@ -1557,7 +1565,7 @@ export const BusinessPublicProfileView: React.FC<{
               <div className="flex items-center justify-between">
                 <span>شروع تعرفه خدمات:</span>
                 <span className="font-bold text-white tabular-nums">
-                  {formatPriceToman(business.startingPriceToman)}
+                  {formatStartingTariff(effectiveStartingPriceToman)}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -1820,7 +1828,7 @@ export const BusinessPublicProfileView: React.FC<{
             {business.name}
           </p>
           <p className="text-[11px] text-[#6B6480] tabular-nums">
-            شروع از {formatPriceToman(business.startingPriceToman)}
+            شروع از {formatStartingTariff(effectiveStartingPriceToman)}
           </p>
         </div>
         {business.isSampleShowcase ? (

@@ -3222,7 +3222,146 @@ test('Booking SMS Notification: POST /api/v1/appointments/notify-booking dispatc
   }
 });
 
+test('Appointment Cancellation SMS: notify-status with CANCELLED never invokes SMS_BOOKING_CUSTOMER_TEMPLATE (تایید شد) and uses cancel template or clean cancellation notice', async () => {
+  const capturedPayloads: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
 
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map(),
+    admins: new Map(),
+    memberships: [],
+    businesses: new Map(),
+    services: new Map(),
+    appointments: new Map(),
+  };
+  const pool = createSecurityTestPool(state);
 
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+      SMS_PROVIDER: 'melipayamak',
+      SMS_API_KEY: 'test-melipayamak-token',
+      SMS_SENDER: '50004001',
+      SMS_OTP_TEMPLATE: '112233',
+      SMS_BOOKING_CUSTOMER_TEMPLATE: '998877',
+    },
+    pool
+  );
 
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = typeof input === 'string' ? input : input.toString();
+    if (urlStr.includes('console.melipayamak.com')) {
+      const parsedBody = init?.body ? JSON.parse(String(init.body)) : {};
+      capturedPayloads.push({ url: urlStr, body: parsedBody });
+      return new Response(JSON.stringify({ recId: '123456789' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
 
+  try {
+    const cancelRes = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'CANCELLED',
+        customerName: 'سارا محمدی',
+        customerPhone: '09131112233',
+        businessName: 'سالن رز',
+        dateJalali: '۱۴۰۵/۰۹/۱۵',
+        timeSlot: '۱۶:۰۰',
+      }),
+    });
+    assert.equal(cancelRes.status, 200);
+    const cancelJson = (await cancelRes.json()) as { customerSmsSent: boolean };
+    assert.equal(cancelJson.customerSmsSent, true);
+    assert.equal(capturedPayloads.length, 1);
+    assert.ok(capturedPayloads[0].url.includes('/api/send/simple/'));
+    assert.notEqual(capturedPayloads[0].body.bodyId, 998877);
+    const sentCancelText = String(capturedPayloads[0].body.text || '');
+    assert.ok(sentCancelText.includes('لغو شد'));
+    assert.ok(!sentCancelText.includes('تایید شد'));
+
+    // در وضعیت CONFIRMED باید همچنان پترن تایید مشتری (998877) فراخوانی شود
+    const confirmRes = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'CONFIRMED',
+        customerName: 'سارا محمدی',
+        customerPhone: '09131112233',
+        businessName: 'سالن رز',
+        dateJalali: '۱۴۰۵/۰۹/۱۵',
+        timeSlot: '۱۷:۰۰',
+      }),
+    });
+    assert.equal(confirmRes.status, 200);
+    const confirmJson = (await confirmRes.json()) as { customerSmsSent: boolean };
+    assert.equal(confirmJson.customerSmsSent, true);
+    assert.equal(capturedPayloads.length, 2);
+    assert.equal(capturedPayloads[1].body.bodyId, 998877);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await srv.close();
+  }
+});
+
+test('SQL integrity: syncRegisteredAccountsInDb preserves existing DB business_meta_ext values and normalizes legacy beutyhub/BeautyHub names', async () => {
+  const executedQueries: Array<{ sql: string; params?: unknown[] }> = [];
+  const spyPool = {
+    async connect() {
+      return {
+        async query(sql: string, params?: unknown[]) {
+          executedQueries.push({ sql, params });
+          if (sql.includes('FROM platform_kv_store')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('INSERT INTO users')) {
+            return { rowCount: 1, rows: [{ id: 'usr-1', is_active: true }] };
+          }
+          if (sql.includes('SELECT id FROM businesses')) {
+            return { rowCount: 1, rows: [{ id: 'biz-uuid-1' }] };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+
+  const { syncRegisteredAccountsInDb } = await import('./repositories/beautyhubRepository');
+  await syncRegisteredAccountsInDb(spyPool as never, [
+    {
+      phone: '09138887766',
+      fullName: 'کاربر beutyhub',
+      city: 'تهران',
+      role: 'owner',
+      businessId: 'biz-ext-1',
+      depositPercent: 30,
+    },
+  ]);
+
+  const userInsert = executedQueries.find((q) => q.sql.includes('INSERT INTO users'));
+  assert.ok(userInsert);
+  assert.equal(userInsert.params?.[1], 'کاربر تایم تو');
+  assert.equal(userInsert.params?.[2], 'اصفهان');
+  assert.ok(userInsert.sql.includes("NOT ILIKE '%beuty%'"));
+
+  const metaUpsert = executedQueries.find((q) =>
+    q.sql.includes('INSERT INTO business_meta_ext')
+  );
+  assert.ok(metaUpsert);
+  // مقادیر موجود در دیتابیس (business_meta_ext.extra_json) باید در طرف راست || قرار گیرند تا سینک کلاینت تنظیمات دیتابیس را بازنویسی نکند
+  assert.ok(
+    metaUpsert.sql.includes(
+      "SET extra_json = $2::jsonb || COALESCE(business_meta_ext.extra_json, '{}'::jsonb)"
+    )
+  );
+});

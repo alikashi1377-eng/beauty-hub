@@ -23,6 +23,7 @@ import { BusinessType } from '../../types';
 import {
   computeFairRotationScore,
   formatPriceToman,
+  formatStartingTariff,
   toPersianDigits,
 } from '../../utils/formatters';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
@@ -271,7 +272,7 @@ export const HomePage: React.FC = () => {
               </h1>
 
               <p className="pt-1 text-xs sm:text-sm lg:text-base text-white/95 font-semibold leading-relaxed max-w-xs sm:max-w-sm drop-shadow-xs">
-                رزرو آنلاین خدمات زیبایی
+                رزرو آنلاین خدمات زیبایی{' '}
                 <br />
                 و مراقبت فردی در بهترین سالن‌ها
               </p>
@@ -461,7 +462,22 @@ export const HomePage: React.FC = () => {
                 {homeBannerPrimary ? (
                   <span className="text-xs font-bold text-slate-200 tabular-nums">
                     شروع تعرفه از:{' '}
-                    {formatPriceToman(homeBannerPrimary.startingPriceToman)}
+                    {formatStartingTariff(
+                      (() => {
+                        const prices = services
+                          .filter(
+                            (s) =>
+                              s.isActive !== false &&
+                              Number(s.priceToman) > 0 &&
+                              (s.businessId === homeBannerPrimary.id ||
+                                s.businessId === homeBannerPrimary.slug)
+                          )
+                          .map((s) => Number(s.priceToman));
+                        return prices.length > 0
+                          ? Math.min(...prices)
+                          : homeBannerPrimary.startingPriceToman;
+                      })()
+                    )}
                   </span>
                 ) : null}
               </div>
@@ -522,7 +538,22 @@ export const HomePage: React.FC = () => {
                     شروع تعرفه خدمات
                   </span>
                   <span className="text-sm font-extrabold text-[#0057FF] tabular-nums">
-                    {formatPriceToman(homeBannerSecondary.startingPriceToman)}
+                    {formatStartingTariff(
+                      (() => {
+                        const prices = services
+                          .filter(
+                            (s) =>
+                              s.isActive !== false &&
+                              Number(s.priceToman) > 0 &&
+                              (s.businessId === homeBannerSecondary.id ||
+                                s.businessId === homeBannerSecondary.slug)
+                          )
+                          .map((s) => Number(s.priceToman));
+                        return prices.length > 0
+                          ? Math.min(...prices)
+                          : homeBannerSecondary.startingPriceToman;
+                      })()
+                    )}
                   </span>
                 </div>
                 <Link

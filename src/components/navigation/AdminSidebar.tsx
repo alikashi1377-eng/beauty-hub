@@ -5,7 +5,7 @@ import {
   Building2,
   Users,
   FolderTree,
-  CreditCard,
+  Crown,
   Receipt,
   PieChart,
   MessageSquare,
@@ -18,9 +18,15 @@ import { TimetoLogo } from '../ui/TimetoLogo';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { toPersianDigits } from '../../utils/formatters';
 
+export type AdminNavCategory =
+  | 'مدیریت سالن‌ها و کاربران'
+  | 'سفیر برند VIP، تبلیغات و مالی'
+  | 'پشتیبانی و تنظیمات';
+
 export interface AdminNavItem {
   to: string;
   label: string;
+  category: AdminNavCategory;
   end?: boolean;
   icon: React.ReactNode;
 }
@@ -29,49 +35,64 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   {
     to: '/admin',
     label: 'داشبورد و تاییدها',
+    category: 'مدیریت سالن‌ها و کاربران',
     end: true,
     icon: <ShieldCheck className="w-4 h-4" />,
   },
   {
     to: '/admin/businesses',
-    label: 'بررسی کسب‌وکارها',
+    label: 'بررسی کسب‌وکارها و زباله‌دان',
+    category: 'مدیریت سالن‌ها و کاربران',
     icon: <Building2 className="w-4 h-4" />,
   },
   {
     to: '/admin/users',
     label: 'کاربران سامانه',
+    category: 'مدیریت سالن‌ها و کاربران',
     icon: <Users className="w-4 h-4" />,
   },
   {
     to: '/admin/categories',
     label: 'دسته‌بندی خدمات',
+    category: 'مدیریت سالن‌ها و کاربران',
     icon: <FolderTree className="w-4 h-4" />,
   },
   {
     to: '/admin/subscriptions',
-    label: 'تبلیغات ویژه و بسته‌ها',
-    icon: <CreditCard className="w-4 h-4" />,
+    label: 'سفیر برند VIP و تبلیغات',
+    category: 'سفیر برند VIP، تبلیغات و مالی',
+    icon: <Crown className="w-4 h-4" />,
   },
   {
     to: '/admin/payments',
-    label: 'تراکنش‌های مالی',
+    label: 'تراکنش‌ها، کارمزد و تسویه شبا',
+    category: 'سفیر برند VIP، تبلیغات و مالی',
     icon: <Receipt className="w-4 h-4" />,
-  },
-  {
-    to: '/admin/support',
-    label: 'تیکت‌ها و پشتیبانی',
-    icon: <MessageSquare className="w-4 h-4" />,
   },
   {
     to: '/admin/reports',
     label: 'گزارش‌های تحلیلی',
+    category: 'سفیر برند VIP، تبلیغات و مالی',
     icon: <PieChart className="w-4 h-4" />,
+  },
+  {
+    to: '/admin/support',
+    label: 'تیکت‌ها و پشتیبانی',
+    category: 'پشتیبانی و تنظیمات',
+    icon: <MessageSquare className="w-4 h-4" />,
   },
   {
     to: '/admin/settings',
     label: 'تنظیمات پلتفرم',
+    category: 'پشتیبانی و تنظیمات',
     icon: <Settings className="w-4 h-4" />,
   },
+];
+
+const ADMIN_NAV_CATEGORIES: AdminNavCategory[] = [
+  'مدیریت سالن‌ها و کاربران',
+  'سفیر برند VIP، تبلیغات و مالی',
+  'پشتیبانی و تنظیمات',
 ];
 
 export const AdminSidebar: React.FC = () => {
@@ -101,48 +122,57 @@ export const AdminSidebar: React.FC = () => {
       </div>
 
       {mobileOpen ? (
-        <div className="lg:hidden bg-[#061138] text-slate-200 px-4 py-3 grid grid-cols-2 gap-2 border-b border-[#1E293B]">
-          {ADMIN_NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center justify-between gap-2 p-2.5 rounded-2xl text-xs ${
-                  isActive
-                    ? 'bg-[#0057FF] text-white font-bold shadow-[0_4px_12px_rgba(0,87,255,0.4)]'
-                    : 'bg-white/10 text-slate-200'
-                }`
-              }
-            >
-              <span className="inline-flex items-center gap-2">
-                {item.icon}
-                <span>{item.label}</span>
-              </span>
-              {item.to === '/admin' && unreadCount > 0 ? (
-                <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
-                  {toPersianDigits(unreadCount)}
-                </span>
-              ) : null}
-              {item.to === '/admin/support' && openTicketsCount > 0 ? (
-                <span className="px-1.5 py-0.2 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums">
-                  {toPersianDigits(openTicketsCount)}
-                </span>
-              ) : null}
-            </NavLink>
+        <div className="lg:hidden bg-[#061138] text-slate-200 px-4 py-3 space-y-3 border-b border-[#1E293B]">
+          {ADMIN_NAV_CATEGORIES.map((category) => (
+            <div key={category} className="space-y-1.5">
+              <p className="text-[10px] font-extrabold text-[#00E5FF] px-1">
+                {category}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {ADMIN_NAV_ITEMS.filter((i) => i.category === category).map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={() => setMobileOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center justify-between gap-2 p-2.5 rounded-2xl text-xs ${
+                        isActive
+                          ? 'bg-[#0057FF] text-white font-bold shadow-[0_4px_12px_rgba(0,87,255,0.4)]'
+                          : 'bg-white/10 text-slate-200'
+                      }`
+                    }
+                  >
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    {item.to === '/admin' && unreadCount > 0 ? (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums shrink-0">
+                        {toPersianDigits(unreadCount)}
+                      </span>
+                    ) : null}
+                    {item.to === '/admin/support' && openTicketsCount > 0 ? (
+                      <span className="px-1.5 py-0.2 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums shrink-0">
+                        {toPersianDigits(openTicketsCount)}
+                      </span>
+                    ) : null}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : null}
 
       <aside
         aria-label="منوی پنل مدیریت پلتفرم"
-        className="hidden lg:flex lg:flex-col w-[268px] shrink-0 bg-[#061138] text-white border-l border-[#1E293B] min-h-screen"
+        className="hidden lg:flex lg:flex-col w-[276px] shrink-0 bg-[#061138] text-white border-l border-[#1E293B] min-h-screen"
       >
         <div className="p-5 border-b border-[#1E293B] space-y-2">
           <TimetoLogo size="md" theme="dark" subtitle="پنل مدیریت کلان پلتفرم" />
           <p className="text-xs font-normal text-slate-300 pt-1">
-            بررسی و تایید سالن‌ها، کاربران و اشتراک‌ها
+            مدیریت یکپارچه سالن‌ها، سفیر برند VIP و تسویه شبا
           </p>
           <Link
             to="/"
@@ -152,35 +182,42 @@ export const AdminSidebar: React.FC = () => {
           </Link>
         </div>
 
-        <nav className="flex-1 p-3.5 space-y-1">
-          {ADMIN_NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-colors ${
-                  isActive
-                    ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
-                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                }`
-              }
-            >
-              <span className="inline-flex items-center gap-2.5">
-                {item.icon}
-                <span>{item.label}</span>
-              </span>
-              {item.to === '/admin' && unreadCount > 0 ? (
-                <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
-                  {toPersianDigits(unreadCount)}
-                </span>
-              ) : null}
-              {item.to === '/admin/support' && openTicketsCount > 0 ? (
-                <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums">
-                  {toPersianDigits(openTicketsCount)}
-                </span>
-              ) : null}
-            </NavLink>
+        <nav className="flex-1 p-3.5 space-y-4">
+          {ADMIN_NAV_CATEGORIES.map((category) => (
+            <div key={category} className="space-y-1">
+              <p className="px-3 text-[10px] font-extrabold text-[#94A3B8] tracking-tight">
+                {category}
+              </p>
+              {ADMIN_NAV_ITEMS.filter((i) => i.category === category).map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-colors ${
+                      isActive
+                        ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
+                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    }`
+                  }
+                >
+                  <span className="inline-flex items-center gap-2.5">
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </span>
+                  {item.to === '/admin' && unreadCount > 0 ? (
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#EF4444] text-white text-[10px] font-extrabold tabular-nums">
+                      {toPersianDigits(unreadCount)}
+                    </span>
+                  ) : null}
+                  {item.to === '/admin/support' && openTicketsCount > 0 ? (
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-[#061138] text-[10px] font-extrabold tabular-nums">
+                      {toPersianDigits(openTicketsCount)}
+                    </span>
+                  ) : null}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 

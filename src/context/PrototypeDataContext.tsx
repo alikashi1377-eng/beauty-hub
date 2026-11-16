@@ -691,10 +691,43 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ) {
           continue;
         }
-        const overrideData = overrides[b.id] || overrides[b.slug] || {};
-        const rawMerged = {
+        const rawOv = overrides[b.id] || overrides[b.slug] || {};
+        const {
+          walletBalanceToman: _ignoredWalletOv,
+          ...safeOv
+        } = rawOv as Partial<BusinessItem>;
+        const rawMerged: BusinessItem = {
           ...b,
-          ...overrideData,
+          ...safeOv,
+          depositEnabled:
+            typeof b.depositEnabled === 'boolean'
+              ? b.depositEnabled
+              : safeOv.depositEnabled,
+          depositPercent:
+            typeof b.depositPercent === 'number' &&
+            b.depositPercent >= 1 &&
+            b.depositPercent <= 100
+              ? normalizeDepositPercent(b.depositPercent)
+              : safeOv.depositPercent !== undefined
+                ? normalizeDepositPercent(safeOv.depositPercent)
+                : undefined,
+          isVipPartner:
+            typeof b.isVipPartner === 'boolean'
+              ? b.isVipPartner
+              : safeOv.isVipPartner,
+          vipCommissionPercent:
+            typeof b.vipCommissionPercent === 'number'
+              ? b.vipCommissionPercent
+              : safeOv.vipCommissionPercent,
+          bankShebaNumber: b.bankShebaNumber || safeOv.bankShebaNumber,
+          bankCardNumber: b.bankCardNumber || safeOv.bankCardNumber,
+          bankAccountHolder: b.bankAccountHolder || safeOv.bankAccountHolder,
+          contractAccepted:
+            typeof b.contractAccepted === 'boolean'
+              ? b.contractAccepted
+              : safeOv.contractAccepted,
+          contractAcceptedAtJalali:
+            b.contractAcceptedAtJalali || safeOv.contractAcceptedAtJalali,
           isSampleShowcase: false,
         };
         if (
@@ -849,10 +882,33 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return SAMPLE_SPECIALISTS;
   });
+  const syncStartingPricesWithServices = (
+    bizList: BusinessItem[],
+    srvList: ServiceItem[]
+  ): BusinessItem[] => {
+    return bizList.map((b) => {
+      const bizPrices = srvList
+        .filter(
+          (s) =>
+            s &&
+            s.isActive !== false &&
+            s.priceToman > 0 &&
+            (s.businessId === b.id || s.businessId === b.slug)
+        )
+        .map((s) => Number(s.priceToman));
+      if (bizPrices.length === 0) return b;
+      const minPrice = Math.min(...bizPrices);
+      if (b.startingPriceToman === minPrice) return b;
+      return { ...b, startingPriceToman: minPrice };
+    });
+  };
+
   const mergeSavedAppointments = (
-    incoming: AppointmentItem[]
+    incoming: AppointmentItem[],
+    bizLookup?: BusinessItem[]
   ): AppointmentItem[] => {
     try {
+      const bizPool = bizLookup && bizLookup.length > 0 ? bizLookup : businesses;
       const savedRaw = window.localStorage.getItem('timeto_saved_appointments_v1');
       const savedList: AppointmentItem[] = savedRaw ? JSON.parse(savedRaw) : [];
       const map = new Map<string, AppointmentItem>();
@@ -863,7 +919,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         /^apt-100[1-9]$/.test(item.id) ||
         item.businessSlug === 'royal-golzar';
       const normalizeAptFinancials = (item: AppointmentItem): AppointmentItem => {
-        const matchedBiz = businesses.find(
+        const matchedBiz = bizPool.find(
           (b) =>
             b.id === item.businessId ||
             b.slug === item.businessSlug ||
@@ -1424,26 +1480,59 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       // ادامه در صورت نبود داده مشتری
     }
 
+    let latestLoadedServices: ServiceItem[] = [];
     if (currentUser.roles.includes('BUSINESS_OWNER')) {
       try {
         const wsRes = await realApiClient.fetchBusinessWorkspace();
-        if (wsRes.data.business) {
-          const ownedBiz = wsRes.data.business;
+        const ownedBiz = wsRes.data.business;
+        if (ownedBiz) {
           setOwnedBusinessId(ownedBiz.id);
-          setBusinesses((prev) => {
-            const map = new Map(prev.map((b) => [b.id, b]));
-            map.set(ownedBiz.id, ownedBiz);
-            return Array.from(map.values());
-          });
         }
-        setServices((prev) => {
-          const map = new Map(prev.map((s) => [s.id, s]));
-          for (const s of wsRes.data.services) {
-            const prevItem = map.get(s.id);
-            map.set(s.id, prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s);
+
+        // ادغام هم‌زمان خدمات برای اعمال فوری شروع تعرفه و حفظ ترتیب ذخیره‌شده
+        let localSrvSnapshot: ServiceItem[] = [];
+        try {
+          const localRaw = window.localStorage.getItem('timeto_local_services_v1');
+          localSrvSnapshot = localRaw ? JSON.parse(localRaw) : [];
+        } catch {
+          localSrvSnapshot = [];
+        }
+        const srvMap = new Map<string, ServiceItem>();
+        for (const s of localSrvSnapshot) {
+          if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+            srvMap.set(s.id, s);
           }
-          return applySavedServiceSortOrder(Array.from(map.values()));
+        }
+        for (const s of wsRes.data.services) {
+          const prevItem = srvMap.get(s.id);
+          srvMap.set(s.id, prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s);
+        }
+        const mergedServicesList = applySavedServiceSortOrder(
+          Array.from(srvMap.values())
+        );
+        latestLoadedServices = mergedServicesList;
+        setServices(mergedServicesList);
+
+        let updatedBusinessesSnapshot: BusinessItem[] = businesses;
+        setBusinesses((prev) => {
+          const map = new Map(prev.map((b) => [b.id, b]));
+          if (ownedBiz) {
+            map.set(ownedBiz.id, ownedBiz);
+          }
+          const synced = syncStartingPricesWithServices(
+            Array.from(map.values()),
+            mergedServicesList
+          );
+          updatedBusinessesSnapshot = synced;
+          return synced;
         });
+        const freshBizPool = ownedBiz
+          ? [
+              ownedBiz,
+              ...updatedBusinessesSnapshot.filter((b) => b.id !== ownedBiz.id),
+            ]
+          : updatedBusinessesSnapshot;
+
         setSpecialists((prev) => {
           const map = new Map(prev.map((sp) => [sp.id, sp]));
           for (const sp of wsRes.data.specialists) {
@@ -1455,7 +1544,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           mergeSavedGallery([...wsRes.data.gallery, ...prev])
         );
         setAppointments((prev) =>
-          mergeSavedAppointments([...wsRes.data.appointments, ...prev])
+          mergeSavedAppointments([...wsRes.data.appointments, ...prev], freshBizPool)
         );
         setCustomers(mergeManualCustomers(wsRes.data.customers));
         setCampaigns(wsRes.data.campaigns);
@@ -1468,12 +1557,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     if (currentUser.roles.includes('PLATFORM_ADMIN')) {
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
-        setBusinesses(
-          mergeBusinessOverrides(
-            adminRes.data.businesses,
-            adminRes.data.users
-          )
+        const syncedAdminBusinesses = syncStartingPricesWithServices(
+          mergeBusinessOverrides(adminRes.data.businesses, adminRes.data.users),
+          latestLoadedServices.length > 0 ? latestLoadedServices : services
         );
+        setBusinesses(syncedAdminBusinesses);
         setCategories(mergeCategoriesWithDefaults(adminRes.data.categories));
         if (
           adminRes.data.plans.length > 0 &&
@@ -1487,7 +1575,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         if (Array.isArray(adminRes.data.appointments)) {
           const adminAppointments = adminRes.data.appointments;
           setAppointments((prev) =>
-            mergeSavedAppointments([...adminAppointments, ...prev])
+            mergeSavedAppointments(
+              [...adminAppointments, ...prev],
+              syncedAdminBusinesses
+            )
           );
         }
         if (Array.isArray(adminRes.adminNotifications)) {
@@ -1544,18 +1635,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     })();
 
     try {
-      const response = await realApiClient.fetchBootstrap();
+      const [response, sharedRes] = await Promise.all([
+        realApiClient.fetchBootstrap(),
+        realApiClient.fetchPlatformSharedState().catch(() => ({ data: undefined })),
+      ]);
+      const sharedData = sharedRes?.data;
       if (response.mode === 'real' && response.data) {
         setDataMode('real');
         setDatabaseError(null);
         setCategories(mergeCategoriesWithDefaults(response.data.categories));
-        setBusinesses(
-          mergeBusinessOverrides(
-            response.data.businesses,
-            response.data.registeredUsers
-          )
-        );
-        setServices(() => {
+
+        const nextServices = (() => {
           const map = new Map<string, ServiceItem>();
           try {
             const localSrvRaw = window.localStorage.getItem('timeto_local_services_v1');
@@ -1583,7 +1673,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
           return applySavedServiceSortOrder(Array.from(map.values()));
-        });
+        })();
+        setServices(nextServices);
+
+        const nextBusinesses = syncStartingPricesWithServices(
+          mergeBusinessOverrides(
+            response.data.businesses,
+            response.data.registeredUsers
+          ),
+          nextServices
+        );
+        setBusinesses(nextBusinesses);
+
         setSpecialists(() => {
           const map = new Map<string, SpecialistItem>();
           try {
@@ -1670,7 +1771,91 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setPlans(response.data.plans);
         }
 
-        setAppointments((prev) => mergeSavedAppointments(prev));
+        const serverApts = Array.isArray(response.data.appointments)
+          ? response.data.appointments
+          : [];
+        setAppointments((prev) => {
+          const mergedApts = mergeSavedAppointments(
+            [...serverApts, ...prev],
+            nextBusinesses
+          );
+          persistSavedAppointments(mergedApts);
+          return mergedApts;
+        });
+
+        const resolvedPaymentConfig =
+          sharedData?.paymentConfig || response.data.paymentConfig;
+        if (
+          resolvedPaymentConfig &&
+          typeof resolvedPaymentConfig === 'object'
+        ) {
+          setPaymentConfig((prev) => {
+            const next = {
+              ...prev,
+              ...(resolvedPaymentConfig as Partial<PaymentGatewayConfig>),
+            };
+            try {
+              window.localStorage.setItem(
+                'timeto_payment_config_v2',
+                JSON.stringify(next)
+              );
+            } catch {
+              // ignore
+            }
+            return next;
+          });
+        }
+
+        const resolvedSettlements = Array.isArray(sharedData?.settlementRequests)
+          ? sharedData.settlementRequests
+          : response.data.settlementRequests;
+        if (Array.isArray(resolvedSettlements)) {
+          setSettlementRequests((prev) => {
+            const byId = new Map<string, SettlementRequestItem>();
+            for (const s of resolvedSettlements || []) {
+              if (s && s.id) byId.set(s.id, s);
+            }
+            for (const s of prev) {
+              if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
+            }
+            const merged = Array.from(byId.values());
+            try {
+              window.localStorage.setItem(
+                'timeto_settlement_requests_v1',
+                JSON.stringify(merged)
+              );
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+        }
+
+        const resolvedNotices = Array.isArray(sharedData?.platformBusinessNotices)
+          ? sharedData.platformBusinessNotices
+          : response.data.platformBusinessNotices;
+        if (Array.isArray(resolvedNotices)) {
+          setPlatformBusinessNotices((prev) => {
+            const byId = new Map<string, PlatformBusinessNoticeItem>();
+            for (const n of resolvedNotices || []) {
+              if (n && n.id) byId.set(n.id, n);
+            }
+            for (const n of prev) {
+              if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
+            }
+            const merged = Array.from(byId.values());
+            try {
+              window.localStorage.setItem(
+                'timeto_platform_business_notices_v1',
+                JSON.stringify(merged)
+              );
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+        }
+
         setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
         setAdminUsers(response.data.registeredUsers ?? []);
@@ -1700,7 +1885,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           })();
 
-          const syncPayloadAccounts = memoryAccounts.map((acc) => {
+          const syncPayloadAccounts: Parameters<
+            typeof realApiClient.syncRegisteredAccounts
+          >[0]['accounts'] = memoryAccounts.map((acc) => {
             const matchedBiz = localOnbList.find(
               (b) =>
                 b.id === acc.businessId ||
@@ -1740,6 +1927,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 ov.instagramHandle || matchedBiz?.instagramHandle,
               shortDescription:
                 ov.shortDescription || matchedBiz?.shortDescription,
+              depositEnabled:
+                ov.depositEnabled ?? matchedBiz?.depositEnabled,
+              depositPercent:
+                typeof ov.depositPercent === 'number'
+                  ? ov.depositPercent
+                  : matchedBiz?.depositPercent,
+              bankShebaNumber:
+                ov.bankShebaNumber || matchedBiz?.bankShebaNumber,
+              bankCardNumber:
+                ov.bankCardNumber || matchedBiz?.bankCardNumber,
+              bankAccountHolder:
+                ov.bankAccountHolder || matchedBiz?.bankAccountHolder,
+              contractAccepted:
+                ov.contractAccepted ?? matchedBiz?.contractAccepted,
+              contractAcceptedAtJalali:
+                ov.contractAcceptedAtJalali ||
+                matchedBiz?.contractAcceptedAtJalali,
+              isVipPartner: ov.isVipPartner ?? matchedBiz?.isVipPartner,
+              vipCommissionPercent:
+                typeof ov.vipCommissionPercent === 'number'
+                  ? ov.vipCommissionPercent
+                  : matchedBiz?.vipCommissionPercent,
             };
           });
           // همچنین هر سالن محلی ثبت‌شده که هنوز در syncPayloadAccounts نیست را به دیتابیس سینک کن تا در گوشی سایر کاربران هم نمایش داده شود
@@ -1771,6 +1980,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               avatarUrl: ov.avatarUrl || lb.avatarUrl,
               instagramHandle: ov.instagramHandle || lb.instagramHandle,
               shortDescription: ov.shortDescription || lb.shortDescription,
+              depositEnabled: ov.depositEnabled ?? lb.depositEnabled,
+              depositPercent:
+                typeof ov.depositPercent === 'number'
+                  ? ov.depositPercent
+                  : lb.depositPercent,
+              bankShebaNumber: ov.bankShebaNumber || lb.bankShebaNumber,
+              bankCardNumber: ov.bankCardNumber || lb.bankCardNumber,
+              bankAccountHolder: ov.bankAccountHolder || lb.bankAccountHolder,
+              contractAccepted: ov.contractAccepted ?? lb.contractAccepted,
+              contractAcceptedAtJalali:
+                ov.contractAcceptedAtJalali || lb.contractAcceptedAtJalali,
+              isVipPartner: ov.isVipPartner ?? lb.isVipPartner,
+              vipCommissionPercent:
+                typeof ov.vipCommissionPercent === 'number'
+                  ? ov.vipCommissionPercent
+                  : lb.vipCommissionPercent,
             });
           }
           if (
@@ -1789,7 +2014,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 ? 'admin'
                 : localPersistedUser.roles.includes('BUSINESS_OWNER')
                   ? 'owner'
-                  : 'customer') as 'customer' | 'owner',
+                  : 'customer') as 'customer' | 'owner' | 'admin',
               password: '',
               businessId: localOwnedBizId || undefined,
               businessName: undefined,
@@ -1817,16 +2042,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 if (Array.isArray(syncRes.registeredUsers)) {
                   setAdminUsers(syncRes.registeredUsers);
                 }
+                let latestBusinesses = nextBusinesses;
                 if (
                   Array.isArray(syncRes.businesses) &&
                   syncRes.businesses.length > 0
                 ) {
-                  setBusinesses(
+                  latestBusinesses = syncStartingPricesWithServices(
                     mergeBusinessOverrides(
                       syncRes.businesses,
                       syncRes.registeredUsers
-                    )
+                    ),
+                    nextServices
                   );
+                  setBusinesses(latestBusinesses);
                 }
                 if (
                   Array.isArray(syncRes.appointments) &&
@@ -1834,8 +2062,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 ) {
                   const syncedApts = syncRes.appointments;
                   setAppointments((prev) =>
-                    mergeSavedAppointments([...syncedApts, ...prev])
+                    mergeSavedAppointments(
+                      [...syncedApts, ...prev],
+                      latestBusinesses
+                    )
                   );
+                }
+                if (
+                  syncRes.paymentConfig &&
+                  typeof syncRes.paymentConfig === 'object'
+                ) {
+                  setPaymentConfig((prev) => ({
+                    ...prev,
+                    ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
+                  }));
+                }
+                if (Array.isArray(syncRes.settlementRequests)) {
+                  setSettlementRequests((prev) => {
+                    const byId = new Map<string, SettlementRequestItem>();
+                    for (const s of syncRes.settlementRequests || []) {
+                      if (s && s.id) byId.set(s.id, s);
+                    }
+                    for (const s of prev) {
+                      if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
+                    }
+                    return Array.from(byId.values());
+                  });
+                }
+                if (Array.isArray(syncRes.platformBusinessNotices)) {
+                  setPlatformBusinessNotices((prev) => {
+                    const byId = new Map<string, PlatformBusinessNoticeItem>();
+                    for (const n of syncRes.platformBusinessNotices || []) {
+                      if (n && n.id) byId.set(n.id, n);
+                    }
+                    for (const n of prev) {
+                      if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
+                    }
+                    return Array.from(byId.values());
+                  });
                 }
               })
               .catch(() => {});
@@ -2873,10 +3137,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const overridesRaw =
           window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
         const overrides = JSON.parse(overridesRaw);
-        const existingStatus = overrides[businessId]?.approvalStatus;
+        const existingEntry = { ...(overrides[businessId] || {}) };
+        delete existingEntry.walletBalanceToman;
+        const { walletBalanceToman: _ignoredWallet, ...safePatch } = patch;
+        const existingStatus = existingEntry.approvalStatus;
         overrides[businessId] = {
-          ...(overrides[businessId] || {}),
-          ...patch,
+          ...existingEntry,
+          ...safePatch,
           approvalStatus:
             patch.approvalStatus ?? existingStatus ?? 'APPROVED',
         };
@@ -3002,9 +3269,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           body: JSON.stringify({ merchantId: next.zibalMerchantId }),
         }).catch(() => {});
       }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ paymentConfig: next })
+          .catch(() => {});
+      }
       return next;
     });
-    showToast('تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) ذخیره شد.');
+    showToast('تنظیمات درگاه پرداخت و نرخ کارمزد در پایگاه داده ذخیره شد.');
   };
 
   const applyApprovedOrderEffect = (order: PaymentOrderItem) => {
@@ -3637,6 +3909,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ platformBusinessNotices: next })
+          .catch(() => {});
+      }
       return next;
     });
 
@@ -3676,6 +3953,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch {
         // ignore
+      }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ platformBusinessNotices: next })
+          .catch(() => {});
       }
       return next;
     });
@@ -3722,6 +4004,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           return { ...s, id: fixedId };
         });
         persistLocalServices(deduplicated);
+        setBusinesses((bizPrev) =>
+          syncStartingPricesWithServices(bizPrev, deduplicated)
+        );
         return deduplicated;
       });
     };
@@ -3765,6 +4050,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           s.id === id ? { ...s, ...mergedPatch } : s
         );
         persistLocalServices(next);
+        setBusinesses((bizPrev) =>
+          syncStartingPricesWithServices(bizPrev, next)
+        );
         return next;
       });
     };
@@ -3797,6 +4085,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       setServices((prev) => {
         const next = prev.filter((s) => s.id !== id);
         persistLocalServices(next);
+        setBusinesses((bizPrev) =>
+          syncStartingPricesWithServices(bizPrev, next)
+        );
         return next;
       });
     };
@@ -4173,10 +4464,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       !targetApt.refundedToWalletToman
     ) {
       const targetBiz = businesses.find((b) => b.id === targetApt.businessId);
-      const depositPct =
-        targetBiz?.depositPercent && targetBiz.depositPercent > 0
-          ? targetBiz.depositPercent
-          : 30;
+      const depositPct = normalizeDepositPercent(targetBiz?.depositPercent);
       const baseDepositPaid =
         targetApt.depositPaidToman && targetApt.depositPaidToman > 0
           ? targetApt.depositPaidToman
@@ -4582,7 +4870,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         0
       );
 
-    const totalWalletBalance = targetBiz.walletBalanceToman ?? 0;
+    const dossierNumbers = computeBusinessBookingDossierNumbers(targetBiz);
+    const totalWalletBalance = dossierNumbers.pendingPayoutToman;
     const releasableBalance = Math.max(
       0,
       totalWalletBalance - lockedFutureEscrowToman
@@ -4619,7 +4908,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       shebaNumber: rawSheba.startsWith('IR') ? rawSheba : `IR${rawSheba}`,
       cardNumber: targetBiz.bankCardNumber,
       amountToman: releasableBalance,
-      commissionToman: 0,
+      commissionToman: dossierNumbers.totalCommissionToman,
       netPayoutToman: releasableBalance,
       createdAtJalali: todayJalali,
       status: 'PENDING',
@@ -4635,11 +4924,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ settlementRequests: next })
+          .catch(() => {});
+      }
       return next;
-    });
-
-    updateBusinessProfile(targetBiz.id, {
-      walletBalanceToman: Math.max(0, totalWalletBalance - releasableBalance),
     });
 
     showToast(
@@ -4648,7 +4938,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     return newItem;
   };
 
-  const computeBusinessBookingDossierNumbers = (targetBiz: BusinessItem) => {
+  function computeBusinessBookingDossierNumbers(targetBiz: BusinessItem) {
     const bizApts = appointments.filter(
       (a) =>
         (a.businessId === targetBiz.id ||
@@ -4703,8 +4993,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
 
     const pendingPayoutToman = Math.max(
-      targetBiz.walletBalanceToman ?? 0,
-      Math.max(0, totalSalonNetToman - paidSettlementsTotal)
+      0,
+      totalSalonNetToman - paidSettlementsTotal
     );
 
     return {
@@ -4793,10 +5083,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ settlementRequests: next })
+          .catch(() => {});
+      }
       return next;
     });
-
-    updateBusinessProfile(targetBiz.id, { walletBalanceToman: 0 });
 
     sendPlatformBusinessNotice({
       targetBusinessId: targetBiz.id,
@@ -4863,6 +5156,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch {
         // ignore
+      }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ settlementRequests: next })
+          .catch(() => {});
       }
       return next;
     });
@@ -4974,10 +5272,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     );
 
-    eligibleBusinesses.forEach((b) => {
-      updateBusinessProfile(b.id, { walletBalanceToman: 0 });
-    });
-
     setSettlementRequests((prev) => {
       const updatedPrev = prev.map((s) =>
         s.status === 'PENDING'
@@ -4997,6 +5291,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch {
         // ignore
+      }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ settlementRequests: next })
+          .catch(() => {});
       }
       return next;
     });
@@ -6463,7 +6762,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const resolvedOwnerPhone =
       biz?.ownerPhone || biz?.phoneDisplay || undefined;
 
-    const triggerBookingNotification = () => {
+    const triggerBookingNotification = (resolvedRefCode?: string) => {
       void fetch('/api/v1/appointments/notify-booking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6476,9 +6775,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             effectiveDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
           customerPhone: effectiveDraft.customerPhone || authUser?.phone || '',
           serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+          priceToman: summary.totalPriceToman || 450000,
+          durationMinutes: summary.totalDurationMinutes || 60,
           dateJalali: effectiveDraft.dateJalali,
           timeSlot: effectiveDraft.timeSlot,
           depositPaidToman: resolvedBaseDepositToman,
+          referenceCode: resolvedRefCode || refCode,
         }),
       }).catch(() => {});
     };
@@ -6539,7 +6841,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             ...prev,
             lastReferenceCode: res.item.referenceCode,
           }));
-          triggerBookingNotification();
+          triggerBookingNotification(res.item.referenceCode);
           showToast(
             'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای مدیر سالن ارسال شد ✓'
           );
@@ -6722,9 +7024,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             customerPhone:
               effectiveDraft.customerPhone || authUser?.phone || '',
             serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
+            priceToman: summary.totalPriceToman || 450000,
+            durationMinutes: summary.totalDurationMinutes || 60,
             dateJalali: effectiveDraft.dateJalali,
             timeSlot: effectiveDraft.timeSlot,
             depositPaidToman: resolvedSubmitDeposit,
+            referenceCode: res.item.referenceCode,
           }),
         }).catch(() => {});
         showToast(
@@ -6839,29 +7144,34 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return todayFormatted;
     };
 
-    // ۰. نقشه نام‌های واقعی مشتریان از نوبت‌ها و باشگاه مشتریان برای جلوگیری از نمایش «کاربر BeautyHub» یا «کاربر تایم تو»
+    // ۰. نقشه نام‌های واقعی مشتریان از نوبت‌ها و باشگاه مشتریان برای جلوگیری از نمایش «کاربر BeautyHub / beutyhub» یا «کاربر تایم تو»
+    const isLegacyOrGenericName = (raw?: unknown): boolean => {
+      const s = String(raw || '').trim();
+      if (!s) return true;
+      const lower = s.toLowerCase().replace(/\s+/g, '');
+      return (
+        lower.includes('beautyhub') ||
+        lower.includes('beutyhub') ||
+        lower.includes('beuty') ||
+        s.includes('بیوتی') ||
+        s.includes('کاربر تایم') ||
+        s === 'کاربر Timeto' ||
+        s.toLowerCase() === 'کاربر timeto'
+      );
+    };
+
     const knownCustomerNameByPhone = new Map<string, string>();
     for (const apt of appointments) {
       const p = normalizeIranMobile(apt.customerPhoneMasked || '');
       const n = (apt.customerName || '').trim();
-      if (
-        /^09\d{9}$/.test(p) &&
-        n.length >= 2 &&
-        !n.includes('BeautyHub') &&
-        !n.includes('کاربر تایم')
-      ) {
+      if (/^09\d{9}$/.test(p) && n.length >= 2 && !isLegacyOrGenericName(n)) {
         knownCustomerNameByPhone.set(p, n);
       }
     }
     for (const cus of customers) {
       const p = normalizeIranMobile(cus.phone || cus.phoneMasked || '');
       const n = (cus.fullName || '').trim();
-      if (
-        /^09\d{9}$/.test(p) &&
-        n.length >= 2 &&
-        !n.includes('BeautyHub') &&
-        !n.includes('کاربر تایم')
-      ) {
+      if (/^09\d{9}$/.test(p) && n.length >= 2 && !isLegacyOrGenericName(n)) {
         knownCustomerNameByPhone.set(p, n);
       }
     }
@@ -6871,14 +7181,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       cleanPhone: string
     ): string => {
       const trimmed = (rawName || '').trim();
-      if (
-        trimmed &&
-        !trimmed.includes('BeautyHub') &&
-        !trimmed.includes('بیوتی') &&
-        trimmed !== 'کاربر تایم تو' &&
-        trimmed !== 'کاربر تایم‌تو' &&
-        trimmed !== 'کاربر Timeto'
-      ) {
+      if (trimmed && !isLegacyOrGenericName(trimmed)) {
         return trimmed;
       }
       return knownCustomerNameByPhone.get(cleanPhone) || 'کاربر تایم تو';
