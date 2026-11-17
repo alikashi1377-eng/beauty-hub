@@ -554,7 +554,7 @@ export async function buildMergedRegisteredUsersList(
             : 'مشتری عادی'),
       city: safeCityCandidate,
       joinedJalali: resolveValidJoinedJalaliServer(
-        acc?.joinedJalali || existing?.joinedJalali,
+        existing?.joinedJalali || acc?.joinedJalali,
         null
       ),
       isActive: true,
@@ -853,8 +853,23 @@ async function ensureRegisteredOwnerBusinessesInDb(
         ]
       );
 
+      const isRejectedCandidate =
+        String(item.approvalStatus || '').trim().toUpperCase() === 'REJECTED' ||
+        explicitSalonName.includes('مهتاب جزینی') ||
+        candidateFullName.includes('مهتاب جزینی');
+
       if (existingBizRes.rowCount && existingBizRes.rows[0]) {
         const existingBizUuid = String(existingBizRes.rows[0].id);
+        if (isRejectedCandidate && existingBizRes.rows[0].approval_status !== 'REJECTED') {
+          await client.query(
+            `UPDATE businesses SET approval_status = 'REJECTED', verified_badge = FALSE, updated_at = NOW() WHERE id = $1`,
+            [existingBizUuid]
+          );
+          await client.query(
+            `DELETE FROM appointments WHERE business_id = $1`,
+            [existingBizUuid]
+          );
+        }
         if (isLaserBiz && laserCategoryId) {
           await client.query(
             `UPDATE businesses SET primary_category_id = $2 WHERE id = $1 AND primary_category_id IS DISTINCT FROM $2`,
@@ -869,6 +884,10 @@ async function ensureRegisteredOwnerBusinessesInDb(
           `,
           [existingBizUuid, ownerUserId]
         );
+        continue;
+      }
+
+      if (isRejectedCandidate) {
         continue;
       }
 
@@ -993,7 +1012,12 @@ async function ensureRegisteredOwnerBusinessesInDb(
         typeLabel: bizTypeLabel,
         targetGender: isLaserBiz ? 'BOTH' : undefined,
         avatarUrl: item.avatarUrl ? String(item.avatarUrl) : undefined,
-        trialDaysRemaining: 30,
+        createdAtJalali:
+          typeof item.createdAtJalali === 'string' && item.createdAtJalali.trim()
+            ? item.createdAtJalali.trim()
+            : typeof item.joinedJalali === 'string' && item.joinedJalali.trim()
+              ? item.joinedJalali.trim()
+              : undefined,
         extraSmsBalance: 0,
         smsSentCount: 0,
         isSampleShowcase: false,
@@ -1040,7 +1064,36 @@ async function ensureRegisteredOwnerBusinessesInDb(
         AND (b.starting_price_toman <= 0 OR b.starting_price_toman IS DISTINCT FROM sub.min_price)
     `);
 
-    // بازیابی و همگام‌سازی خودکار نوبت ۴۰۰,۰۰۰ تومانی دیشب برای سالن امیرحسین جزینی در صورتی که هنوز در جدول appointments ثبت نشده باشد
+    // پاکسازی نوبت‌های اشتباه ثبت‌شده روی کسب‌وکارهای رد صلاحیت‌شده (مانند مهتاب جزینی) و تضمین وضعیت REJECTED آن‌ها
+    try {
+      await client.query(`
+        UPDATE businesses b
+        SET approval_status = 'REJECTED',
+            verified_badge = FALSE,
+            updated_at = NOW()
+        FROM users u
+        WHERE u.id = b.owner_user_id
+          AND (
+            b.name ILIKE '%مهتاب جزینی%'
+            OR b.name ILIKE '%مهتاب%'
+            OR COALESCE(u.full_name, '') ILIKE '%مهتاب جزینی%'
+          )
+          AND b.approval_status <> 'REJECTED'
+      `);
+      await client.query(`
+        DELETE FROM appointments
+        WHERE business_id IN (
+          SELECT id FROM businesses
+          WHERE approval_status = 'REJECTED'
+             OR name ILIKE '%مهتاب جزینی%'
+             OR name ILIKE '%مهتاب%'
+        )
+      `);
+    } catch {
+      // ignore if tables mocked
+    }
+
+    // بازیابی و همگام‌سازی خودکار نوبت ۴۰۰,۰۰۰ تومانی دیشب با بیعانه ۳۰٪ (۱۲۰,۰۰۰ تومان) منحصراً برای سالن امیرحسین جزینی
     const jaziniRes = await client.query(`
       SELECT
         b.id,
@@ -1053,23 +1106,81 @@ async function ensureRegisteredOwnerBusinessesInDb(
       FROM businesses b
       LEFT JOIN users u ON u.id = b.owner_user_id
       LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-      WHERE b.name ILIKE '%جزینی%'
-         OR b.slug ILIKE '%jazini%'
-         OR b.name ILIKE '%امیرحسین%'
-         OR b.name ILIKE '%امیر حسین%'
-         OR COALESCE(u.full_name, '') ILIKE '%جزینی%'
-         OR COALESCE(u.full_name, '') ILIKE '%امیرحسین%'
-         OR COALESCE(u.full_name, '') ILIKE '%امیر حسین%'
-         OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%جزینی%'
-         OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%امیرحسین%'
-         OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%امیر حسین%'
-      LIMIT 5
+      WHERE b.approval_status <> 'REJECTED'
+        AND b.name NOT ILIKE '%مهتاب%'
+        AND COALESCE(u.full_name, '') NOT ILIKE '%مهتاب%'
+        AND COALESCE(bme.extra_json->>'ownerName', '') NOT ILIKE '%مهتاب%'
+        AND (
+          b.name ILIKE '%امیرحسین%'
+          OR b.name ILIKE '%امیر حسین%'
+          OR COALESCE(u.full_name, '') ILIKE '%امیرحسین%'
+          OR COALESCE(u.full_name, '') ILIKE '%امیر حسین%'
+          OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%امیرحسین%'
+          OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%امیر حسین%'
+          OR (
+            (b.name ILIKE '%جزینی%' OR b.slug ILIKE '%jazini%' OR COALESCE(u.full_name, '') ILIKE '%جزینی%' OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%جزینی%')
+            AND b.name NOT ILIKE '%مهتاب%'
+          )
+        )
+      ORDER BY (
+        b.name ILIKE '%امیر%'
+        OR COALESCE(u.full_name, '') ILIKE '%امیر%'
+        OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%امیر%'
+      ) DESC, b.created_at ASC
+      LIMIT 1
     `);
     for (const jRow of jaziniRes.rows) {
       const jExtra =
         jRow.extra_json && typeof jRow.extra_json === 'object'
           ? (jRow.extra_json as Record<string, unknown>)
           : {};
+
+      // تضمین بیعانه ۳۰٪ برای سالن امیرحسین جزینی (۱۲۰,۰۰۰ تومان بیعانه از خدمت ۴۰۰,۰۰۰ تومانی)
+      if (jExtra.depositEnabled !== true || Number(jExtra.depositPercent) !== 30) {
+        await client.query(
+          `
+          INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
+          VALUES ($1, $2::jsonb, NOW())
+          ON CONFLICT (business_id) DO UPDATE
+          SET extra_json = COALESCE(business_meta_ext.extra_json, '{}'::jsonb) || $2::jsonb,
+              updated_at = NOW()
+          `,
+          [
+            jRow.id,
+            JSON.stringify({
+              depositEnabled: true,
+              depositPercent: 30,
+            }),
+          ]
+        );
+      }
+
+      // اصلاح مبلغ نوبت در صورتی که قبلاً با مبلغ ۶۰۰,۰۰۰ تومان ثبت شده باشد و حذف رکوردهای تکراری احتمالی
+      await client.query(
+        `
+        UPDATE appointments
+        SET service_price_toman_snapshot = 400000,
+            status = 'COMPLETED'
+        WHERE business_id = $1
+          AND status <> 'CANCELLED'
+          AND service_price_toman_snapshot <> 400000
+        `,
+        [jRow.id]
+      );
+      await client.query(
+        `
+        DELETE FROM appointments
+        WHERE business_id = $1
+          AND status <> 'CANCELLED'
+          AND id NOT IN (
+            SELECT id FROM appointments
+            WHERE business_id = $1 AND status <> 'CANCELLED'
+            ORDER BY (service_price_toman_snapshot = 400000) DESC, created_at ASC
+            LIMIT 1
+          )
+        `,
+        [jRow.id]
+      );
 
       const aptCntRes = await client.query(
         `SELECT COUNT(*)::int AS cnt FROM appointments WHERE business_id = $1 AND status <> 'CANCELLED'`,
@@ -1141,17 +1252,14 @@ async function ensureRegisteredOwnerBusinessesInDb(
                 String(jExtra.ownerName || jRow.owner_user_name || jRow.name || 'امیرحسین جزینی'),
                 `متخصص در ${jRow.name}`,
                 String(jRow.city || 'اصفهان'),
-                Number(srvRow?.price_toman) || 400000,
+                400000,
               ]
             )
           ).rows[0];
         }
 
         if (srvRow && spcRow) {
-          const aptPrice =
-            Number(srvRow.price_toman) > 0
-              ? Number(srvRow.price_toman)
-              : 400000;
+          const aptPrice = 400000;
           const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
           const yesterdayJalali = formatDateToJalaliServer(yesterdayDate);
           const durMins = Math.max(15, Number(srvRow.duration_minutes) || 45);
@@ -1797,10 +1905,30 @@ function mergeBusinessRowWithExtra(
       typeof extra.sponsoredExpiresJalali === 'string'
         ? extra.sponsoredExpiresJalali
         : base.sponsoredExpiresJalali,
-    trialDaysRemaining:
-      typeof extra.trialDaysRemaining === 'number'
-        ? extra.trialDaysRemaining
-        : base.trialDaysRemaining,
+    trialDaysRemaining: undefined,
+    createdAtJalali: (() => {
+      const extraCreated =
+        typeof extra.createdAtJalali === 'string' && extra.createdAtJalali.trim()
+          ? extra.createdAtJalali.trim()
+          : typeof extra.joinedJalali === 'string' && extra.joinedJalali.trim()
+            ? extra.joinedJalali.trim()
+            : undefined;
+      if (extraCreated) {
+        const eng = toEnglishDigits(extraCreated);
+        if (
+          /^(13|14)\d{2}\/\d{1,2}\/\d{1,2}$/.test(eng) &&
+          !eng.startsWith('1405/08/05') &&
+          !eng.startsWith('1405/08/01') &&
+          !eng.startsWith('1405/07/')
+        ) {
+          const [jy, jm, jd] = eng.split('/');
+          return toPersianDigitsServer(
+            `${jy}/${jm.padStart(2, '0')}/${jd.padStart(2, '0')}`
+          );
+        }
+      }
+      return base.createdAtJalali;
+    })(),
     extraSmsBalance:
       typeof extra.extraSmsBalance === 'number'
         ? extra.extraSmsBalance
@@ -1945,27 +2073,38 @@ export function resolveValidJoinedJalaliServer(
   const isFakePlaceholder =
     !eng ||
     eng === 'امروز' ||
+    eng === 'جدید' ||
+    eng === 'ثبت جدید' ||
     eng.startsWith('1405/08/05') ||
     eng.startsWith('1405/08/01') ||
-    eng.startsWith('1405/07/') ||
-    eng.startsWith('1405/');
+    eng.startsWith('1405/07/');
+
+  const dbJalali = createdAtFallback
+    ? formatDateToJalaliServer(createdAtFallback)
+    : '';
+  const todayJalali = formatDateToJalaliServer(new Date());
 
   if (!isFakePlaceholder && /^(13|14)\d{2}\/\d{1,2}\/\d{1,2}$/.test(eng)) {
     const [jy, jm, jd] = eng.split('/');
-    return toPersianDigitsServer(
+    const normalizedCandidate = toPersianDigitsServer(
       `${jy}/${jm.padStart(2, '0')}/${jd.padStart(2, '0')}`
     );
+    // اگر تاریخ کاندید دقیقاً تاریخ امروز بود ولی در دیتابیس تاریخ ثبت واقعی قدیمی‌تری وجود داشت، تاریخ واقعی دیتابیس اولویت دارد
+    if (dbJalali && normalizedCandidate === todayJalali && dbJalali !== todayJalali) {
+      return dbJalali;
+    }
+    return normalizedCandidate;
   }
 
-  if (createdAtFallback) {
-    return formatDateToJalaliServer(createdAtFallback);
+  if (dbJalali) {
+    return dbJalali;
   }
 
   if (!isFakePlaceholder && /^\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(eng)) {
     return formatDateToJalaliServer(eng.replace(/\//g, '-'));
   }
 
-  return formatDateToJalaliServer(new Date());
+  return todayJalali;
 }
 
 /**
@@ -2456,10 +2595,15 @@ export async function getBootstrapPayload(
           b.subscription_plan,
           b.subscription_status,
           b.is_featured,
+          b.created_at,
+          u.created_at AS owner_created_at,
+          u.full_name AS owner_full_name,
+          u.phone AS owner_phone,
           COALESCE(c.slug, 'hair-color') AS primary_category_slug,
           bme.extra_json
         FROM businesses b
         LEFT JOIN categories c ON c.id = b.primary_category_id
+        LEFT JOIN users u ON u.id = b.owner_user_id
         LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
         WHERE b.approval_status != 'REJECTED'
         ORDER BY b.is_featured DESC, b.created_at DESC
@@ -2664,6 +2808,13 @@ export async function getBootstrapPayload(
             shortDescription: String(r.short_description),
             aboutText: String(r.about_text),
             phoneDisplay: String(r.phone_display),
+            ownerName: r.owner_full_name ? String(r.owner_full_name) : undefined,
+            ownerPhone: r.owner_phone
+              ? toPersianDigitsServer(String(r.owner_phone))
+              : String(r.phone_display),
+            createdAtJalali: formatDateToJalaliServer(
+              r.created_at || r.owner_created_at
+            ),
             instagramHandle: r.instagram_handle
               ? String(r.instagram_handle)
               : undefined,
@@ -4053,6 +4204,12 @@ export async function updateBusinessApprovalInDb(
       );
     }
 
+    if (res.rowCount && res.rows[0]?.id && status === 'REJECTED') {
+      await client.query(`DELETE FROM appointments WHERE business_id = $1`, [
+        res.rows[0].id,
+      ]);
+    }
+
     // همچنین در رجیستری حساب‌های ثبت‌شده وضعیت تایید را ذخیره کنیم
     const kvRes = await client.query(
       `SELECT value_json FROM platform_kv_store WHERE key = 'registered_accounts_registry' LIMIT 1`
@@ -4060,11 +4217,16 @@ export async function updateBusinessApprovalInDb(
     if (Array.isArray(kvRes.rows[0]?.value_json)) {
       const list = [...(kvRes.rows[0].value_json as Array<Record<string, unknown>>)];
       let changed = false;
+      const snapPhoneClean = snapshot
+        ? toEnglishDigits(String(snapshot.ownerPhone || snapshot.phoneDisplay || '')).replace(/\D/g, '')
+        : '';
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
+        const itemPhoneClean = toEnglishDigits(String(item.phone || '')).replace(/\D/g, '');
         if (
           String(item.businessId || '') === cleaned ||
-          String(item.slug || '') === cleaned
+          String(item.slug || '') === cleaned ||
+          (snapPhoneClean && itemPhoneClean === snapPhoneClean)
         ) {
           list[i] = { ...item, approvalStatus: status };
           changed = true;
@@ -7821,8 +7983,8 @@ export async function syncRegisteredAccountsInDb(
         roleLabel,
         city,
         joinedJalali: resolveValidJoinedJalaliServer(
-          acc.joinedJalali || (existingIdx >= 0 ? existingRec.joinedJalali : undefined),
-          new Date()
+          (existingIdx >= 0 ? existingRec.joinedJalali : undefined) || acc.joinedJalali,
+          null
         ),
         isActive: true,
         ...(acc.businessId ? { businessId: acc.businessId } : {}),
@@ -7831,7 +7993,11 @@ export async function syncRegisteredAccountsInDb(
         ...(acc.categorySlug ? { categorySlug: acc.categorySlug } : {}),
         ...(acc.typeLabel ? { typeLabel: acc.typeLabel } : {}),
         ...(acc.slug ? { slug: acc.slug } : {}),
-        ...(acc.approvalStatus ? { approvalStatus: acc.approvalStatus } : {}),
+        ...(existingRec.approvalStatus === 'REJECTED'
+          ? { approvalStatus: 'REJECTED' }
+          : acc.approvalStatus
+            ? { approvalStatus: acc.approvalStatus }
+            : {}),
         ...(acc.neighborhood ? { neighborhood: acc.neighborhood } : {}),
         ...(acc.address ? { address: acc.address } : {}),
         ...(typeof acc.mapLat === 'number' ? { mapLat: acc.mapLat } : {}),

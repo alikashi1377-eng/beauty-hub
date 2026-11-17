@@ -373,3 +373,28 @@ test('formatPriceToman never returns رایگان and 1M/10M service with 20% de
   assert.equal(singleBooking.salonNetDepositCreditedToman * 10, 1_700_000);
 });
 
+test('Amirhossein Jazini 400,000 Toman service with 30% deposit yields exact 120,000 deposit, 12,000 commission (3%), 108,000 net payable, and 280,000 in-person', () => {
+  const jaziniBreakdown = resolveAppointmentFinancialBreakdown({
+    appointment: {
+      priceToman: 400_000,
+      depositPaidToman: 120_000,
+    },
+    business: {
+      type: BusinessType.MenBarbershop,
+      typeLabel: 'آرایشگاه مردانه',
+      categorySlug: 'mens-barbershop',
+      targetGender: 'MALE',
+      name: 'سالن امیرحسین جزینی',
+      depositPercent: 30,
+    },
+  });
+
+  assert.equal(jaziniBreakdown.totalServicePriceToman, 400_000);
+  assert.equal(jaziniBreakdown.depositPercent, 30);
+  assert.equal(jaziniBreakdown.baseDepositToman, 120_000);
+  assert.equal(jaziniBreakdown.remainingInSalonToman, 280_000);
+  assert.equal(jaziniBreakdown.platformCommissionPercent, 3);
+  assert.equal(jaziniBreakdown.platformCommissionToman, 12_000);
+  assert.equal(jaziniBreakdown.salonNetDepositCreditedToman, 108_000);
+});
+

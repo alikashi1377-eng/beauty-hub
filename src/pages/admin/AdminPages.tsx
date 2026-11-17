@@ -201,7 +201,13 @@ const BusinessFinancialDossierTable: React.FC<{
     isLoadingInitialData,
   } = usePrototypeData();
 
-  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+  const realBusinesses = businesses.filter(
+    (b) =>
+      !b.isSampleShowcase &&
+      b.approvalStatus !== 'REJECTED' &&
+      !String(b.name || '').includes('مهتاب') &&
+      !String(b.ownerName || '').includes('مهتاب')
+  );
 
   const rows = realBusinesses.map((biz) => {
     const dossier = computeBusinessDossierMetrics(
@@ -684,10 +690,15 @@ const BusinessFullInspectModal: React.FC<{
             <p className="text-[#334155] leading-relaxed">{business.address}</p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <span className="px-2.5 py-1 rounded-lg bg-[#E0ECFF] text-[#0057FF] font-extrabold">
-                پلن: {business.subscriptionPlan}
+                مدل همکاری: کارمزد پلتفرم (
+                {toPersianDigits(
+                  resolveBusinessCommissionMeta(business, paymentConfig)
+                    .commissionPercent
+                )}
+                ٪)
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#92400E] font-bold">
-                زمان درخواست: {business.createdAtJalali || 'ثبت جدید'}
+                تاریخ عضویت: {business.createdAtJalali || 'ثبت‌شده در سامانه'}
               </span>
             </div>
             {business.mapLat && business.mapLng ? (
@@ -876,8 +887,14 @@ export const AdminDashboardPage: React.FC = () => {
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
-  // در پنل مدیریت کلان، سالن‌های نمونه نمایشی به‌طور کامل کنار گذاشته می‌شوند و فقط کسب‌وکارهای واقعی نمایش می‌یابند
-  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
+  // در پنل مدیریت کلان، سالن‌های نمونه نمایشی و سالن‌های رد صلاحیت‌شده کنار گذاشته می‌شوند و فقط کسب‌وکارهای واقعی فعال نمایش می‌یابند
+  const realBusinesses = businesses.filter(
+    (b) =>
+      !b.isSampleShowcase &&
+      b.approvalStatus !== 'REJECTED' &&
+      !String(b.name || '').includes('مهتاب') &&
+      !String(b.ownerName || '').includes('مهتاب')
+  );
 
   // صف بررسی فقط شامل کسب‌وکارهایی است که هنوز توسط مدیر کل تعیین تکلیف (تایید یا رد) نشده‌اند
   const sortedBusinesses = [...realBusinesses]
@@ -904,18 +921,26 @@ export const AdminDashboardPage: React.FC = () => {
 
   const pendingCount = sortedBusinesses.length;
 
-  const activeSubscriptionsCount = realBusinesses.filter(
-    (b) =>
-      b.subscriptionStatus === 'ACTIVE' || b.subscriptionStatus === 'TRIAL'
-  ).length;
+  const activeSubscriptionsCount = realBusinesses.length;
 
-  // تمام رزروهای واقعی دیتابیس (بدون نمونه‌های نمایشی)
-  const realAppointments = appointments.filter(
-    (a) =>
-      !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
-      !/^biz-[1-8]$/.test(a.businessId) &&
-      a.status !== 'CANCELLED'
-  );
+  // تمام رزروهای واقعی دیتابیس (بدون نمونه‌های نمایشی و بدون کسب‌وکارهای رد صلاحیت‌شده)
+  const realAppointments = appointments.filter((a) => {
+    if (
+      /^apt-(?:[1-9]|1[0-2])$/.test(a.id) ||
+      /^biz-[1-8]$/.test(a.businessId) ||
+      a.status === 'CANCELLED' ||
+      String(a.businessName || '').includes('مهتاب')
+    ) {
+      return false;
+    }
+    const matchedBiz = businesses.find((b) =>
+      doesAppointmentBelongToBusiness(a, b)
+    );
+    if (matchedBiz && matchedBiz.approvalStatus === 'REJECTED') {
+      return false;
+    }
+    return true;
+  });
 
   // محاسبه دقیق بیعانه‌های آنلاین، کارمزد پلتفرم و ارزش کل خدمات از روی نوبت‌های واقعی
   let totalServiceVolumeToman = 0;
@@ -1609,6 +1634,7 @@ export const AdminBusinessesPage: React.FC = () => {
     grantBusinessPlanOrAdByAdmin,
     platformBusinessNotices,
     sendPlatformBusinessNotice,
+    paymentConfig,
     showToast,
   } = usePrototypeData();
   const [searchQuery, setSearchQuery] = useState('');
@@ -1954,47 +1980,48 @@ export const AdminBusinessesPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار، پلن، قرارداد و روزشمار اعتبار',
-            render: (b) => (
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-extrabold text-[#1E1B2E]">
-                    {b.name}
-                  </span>
-                  {b.isVipPartner ? (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                      👑 سفیر برند VIP (کارمزد {toPersianDigits(b.vipCommissionPercent ?? 0)}٪)
+            header: 'عنوان کسب‌وکار، تاریخ عضویت، مدل همکاری و وضعیت قرارداد',
+            render: (b) => {
+              const commPct = resolveBusinessCommissionMeta(
+                b,
+                paymentConfig
+              ).commissionPercent;
+              return (
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-extrabold text-[#1E1B2E]">
+                      {b.name}
                     </span>
-                  ) : null}
+                    {b.isVipPartner ? (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
+                        👑 سفیر برند VIP (کارمزد {toPersianDigits(b.vipCommissionPercent ?? 0)}٪)
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-[#0057FF] font-bold">
+                      تاریخ عضویت: {b.createdAtJalali || 'ثبت‌شده در سامانه'} · کارمزد پلتفرم: {toPersianDigits(commPct)}٪
+                    </span>
+                    {b.contractAccepted ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
+                        ✓ قرارداد تایید شده
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
+                        ⚠️ قرارداد تایید نشده
+                      </span>
+                    )}
+                    {b.isSponsored &&
+                    b.sponsoredDaysRemaining &&
+                    b.sponsoredDaysRemaining > 0 ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black tabular-nums">
+                        ★ {toPersianDigits(b.sponsoredDaysRemaining)} روز تبلیغ ویژه
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] text-[#0057FF] font-bold">
-                    پلن: {b.subscriptionPlan} · ثبت: {b.createdAtJalali || 'جدید'}
-                  </span>
-                  {b.contractAccepted ? (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
-                      ✓ قرارداد تایید شده
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
-                      ⚠️ قرارداد تایید نشده
-                    </span>
-                  )}
-                  {b.trialDaysRemaining && b.trialDaysRemaining > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black tabular-nums">
-                      ⏳ {toPersianDigits(b.trialDaysRemaining)} روز اعتبار پلن
-                    </span>
-                  ) : null}
-                  {b.isSponsored &&
-                  b.sponsoredDaysRemaining &&
-                  b.sponsoredDaysRemaining > 0 ? (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black tabular-nums">
-                      ★ {toPersianDigits(b.sponsoredDaysRemaining)} روز تبلیغ ویژه
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ),
+              );
+            },
           },
           {
             key: 'owner',
@@ -2085,9 +2112,9 @@ export const AdminBusinessesPage: React.FC = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => openGrantModal(b, 'PLAN')}
+                      onClick={() => openGrantModal(b, 'SPONSORED_AD')}
                     >
-                      <span>🎁 پلن / تبلیغ زمان‌دار</span>
+                      <span>🎁 تبلیغ ویژه زمان‌دار</span>
                     </Button>
                   </>
                 ) : null}

@@ -2591,7 +2591,8 @@ export function createApiV1Router(
           if (
             status === 'CANCELLED' ||
             /^apt-(?:[1-9]|1[0-2])$/.test(aptId) ||
-            /^biz-[1-8]$/.test(bizId)
+            /^biz-[1-8]$/.test(bizId) ||
+            bizName.includes('مهتاب')
           ) {
             continue;
           }
@@ -2613,11 +2614,96 @@ export function createApiV1Router(
           });
         }
 
-        const [bootstrapPayload, sharedState] = await Promise.all([
+        const [bootstrapPayload, sharedState, rejectedBizRes] = await Promise.all([
           getBootstrapPayload(pool),
           getSharedPlatformState(pool),
+          pool.query(`
+            SELECT
+              b.id,
+              b.legacy_demo_id,
+              COALESCE(b.legacy_demo_id, b.id::text) AS external_id,
+              b.slug,
+              b.name,
+              b.type,
+              b.type_label,
+              b.city,
+              b.neighborhood,
+              b.address,
+              b.map_lat,
+              b.map_lng,
+              b.phone_display,
+              b.instagram_handle,
+              b.short_description,
+              b.about_text,
+              b.visual_theme,
+              b.rating_avg,
+              b.review_count,
+              b.starting_price_toman,
+              b.verified_badge,
+              b.approval_status,
+              b.subscription_plan,
+              b.subscription_status,
+              b.is_featured,
+              b.created_at,
+              u.created_at AS owner_created_at,
+              u.full_name AS owner_full_name,
+              u.phone AS owner_phone,
+              COALESCE(c.slug, 'hair-color') AS primary_category_slug,
+              bme.extra_json
+            FROM businesses b
+            LEFT JOIN categories c ON c.id = b.primary_category_id
+            LEFT JOIN users u ON u.id = b.owner_user_id
+            LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+            WHERE b.approval_status = 'REJECTED'
+              AND COALESCE(b.legacy_demo_id, '') NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+            ORDER BY b.created_at DESC
+          `),
         ]);
-        syncedBusinesses = bootstrapPayload.businesses;
+        const rejectedBusinesses = (rejectedBizRes.rows || []).map((r: Record<string, unknown>) => {
+          const extra =
+            r.extra_json && typeof r.extra_json === 'object'
+              ? (r.extra_json as Record<string, unknown>)
+              : {};
+          return {
+            id: String(r.external_id),
+            slug: String(r.slug),
+            name: String(r.name),
+            type: String(r.type || 'WOMEN_SALON'),
+            typeLabel: String(extra.typeLabel || r.type_label || 'سالن زیبایی'),
+            categorySlug: String(extra.categorySlug || r.primary_category_slug || 'hair-color'),
+            city: String(r.city || 'اصفهان'),
+            neighborhood: String(r.neighborhood || ''),
+            address: String(r.address || ''),
+            mapLat: r.map_lat !== null && r.map_lat !== undefined ? Number(r.map_lat) : undefined,
+            mapLng: r.map_lng !== null && r.map_lng !== undefined ? Number(r.map_lng) : undefined,
+            rating: Number(r.rating_avg) || 4.8,
+            reviewCount: Number(r.review_count) || 0,
+            startingPriceToman: Number(r.starting_price_toman) || 0,
+            verifiedBadge: false,
+            shortDescription: String(r.short_description || ''),
+            aboutText: String(r.about_text || ''),
+            phoneDisplay: String(r.phone_display || ''),
+            ownerName: String(extra.ownerName || r.owner_full_name || ''),
+            ownerPhone: String(extra.ownerPhone || r.owner_phone || r.phone_display || ''),
+            createdAtJalali:
+              typeof extra.createdAtJalali === 'string' && extra.createdAtJalali
+                ? extra.createdAtJalali
+                : undefined,
+            instagramHandle: r.instagram_handle ? String(r.instagram_handle) : undefined,
+            workingHours: [],
+            visualTheme: String(r.visual_theme || 'violet'),
+            approvalStatus: 'REJECTED',
+            subscriptionPlan: String(r.subscription_plan || 'شروع رایگان'),
+            subscriptionStatus: String(r.subscription_status || 'TRIAL'),
+            featured: false,
+          };
+        });
+        syncedBusinesses = [
+          ...(bootstrapPayload.businesses || []),
+          ...rejectedBusinesses.filter(
+            (rb) => !(bootstrapPayload.businesses || []).some((b) => b.id === rb.id || b.slug === rb.slug)
+          ),
+        ];
         syncedServices = bootstrapPayload.services;
         syncedSpecialists = bootstrapPayload.specialists;
         syncedSettlementRequests = sharedState.settlementRequests;
@@ -2652,6 +2738,8 @@ export function createApiV1Router(
           LEFT JOIN specialists sp ON sp.id = a.specialist_id
           WHERE COALESCE(b.legacy_demo_id, '') NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
             AND COALESCE(a.legacy_demo_id, '') NOT IN ('apt-1','apt-2','apt-3','apt-4','apt-5','apt-6','apt-7','apt-8','apt-9','apt-10','apt-11','apt-12')
+            AND COALESCE(b.approval_status, 'APPROVED') <> 'REJECTED'
+            AND COALESCE(b.name, '') NOT ILIKE '%مهتاب%'
           ORDER BY a.service_starts_at DESC, a.created_at DESC
           LIMIT 300
         `);
