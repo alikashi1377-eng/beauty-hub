@@ -1059,10 +1059,12 @@ export function createApiV1Router(
       const dbPool =
         customPool ??
         (config.dataMode === 'real' ? getOrCreatePool(config) : null);
-      if (dbPool && slugOrId) {
+      if (dbPool && (slugOrId || params.businessName || params.ownerPhone)) {
         await ensureAppointmentFromNotifyBookingInDb(dbPool, {
           businessSlug: params.businessSlug,
           businessId: params.businessId,
+          businessName: params.businessName,
+          ownerPhone: params.ownerPhone,
           customerName: params.customerName,
           customerPhone: cleanCustPhone || params.customerPhone,
           serviceTitle: params.serviceTitle,
@@ -2569,16 +2571,55 @@ export function createApiV1Router(
       }
 
       let syncedBusinesses: unknown[] | undefined;
+      let syncedServices: unknown[] | undefined;
+      let syncedSpecialists: unknown[] | undefined;
       let syncedAppointments: unknown[] | undefined;
       let syncedSettlementRequests: Array<Record<string, unknown>> | undefined;
       let syncedPaymentConfig: Record<string, unknown> | undefined;
       let syncedNotices: Array<Record<string, unknown>> | undefined;
       try {
+        const rawClientAppointments = Array.isArray(req.body?.appointments)
+          ? (req.body.appointments as Array<Record<string, unknown>>)
+          : [];
+        for (const cApt of rawClientAppointments) {
+          if (!cApt || typeof cApt !== 'object') continue;
+          const aptId = String(cApt.id || '').trim();
+          const bizId = String(cApt.businessId || '').trim();
+          const bizSlug = String(cApt.businessSlug || '').trim();
+          const bizName = String(cApt.businessName || '').trim();
+          const status = String(cApt.status || 'CONFIRMED').trim();
+          if (
+            status === 'CANCELLED' ||
+            /^apt-(?:[1-9]|1[0-2])$/.test(aptId) ||
+            /^biz-[1-8]$/.test(bizId)
+          ) {
+            continue;
+          }
+          await ensureAppointmentFromNotifyBookingInDb(pool, {
+            businessSlug: bizSlug || undefined,
+            businessId: bizId || undefined,
+            businessName: bizName || undefined,
+            customerName: cApt.customerName ? String(cApt.customerName) : undefined,
+            customerPhone: cApt.customerPhoneMasked
+              ? String(cApt.customerPhoneMasked)
+              : undefined,
+            serviceTitle: cApt.serviceTitle ? String(cApt.serviceTitle) : undefined,
+            priceToman: Number(cApt.priceToman) || undefined,
+            durationMinutes: Number(cApt.durationMinutes) || undefined,
+            dateJalali: cApt.dateJalali ? String(cApt.dateJalali) : undefined,
+            timeSlot: cApt.timeSlot ? String(cApt.timeSlot) : undefined,
+            referenceCode: cApt.referenceCode ? String(cApt.referenceCode) : undefined,
+            status,
+          });
+        }
+
         const [bootstrapPayload, sharedState] = await Promise.all([
           getBootstrapPayload(pool),
           getSharedPlatformState(pool),
         ]);
         syncedBusinesses = bootstrapPayload.businesses;
+        syncedServices = bootstrapPayload.services;
+        syncedSpecialists = bootstrapPayload.specialists;
         syncedSettlementRequests = sharedState.settlementRequests;
         syncedPaymentConfig = sharedState.paymentConfig;
         syncedNotices = sharedState.platformBusinessNotices;
@@ -2657,6 +2698,8 @@ export function createApiV1Router(
         mode: 'real',
         registeredUsers: result.registeredUsers,
         businesses: syncedBusinesses,
+        services: syncedServices,
+        specialists: syncedSpecialists,
         appointments: syncedAppointments,
         settlementRequests: syncedSettlementRequests,
         paymentConfig: syncedPaymentConfig,

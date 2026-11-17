@@ -2032,78 +2032,127 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               shortDescription: undefined,
             });
           }
-          if (syncPayloadAccounts.length > 0) {
-            void realApiClient
-              .syncRegisteredAccounts({
-                accounts: syncPayloadAccounts,
-                issueSessionForPhone: localPersistedUser?.phone || undefined,
-              })
-              .then((syncRes) => {
-                if (Array.isArray(syncRes.registeredUsers)) {
-                  setAdminUsers(syncRes.registeredUsers);
+          const localSavedApts = mergeSavedAppointments([], nextBusinesses).filter(
+            (a: AppointmentItem) =>
+              a &&
+              a.status !== 'CANCELLED' &&
+              !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
+              !/^biz-[1-8]$/.test(a.businessId)
+          );
+          void realApiClient
+            .syncRegisteredAccounts({
+              accounts: syncPayloadAccounts,
+              issueSessionForPhone: localPersistedUser?.phone || undefined,
+              appointments: localSavedApts,
+            })
+            .then((syncRes) => {
+              if (Array.isArray(syncRes.registeredUsers)) {
+                setAdminUsers(syncRes.registeredUsers);
+              }
+              let latestServices = nextServices;
+              if (
+                Array.isArray(syncRes.services) &&
+                syncRes.services.length > 0
+              ) {
+                const srvMap = new Map<string, ServiceItem>();
+                for (const s of nextServices) {
+                  if (s && s.id) srvMap.set(s.id, s);
                 }
-                let latestBusinesses = nextBusinesses;
-                if (
-                  Array.isArray(syncRes.businesses) &&
-                  syncRes.businesses.length > 0
-                ) {
-                  latestBusinesses = syncStartingPricesWithServices(
-                    mergeBusinessOverrides(
-                      syncRes.businesses,
-                      syncRes.registeredUsers
-                    ),
-                    nextServices
+                for (const s of syncRes.services) {
+                  if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+                    srvMap.set(s.id, s);
+                  }
+                }
+                latestServices = applySavedServiceSortOrder(
+                  Array.from(srvMap.values())
+                );
+                setServices(latestServices);
+              }
+              if (
+                Array.isArray(syncRes.specialists) &&
+                syncRes.specialists.length > 0
+              ) {
+                setSpecialists((prevSpcs) => {
+                  const spcMap = new Map<string, SpecialistItem>();
+                  for (const sp of prevSpcs) {
+                    if (sp && sp.id) spcMap.set(sp.id, sp);
+                  }
+                  for (const sp of syncRes.specialists || []) {
+                    if (
+                      sp &&
+                      sp.id &&
+                      !/^biz-[1-8]$/.test(sp.businessId) &&
+                      !/^spc-[1-8]$/.test(sp.id)
+                    ) {
+                      spcMap.set(sp.id, sp);
+                    }
+                  }
+                  return Array.from(spcMap.values());
+                });
+              }
+              let latestBusinesses = nextBusinesses;
+              if (
+                Array.isArray(syncRes.businesses) &&
+                syncRes.businesses.length > 0
+              ) {
+                latestBusinesses = syncStartingPricesWithServices(
+                  mergeBusinessOverrides(
+                    syncRes.businesses,
+                    syncRes.registeredUsers
+                  ),
+                  latestServices
+                );
+                setBusinesses(latestBusinesses);
+              }
+              if (
+                Array.isArray(syncRes.appointments) &&
+                syncRes.appointments.length > 0
+              ) {
+                const syncedApts = syncRes.appointments;
+                setAppointments((prev) => {
+                  const merged = mergeSavedAppointments(
+                    [...syncedApts, ...prev],
+                    latestBusinesses
                   );
-                  setBusinesses(latestBusinesses);
-                }
-                if (
-                  Array.isArray(syncRes.appointments) &&
-                  syncRes.appointments.length > 0
-                ) {
-                  const syncedApts = syncRes.appointments;
-                  setAppointments((prev) =>
-                    mergeSavedAppointments(
-                      [...syncedApts, ...prev],
-                      latestBusinesses
-                    )
-                  );
-                }
-                if (
-                  syncRes.paymentConfig &&
-                  typeof syncRes.paymentConfig === 'object'
-                ) {
-                  setPaymentConfig((prev) => ({
-                    ...prev,
-                    ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
-                  }));
-                }
-                if (Array.isArray(syncRes.settlementRequests)) {
-                  setSettlementRequests((prev) => {
-                    const byId = new Map<string, SettlementRequestItem>();
-                    for (const s of syncRes.settlementRequests || []) {
-                      if (s && s.id) byId.set(s.id, s);
-                    }
-                    for (const s of prev) {
-                      if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
-                    }
-                    return Array.from(byId.values());
-                  });
-                }
-                if (Array.isArray(syncRes.platformBusinessNotices)) {
-                  setPlatformBusinessNotices((prev) => {
-                    const byId = new Map<string, PlatformBusinessNoticeItem>();
-                    for (const n of syncRes.platformBusinessNotices || []) {
-                      if (n && n.id) byId.set(n.id, n);
-                    }
-                    for (const n of prev) {
-                      if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
-                    }
-                    return Array.from(byId.values());
-                  });
-                }
-              })
-              .catch(() => {});
-          }
+                  persistSavedAppointments(merged);
+                  return merged;
+                });
+              }
+              if (
+                syncRes.paymentConfig &&
+                typeof syncRes.paymentConfig === 'object'
+              ) {
+                setPaymentConfig((prev) => ({
+                  ...prev,
+                  ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
+                }));
+              }
+              if (Array.isArray(syncRes.settlementRequests)) {
+                setSettlementRequests((prev) => {
+                  const byId = new Map<string, SettlementRequestItem>();
+                  for (const s of syncRes.settlementRequests || []) {
+                    if (s && s.id) byId.set(s.id, s);
+                  }
+                  for (const s of prev) {
+                    if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
+                  }
+                  return Array.from(byId.values());
+                });
+              }
+              if (Array.isArray(syncRes.platformBusinessNotices)) {
+                setPlatformBusinessNotices((prev) => {
+                  const byId = new Map<string, PlatformBusinessNoticeItem>();
+                  for (const n of syncRes.platformBusinessNotices || []) {
+                    if (n && n.id) byId.set(n.id, n);
+                  }
+                  for (const n of prev) {
+                    if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
+                  }
+                  return Array.from(byId.values());
+                });
+              }
+            })
+            .catch(() => {});
         } catch {
           // ignore
         }
@@ -2193,6 +2242,78 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     void refreshRealData();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || dataMode !== 'real') return;
+    const syncLiveFromServer = () => {
+      const localSavedApts = mergeSavedAppointments([], []).filter(
+        (a: AppointmentItem) =>
+          a &&
+          a.status !== 'CANCELLED' &&
+          !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
+          !/^biz-[1-8]$/.test(a.businessId)
+      );
+      void realApiClient
+        .syncRegisteredAccounts({
+          accounts: [],
+          appointments: localSavedApts,
+        })
+        .then((syncRes) => {
+          if (Array.isArray(syncRes.registeredUsers)) {
+            setAdminUsers(syncRes.registeredUsers);
+          }
+          if (Array.isArray(syncRes.services) && syncRes.services.length > 0) {
+            setServices((prevSrvs) => {
+              const srvMap = new Map<string, ServiceItem>();
+              for (const s of prevSrvs) {
+                if (s && s.id) srvMap.set(s.id, s);
+              }
+              for (const s of syncRes.services || []) {
+                if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+                  srvMap.set(s.id, s);
+                }
+              }
+              return applySavedServiceSortOrder(Array.from(srvMap.values()));
+            });
+          }
+          if (
+            Array.isArray(syncRes.businesses) &&
+            syncRes.businesses.length > 0
+          ) {
+            setBusinesses((prevBiz) =>
+              mergeBusinessOverrides(
+                syncRes.businesses || prevBiz,
+                syncRes.registeredUsers
+              )
+            );
+          }
+          if (
+            Array.isArray(syncRes.appointments) &&
+            syncRes.appointments.length > 0
+          ) {
+            setAppointments((prev) => {
+              const merged = mergeSavedAppointments(
+                [...(syncRes.appointments || []), ...prev],
+                syncRes.businesses || []
+              );
+              persistSavedAppointments(merged);
+              return merged;
+            });
+          }
+        })
+        .catch(() => {});
+    };
+
+    const onWindowFocus = () => {
+      syncLiveFromServer();
+    };
+    window.addEventListener('focus', onWindowFocus);
+    const intervalId = window.setInterval(syncLiveFromServer, 25000);
+    return () => {
+      window.removeEventListener('focus', onWindowFocus);
+      window.clearInterval(intervalId);
+    };
+  }, [dataMode]);
 
   const buildSessionUserFromMemory = (
     phone: string,

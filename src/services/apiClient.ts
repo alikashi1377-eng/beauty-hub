@@ -743,9 +743,13 @@ export const realApiClient = {
       vipCommissionPercent?: number;
     }>;
     issueSessionForPhone?: string;
+    appointments?: AppointmentItem[];
+    services?: ServiceItem[];
   }): Promise<{
     registeredUsers: AdminUserRecord[];
     businesses?: BusinessItem[];
+    services?: ServiceItem[];
+    specialists?: SpecialistItem[];
     appointments?: AppointmentItem[];
     settlementRequests?: SettlementRequestItem[];
     paymentConfig?: Partial<PaymentGatewayConfig>;
@@ -758,6 +762,8 @@ export const realApiClient = {
       ok: boolean;
       registeredUsers: AdminUserRecord[];
       businesses?: BusinessItem[];
+      services?: ServiceItem[];
+      specialists?: SpecialistItem[];
       appointments?: AppointmentItem[];
       settlementRequests?: SettlementRequestItem[];
       paymentConfig?: Partial<PaymentGatewayConfig>;

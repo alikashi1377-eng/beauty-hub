@@ -36,6 +36,7 @@ import {
   Wallet,
   FileText,
   Crown,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AdPackageItem,
@@ -86,6 +87,35 @@ const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType<{ className?:
   HeartHandshake,
 };
 
+/** بررسی تطابق دقیق نوبت با یک کسب‌وکار (شناسه، اسلاگ، نام سالن یا نام صاحب سالن) */
+function doesAppointmentBelongToBusiness(
+  apt: ReturnType<typeof usePrototypeData>['appointments'][number],
+  business: BusinessItem
+): boolean {
+  if (!apt || apt.status === 'CANCELLED') return false;
+  if (apt.businessId === business.id || apt.businessId === business.slug) {
+    return true;
+  }
+  if (apt.businessSlug && apt.businessSlug === business.slug) {
+    return true;
+  }
+  const aptBizName = (apt.businessName || '').trim();
+  const bizName = (business.name || '').trim();
+  const ownerName = (business.ownerName || '').trim();
+  if (aptBizName && bizName && aptBizName === bizName) {
+    return true;
+  }
+  if (
+    aptBizName &&
+    ownerName &&
+    ownerName.length >= 3 &&
+    (aptBizName.includes(ownerName) || bizName.includes(aptBizName))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /** محاسبه خلاصه پرونده مالی و کارکرد یک کسب‌وکار بر اساس نوبت‌های واقعی ثبت‌شده */
 function computeBusinessDossierMetrics(
   business: BusinessItem,
@@ -93,12 +123,8 @@ function computeBusinessDossierMetrics(
   services: ReturnType<typeof usePrototypeData>['services'],
   paymentConfig: ReturnType<typeof usePrototypeData>['paymentConfig']
 ) {
-  const bizApts = appointments.filter(
-    (a) =>
-      (a.businessId === business.id ||
-        a.businessId === business.slug ||
-        (a.businessName && a.businessName.trim() === business.name.trim())) &&
-      a.status !== 'CANCELLED'
+  const bizApts = appointments.filter((a) =>
+    doesAppointmentBelongToBusiness(a, business)
   );
   const commMeta = resolveBusinessCommissionMeta(business, paymentConfig);
 
@@ -139,6 +165,7 @@ function computeBusinessDossierMetrics(
     totalServiceToman - totalDepositCollectedToman
   );
   const currentPayableToman = totalNetToSalonToman;
+  const latestAppointment = bizApts[0] || null;
 
   return {
     bookingsCount: bizApts.length,
@@ -154,6 +181,7 @@ function computeBusinessDossierMetrics(
     totalCommissionToman,
     totalNetToSalonToman,
     currentPayableToman,
+    latestAppointment,
   };
 }
 
@@ -169,6 +197,8 @@ const BusinessFinancialDossierTable: React.FC<{
     paymentConfig,
     settlementRequests,
     settleBusinessDossierByAdmin,
+    refreshRealData,
+    isLoadingInitialData,
   } = usePrototypeData();
 
   const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
@@ -205,26 +235,41 @@ const BusinessFinancialDossierTable: React.FC<{
   });
 
   return (
-    <Card className="rounded-3xl p-5 sm:p-6 space-y-4 border-2 border-[#0057FF]/20 bg-gradient-to-br from-[#F8FAFC] to-white">
+    <Card className="rounded-3xl p-5 sm:p-6 space-y-4 border-2 border-[#0057FF]/25 bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]/40 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3.5">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Wallet className="w-5 h-5 text-[#0057FF]" />
             <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
               پرونده مالی و کارکرد هر کسب‌وکار (تعداد رزرو، جمع خدمات، بیعانه، کسر کارمزد و تسویه هفتگی)
             </h2>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              سینک زنده با دیتابیس مرکزی
+            </span>
           </div>
           <p className="text-xs text-[#475569] leading-relaxed">
-            در این جدول ریز کارکرد واقعی هر سالن طبق مفاد قرارداد و تنظیمات مدیریت محاسبه می‌شود: کارمزد پلتفرم بر اساس <strong>کل قیمت خدمات ارائه‌شده</strong> محاسبه شده و از محل <strong>بیعانه دریافتی آنلاین</strong> کسر می‌گردد و الباقی بیعانه به شبای صاحب کسب‌وکار واریز می‌شود.
+            در این جدول ریز کارکرد واقعی هر سالن طبق مفاد قرارداد و تنظیمات مدیریت به‌صورت زنده از پایگاه داده محاسبه می‌شود: کارمزد پلتفرم بر اساس <strong>کل قیمت خدمات ارائه‌شده</strong> محاسبه شده و از محل <strong>بیعانه دریافتی آنلاین</strong> کسر می‌گردد و الباقی بیعانه به شبای صاحب کسب‌وکار واریز می‌شود.
           </p>
         </div>
-        <Link
-          to="/admin/payments"
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#061138] text-white text-xs font-extrabold hover:bg-[#0057FF] transition-colors"
-        >
-          <CreditCard className="w-4 h-4" />
-          <span>تنظیمات کارمزدها و تسویه دسته‌ای شبا</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void refreshRealData()}
+            disabled={isLoadingInitialData}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white text-[#0057FF] border border-[#0057FF]/30 text-xs font-extrabold hover:bg-[#EFF6FF] transition-colors disabled:opacity-60 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingInitialData ? 'animate-spin' : ''}`} />
+            <span>{isLoadingInitialData ? 'در حال بروزرسانی...' : 'بروزرسانی آنی اطلاعات'}</span>
+          </button>
+          <Link
+            to="/admin/payments"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#061138] text-white text-xs font-extrabold hover:bg-[#0057FF] transition-colors"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>تنظیمات کارمزدها و تسویه دسته‌ای شبا</span>
+          </Link>
+        </div>
       </div>
 
       {/* راهنمای فرمول پویا محاسبه مالی بر اساس اطلاعات واقعی هر سالن */}
@@ -305,6 +350,11 @@ const BusinessFinancialDossierTable: React.FC<{
                     {formatPriceToman(dossier.totalRemainingInSalonToman)}
                   </strong>
                 </span>
+                {dossier.latestAppointment ? (
+                  <span className="text-[10px] text-[#0057FF] bg-[#EFF6FF] border border-[#BFDBFE] px-1.5 py-0.5 rounded-md inline-block mt-0.5 font-bold">
+                    آخرین نوبت: {dossier.latestAppointment.serviceTitle} ({dossier.latestAppointment.dateJalali})
+                  </span>
+                ) : null}
               </div>
             ),
           },
@@ -874,11 +924,8 @@ export const AdminDashboardPage: React.FC = () => {
   let totalSalonNetShareToman = 0;
 
   for (const apt of realAppointments) {
-    const biz = realBusinesses.find(
-      (b) =>
-        b.id === apt.businessId ||
-        b.slug === apt.businessId ||
-        (apt.businessName && b.name.trim() === apt.businessName.trim())
+    const biz = realBusinesses.find((b) =>
+      doesAppointmentBelongToBusiness(apt, b)
     );
     const srv = services.find((s) => s.id === apt.serviceId);
     const servicePrice = Math.max(
@@ -5170,11 +5217,8 @@ export const AdminReportsPage: React.FC = () => {
 
   let onlineDepositsToman = 0;
   for (const apt of realAppointments) {
-    const biz = realBusinesses.find(
-      (b) =>
-        b.id === apt.businessId ||
-        b.slug === apt.businessId ||
-        (apt.businessName && b.name.trim() === apt.businessName.trim())
+    const biz = realBusinesses.find((b) =>
+      doesAppointmentBelongToBusiness(apt, b)
     );
     const srv = services.find((s) => s.id === apt.serviceId);
     const servicePrice = Math.max(

@@ -3365,3 +3365,89 @@ test('SQL integrity: syncRegisteredAccountsInDb preserves existing DB business_m
     )
   );
 });
+
+test('SQL integrity: ensureAppointmentFromNotifyBookingInDb uses b.primary_category_id and persists live bookings into appointments and business_customers', async () => {
+  const executedQueries: Array<{ sql: string; params?: unknown[] }> = [];
+  const spyPool = {
+    async connect() {
+      return {
+        async query(sql: string, params?: unknown[]) {
+          executedQueries.push({ sql, params });
+          if (sql.includes('SELECT b.id, b.name, b.city, b.primary_category_id')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'biz-jazini-uuid',
+                  name: 'سالن امیرحسین جزینی',
+                  city: 'اصفهان',
+                  primary_category_id: 'cat-mens-1',
+                  extra_json: { ownerName: 'امیرحسین جزینی', depositPercent: 20 },
+                },
+              ],
+            };
+          }
+          if (sql.includes('SELECT 1 FROM appointments')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('FROM services')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'srv-jazini-1',
+                  title: 'اصلاح و استایلینگ تخصصی',
+                  duration_minutes: 45,
+                  price_toman: 400000,
+                },
+              ],
+            };
+          }
+          if (sql.includes('FROM specialists')) {
+            return {
+              rowCount: 1,
+              rows: [{ id: 'spc-jazini-1', full_name: 'امیرحسین جزینی' }],
+            };
+          }
+          return { rowCount: 1, rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+
+  const { ensureAppointmentFromNotifyBookingInDb } = await import(
+    './repositories/beautyhubRepository'
+  );
+  await ensureAppointmentFromNotifyBookingInDb(spyPool as never, {
+    businessName: 'سالن امیرحسین جزینی',
+    customerName: 'علی رضایی',
+    customerPhone: '09131112233',
+    serviceTitle: 'اصلاح و استایلینگ تخصصی',
+    priceToman: 400000,
+    durationMinutes: 45,
+    dateJalali: '۱۴۰۴/۱۲/۲۵',
+    timeSlot: '20:00',
+    referenceCode: 'BH-JZN-400',
+    status: 'COMPLETED',
+  });
+
+  const allSql = executedQueries.map((q) => q.sql).join('\n');
+  assert.equal(allSql.includes('b.category_id'), false);
+  assert.equal(allSql.includes('b.primary_category_id'), true);
+
+  const aptInsert = executedQueries.find((q) =>
+    q.sql.includes('INSERT INTO appointments')
+  );
+  assert.ok(aptInsert);
+  assert.equal(aptInsert.params?.[0], 'BH-JZN-400');
+  assert.equal(aptInsert.params?.[1], 'biz-jazini-uuid');
+  assert.equal(aptInsert.params?.[5], 400000);
+  assert.equal(aptInsert.params?.[14], 'COMPLETED');
+
+  const crmUpsert = executedQueries.find((q) =>
+    q.sql.includes('INSERT INTO business_customers')
+  );
+  assert.ok(crmUpsert);
+});
+
