@@ -96,21 +96,12 @@ function doesAppointmentBelongToBusiness(
   if (apt.businessId === business.id || apt.businessId === business.slug) {
     return true;
   }
-  if (apt.businessSlug && apt.businessSlug === business.slug) {
+  if (apt.businessSlug && (apt.businessSlug === business.slug || apt.businessSlug === business.id)) {
     return true;
   }
   const aptBizName = (apt.businessName || '').trim();
   const bizName = (business.name || '').trim();
-  const ownerName = (business.ownerName || '').trim();
   if (aptBizName && bizName && aptBizName === bizName) {
-    return true;
-  }
-  if (
-    aptBizName &&
-    ownerName &&
-    ownerName.length >= 3 &&
-    (aptBizName.includes(ownerName) || bizName.includes(aptBizName))
-  ) {
     return true;
   }
   return false;
@@ -2336,16 +2327,16 @@ export const AdminBusinessesPage: React.FC = () => {
                   }
                   options={[
                     {
-                      value: 'SEARCH_TOP',
-                      label: 'صدر نتایج جست‌وجوی شهر (/search)',
+                      value: 'HERO_SPOTLIGHT',
+                      label: '🏆 منتخب ماه مراجعان + ویترین طلایی بالای صفحه اصلی',
                     },
                     {
                       value: 'HOME_BANNER',
-                      label: 'بنر ویژه در صفحه اول سایت + صدر جست‌وجو',
+                      label: '🌟 بنر ویژه صفحه اصلی (پایین صفحه اول) + صدر جست‌وجو',
                     },
                     {
-                      value: 'HERO_SPOTLIGHT',
-                      label: 'ویترین طلایی بالای صفحه اول',
+                      value: 'SEARCH_TOP',
+                      label: '🔍 صدر نتایج جست‌وجوی شهر (/search)',
                     },
                   ]}
                 />
@@ -3633,9 +3624,9 @@ export const AdminSubscriptionsPage: React.FC = () => {
   const pendingOrders = paymentOrders.filter((o) => o.status === 'PENDING');
 
   const placementLabels: Record<string, string> = {
-    SEARCH_TOP: 'صدر جست‌وجو (/search)',
-    HOME_BANNER: 'بنر صفحه اول + صدر جست‌وجو',
-    HERO_SPOTLIGHT: 'ویترین طلایی بالای صفحه اول',
+    SEARCH_TOP: '🔍 صدر جست‌وجو (/search)',
+    HOME_BANNER: '🌟 بنر ویژه صفحه اصلی + صدر جست‌وجو',
+    HERO_SPOTLIGHT: '🏆 منتخب ماه مراجعان + ویترین طلایی صفحه اصلی',
   };
 
   const realActiveBusinesses = businesses.filter(
@@ -4150,37 +4141,105 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'actions',
-              header: 'مدیریت کامل جایگاه و زمان',
-              render: (b) => (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => openManageBizModal(b)}
-                  >
-                    <Megaphone className="w-3.5 h-3.5" />
-                    <span>تنظیم جایگاه و زمان تبلیغ</span>
-                  </Button>
-                  {b.isSponsored ? (
+              header: 'انتخاب سریع «منتخب ماه» / «بنر ویژه» و مدیریت زمان',
+              render: (b) => {
+                const isSpotlight =
+                  b.isSponsored && b.sponsoredPlacement === 'HERO_SPOTLIGHT';
+                const isHomeBanner =
+                  b.isSponsored && b.sponsoredPlacement === 'HOME_BANNER';
+                return (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nowMs = Date.now();
+                        const days = b.sponsoredDaysRemaining || 30;
+                        updateBusinessProfile(b.id, {
+                          isSponsored: true,
+                          featured: true,
+                          sponsoredPlacement: 'HERO_SPOTLIGHT',
+                          sponsoredOrder: 1,
+                          sponsoredDaysRemaining: days,
+                          sponsoredExpiresAtMs:
+                            nowMs + days * 24 * 60 * 60 * 1000,
+                          sponsoredLabel:
+                            b.sponsoredLabel || '🏆 منتخب ماه مراجعان تایم‌تو',
+                        });
+                        showToast(
+                          `«${b.name}» به عنوان 🏆 منتخب ماه مراجعان و ویترین طلایی صفحه اصلی تنظیم شد ✓`
+                        );
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
+                        isSpotlight
+                          ? 'bg-amber-500 text-[#061138] border-amber-600 shadow-xs'
+                          : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                      }`}
+                    >
+                      {isSpotlight
+                        ? '🏆 منتخب ماه فعال است'
+                        : '🏆 تنظیم به عنوان منتخب ماه'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nowMs = Date.now();
+                        const days = b.sponsoredDaysRemaining || 30;
+                        updateBusinessProfile(b.id, {
+                          isSponsored: true,
+                          featured: true,
+                          sponsoredPlacement: 'HOME_BANNER',
+                          sponsoredOrder: 1,
+                          sponsoredDaysRemaining: days,
+                          sponsoredExpiresAtMs:
+                            nowMs + days * 24 * 60 * 60 * 1000,
+                          sponsoredLabel:
+                            b.sponsoredLabel || '🌟 پیشنهاد ویژه صفحه اصلی',
+                        });
+                        showToast(
+                          `«${b.name}» در 🌟 بنر ویژه صفحه اصلی قرار گرفت ✓`
+                        );
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
+                        isHomeBanner
+                          ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
+                          : 'bg-[#EFF6FF] text-[#0057FF] border-[#BFDBFE] hover:bg-[#DBEAFE]'
+                      }`}
+                    >
+                      {isHomeBanner
+                        ? '🌟 بنر ویژه صفحه اصلی فعال است'
+                        : '🌟 نمایش در بنر ویژه صفحه اصلی'}
+                    </button>
+
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        updateBusinessProfile(b.id, {
-                          isSponsored: false,
-                        });
-                        showToast(
-                          `نمایش تبلیغاتی «${b.name}» غیرفعال شد و به حالت عادی بازگشت.`
-                        );
-                      }}
+                      onClick={() => openManageBizModal(b)}
                     >
-                      لغو پین
+                      <Megaphone className="w-3.5 h-3.5" />
+                      <span>تنظیمات کامل جایگاه</span>
                     </Button>
-                  ) : null}
-                </div>
-              ),
+                    {b.isSponsored ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          updateBusinessProfile(b.id, {
+                            isSponsored: false,
+                          });
+                          showToast(
+                            `نمایش تبلیغاتی «${b.name}» غیرفعال شد و به حالت عادی بازگشت.`
+                          );
+                        }}
+                      >
+                        لغو پین
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              },
             },
           ]}
         />
@@ -4445,16 +4504,16 @@ export const AdminSubscriptionsPage: React.FC = () => {
                 }
                 options={[
                   {
-                    value: 'SEARCH_TOP',
-                    label: 'صدر نتایج جست‌وجو (/search)',
+                    value: 'HERO_SPOTLIGHT',
+                    label: '🏆 منتخب ماه مراجعان + ویترین طلایی صفحه اصلی',
                   },
                   {
                     value: 'HOME_BANNER',
-                    label: 'بنر ویژه صفحه اول + صدر جست‌وجو',
+                    label: '🌟 بنر ویژه صفحه اصلی (پایین صفحه اول) + صدر جست‌وجو',
                   },
                   {
-                    value: 'HERO_SPOTLIGHT',
-                    label: 'ویترین طلایی صفحه اول + صدر جست‌وجو',
+                    value: 'SEARCH_TOP',
+                    label: '🔍 صدر نتایج جست‌وجو (/search)',
                   },
                 ]}
               />

@@ -265,6 +265,9 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
   placeholderName,
   businessName,
   aspectRatio = 1,
+  enableCoverBannerOption = false,
+  coverValue,
+  onCoverChange,
 }) => {
   const effectiveHint = helperText || hint;
   const effectivePlaceholder = businessName || placeholderName || 'تایم‌تو';
@@ -277,7 +280,9 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
           ? 4 / 3
           : 1;
   const inputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const coverFrameRef = useRef<HTMLDivElement>(null);
 
   // نگه داشتن تصویر اصلی آپلودشده جهت جابجایی و تغییر اندازه بدون افت کیفیت
   const [sourceImageUrl, setSourceImageUrl] = useState<string>(value || '');
@@ -287,7 +292,21 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
+  // استیت اختصاصی بنر عریض (۱۶:۹) بالای پروفایل
+  const [coverSourceUrl, setCoverSourceUrl] = useState<string>(coverValue || '');
+  const [coverZoom, setCoverZoom] = useState<number>(1);
+  const [coverPan, setCoverPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isCoverDragging, setIsCoverDragging] = useState<boolean>(false);
+  const [coverLoading, setCoverLoading] = useState<boolean>(false);
+
   const dragStartRef = useRef<{
+    clientX: number;
+    clientY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  const coverDragStartRef = useRef<{
     clientX: number;
     clientY: number;
     startX: number;
@@ -304,6 +323,16 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
       setPan({ x: 0, y: 0 });
     }
   }, [value, sourceImageUrl]);
+
+  useEffect(() => {
+    if (coverValue && !coverSourceUrl) {
+      setCoverSourceUrl(coverValue);
+    } else if (!coverValue && coverSourceUrl) {
+      setCoverSourceUrl('');
+      setCoverZoom(1);
+      setCoverPan({ x: 0, y: 0 });
+    }
+  }, [coverValue, coverSourceUrl]);
 
   const commitPositionedImage = useCallback(
     async (src: string, nextZoom: number, nextPan: { x: number; y: number }) => {
@@ -328,6 +357,26 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     [numericAspectRatio, onChange]
   );
 
+  const commitPositionedCover = useCallback(
+    async (src: string, nextZoom: number, nextPan: { x: number; y: number }) => {
+      if (!src || !onCoverChange) return;
+      try {
+        const resultDataUrl = await renderPositionedPhotoDataUrl(
+          src,
+          nextZoom,
+          nextPan.x,
+          nextPan.y,
+          1280,
+          720
+        );
+        onCoverChange(resultDataUrl);
+      } catch {
+        // ignore CORS on external urls
+      }
+    },
+    [onCoverChange]
+  );
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -347,6 +396,28 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     } finally {
       setLoading(false);
       if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const handleCoverFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onCoverChange) return;
+    setError('');
+    setCoverLoading(true);
+    try {
+      const optimizedCover = await resizeImageFileToDataUrl(file, 1600, 0.88);
+      setCoverSourceUrl(optimizedCover);
+      setCoverZoom(1);
+      setCoverPan({ x: 0, y: 0 });
+      onCoverChange(optimizedCover);
+      await commitPositionedCover(optimizedCover, 1, { x: 0, y: 0 });
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'خطا در بارگذاری تصویر بنر.'
+      );
+    } finally {
+      setCoverLoading(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
     }
   };
 
@@ -399,6 +470,56 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     }
   };
 
+  const handleCoverPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!coverSourceUrl) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsCoverDragging(true);
+    coverDragStartRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      startX: coverPan.x,
+      startY: coverPan.y,
+    };
+  };
+
+  const handleCoverPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isCoverDragging || !coverDragStartRef.current || !coverFrameRef.current)
+      return;
+    const rect = coverFrameRef.current.getBoundingClientRect();
+    const dxPercent =
+      ((e.clientX - coverDragStartRef.current.clientX) / Math.max(1, rect.width)) *
+      100;
+    const dyPercent =
+      ((e.clientY - coverDragStartRef.current.clientY) / Math.max(1, rect.height)) *
+      100;
+
+    const maxPan = Math.max(35, (coverZoom - 0.5) * 65);
+    const nextX = Math.max(
+      -maxPan,
+      Math.min(maxPan, coverDragStartRef.current.startX + dxPercent)
+    );
+    const nextY = Math.max(
+      -maxPan,
+      Math.min(maxPan, coverDragStartRef.current.startY + dyPercent)
+    );
+    setCoverPan({ x: nextX, y: nextY });
+  };
+
+  const handleCoverPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isCoverDragging) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    setIsCoverDragging(false);
+    coverDragStartRef.current = null;
+    if (coverSourceUrl) {
+      void commitPositionedCover(coverSourceUrl, coverZoom, coverPan);
+    }
+  };
+
   const handleWheelZoom = (e: React.WheelEvent<HTMLDivElement>) => {
     if (!sourceImageUrl) return;
     e.preventDefault();
@@ -420,6 +541,16 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     }
   };
 
+  const handleCoverZoomChange = (nextZoomValue: number) => {
+    const clamped = Number(
+      Math.max(0.6, Math.min(2.6, nextZoomValue)).toFixed(2)
+    );
+    setCoverZoom(clamped);
+    if (coverSourceUrl) {
+      void commitPositionedCover(coverSourceUrl, clamped, coverPan);
+    }
+  };
+
   const handleResetPosition = () => {
     const resetPan = { x: 0, y: 0 };
     setZoom(1);
@@ -429,12 +560,22 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
     }
   };
 
+  const handleResetCoverPosition = () => {
+    const resetPan = { x: 0, y: 0 };
+    setCoverZoom(1);
+    setCoverPan(resetPan);
+    if (coverSourceUrl) {
+      void commitPositionedCover(coverSourceUrl, 1, resetPan);
+    }
+  };
+
   const activePreviewUrl = sourceImageUrl || value || '';
+  const activeCoverPreviewUrl = coverSourceUrl || coverValue || '';
 
   return (
-    <div className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
+    <div className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-5">
+      {/* بخش ۱: آپلود و تنظیم عکس پروفایل ۱:۱ (آواتار دایره‌ای و کارت متخصص / منتخب ماه) */}
       <div className="flex flex-col sm:flex-row items-center gap-4">
-        {/* کادر تعاملی تصویر: فقط کشیدن با دست/موس برای تنظیم جایگاه */}
         <div className="flex flex-col items-center gap-2 shrink-0">
           <div
             ref={frameRef}
@@ -488,11 +629,12 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
           </div>
         </div>
 
-        {/* توضیحات، نوار کوچک/بزرگ کردن و دکمه‌های انتخاب یا حذف */}
         <div className="flex-1 space-y-3 text-center sm:text-right w-full">
           <div>
             <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
-              {label}
+              {enableCoverBannerOption
+                ? '۱. عکس پروفایل اصلی و آواتار (کادر مربعی ۱:۱ — نمایش در پروفایل، کارت متخصص و منتخب ماه)'
+                : label}
             </p>
             <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">
               {effectiveHint}
@@ -504,7 +646,7 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
               <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-[#061138]">
                 <span className="inline-flex items-center gap-1 text-[#0057FF]">
                   <Move className="w-3.5 h-3.5" />
-                  <span>کوچک یا بزرگ کردن تصویر:</span>
+                  <span>کوچک یا بزرگ کردن عکس پروفایل:</span>
                 </span>
                 <button
                   type="button"
@@ -566,8 +708,8 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
                 {loading
                   ? 'در حال پردازش...'
                   : activePreviewUrl
-                    ? 'تغییر تصویر'
-                    : 'آپلود عکس از گوشی / سیستم'}
+                    ? 'تغییر عکس پروفایل'
+                    : 'آپلود عکس پروفایل از گوشی / سیستم'}
               </span>
             </button>
 
@@ -593,6 +735,229 @@ export const ProfilePhotoUploader: React.FC<ProfilePhotoUploaderProps> = ({
           ) : null}
         </div>
       </div>
+
+      {/* بخش ۲: آپلود و تنظیم مجزای بنر عریض بالای صفحه پروفایل (نسبت ۱۶:۹) + پیش‌نمایش زنده */}
+      {enableCoverBannerOption && onCoverChange ? (
+        <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                ۲. بنر عریض بالای صفحه پروفایل و کارت افقی سالن (نسبت ۱۶:۹ — اختیاری)
+              </p>
+              <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">
+                چون کادر بالای پروفایل عریض (افقی) است، می‌توانید یک عکس افقی مجزا از محیط سالن یا بنر اختصاصی برای آن انتخاب و تنظیم کنید تا عکس پرتره شما بریده نشود.
+              </p>
+            </div>
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleCoverFileSelect}
+              className="hidden"
+            />
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={coverLoading}
+                onClick={() => coverInputRef.current?.click()}
+                className="px-3.5 py-2 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <ImagePlus className="w-3.5 h-3.5 text-[#00E5FF]" />
+                <span>
+                  {coverLoading
+                    ? 'در حال پردازش بنر...'
+                    : activeCoverPreviewUrl
+                      ? 'تغییر تصویر بنر عریض'
+                      : 'انتخاب تصویر مجزا برای بنر عریض'}
+                </span>
+              </button>
+              {activeCoverPreviewUrl ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoverSourceUrl('');
+                    setCoverZoom(1);
+                    setCoverPan({ x: 0, y: 0 });
+                    onCoverChange('');
+                  }}
+                  className="px-2.5 py-2 rounded-xl bg-white hover:bg-[#FEF2F2] text-[#EF4444] border border-[#FECACA] text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>حذف بنر مجزا</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {activeCoverPreviewUrl ? (
+            <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-2.5">
+              <div
+                ref={coverFrameRef}
+                onPointerDown={handleCoverPointerDown}
+                onPointerMove={handleCoverPointerMove}
+                onPointerUp={handleCoverPointerUp}
+                onPointerCancel={handleCoverPointerUp}
+                style={{ touchAction: 'none' }}
+                className={`relative w-full h-40 sm:h-48 rounded-2xl overflow-hidden border-2 border-[#0057FF]/40 bg-[#0F172A] select-none ${
+                  isCoverDragging ? 'cursor-grabbing' : 'cursor-grab'
+                }`}
+              >
+                <img
+                  src={activeCoverPreviewUrl}
+                  alt="بنر پروفایل"
+                  draggable={false}
+                  style={{
+                    transform: `translate3d(${coverPan.x}%, ${coverPan.y}%, 0) scale(${coverZoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                  className="w-full h-full object-cover pointer-events-none select-none transition-transform duration-75"
+                />
+                <div className="pointer-events-none absolute bottom-2 right-2 px-2.5 py-1 rounded-lg bg-[#061138]/80 backdrop-blur-xs text-[10px] font-bold text-white inline-flex items-center gap-1">
+                  <Move className="w-3 h-3 text-[#00E5FF]" />
+                  <span>بکشید تا کادر بنر ۱۶:۹ را تنظیم کنید</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-[#061138]">
+                <span className="text-[#0057FF]">بزرگ‌نمایی و تنظیم کادر بنر:</span>
+                <button
+                  type="button"
+                  onClick={handleResetCoverPosition}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#64748B] hover:text-[#0057FF] cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>مرکز بنر</span>
+                </button>
+              </div>
+              <div className="flex items-center gap-2.5" dir="ltr">
+                <button
+                  type="button"
+                  onClick={() => handleCoverZoomChange(coverZoom - 0.1)}
+                  className="p-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#061138] cursor-pointer"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <input
+                  type="range"
+                  min={0.6}
+                  max={2.6}
+                  step={0.05}
+                  value={coverZoom}
+                  onChange={(e) => handleCoverZoomChange(Number(e.target.value))}
+                  aria-label="بزرگ‌نمایی بنر"
+                  className="w-full accent-[#0057FF] h-2 bg-[#E2E8F0] rounded-lg cursor-pointer"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCoverZoomChange(coverZoom + 0.1)}
+                  className="p-1.5 rounded-lg bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#061138] cursor-pointer"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* بخش ۳: پیش‌نمایش زنده نحوه نمایش به مشتریان در صفحه پروفایل و صفحه اصلی */}
+          {activePreviewUrl || activeCoverPreviewUrl ? (
+            <div className="p-3.5 rounded-2xl bg-white border border-[#E2E8F0] space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-[#061138] inline-flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-[#0057FF]" />
+                  <span>پیش‌نمایش زنده نحوه نمایش عکس شما به مشتریان در سایت:</span>
+                </span>
+                <span className="text-[10px] font-bold text-[#059669] bg-[#ECFDF5] px-2.5 py-0.5 rounded-full border border-[#A7F3D0]">
+                  ثبت آنی و همگام در تمام صفحات ✓
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-stretch">
+                {/* پیش‌نمایش الف: هدر صفحه پروفایل سالن (بنر عریض + آواتار دایره‌ای) */}
+                <div className="sm:col-span-7 rounded-2xl border border-[#CBD5E1] bg-[#FAF8FF] p-2.5 space-y-2">
+                  <span className="text-[10px] font-extrabold text-[#475569] block">
+                    الف) نمای بالای صفحه پروفایل سالن (بنر افقی + دایره پروفایل):
+                  </span>
+                  <div className="relative">
+                    <div className="relative h-28 rounded-xl overflow-hidden bg-[#0B132B] border border-[#E2E8F0]">
+                      {activeCoverPreviewUrl ? (
+                        <img
+                          src={activeCoverPreviewUrl}
+                          alt="پیش‌نمایش بنر"
+                          className="w-full h-full object-cover object-center"
+                        />
+                      ) : activePreviewUrl ? (
+                        <>
+                          <img
+                            src={activePreviewUrl}
+                            alt=""
+                            aria-hidden="true"
+                            className="w-full h-full object-cover blur-xl scale-110 opacity-65"
+                          />
+                          <img
+                            src={activePreviewUrl}
+                            alt="پیش‌نمایش بنر هوشمند"
+                            className="relative z-[1] w-full h-full object-contain object-center"
+                          />
+                        </>
+                      ) : null}
+                      <div className="absolute inset-0 z-[2] bg-gradient-to-t from-[#1E1B2E]/75 via-transparent to-black/20" />
+                    </div>
+                    <div className="relative z-10 -mt-6 mx-3 rounded-xl bg-white border border-[#E6E0F5] p-2.5 flex items-center gap-2.5 shadow-xs">
+                      <div className="w-11 h-11 rounded-full overflow-hidden ring-2 ring-white bg-[#E2E8F0] shrink-0">
+                        {activePreviewUrl || activeCoverPreviewUrl ? (
+                          <img
+                            src={activePreviewUrl || activeCoverPreviewUrl}
+                            alt="آواتار"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
+                          {effectivePlaceholder}
+                        </p>
+                        <p className="text-[10px] text-[#64748B] truncate">
+                          {activeCoverPreviewUrl
+                            ? 'بنر اختصاصی ۱۶:۹ + آواتار ۱:۱'
+                            : 'قاب هوشمند بدون بریده شدن چهره در بنر'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* پیش‌نمایش ب: کارت منتخب ماه و متخصص در صفحه اصلی */}
+                <div className="sm:col-span-5 rounded-2xl border border-[#CBD5E1] bg-[#FAF8FF] p-2.5 flex flex-col justify-between space-y-2">
+                  <span className="text-[10px] font-extrabold text-[#475569] block">
+                    ب) نمای کارت «منتخب ماه» و متخصص در صفحه اصلی:
+                  </span>
+                  <div className="relative h-36 rounded-xl overflow-hidden bg-slate-900 border border-[#CBD5E1]">
+                    {activePreviewUrl || activeCoverPreviewUrl ? (
+                      <img
+                        src={activePreviewUrl || activeCoverPreviewUrl}
+                        alt="پیش‌نمایش منتخب ماه"
+                        className="w-full h-full object-cover object-top"
+                      />
+                    ) : null}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/85 via-transparent to-transparent" />
+                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[9px] font-extrabold">
+                      منتخب ماه مراجعان
+                    </span>
+                    <div className="absolute bottom-2 inset-x-2.5 text-white">
+                      <p className="text-xs font-extrabold truncate">
+                        {effectivePlaceholder}
+                      </p>
+                      <p className="text-[10px] text-white/80">
+                        نمایش دقیق همین تصویر در صفحه اصلی
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

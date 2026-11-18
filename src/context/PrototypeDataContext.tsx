@@ -6952,15 +6952,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const resolvedBizName =
       biz?.name || overrideDraft?.businessName || 'سالن زیبایی';
 
-    const bizServices = services.filter((s) => s.businessId === resolvedBizId);
+    const bizServices = services.filter(
+      (s) =>
+        s.businessId === resolvedBizId ||
+        s.businessId === resolvedBizSlug ||
+        (biz?.id && s.businessId === biz.id)
+    );
     const summary = computeSelectedServicesSummary(
       bizServices.length > 0 ? bizServices : services,
       effectiveDraft.serviceIds ?? [],
       effectiveDraft.serviceId
     );
     const primarySrv = summary.selectedServices[0];
+    const resolvedTotalServicePrice =
+      summary.totalPriceToman ||
+      bizServices[0]?.priceToman ||
+      biz?.startingPriceToman ||
+      400000;
     const bizSpecs = mergedSpecialists.filter(
-      (sp) => sp.businessId === resolvedBizId
+      (sp) =>
+        sp.businessId === resolvedBizId ||
+        sp.businessId === resolvedBizSlug ||
+        (biz?.id && sp.businessId === biz.id)
     );
     const spc =
       bizSpecs.find((sp) => sp.id === effectiveDraft.specialistId) ??
@@ -6975,7 +6988,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const refCode = `TM-${Math.floor(404000 + Math.random() * 9000)}`;
 
     const financialBreakdown = calculateBookingFinancialBreakdown({
-      totalServicePriceToman: summary.totalPriceToman || 450000,
+      totalServicePriceToman: resolvedTotalServicePrice,
       depositPercent: biz?.depositPercent,
       business: biz,
       commissionConfig: {
@@ -7010,7 +7023,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       dateJalali: effectiveDraft.dateJalali,
       timeSlot: effectiveDraft.timeSlot,
       durationMinutes: summary.totalDurationMinutes || 60,
-      priceToman: summary.totalPriceToman || 450000,
+      priceToman: resolvedTotalServicePrice,
       depositPaidToman: resolvedBaseDepositToman,
       platformCommissionToman: financialBreakdown.platformCommissionToman,
       customerGatewayAndTaxFeeToman:
@@ -7040,7 +7053,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             effectiveDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
           customerPhone: effectiveDraft.customerPhone || authUser?.phone || '',
           serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
-          priceToman: summary.totalPriceToman || 450000,
+          priceToman: resolvedTotalServicePrice,
           durationMinutes: summary.totalDurationMinutes || 60,
           dateJalali: effectiveDraft.dateJalali,
           timeSlot: effectiveDraft.timeSlot,
@@ -7059,7 +7072,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ownerPhone: resolvedOwnerPhone,
           serviceId: effectiveDraft.serviceId,
           serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
-          priceToman: summary.totalPriceToman || 450000,
+          priceToman: resolvedTotalServicePrice,
           durationMinutes: summary.totalDurationMinutes || 60,
           allowAutoCreateService: true,
           specialistId:
@@ -7181,15 +7194,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const resolvedOwnerPhone =
       biz?.ownerPhone || biz?.phoneDisplay || undefined;
 
-    const bizServices = services.filter((s) => s.businessId === resolvedBizId);
+    const bizServices = services.filter(
+      (s) =>
+        s.businessId === resolvedBizId ||
+        s.businessId === resolvedBizSlug ||
+        (biz?.id && s.businessId === biz.id)
+    );
     const summary = computeSelectedServicesSummary(
       bizServices.length > 0 ? bizServices : services,
       effectiveDraft.serviceIds ?? [],
       effectiveDraft.serviceId
     );
+    const resolvedSubmitServicePrice =
+      summary.totalPriceToman ||
+      bizServices[0]?.priceToman ||
+      biz?.startingPriceToman ||
+      400000;
 
     const bizSpecs = mergedSpecialists.filter(
-      (sp) => sp.businessId === resolvedBizId
+      (sp) =>
+        sp.businessId === resolvedBizId ||
+        sp.businessId === resolvedBizSlug ||
+        (biz?.id && sp.businessId === biz.id)
     );
     const spc =
       bizSpecs.find((sp) => sp.id === effectiveDraft.specialistId) ??
@@ -7203,7 +7229,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           : resolvedBizName;
 
     const submitBreakdown = calculateBookingFinancialBreakdown({
-      totalServicePriceToman: summary.totalPriceToman || 450000,
+      totalServicePriceToman: resolvedSubmitServicePrice,
       depositPercent: biz?.depositPercent,
       business: biz,
       commissionConfig: {
@@ -7228,7 +7254,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ownerPhone: resolvedOwnerPhone,
           serviceId: effectiveDraft.serviceId,
           serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
-          priceToman: summary.totalPriceToman || 450000,
+          priceToman: resolvedSubmitServicePrice,
           durationMinutes: summary.totalDurationMinutes || 60,
           allowAutoCreateService: true,
           specialistId:

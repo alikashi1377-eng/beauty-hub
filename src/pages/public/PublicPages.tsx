@@ -56,6 +56,7 @@ import {
   BusinessCard,
   ProfessionalCard,
 } from '../../components/ui/MarketplaceComponents';
+import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   Sparkles: <Sparkles className="w-4 h-4 text-[#0057FF]" />,
@@ -154,11 +155,14 @@ export const SearchPage: React.FC = () => {
   }, [categoryFilter, services, specialists]);
 
   const publicReadyBusinesses = React.useMemo(() => {
-    const nonRejected = businesses.filter(
-      (b) => b.approvalStatus !== 'REJECTED' && b.contractAccepted !== false
+    return businesses.filter((b) =>
+      isBusinessReadyForPublicDisplay({ business: b, services, specialists })
     );
-    return nonRejected;
-  }, [businesses]);
+  }, [businesses, services, specialists]);
+
+  const publicReadyBusinessIds = React.useMemo(() => {
+    return new Set(publicReadyBusinesses.flatMap((b) => [b.id, b.slug]));
+  }, [publicReadyBusinesses]);
 
   const baseFiltered = filterBusinesses(publicReadyBusinesses, {
     query: '',
@@ -199,6 +203,9 @@ export const SearchPage: React.FC = () => {
     if (!normalizedQ && categoryFilter === 'ALL') return [];
     const isLaserCat = categoryFilter === 'laser-hair-removal';
     return specialists.filter((sp) => {
+      if (sp.isActive === false || !publicReadyBusinessIds.has(sp.businessId)) {
+        return false;
+      }
       const matchesQ =
         !normalizedQ ||
         sp.fullName.toLowerCase().includes(normalizedQ) ||
@@ -216,7 +223,13 @@ export const SearchPage: React.FC = () => {
       }
       return Boolean(businessIdsMatchingSelectedCategory?.has(sp.businessId));
     });
-  }, [normalizedQ, categoryFilter, specialists, businessIdsMatchingSelectedCategory]);
+  }, [
+    normalizedQ,
+    categoryFilter,
+    specialists,
+    publicReadyBusinessIds,
+    businessIdsMatchingSelectedCategory,
+  ]);
 
   const handleResetFilters = () => {
     setQuery('');

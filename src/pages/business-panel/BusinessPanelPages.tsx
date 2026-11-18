@@ -5324,9 +5324,11 @@ export const BusinessProfileEditPage: React.FC = () => {
   const {
     currentBusiness,
     businesses,
+    specialists,
     services,
     gallery,
     updateBusinessProfile,
+    updateSpecialist,
     updateOnboardingDraft,
     showToast,
   } = usePrototypeData();
@@ -5402,6 +5404,27 @@ export const BusinessProfileEditPage: React.FC = () => {
     (g) => g.businessId === currentBiz.id
   ).length;
 
+  const syncPrimarySpecialistAvatar = (nextAvatar: string) => {
+    if (!nextAvatar) return;
+    const bizSpecs = specialists.filter(
+      (sp) => sp.businessId === currentBiz.id || sp.businessId === currentBiz.slug
+    );
+    if (bizSpecs.length === 1) {
+      updateSpecialist(bizSpecs[0].id, { avatarUrl: nextAvatar });
+    } else if (bizSpecs.length > 1) {
+      const ownerSp = bizSpecs.find(
+        (sp) =>
+          (currentBiz.ownerName && sp.fullName === currentBiz.ownerName) ||
+          sp.fullName === currentBiz.name ||
+          !sp.avatarUrl ||
+          sp.avatarUrl.includes('/assets/images/')
+      );
+      if (ownerSp) {
+        updateSpecialist(ownerSp.id, { avatarUrl: nextAvatar });
+      }
+    }
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setStepValidationError('');
@@ -5452,6 +5475,9 @@ export const BusinessProfileEditPage: React.FC = () => {
       shortDescription: shortDesc.trim(),
       aboutText: aboutText.trim(),
     });
+    if (avatarUrl) {
+      syncPrimarySpecialistAvatar(avatarUrl);
+    }
     updateOnboardingDraft({
       businessName: name.trim(),
       avatarUrl,
@@ -5614,11 +5640,12 @@ export const BusinessProfileEditPage: React.FC = () => {
                   updateBusinessProfile(currentBiz.id, {
                     avatarUrl: url || undefined,
                   });
+                  syncPrimarySpecialistAvatar(url);
                   updateOnboardingDraft({
                     avatarUrl: url,
                   });
                   if (url) {
-                    showToast('تصویر پروفایل سالن بلافاصله ذخیره و ثبت شد ✓');
+                    showToast('تصویر پروفایل سالن و متخصص بلافاصله ذخیره و ثبت شد ✓');
                   }
                 }}
                 label="تصویر پروفایل و ویترین سالن"

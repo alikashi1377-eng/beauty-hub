@@ -1075,15 +1075,30 @@ export function createApiV1Router(
           referenceCode: params.referenceCode,
         });
 
+        const bizNameParam = String(params.businessName || '').trim();
         const bizRes = await dbPool.query(
           `
-          SELECT b.id, b.name, b.slug, b.phone_display, bme.extra_json
+          SELECT
+            b.id,
+            b.name,
+            b.slug,
+            b.phone_display,
+            u.phone AS owner_user_phone,
+            bme.extra_json
           FROM businesses b
+          LEFT JOIN users u ON u.id = b.owner_user_id
           LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
-          WHERE b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1
+          WHERE ($1 <> '' AND (b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1))
+             OR ($2 <> '' AND (b.name = $2 OR b.name ILIKE '%' || $2 || '%'))
+          ORDER BY
+            CASE
+              WHEN $1 <> '' AND (b.slug = $1 OR b.id::text = $1 OR b.legacy_demo_id = $1) THEN 0
+              WHEN $2 <> '' AND b.name = $2 THEN 1
+              ELSE 2
+            END ASC
           LIMIT 1
           `,
-          [slugOrId]
+          [slugOrId, bizNameParam]
         );
         const row = bizRes.rows[0];
         const extra =
@@ -1095,26 +1110,38 @@ export function createApiV1Router(
           resolvedBizName = String(row.name);
         }
 
-        const dbOwnerCandidate = normalizeIranMobile(
-          extra.ownerPhone || row?.phone_display || ''
-        );
+        const dbOwnerCandidate =
+          normalizeIranMobile(extra.ownerPhone) ||
+          normalizeIranMobile(row?.owner_user_phone) ||
+          normalizeIranMobile(row?.phone_display);
         if (/^09\d{9}$/.test(dbOwnerCandidate)) {
           resolvedOwnerPhone = dbOwnerCandidate;
         }
 
         if (!/^09\d{9}$/.test(resolvedOwnerPhone)) {
-          const regRes = await dbPool
+          const kvRes = await dbPool
             .query(
-              `
-              SELECT phone
-              FROM registered_accounts_registry
-              WHERE business_slug = $1 OR business_id = $1 OR business_id = $2
-              LIMIT 1
-              `,
-              [slugOrId, String(row?.id || slugOrId)]
+              `SELECT value_json FROM platform_kv_store WHERE key = 'registered_accounts_registry' LIMIT 1`
             )
-            .catch(() => ({ rows: [] as Array<{ phone?: string }> }));
-          const regPhone = normalizeIranMobile(regRes.rows[0]?.phone);
+            .catch(() => ({ rows: [] as Array<{ value_json?: unknown }> }));
+          const accountsArr = Array.isArray(kvRes.rows[0]?.value_json)
+            ? (kvRes.rows[0].value_json as Array<Record<string, unknown>>)
+            : [];
+          const matchedAcc = accountsArr.find((acc) => {
+            const accBizId = String(acc.businessId || '').trim();
+            const accBizSlug = String(acc.businessSlug || '').trim();
+            const accSalonName = String(acc.salonName || '').trim();
+            return (
+              (slugOrId && (accBizId === slugOrId || accBizSlug === slugOrId)) ||
+              (row?.id && accBizId === String(row.id)) ||
+              (resolvedBizName &&
+                accSalonName &&
+                (accSalonName === resolvedBizName ||
+                  accSalonName.includes(resolvedBizName) ||
+                  resolvedBizName.includes(accSalonName)))
+            );
+          });
+          const regPhone = normalizeIranMobile(matchedAcc?.phone);
           if (/^09\d{9}$/.test(regPhone)) {
             resolvedOwnerPhone = regPhone;
           }
@@ -1138,16 +1165,20 @@ export function createApiV1Router(
           effectiveSms.bookingOwnerTemplate ||
           process.env.SMS_BOOKING_OWNER_TEMPLATE ||
           undefined;
+        const customerPatternId =
+          effectiveSms.bookingCustomerTemplate ||
+          process.env.SMS_BOOKING_CUSTOMER_TEMPLATE ||
+          undefined;
 
         const custLabel = String(params.customerName || 'مشتری').trim();
         const srvLabel = String(params.serviceTitle || 'خدمات زیبایی').trim();
 
-        // ۱. در لحظه ثبت اولیه نوبت (وضعیت در انتظار تایید سالن‌دار)، پیامک فقط برای صاحب کسب‌وکار / متخصص ارسال می‌شود
+        // ۱. ارسال پیامک اطلاع‌رسانی ثبت نوبت جدید به صاحب کسب‌وکار / سالن‌دار (مانند سالن آیرا)
         if (/^09\d{9}$/.test(resolvedOwnerPhone)) {
           const ownerDelivery = await sendPatternSmsViaGateway({
             phone: resolvedOwnerPhone,
             args: [custLabel, srvLabel, dateStr, timeStr],
-            fallbackSingleArg: `نوبت جدید ${dateStr} ساعت ${timeStr}`,
+            fallbackSingleArg: `نوبت جدید ${custLabel} (${srvLabel}) در تاریخ ${dateStr} ساعت ${timeStr}`,
             customTemplateId: ownerPatternId,
             config: effectiveSms,
             nodeEnv: config.nodeEnv,
@@ -1155,8 +1186,18 @@ export function createApiV1Router(
           ownerSmsSent = Boolean(ownerDelivery.sent);
         }
 
-        // ۲. پیامک به مشتری در لحظه ثبت اولیه ارسال نمی‌شود تا قبل از تایید سالن‌دار پیام تایید برای مشتری نرود
-        customerSmsSent = false;
+        // ۲. ارسال پیامک ثبت نوبت به شماره موبایل مشتری
+        if (/^09\d{9}$/.test(cleanCustPhone)) {
+          const customerDelivery = await sendPatternSmsViaGateway({
+            phone: cleanCustPhone,
+            args: [custLabel, resolvedBizName, dateStr, timeStr],
+            fallbackSingleArg: `${custLabel} عزیز، نوبت شما در ${resolvedBizName} برای تاریخ ${dateStr} ساعت ${timeStr} ثبت شد.`,
+            customTemplateId: customerPatternId,
+            config: effectiveSms,
+            nodeEnv: config.nodeEnv,
+          }).catch(() => ({ sent: false }));
+          customerSmsSent = Boolean(customerDelivery.sent);
+        }
       }
     } catch {
       // خطای ارسال پیامک جانبی مانع ثبت نوبت نشود
@@ -2578,42 +2619,7 @@ export function createApiV1Router(
       let syncedPaymentConfig: Record<string, unknown> | undefined;
       let syncedNotices: Array<Record<string, unknown>> | undefined;
       try {
-        const rawClientAppointments = Array.isArray(req.body?.appointments)
-          ? (req.body.appointments as Array<Record<string, unknown>>)
-          : [];
-        for (const cApt of rawClientAppointments) {
-          if (!cApt || typeof cApt !== 'object') continue;
-          const aptId = String(cApt.id || '').trim();
-          const bizId = String(cApt.businessId || '').trim();
-          const bizSlug = String(cApt.businessSlug || '').trim();
-          const bizName = String(cApt.businessName || '').trim();
-          const status = String(cApt.status || 'CONFIRMED').trim();
-          if (
-            status === 'CANCELLED' ||
-            /^apt-(?:[1-9]|1[0-2])$/.test(aptId) ||
-            /^biz-[1-8]$/.test(bizId) ||
-            bizName.includes('مهتاب')
-          ) {
-            continue;
-          }
-          await ensureAppointmentFromNotifyBookingInDb(pool, {
-            businessSlug: bizSlug || undefined,
-            businessId: bizId || undefined,
-            businessName: bizName || undefined,
-            customerName: cApt.customerName ? String(cApt.customerName) : undefined,
-            customerPhone: cApt.customerPhoneMasked
-              ? String(cApt.customerPhoneMasked)
-              : undefined,
-            serviceTitle: cApt.serviceTitle ? String(cApt.serviceTitle) : undefined,
-            priceToman: Number(cApt.priceToman) || undefined,
-            durationMinutes: Number(cApt.durationMinutes) || undefined,
-            dateJalali: cApt.dateJalali ? String(cApt.dateJalali) : undefined,
-            timeSlot: cApt.timeSlot ? String(cApt.timeSlot) : undefined,
-            referenceCode: cApt.referenceCode ? String(cApt.referenceCode) : undefined,
-            status,
-          });
-        }
-
+        // دیتابیس PostgreSQL مرجع واحد نوبت‌هاست؛ از تزریق نوبت‌های کش مرورگر (localStorage) جلوگیری می‌شود تا آمار مالی و رزروها کاملاً واقعی و دقیق بماند
         const [bootstrapPayload, sharedState, rejectedBizRes] = await Promise.all([
           getBootstrapPayload(pool),
           getSharedPlatformState(pool),
@@ -3293,6 +3299,62 @@ export function createApiV1Router(
           zibalOrdersMap.set(`order:${storedOrder.orderId}`, storedOrder);
         }
         persistZibalOrders();
+
+        // اگر تراکنش مربوط به بیعانه نوبت (purpose === 'booking') است، بلافاصله در سرور نوبت را ثبت و پیامک سالن‌دار و مشتری را ارسال کن
+        if (storedOrder.purpose === 'booking') {
+          const draftObj =
+            storedOrder.bookingDraft &&
+            typeof storedOrder.bookingDraft === 'object'
+              ? storedOrder.bookingDraft
+              : {};
+          await dispatchBookingSmsAndWalletCredit({
+            businessId:
+              storedOrder.businessId ||
+              (typeof draftObj.businessId === 'string'
+                ? draftObj.businessId
+                : undefined),
+            businessSlug:
+              storedOrder.businessSlug ||
+              (typeof draftObj.businessSlug === 'string'
+                ? draftObj.businessSlug
+                : undefined),
+            businessName:
+              storedOrder.businessName ||
+              (typeof draftObj.businessName === 'string'
+                ? draftObj.businessName
+                : undefined),
+            customerName:
+              storedOrder.customerName ||
+              (typeof draftObj.customerName === 'string'
+                ? draftObj.customerName
+                : undefined),
+            customerPhone:
+              storedOrder.customerPhone ||
+              (typeof draftObj.customerPhone === 'string'
+                ? draftObj.customerPhone
+                : undefined),
+            serviceTitle:
+              typeof draftObj.serviceTitle === 'string'
+                ? draftObj.serviceTitle
+                : undefined,
+            priceToman:
+              typeof draftObj.servicePriceToman === 'number'
+                ? draftObj.servicePriceToman
+                : typeof draftObj.priceToman === 'number'
+                  ? draftObj.priceToman
+                  : undefined,
+            dateJalali:
+              typeof draftObj.dateJalali === 'string'
+                ? draftObj.dateJalali
+                : undefined,
+            timeSlot:
+              typeof draftObj.timeSlot === 'string'
+                ? draftObj.timeSlot
+                : undefined,
+            referenceCode: `ZB-${refNumStr}`,
+            depositPaidToman: storedOrder.amountToman,
+          }).catch(() => undefined);
+        }
       }
 
       res.status(200).json({

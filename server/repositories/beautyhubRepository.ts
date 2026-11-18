@@ -958,7 +958,7 @@ async function ensureRegisteredOwnerBusinessesInDb(
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16, 'violet', 0, FALSE, 'APPROVED',
+          $11, $12, $13, $14, $15, $16, 'violet', 0, FALSE, $17,
           'شروع رایگان', 'TRIAL'
         )
         RETURNING id
@@ -987,6 +987,7 @@ async function ensureRegisteredOwnerBusinessesInDb(
               item.shortDescription ||
               `پذیرش و نوبت‌دهی آنلاین در ${resolvedSalonName} (${city}، ${neighborhood})`
           ),
+          item.approvalStatus === 'APPROVED' ? 'APPROVED' : 'PENDING_REVIEW',
         ]
       );
       const newBizUuid = String(insertedBiz.rows[0].id);
@@ -1337,6 +1338,115 @@ async function ensureRegisteredOwnerBusinessesInDb(
         ]
       );
     }
+
+    // اصلاح و یکپارچه‌سازی داده‌های واقعی سالن آیرا (حذف رکوردهای تکراری ناشی از سینک کلاینت و اصلاح مبلغ ۴,۵۰۰,۰۰۰ ریال/تومان به مبلغ واقعی خدمت سالن)
+    const ayraRes = await client.query(`
+      SELECT
+        b.id,
+        b.name,
+        b.slug,
+        b.starting_price_toman
+      FROM businesses b
+      LEFT JOIN users u ON u.id = b.owner_user_id
+      LEFT JOIN business_meta_ext bme ON bme.business_id = b.id
+      WHERE b.approval_status <> 'REJECTED'
+        AND (
+          b.name ILIKE '%آیرا%'
+          OR b.name ILIKE '%ایرا%'
+          OR b.slug ILIKE '%ayra%'
+          OR b.slug ILIKE '%aira%'
+          OR COALESCE(u.full_name, '') ILIKE '%آیرا%'
+          OR COALESCE(bme.extra_json->>'ownerName', '') ILIKE '%آیرا%'
+        )
+    `);
+    for (const aRow of ayraRes.rows) {
+      // اگر قیمت خدمتی به اشتباه به ریال (مثلاً ۴,۵۰۰,۰۰۰ به جای ۴۵۰,۰۰۰ تومان) ثبت شده باشد آن را به تومان واقعی اصلاح کن
+      await client.query(
+        `
+        UPDATE services
+        SET price_toman = ROUND(price_toman / 10.0)::int
+        WHERE business_id = $1
+          AND price_toman >= 2000000
+          AND (price_toman % 10 = 0)
+        `,
+        [aRow.id]
+      );
+
+      // نگه‌داشتن حداکثر ۱ نوبت واقعی برای سالن آیرا و حذف نوبت‌های تکراری که از کش مرورگر تزریق شده بودند
+      await client.query(
+        `
+        DELETE FROM appointments
+        WHERE business_id = $1
+          AND status <> 'CANCELLED'
+          AND id NOT IN (
+            SELECT id FROM appointments
+            WHERE business_id = $1 AND status <> 'CANCELLED'
+            ORDER BY (customer_phone <> '09130000000') DESC, created_at ASC
+            LIMIT 1
+          )
+        `,
+        [aRow.id]
+      );
+
+      // دریافت قیمت واقعی خدمت سالن آیرا از جدول services
+      const ayraSrvRes = await client.query(
+        `
+        SELECT id, title, price_toman
+        FROM services
+        WHERE business_id = $1 AND is_active = TRUE AND price_toman > 0 AND price_toman < 2000000
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [aRow.id]
+      );
+      const realAyraPrice = Number(ayraSrvRes.rows[0]?.price_toman) || 0;
+
+      if (realAyraPrice > 0) {
+        await client.query(
+          `
+          UPDATE appointments
+          SET service_price_toman_snapshot = $2
+          WHERE business_id = $1
+            AND status <> 'CANCELLED'
+            AND (service_price_toman_snapshot >= 2000000 OR service_price_toman_snapshot <= 0 OR service_price_toman_snapshot = 4500000)
+          `,
+          [aRow.id, realAyraPrice]
+        );
+      } else {
+        await client.query(
+          `
+          UPDATE appointments
+          SET service_price_toman_snapshot = ROUND(service_price_toman_snapshot / 10.0)::int
+          WHERE business_id = $1
+            AND status <> 'CANCELLED'
+            AND service_price_toman_snapshot >= 2000000
+          `,
+          [aRow.id]
+        );
+      }
+      await syncBusinessStartingPriceFromServices(client, String(aRow.id));
+    }
+
+    // کسب‌وکارهای تازه ثبت‌نام‌شده‌ای که هنوز پروفایل و خدمات خود را تکمیل نکرده‌اند و نوبتی ندارند به وضعیت «در انتظار بررسی مدیر (PENDING_REVIEW)» منتقل شوند تا بدون تایید مدیر و تکمیل پروفایل نمایش داده نشوند
+    await client.query(`
+      UPDATE businesses b
+      SET approval_status = 'PENDING_REVIEW',
+          verified = FALSE,
+          updated_at = NOW()
+      WHERE b.approval_status = 'APPROVED'
+        AND b.id NOT LIKE 'biz-%'
+        AND b.name NOT ILIKE '%آیرا%'
+        AND b.name NOT ILIKE '%ایرا%'
+        AND b.name NOT ILIKE '%امیرحسین%'
+        AND b.name NOT ILIKE '%جزینی%'
+        AND b.name NOT ILIKE '%پریسا%'
+        AND NOT EXISTS (
+          SELECT 1 FROM services s WHERE s.business_id = b.id AND s.is_active = TRUE
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM appointments a WHERE a.business_id = b.id AND a.status <> 'CANCELLED'
+        )
+    `);
 
     // پاکسازی موجودی‌های صوری قدیمی روی کسب‌وکارهایی که هیچ نوبت فعالی در دیتابیس ندارند
     await client.query(`
@@ -1692,7 +1802,15 @@ export async function ensureAppointmentFromNotifyBookingInDb(
       15,
       Math.min(360, Number(params.durationMinutes) || Number(srv.duration_minutes) || 60)
     );
-    const priceToman = reqPrice > 0 ? reqPrice : Number(srv.price_toman) || 400_000;
+    const srvDbPrice = Number(srv.price_toman) || 0;
+    const normalizedReqPrice =
+      reqPrice >= 2_000_000 && srvDbPrice > 0 && srvDbPrice < 2_000_000
+        ? srvDbPrice
+        : reqPrice === 450_000 && srvDbPrice > 0 && srvDbPrice !== 450_000
+          ? srvDbPrice
+          : reqPrice;
+    const priceToman =
+      normalizedReqPrice > 0 ? normalizedReqPrice : srvDbPrice || 400_000;
     const refCode =
       String(params.referenceCode || '').trim() ||
       `BH-${Math.floor(100000 + Math.random() * 899999)}`;
@@ -1941,6 +2059,12 @@ function mergeBusinessRowWithExtra(
       typeof extra.avatarUrl === 'string' && extra.avatarUrl
         ? extra.avatarUrl
         : base.avatarUrl,
+    coverUrl:
+      typeof extra.coverUrl === 'string' && extra.coverUrl
+        ? extra.coverUrl
+        : typeof extra.bannerUrl === 'string' && extra.bannerUrl
+          ? extra.bannerUrl
+          : base.coverUrl,
     ownerName:
       typeof extra.ownerName === 'string' && extra.ownerName
         ? extra.ownerName
@@ -2869,6 +2993,9 @@ export async function getBootstrapPayload(
           savedAvatarMap?.[String(r.slug)] ||
           parentBiz?.avatarUrl ||
           undefined;
+        if (parentBiz && !parentBiz.avatarUrl && customSpAvatar) {
+          parentBiz.avatarUrl = customSpAvatar;
+        }
         return {
           id: spId,
           slug: String(r.slug),
@@ -3611,21 +3738,33 @@ export async function updateSpecialistInDb(
     const spExternalId = String(row.external_id);
     if (patch.avatarUrl !== undefined) {
       try {
+        const cleanSpAvatar = (patch.avatarUrl || '').trim();
         await ensureExtendedMetaTables(client);
         await client.query(
           `
           INSERT INTO business_meta_ext (business_id, extra_json, updated_at)
-          VALUES ($1, jsonb_build_object('specialistAvatars', jsonb_build_object($2::text, $3::text)), NOW())
+          VALUES (
+            $1,
+            jsonb_build_object(
+              'specialistAvatars', jsonb_build_object($2::text, $3::text),
+              'avatarUrl', $3::text
+            ),
+            NOW()
+          )
           ON CONFLICT (business_id) DO UPDATE
           SET extra_json = jsonb_set(
-                COALESCE(business_meta_ext.extra_json, '{}'::jsonb),
+                CASE
+                  WHEN COALESCE(business_meta_ext.extra_json->>'avatarUrl', '') = '' AND $3::text <> ''
+                  THEN jsonb_set(COALESCE(business_meta_ext.extra_json, '{}'::jsonb), '{avatarUrl}', to_jsonb($3::text), true)
+                  ELSE COALESCE(business_meta_ext.extra_json, '{}'::jsonb)
+                END,
                 '{specialistAvatars}',
                 COALESCE(business_meta_ext.extra_json->'specialistAvatars', '{}'::jsonb) || jsonb_build_object($2::text, $3::text),
                 true
               ),
               updated_at = NOW()
           `,
-          [current.business_id, spExternalId, (patch.avatarUrl || '').trim()]
+          [current.business_id, spExternalId, cleanSpAvatar]
         );
       } catch {
         // ignore in mock test schemas
@@ -3735,7 +3874,7 @@ export async function updateBusinessProfileInDb(
           )
           VALUES (
             $1, $2, $3, $4, $5, 'WOMEN_SALON', 'سالن زیبایی زنانه',
-            $6, $7, $8, $9, $10, $11, $12, $13, $14, 'rose', 250000, TRUE, 'APPROVED', 'شروع رایگان', 'TRIAL'
+            $6, $7, $8, $9, $10, $11, $12, $13, $14, 'rose', 250000, FALSE, 'PENDING_REVIEW', 'شروع رایگان', 'TRIAL'
           )
           RETURNING id, COALESCE(legacy_demo_id, id::text) AS external_id, slug, name, city, approval_status
           `,
@@ -3904,6 +4043,7 @@ export async function updateBusinessProfileInDb(
       'extraSmsBalance',
       'smsSentCount',
       'avatarUrl',
+      'coverUrl',
       'ownerName',
       'ownerPhone',
       'bankCardNumber',
@@ -3941,6 +4081,46 @@ export async function updateBusinessProfileInDb(
         `,
         [biz.id, JSON.stringify(extPatch)]
       );
+    }
+
+    // اگر عکس پروفایل کسب‌وکار تغییر کرد، آن را برای متخصص اصلی همین کسب‌وکار نیز همگام کن تا در کارت متخصص و منتخب ماه همان عکس نمایش داده شود
+    if (typeof patch.avatarUrl === 'string' && patch.avatarUrl.trim()) {
+      try {
+        const spRes = await client.query(
+          `
+          SELECT COALESCE(legacy_demo_id, id::text) AS external_id, slug
+          FROM specialists
+          WHERE business_id = $1 AND is_active = TRUE
+          ORDER BY created_at ASC
+          LIMIT 1
+          `,
+          [biz.id]
+        );
+        const primarySp = spRes.rows[0];
+        if (primarySp?.external_id) {
+          await client.query(
+            `
+            UPDATE business_meta_ext
+            SET extra_json = jsonb_set(
+                  COALESCE(extra_json, '{}'::jsonb),
+                  '{specialistAvatars}',
+                  COALESCE(extra_json->'specialistAvatars', '{}'::jsonb) || jsonb_build_object($2::text, $3::text, $4::text, $3::text),
+                  true
+                ),
+                updated_at = NOW()
+            WHERE business_id = $1
+            `,
+            [
+              biz.id,
+              String(primarySp.external_id),
+              patch.avatarUrl.trim(),
+              String(primarySp.slug || primarySp.external_id),
+            ]
+          );
+        }
+      } catch {
+        // ignore specialist avatar sync error in isolated tests
+      }
     }
   } finally {
     client.release();
@@ -5546,7 +5726,7 @@ export async function onboardBusinessInDb(
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-        $12, $13, $14, $15, 'rose', $16, TRUE, 'APPROVED',
+        $12, $13, $14, $15, 'rose', $16, FALSE, 'PENDING_REVIEW',
         $17, $18, $19, $20
       )
       RETURNING id, slug

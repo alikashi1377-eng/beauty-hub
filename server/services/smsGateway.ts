@@ -1048,10 +1048,12 @@ export async function sendPatternSmsViaGateway(params: {
     const candidateArgsList: string[][] = [cleanArgs];
     if (cleanArgs.length === 4) {
       candidateArgsList.push([cleanArgs[0], cleanArgs[2], cleanArgs[3]]);
+      candidateArgsList.push([cleanArgs[0], cleanArgs[1], cleanArgs[2]]);
       candidateArgsList.push([
         cleanArgs[0],
         `${cleanArgs[2]} ساعت ${cleanArgs[3]}`,
       ]);
+      candidateArgsList.push([cleanArgs[0], cleanArgs[1]]);
     }
     candidateArgsList.push([fallbackSingleArg]);
     const compactSingle = fallbackSingleArg.trim().replace(/\s+/g, '-');
@@ -1093,6 +1095,46 @@ export async function sendPatternSmsViaGateway(params: {
             provider: 'melipayamak',
             providerMessageId: recIdStr,
             httpStatus: res.status,
+          };
+        }
+      }
+    }
+
+    const cleanSender = stripSurroundingQuotes(config.sender ?? undefined);
+    if (cleanSender) {
+      const simpleEndpoint = `https://console.melipayamak.com/api/send/simple/${encodeURIComponent(
+        extractedKey
+      )}`;
+      const simpleRes = await fetch(simpleEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          from: cleanSender,
+          to: cleanRecipient,
+          text: fallbackSingleArg,
+        }),
+        signal: controller.signal,
+      }).catch(() => null);
+      if (simpleRes && simpleRes.ok) {
+        const simpleRaw = await simpleRes.text();
+        let simpleParsed: { recId?: number | string } | null = null;
+        try {
+          simpleParsed = simpleRaw ? JSON.parse(simpleRaw) : null;
+        } catch {
+          simpleParsed = null;
+        }
+        const simpleRecId = simpleParsed?.recId
+          ? String(simpleParsed.recId).trim()
+          : '';
+        if (simpleRecId) {
+          return {
+            sent: true,
+            provider: 'melipayamak',
+            providerMessageId: simpleRecId,
+            httpStatus: simpleRes.status,
           };
         }
       }

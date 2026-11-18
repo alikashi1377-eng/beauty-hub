@@ -94,10 +94,14 @@ export function computeBusinessProfileCompletion(params: {
   }
 
   const bizServices = services.filter(
-    (s) => s.businessId === business.id && s.isActive !== false
+    (s) =>
+      (s.businessId === business.id || s.businessId === business.slug) &&
+      s.isActive !== false
   );
   const bizSpecialists = specialists.filter(
-    (sp) => sp.businessId === business.id && sp.isActive !== false
+    (sp) =>
+      (sp.businessId === business.id || sp.businessId === business.slug) &&
+      sp.isActive !== false
   );
   const openDays = (business.workingHours || []).filter((h) => h.isOpen);
 
@@ -217,8 +221,10 @@ export function isBusinessReadyForPublicDisplay(params: {
   specialists?: SpecialistItem[];
 }): boolean {
   const { business, services, specialists = [] } = params;
+  // شرط ۱: تایید مدیریت پلتفرم الزامی است
   if (business.approvalStatus !== 'APPROVED') return false;
   if (business.isSampleShowcase || /^biz-[1-8]$/.test(business.id)) return false;
+  if (business.contractAccepted === false) return false;
 
   const summary = computeBusinessProfileCompletion({
     business,
@@ -227,14 +233,19 @@ export function isBusinessReadyForPublicDisplay(params: {
   });
   if (summary.isReadyForPublicShowcase) return true;
 
-  // سالن‌های منتخب/تاییدشده قبلی که حداقل ۱ خدمت فعال و آدرس دارند یا سفیر برند هستند
+  // شرط ۲: حداقل ۱ خدمت فعال، آدرس مشخص و عدم رد مفاد قرارداد
   const bizServices = services.filter(
-    (s) => s.businessId === business.id && s.isActive !== false
+    (s) =>
+      (s.businessId === business.id || s.businessId === business.slug) &&
+      s.isActive !== false
   );
   if (
-    (business.verifiedBadge || business.isVipPartner || business.isSponsored) &&
     bizServices.length >= 1 &&
-    Boolean(business.address?.trim())
+    Boolean(business.address?.trim()) &&
+    (Boolean(business.contractAccepted) ||
+      Boolean(business.verifiedBadge) ||
+      Boolean(business.isVipPartner) ||
+      Boolean(business.isSponsored))
   ) {
     return true;
   }

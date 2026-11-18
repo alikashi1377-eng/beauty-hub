@@ -259,26 +259,29 @@ export const BusinessPublicProfileView: React.FC<{
       ? `${matchedSpecialist.fullName} — ${matchedSpecialist.roleTitle}`
       : business.name;
 
-  const heroBannerUrl =
+  const hasCustomCoverBanner = Boolean(business.coverUrl?.trim());
+  const customAvatarOnlyUrl =
     mode === 'pro' && matchedSpecialist
-      ? matchedSpecialist.avatarUrl ||
-        business.coverUrl ||
-        business.avatarUrl ||
-        getBeautyPhotoUrl(displayName, business.typeLabel, 'botanical')
-      : business.coverUrl ||
-        business.avatarUrl ||
-        getBeautyPhotoUrl(displayName, business.typeLabel);
+      ? matchedSpecialist.avatarUrl?.trim() || business.avatarUrl?.trim() || ''
+      : business.avatarUrl?.trim() || '';
+
+  const heroBannerUrl = hasCustomCoverBanner
+    ? business.coverUrl!.trim()
+    : customAvatarOnlyUrl ||
+      (mode === 'pro' && matchedSpecialist
+        ? getBeautyPhotoUrl(displayName, business.typeLabel, 'botanical')
+        : getBeautyPhotoUrl(displayName, business.typeLabel));
 
   const proAvatarUrl =
     mode === 'pro' && matchedSpecialist
-      ? matchedSpecialist.avatarUrl ||
-        business.avatarUrl ||
+      ? matchedSpecialist.avatarUrl?.trim() ||
+        business.avatarUrl?.trim() ||
         getSpecialistAvatarUrl(
           matchedSpecialist.fullName,
           matchedSpecialist.roleTitle
         )
-      : business.avatarUrl ||
-        business.coverUrl ||
+      : business.avatarUrl?.trim() ||
+        business.coverUrl?.trim() ||
         getBeautyPhotoUrl(business.name, business.typeLabel);
 
   const [activeActionModal, setActiveActionModal] = useState<
@@ -367,15 +370,31 @@ export const BusinessPublicProfileView: React.FC<{
           </Link>
         </div>
       ) : null}
-      {/* ۱. هدر تصویری تمام‌عرض + کارت سفید روی‌هم‌افتاده (Overlapping Profile Sheet) — دقیقاً مطابق Capture4.PNG و Capture1.PNG */}
+      {/* ۱. هدر تصویری تمام‌عرض + کارت سفید روی‌هم‌افتاده (Overlapping Profile Sheet) — با تفکیک هوشمند بنر عریض (coverUrl) از عکس پروفایل ۱:۱ (avatarUrl) */}
       <section className="relative">
-        <div className="relative h-64 sm:h-80 lg:h-96 rounded-[32px] overflow-hidden border border-[#E6E0F5] bg-[#1E1B2E] shadow-md">
-          <img
-            src={heroBannerUrl}
-            alt={displayName}
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#1E1B2E]/80 via-[#1E1B2E]/25 to-black/25" />
+        <div className="relative h-64 sm:h-80 lg:h-96 rounded-[32px] overflow-hidden border border-[#E6E0F5] bg-[#0B132B] shadow-md">
+          {!hasCustomCoverBanner && customAvatarOnlyUrl ? (
+            <>
+              <img
+                src={heroBannerUrl}
+                alt=""
+                aria-hidden="true"
+                className="w-full h-full object-cover object-center blur-2xl scale-110 opacity-65 select-none pointer-events-none"
+              />
+              <img
+                src={heroBannerUrl}
+                alt={displayName}
+                className="relative z-[1] w-full h-full object-contain object-center"
+              />
+            </>
+          ) : (
+            <img
+              src={heroBannerUrl}
+              alt={displayName}
+              className="w-full h-full object-cover object-center"
+            />
+          )}
+          <div className="absolute inset-0 z-[2] bg-gradient-to-t from-[#1E1B2E]/80 via-[#1E1B2E]/20 to-black/25 pointer-events-none" />
 
           {/* دکمه‌های دایره‌ای آیکونی بالای تصویر کاور (فقط آیکون بدون نوشته) */}
           <div className="absolute top-4 sm:top-6 inset-x-4 sm:inset-x-6 flex items-center justify-between z-10">

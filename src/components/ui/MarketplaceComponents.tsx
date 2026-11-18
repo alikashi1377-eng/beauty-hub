@@ -646,7 +646,9 @@ export const ProfessionalCard: React.FC<{
       : favoriteSpecialistIds.includes(specialist.id);
   const handleToggleFavorite = onToggleFavorite ?? toggleFavoriteSpecialist;
 
-  const parentBusiness = businesses.find((b) => b.id === specialist.businessId);
+  const parentBusiness = businesses.find(
+    (b) => b.id === specialist.businessId || b.slug === specialist.businessId
+  );
   const targetUrl = `/pro/${specialist.slug}`;
   const bookingUrl = businessSlug
     ? `/booking/${businessSlug}?specialist=${specialist.id}`

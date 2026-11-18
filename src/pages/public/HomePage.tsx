@@ -69,14 +69,12 @@ export const HomePage: React.FC = () => {
   >('ALL');
   const [openFaqIndex, setOpenFaqIndex] = useState<number>(0);
 
-  const nonRejectedSalons = businesses.filter(
-    (b) => b.approvalStatus !== 'REJECTED' && b.contractAccepted !== false
-  );
-  const fullyCompletedSalons = nonRejectedSalons.filter((b) =>
+  const approvedSalons = businesses.filter((b) =>
     isBusinessReadyForPublicDisplay({ business: b, services, specialists })
   );
-  const approvedSalons =
-    fullyCompletedSalons.length > 0 ? fullyCompletedSalons : nonRejectedSalons;
+  const approvedSalonIds = new Set(
+    approvedSalons.flatMap((b) => [b.id, b.slug])
+  );
   const sortedHomeSalons = [...approvedSalons].sort((a, b) => {
     const aSpon = Number(Boolean(a.isSponsored));
     const bSpon = Number(Boolean(b.isSponsored));
@@ -129,7 +127,11 @@ export const HomePage: React.FC = () => {
       b.id !== homeBannerSecondary?.id
   );
 
-  const filteredProfessionals = specialists.filter((sp) => {
+  const publicSpecialists = specialists.filter(
+    (sp) => sp.isActive !== false && approvedSalonIds.has(sp.businessId)
+  );
+
+  const filteredProfessionals = publicSpecialists.filter((sp) => {
     if (proSpecialtyFilter === 'ALL') return true;
     if (proSpecialtyFilter === 'laser') {
       return (
@@ -166,7 +168,47 @@ export const HomePage: React.FC = () => {
     return true;
   });
 
-  const spotlightSpecialist = specialists[0];
+  const spotlightSalon =
+    sortedHomeSalons.find(
+      (b) => b.isSponsored && b.sponsoredPlacement === 'HERO_SPOTLIGHT'
+    ) ??
+    sortedHomeSalons.find((b) => b.featured) ??
+    null;
+
+  const spotlightSpecialist =
+    (spotlightSalon
+      ? publicSpecialists.find(
+          (sp) =>
+            sp.businessId === spotlightSalon.id ||
+            sp.businessId === spotlightSalon.slug
+        )
+      : undefined) ??
+    publicSpecialists.find((sp) => {
+      const parent = approvedSalons.find(
+        (b) => b.id === sp.businessId || b.slug === sp.businessId
+      );
+      return Boolean(sp.avatarUrl || parent?.avatarUrl);
+    }) ??
+    publicSpecialists[0];
+
+  const spotlightParentBiz = spotlightSpecialist
+    ? approvedSalons.find(
+        (b) =>
+          b.id === spotlightSpecialist.businessId ||
+          b.slug === spotlightSpecialist.businessId
+      )
+    : undefined;
+
+  const spotlightAvatarSrc =
+    spotlightSpecialist?.avatarUrl ||
+    spotlightParentBiz?.avatarUrl ||
+    (spotlightSpecialist
+      ? getSpecialistAvatarUrl(
+          spotlightSpecialist.fullName,
+          spotlightSpecialist.roleTitle
+        )
+      : '');
+
   const isSpotlightFav = spotlightSpecialist
     ? favoriteSpecialistIds.includes(spotlightSpecialist.id)
     : false;
@@ -487,6 +529,7 @@ export const HomePage: React.FC = () => {
               <img
                 src={
                   homeBannerPrimary?.avatarUrl ||
+                  homeBannerPrimary?.coverUrl ||
                   getBeautyPhotoUrl('رویال گلزار', 'مو و رنگ')
                 }
                 alt={homeBannerPrimary?.name || 'پکیج استایل و احیای مو'}
@@ -680,20 +723,17 @@ export const HomePage: React.FC = () => {
           ))}
         </div>
 
-        {spotlightSpecialist && specialists.length > 1 ? (
+        {spotlightSpecialist ? (
           <div className="rounded-3xl border border-[#CBD5E1] bg-white p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-center shadow-xs">
-            <div className="lg:col-span-4 relative h-48 sm:h-60 rounded-2xl overflow-hidden">
+            <div className="lg:col-span-4 relative h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-900">
               <img
-                src={getSpecialistAvatarUrl(
-                  spotlightSpecialist.fullName,
-                  spotlightSpecialist.roleTitle
-                )}
+                src={spotlightAvatarSrc}
                 alt={spotlightSpecialist.fullName}
                 loading="lazy"
                 decoding="async"
-                width={128}
-                height={128}
-                className="w-full h-full object-cover"
+                width={256}
+                height={256}
+                className="w-full h-full object-cover object-top"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/85 via-transparent to-transparent" />
               <button
