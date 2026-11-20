@@ -38,11 +38,11 @@ import {
 import {
   buildCustomerBookingTimeSlots,
   computeSelectedServicesSummary,
+  formatCompactPriceToman,
+  formatCustomerWorkingHourMinimal,
   formatDurationMinutes,
   formatPriceToman,
-  formatServicePriceDisplay,
   formatServicePriceShort,
-  formatWorkingHourDisplay,
   getUpcomingJalaliDays,
   isValidIranMobile,
   normalizeIranMobileInput,
@@ -277,13 +277,22 @@ export const BookingStepPage: React.FC = () => {
       )
     : [];
 
+  const popularServices =
+    bizServices.filter((s) => s.isPopular).length > 0
+      ? bizServices.filter((s) => s.isPopular)
+      : bizServices.slice(0, Math.min(3, bizServices.length));
+  const popularServiceIdSet = new Set(popularServices.map((s) => s.id));
   const serviceCategories = Array.from(
     new Set(bizServices.map((s) => s.category))
   );
   const normalizedServiceQ = serviceSearchQuery.trim().toLowerCase();
   const visibleServices = bizServices.filter((s) => {
     const matchesCat =
-      serviceCatFilter === 'ALL' || s.category === serviceCatFilter;
+      serviceCatFilter === 'ALL'
+        ? true
+        : serviceCatFilter === 'POPULAR'
+          ? popularServiceIdSet.has(s.id)
+          : s.category === serviceCatFilter;
     const matchesQ =
       !normalizedServiceQ ||
       s.title.toLowerCase().includes(normalizedServiceQ) ||
@@ -302,26 +311,37 @@ export const BookingStepPage: React.FC = () => {
   useEffect(() => {
     if (!business) return;
     const srvParam = searchParams.get('service');
+    const srvsParam = searchParams.get('services');
     const spcParam = searchParams.get('specialist');
     const stepParam = searchParams.get('step');
+
+    const parsedMultiParam = srvsParam
+      ? srvsParam
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => bizServices.some((s) => s.id === id))
+      : [];
 
     const existingValidServiceIds = (bookingDraft.serviceIds ?? []).filter(
       (id) => bizServices.some((s) => s.id === id)
     );
 
     const defaultSrv =
-      srvParam && bizServices.some((s) => s.id === srvParam)
+      parsedMultiParam[0] ??
+      (srvParam && bizServices.some((s) => s.id === srvParam)
         ? srvParam
-        : existingValidServiceIds[0] ?? (bizServices[0]?.id ?? '');
+        : existingValidServiceIds[0] ?? (bizServices[0]?.id ?? ''));
 
     const nextServiceIds =
-      srvParam && bizServices.some((s) => s.id === srvParam)
-        ? [srvParam]
-        : existingValidServiceIds.length > 0
-        ? existingValidServiceIds
-        : defaultSrv
-        ? [defaultSrv]
-        : [];
+      parsedMultiParam.length > 0
+        ? parsedMultiParam
+        : srvParam && bizServices.some((s) => s.id === srvParam)
+          ? [srvParam]
+          : existingValidServiceIds.length > 0
+            ? existingValidServiceIds
+            : defaultSrv
+              ? [defaultSrv]
+              : [];
 
     const defaultSpc =
       spcParam && bizSpecialists.some((sp) => sp.id === spcParam)
@@ -570,16 +590,16 @@ export const BookingStepPage: React.FC = () => {
             </span>
           </div>
 
-          {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای جلوگیری از شلوغی در مراکز پرخدمت (مثل مراکز لیزر) */}
-          {bizServices.length > 5 || serviceCategories.length > 1 ? (
+          {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای انتخاب آسان‌تر مشتری */}
+          {bizServices.length > 1 ? (
             <div className="space-y-2">
-              {bizServices.length > 5 ? (
+              {bizServices.length > 3 ? (
                 <div className="relative">
                   <input
                     type="text"
                     value={serviceSearchQuery}
                     onChange={(e) => setServiceSearchQuery(e.target.value)}
-                    placeholder="جست‌وجوی سریع نام خدمت یا ناحیه (مثلاً فول بادی، توتال، بیکینی، فیشیال...)"
+                    placeholder="جست‌وجوی سریع نام خدمت (مثلاً اصلاح، فیشیال، فول‌بادی...)"
                     className="w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] py-2 pr-3.5 pl-8 text-xs font-bold text-[#061138] placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   {serviceSearchQuery ? (
@@ -594,43 +614,55 @@ export const BookingStepPage: React.FC = () => {
                 </div>
               ) : null}
 
-              {serviceCategories.length > 1 ? (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => setServiceCatFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                    serviceCatFilter === 'ALL'
+                      ? 'bg-[#0057FF] text-white'
+                      : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
+                  }`}
+                >
+                  همه ({toPersianDigits(bizServices.length)})
+                </button>
+                {popularServices.length > 0 && bizServices.length > 2 ? (
                   <button
                     type="button"
-                    onClick={() => setServiceCatFilter('ALL')}
+                    onClick={() => setServiceCatFilter('POPULAR')}
                     className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
-                      serviceCatFilter === 'ALL'
+                      serviceCatFilter === 'POPULAR'
+                        ? 'bg-[#F59E0B] text-white'
+                        : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]'
+                    }`}
+                  >
+                    ★ پرطرفدارها ({toPersianDigits(popularServices.length)})
+                  </button>
+                ) : null}
+                {serviceCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setServiceCatFilter(cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                      serviceCatFilter === cat
                         ? 'bg-[#0057FF] text-white'
                         : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
                     }`}
                   >
-                    همه ({toPersianDigits(bizServices.length)})
+                    {cat}
                   </button>
-                  {serviceCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setServiceCatFilter(cat)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
-                        serviceCatFilter === cat
-                          ? 'bg-[#0057FF] text-white'
-                          : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+                ))}
+              </div>
             </div>
           ) : null}
 
-          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود تا کل صفحه اسکرول نخورد */}
+          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود و قیمت‌های کوتاه‌شده (بدون ۳ صفر اضافی) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
               const stages = srv.packageIncludes ?? [];
+              const isPop = popularServiceIdSet.has(srv.id);
               return (
                 <div
                   key={srv.id}
@@ -644,15 +676,15 @@ export const BookingStepPage: React.FC = () => {
                       handleToggleService(srv.id);
                     }
                   }}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-start justify-between gap-2.5 ${
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-center justify-between gap-2.5 ${
                     isSelected
                       ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
                       : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
                   }`}
                 >
-                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <span
-                      className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+                      className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
                         isSelected
                           ? 'bg-[#0057FF] border-[#0057FF] text-white'
                           : 'bg-white border-[#94A3B8] text-transparent'
@@ -660,10 +692,17 @@ export const BookingStepPage: React.FC = () => {
                     >
                       <Check className="w-3.5 h-3.5" />
                     </span>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug truncate">
-                        {srv.title}
-                      </p>
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug truncate">
+                          {srv.title}
+                        </p>
+                        {isPop ? (
+                          <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[9px] font-extrabold shrink-0">
+                            ★
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
                         <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
                           {srv.category}
@@ -678,14 +717,6 @@ export const BookingStepPage: React.FC = () => {
                           </span>
                         ) : null}
                       </div>
-                      {stages.length > 0 ? (
-                        <p className="text-[10px] text-[#475569] truncate">
-                          شامل: {stages.slice(0, 3).join(' · ')}
-                          {stages.length > 3
-                            ? ` + ${toPersianDigits(stages.length - 3)} مورد`
-                            : ''}
-                        </p>
-                      ) : null}
                     </div>
                   </div>
                   <div className="text-left shrink-0">
@@ -707,14 +738,14 @@ export const BookingStepPage: React.FC = () => {
             })}
           </div>
 
-          {/* نوار پایین گام ۱: جمع انتخاب‌شده‌ها و دکمه رفتن به مرحله ۲ (متخصص) */}
+          {/* نوار پایین گام ۱: جمع انتخاب‌شده‌ها و رفتن هوشمند به مرحله بعد (در صورت تک‌متخصص بودن، پرش مستقیم به انتخاب زمان) */}
           <div className="pt-3 border-t border-[#CBD5E1] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="text-xs flex items-center justify-between sm:justify-start gap-1">
               <span className="text-[#64748B] font-semibold">مجموع انتخاب شما: </span>
               <strong className="font-black text-[#061138] tabular-nums">
                 {toPersianDigits(selectedServiceIds.length)} خدمت ·{' '}
                 <span className="text-[#0057FF]">
-                  {formatPriceToman(selectedServicesSummary.totalPriceToman)}
+                  {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
                 </span>
               </strong>
             </div>
@@ -722,9 +753,15 @@ export const BookingStepPage: React.FC = () => {
               variant="primary"
               size="sm"
               className="w-full sm:w-auto justify-center"
-              onClick={() => setActiveStepIndicator(2)}
+              onClick={() =>
+                setActiveStepIndicator(bizSpecialists.length <= 1 ? 3 : 2)
+              }
             >
-              <span>مرحله بعد: انتخاب متخصص</span>
+              <span>
+                {bizSpecialists.length <= 1
+                  ? 'مرحله بعد: انتخاب زمان مراجعه'
+                  : 'مرحله بعد: انتخاب متخصص'}
+              </span>
               <ArrowLeft className="w-4 h-4 shrink-0" />
             </Button>
           </div>
@@ -912,16 +949,16 @@ export const BookingStepPage: React.FC = () => {
             </div>
           </div>
 
-          {/* ساعت‌های قابل انتخاب */}
-          <div className="space-y-2">
+          {/* ساعت‌های قابل انتخاب (فقط زمان‌های حضور بدون نمایش تایم استراحت یا تفکیک دو شیفته) */}
+          <div className="space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-extrabold text-[#061138] block">
                 ۲. انتخاب ساعت مراجعه:
               </span>
-              {dayWorkingHour ? (
-                <span className="text-[11px] font-bold text-[#0057FF] bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-1 rounded-full tabular-nums">
-                  ساعات کاری {dayWorkingHour.dayName}:{' '}
-                  {formatWorkingHourDisplay(dayWorkingHour)}
+              {dayWorkingHour && dayWorkingHour.isOpen ? (
+                <span className="text-[11px] font-bold text-[#0057FF] bg-[#EFF6FF] border border-[#BFDBFE] px-2.5 py-0.5 rounded-full tabular-nums">
+                  ساعات حضور {dayWorkingHour.dayName}:{' '}
+                  {formatCustomerWorkingHourMinimal(dayWorkingHour)}
                 </span>
               ) : null}
             </div>
@@ -934,119 +971,6 @@ export const BookingStepPage: React.FC = () => {
             ) : timeSlotOptions.length === 0 ? (
               <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-center text-xs text-[#475569]">
                 در این تاریخ ظرفیت خالی وجود ندارد. لطفاً روز دیگری را انتخاب کنید.
-              </div>
-            ) : effectiveDayWorkingHour?.hasBreak &&
-              slotSchedule.afternoonSlots.length > 0 ? (
-              <div className="space-y-3.5">
-                {/* شیفت اول (صبح) */}
-                {slotSchedule.morningSlots.length > 0 ? (
-                  <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-extrabold text-[#061138] inline-flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-500" />
-                        <span>نوبت‌های شیفت صبح</span>
-                      </span>
-                      <span className="text-[11px] font-bold text-[#0057FF] tabular-nums">
-                        {effectiveDayWorkingHour.openTime} تا{' '}
-                        {effectiveDayWorkingHour.closeTime}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {slotSchedule.morningSlots.map((slot) => {
-                        const isSelected =
-                          slot.available && bookingDraft.timeSlot === slot.time;
-                        return (
-                          <button
-                            key={`m-${slot.time}`}
-                            type="button"
-                            disabled={!slot.available}
-                            onClick={() => {
-                              if (slot.available) {
-                                updateBookingDraft({ timeSlot: slot.time });
-                              }
-                            }}
-                            className={`px-3 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
-                              !slot.available
-                                ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
-                                : isSelected
-                                  ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
-                                  : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
-                            }`}
-                          >
-                            <span>ساعت {slot.time}</span>
-                            {!slot.available ? (
-                              <span className="text-[10px] no-underline font-normal">
-                                {slot.reason || 'پر'}
-                              </span>
-                            ) : isSelected ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* نوار اطلاع‌رسانی بازه استراحت بین روز */}
-                <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold flex items-center justify-between gap-2 tabular-nums">
-                  <span>
-                    ☕ استراحت بین روز مجموعه (عدم پذیرش از ساعت{' '}
-                    {effectiveDayWorkingHour.closeTime} تا{' '}
-                    {effectiveDayWorkingHour.secondOpenTime || '۱۶:۰۰'})
-                  </span>
-                  <span className="text-[10px] font-extrabold text-amber-700 shrink-0">
-                    دو شیفته
-                  </span>
-                </div>
-
-                {/* شیفت دوم (عصر) */}
-                <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-extrabold text-[#061138] inline-flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-[#0057FF]" />
-                      <span>نوبت‌های شیفت عصر</span>
-                    </span>
-                    <span className="text-[11px] font-bold text-[#0057FF] tabular-nums">
-                      {effectiveDayWorkingHour.secondOpenTime || '۱۶:۰۰'} تا{' '}
-                      {effectiveDayWorkingHour.secondCloseTime || '۲۱:۰۰'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {slotSchedule.afternoonSlots.map((slot) => {
-                      const isSelected =
-                        slot.available && bookingDraft.timeSlot === slot.time;
-                      return (
-                        <button
-                          key={`a-${slot.time}`}
-                          type="button"
-                          disabled={!slot.available}
-                          onClick={() => {
-                            if (slot.available) {
-                              updateBookingDraft({ timeSlot: slot.time });
-                            }
-                          }}
-                          className={`px-3 py-2.5 rounded-xl text-xs tabular-nums border transition-all flex items-center justify-between ${
-                            !slot.available
-                              ? 'bg-[#F1F5F9] text-[#94A3B8] border-[#E2E8F0] opacity-65 cursor-not-allowed line-through'
-                              : isSelected
-                                ? 'bg-[#0057FF] text-white border-[#0057FF] font-extrabold shadow-xs cursor-pointer'
-                                : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
-                          }`}
-                        >
-                          <span>ساعت {slot.time}</span>
-                          {!slot.available ? (
-                            <span className="text-[10px] no-underline font-normal">
-                              {slot.reason || 'پر'}
-                            </span>
-                          ) : isSelected ? (
-                            <Check className="w-3.5 h-3.5" />
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -1071,7 +995,7 @@ export const BookingStepPage: React.FC = () => {
                           : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF] font-bold cursor-pointer'
                       }`}
                     >
-                      <span>ساعت {slot.time}</span>
+                      <span>{slot.time}</span>
                       {!slot.available ? (
                         <span className="text-[10px] no-underline font-normal">
                           {slot.reason || 'پر'}
@@ -1091,7 +1015,9 @@ export const BookingStepPage: React.FC = () => {
               variant="outline"
               size="sm"
               className="w-full sm:w-auto justify-center"
-              onClick={() => setActiveStepIndicator(2)}
+              onClick={() =>
+                setActiveStepIndicator(bizSpecialists.length <= 1 ? 1 : 2)
+              }
             >
               <ChevronRight className="w-4 h-4 shrink-0" />
               <span>مرحله قبل</span>
@@ -1790,13 +1716,10 @@ export const BookingConfirmPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-lg sm:text-2xl font-extrabold text-[#061138]">
-          بازبینی خلاصه نوبت و پرداخت بیعانه آنلاین
+      <div className="mb-3">
+        <h1 className="text-base sm:text-xl font-extrabold text-[#061138]">
+          تایید نهایی نوبت و پرداخت بیعانه
         </h1>
-        <p className="text-xs text-[#475569] mt-1">
-          برای قطعی شدن نوبت، پرداخت بیعانه از طریق درگاه بانکی شاپرک یا کیف پول شما الزامی است.
-        </p>
       </div>
 
       <BookingFlowStepIndicator
@@ -1808,27 +1731,27 @@ export const BookingConfirmPage: React.FC = () => {
         }}
       />
 
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="max-w-3xl mx-auto space-y-4">
         {dataMode === 'real' && !authUser ? (
-          <div className="p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] flex flex-wrap items-center justify-between gap-3 text-xs text-[#92400E]">
+          <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] flex flex-wrap items-center justify-between gap-3 text-xs text-[#92400E]">
             <span className="font-bold">
-              برای ثبت قطعی نوبت و پرداخت بیعانه، ابتدا با شماره موبایل خود وارد شوید.
+              برای ثبت قطعی نوبت، ابتدا با شماره موبایل خود وارد شوید.
             </span>
             <Link to={`/login?redirect=${encodeURIComponent('/booking/confirm')}`}>
               <Button variant="primary" size="sm">
-                ورود سریع با موبایل
+                ورود با موبایل
               </Button>
             </Link>
           </div>
         ) : null}
 
-        {/* کارت آبی‌رنگ خلاصه نوبت انتخابی */}
+        {/* کارت خلاصه نوبت و مبلغ بیعانه — جمع‌وجور و بدون توضیحات اضافی */}
         <Card
           variant="dark"
-          className="rounded-3xl space-y-4 bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] border border-[#00E5FF]/30 shadow-[0_20px_48px_-16px_rgba(6,17,56,0.55)]"
+          className="rounded-3xl space-y-3 bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] border border-[#00E5FF]/30 shadow-[0_16px_40px_-16px_rgba(6,17,56,0.5)]"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-3.5">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/15 pb-3">
+            <div className="flex items-center gap-2.5">
               <img
                 src={
                   business.avatarUrl && business.avatarUrl.trim()
@@ -1836,139 +1759,97 @@ export const BookingConfirmPage: React.FC = () => {
                     : getBeautyPhotoUrl(business.name, business.typeLabel)
                 }
                 alt={business.name}
-                className="w-11 h-11 rounded-2xl object-cover border border-white/25 shrink-0"
+                className="w-10 h-10 rounded-2xl object-cover border border-white/25 shrink-0"
               />
               <div>
-                <span className="text-[11px] font-extrabold text-[#00E5FF] block">
-                  خلاصه نوبت انتخابی
-                </span>
                 <h2 className="text-sm sm:text-base font-black text-white">
                   {business.name} ({business.neighborhood})
                 </h2>
+                <span className="text-[11px] font-bold text-[#00E5FF] tabular-nums block">
+                  {bookingDraft.dateJalali} · ساعت {bookingDraft.timeSlot} ·{' '}
+                  {specialist.fullName}
+                </span>
               </div>
             </div>
             <Link
               to={`/booking/${business.slug}?step=1`}
-              className="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-extrabold transition-colors"
+              className="px-2.5 py-1 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-extrabold transition-colors"
             >
-              ویرایش انتخاب‌ها
+              ویرایش
             </Link>
           </div>
 
-          <div className="space-y-3 text-xs sm:text-sm">
-            <div className="space-y-1.5">
-              <span className="text-slate-300 text-xs block">
-                خدمات انتخاب‌شده ({toPersianDigits(selectedServicesSummary.services.length)} مورد):
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedServicesSummary.services.map((s) => (
-                  <span
-                    key={s.id}
-                    className="px-2.5 py-1 rounded-xl bg-white/12 border border-white/20 text-xs font-extrabold text-white"
-                  >
-                    {s.title} ({formatServicePriceDisplay(s)})
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/15">
-              <div>
-                <span className="text-slate-300 text-xs block">متخصص انتخابی:</span>
-                <span className="font-extrabold text-white mt-0.5 block">
-                  {specialist.fullName}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap gap-1.5">
+              {selectedServicesSummary.services.map((s) => (
+                <span
+                  key={s.id}
+                  className="px-2.5 py-1 rounded-xl bg-white/12 border border-white/20 text-xs font-extrabold text-white"
+                >
+                  {s.title} ({formatServicePriceShort(s)})
                 </span>
-              </div>
-              <div>
-                <span className="text-slate-300 text-xs block">مجموع زمان:</span>
-                <span className="font-extrabold text-white tabular-nums mt-0.5 block">
-                  {formatDurationMinutes(
-                    selectedServicesSummary.totalDurationMinutes
-                  )}
-                </span>
-              </div>
+              ))}
             </div>
-
-            <div className="p-3.5 rounded-2xl bg-white/12 border border-[#00E5FF]/35 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold text-[#00E5FF]">
-                تاریخ و ساعت مراجعه:
-              </span>
-              <span className="text-xs sm:text-sm font-black text-white tabular-nums">
-                {bookingDraft.dateJalali} — ساعت {bookingDraft.timeSlot}
-              </span>
-            </div>
-
-            <div className="pt-2 border-t border-white/15 flex items-center justify-between">
-              <span className="text-slate-200 font-bold">مبلغ کل خدمات:</span>
-              <span className="text-base sm:text-lg font-black text-[#00E5FF] tabular-nums">
-                {formatPriceToman(selectedServicesSummary.totalPriceToman)}
-              </span>
-            </div>
+            <span className="text-xs font-bold text-slate-200 tabular-nums">
+              جمع کل خدمات:{' '}
+              <strong className="text-[#00E5FF] font-black">
+                {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
+              </strong>
+            </span>
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/10 border border-white/25 space-y-2 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-slate-200">
-                مبلغ بیعانه پایه نوبت ({toPersianDigits(depositPercent)}٪ خدمت):
+          <div className="p-3 rounded-2xl bg-white/10 border border-white/20 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between gap-2 text-slate-200">
+              <span>
+                بیعانه رزرو ({toPersianDigits(depositPercent)}٪) + کارمزد درگاه شاپرک:
               </span>
-              <span className="font-extrabold text-white tabular-nums">
-                {formatPriceToman(depositAmountToman)}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-slate-200">
-              <span>کارمزد خدمات رزرو آنلاین، درگاه شاپرک و مالیات (۲٪):</span>
               <span className="font-bold text-white tabular-nums">
+                {formatPriceToman(depositAmountToman)} +{' '}
                 {formatPriceToman(customerGatewayAndTaxFeeToman)}
               </span>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/15">
               <span className="font-extrabold text-[#00E5FF]">
-                جمع قابل پرداخت آنلاین الان:
+                مبلغ قابل پرداخت آنلاین الان:
               </span>
-              <span className="font-black text-white text-base tabular-nums">
+              <span className="font-black text-white text-sm sm:text-base tabular-nums">
                 {formatPriceToman(totalOnlinePayableToman)}
               </span>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-slate-200 pt-1">
-              <span>مانده قابل تسویه حضوری در سالن:</span>
+            <div className="flex items-center justify-between gap-2 text-slate-300 text-[11px]">
+              <span>مانده تسویه حضوری در سالن:</span>
               <strong className="tabular-nums text-white">
-                {formatPriceToman(remainingInSalonToman)}
+                {formatCompactPriceToman(remainingInSalonToman)}
               </strong>
             </div>
-            <p className="text-[11px] text-[#00E5FF]/95 pt-1 border-t border-white/15 leading-relaxed">
-              ⚖️ قانون کنسلی سالن «{business.name}»: در صورت لغو نوبت تا{' '}
-              <strong>
-                {toPersianDigits(cancellationDeadlineHours)} ساعت قبل از زمان
-                نوبت
-              </strong>
-              ، اصل مبلغ بیعانه ({formatPriceToman(depositAmountToman)}) به کیف پول شما بازگردانده می‌شود (کارمزد ۲٪ زیرساخت درگاه و مالیات غیرقابل استرداد است).
+            <p className="text-[11px] text-[#00E5FF]/90 pt-1 border-t border-white/10">
+              ⚖️ لغو رایگان تا{' '}
+              <strong>{toPersianDigits(cancellationDeadlineHours)} ساعت قبل از نوبت</strong>{' '}
+              با بازگشت اصل بیعانه به کیف پول
               {latePenaltyPercent > 0
-                ? ` در صورت لغو دیرهنگام در کمتر از ${toPersianDigits(cancellationDeadlineHours)} ساعت مانده، ${toPersianDigits(latePenaltyPercent)}٪ جریمه کسر می‌گردد.`
+                ? ` (کمتر از آن: ${toPersianDigits(latePenaltyPercent)}٪ جریمه)`
                 : ''}
+              .
             </p>
           </div>
         </Card>
 
-        <Card padding="lg" className="rounded-3xl">
+        <Card padding="md" className="rounded-3xl">
           <form
             onSubmit={handleInitiateCheckout}
-            className="space-y-5"
+            className="space-y-4"
             noValidate
           >
-            <h2 className="text-base font-extrabold text-[#061138] border-b border-[#CBD5E1] pb-3">
-              ۲. مشخصات مراجع و انتخاب روش پرداخت بیعانه
-            </h2>
-
             {formError ? (
               <p
                 role="alert"
-                className="p-3.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-xs font-bold text-[#EF4444]"
+                className="p-3 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] text-xs font-bold text-[#EF4444]"
               >
                 {formError}
               </p>
             ) : null}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 id="bk-cust-name"
                 label="نام و نام خانوادگی مراجع"
@@ -1985,7 +1866,7 @@ export const BookingConfirmPage: React.FC = () => {
 
               <FormField
                 id="bk-cust-phone"
-                label="شماره همراه جهت هماهنگی"
+                label="شماره همراه"
                 required
               >
                 <Input
@@ -2001,60 +1882,61 @@ export const BookingConfirmPage: React.FC = () => {
 
             <FormField
               id="bk-cust-notes"
-              label="توضیحات برای سالن یا متخصص"
+              label="توضیح کوتاه برای سالن"
               optionalLabel="اختیاری"
             >
-              <Textarea
+              <Input
                 id="bk-cust-notes"
-                rows={2}
                 value={bookingDraft.customerNotes}
                 onChange={(e) =>
                   updateBookingDraft({ customerNotes: e.target.value })
                 }
-                placeholder="مثلاً حساسیت پوستی یا نکته خاص درباره خدمت..."
+                placeholder="مثلاً نکته خاص درباره خدمت..."
               />
             </FormField>
 
-            {/* انتخاب روش پرداخت بیعانه: درگاه بانکی شاپرک یا کیف پول مشتری */}
-            <div className="space-y-3 pt-2 border-t border-[#CBD5E1]">
-              <label className="text-sm font-extrabold text-[#061138] block">
-                ۳. انتخاب روش پرداخت آنلاین ({formatPriceToman(totalOnlinePayableToman)})
+            {/* انتخاب روش پرداخت بیعانه: خلاصه و کاربردی */}
+            <div className="space-y-2.5 pt-2 border-t border-[#CBD5E1]">
+              <label className="text-xs sm:text-sm font-extrabold text-[#061138] block">
+                روش پرداخت بیعانه ({formatPriceToman(totalOnlinePayableToman)})
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* گزینه ۱: درگاه پرداخت اینترنتی زیبال (Zibal - شاپرک) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* گزینه ۱: درگاه زیبال */}
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('GATEWAY')}
-                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                  className={`p-3 rounded-2xl border-2 text-right transition-all flex items-center justify-between gap-2 cursor-pointer ${
                     paymentMethod === 'GATEWAY'
-                      ? 'border-[#0057FF] bg-[#EFF6FF] shadow-xs'
+                      ? 'border-[#0057FF] bg-[#EFF6FF] shadow-2xs'
                       : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
-                      <CreditCard className="w-4 h-4 text-[#0057FF]" />
-                      <span>درگاه پرداخت اینترنتی زیبال (Zibal)</span>
-                    </span>
-                    <span
-                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        paymentMethod === 'GATEWAY'
-                          ? 'border-[#0057FF] bg-[#0057FF] text-white'
-                          : 'border-[#94A3B8]'
-                      }`}
-                    >
-                      {paymentMethod === 'GATEWAY' ? (
-                        <Check className="w-2.5 h-2.5" />
-                      ) : null}
-                    </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CreditCard className="w-4 h-4 text-[#0057FF] shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-xs font-extrabold text-[#061138] block truncate">
+                        درگاه بانکی زیبال (شاپرک)
+                      </span>
+                      <span className="text-[10px] text-[#475569] block truncate">
+                        کلیه کارت‌های عضو شتاب
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-[#475569] leading-relaxed">
-                    اتصال مستقیم به درگاه امن شاپرک (زیبال - gateway.zibal.ir) با کلیه کارت‌های عضو شبکه شتاب
-                  </p>
+                  <span
+                    className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                      paymentMethod === 'GATEWAY'
+                        ? 'border-[#0057FF] bg-[#0057FF] text-white'
+                        : 'border-[#94A3B8]'
+                    }`}
+                  >
+                    {paymentMethod === 'GATEWAY' ? (
+                      <Check className="w-2.5 h-2.5" />
+                    ) : null}
+                  </span>
                 </button>
 
-                {/* گزینه ۲: پرداخت آنی از موجودی کیف پول مشتری */}
+                {/* گزینه ۲: کیف پول */}
                 <div
                   onClick={() => setPaymentMethod('WALLET')}
                   role="button"
@@ -2064,70 +1946,59 @@ export const BookingConfirmPage: React.FC = () => {
                       setPaymentMethod('WALLET');
                     }
                   }}
-                  className={`p-4 rounded-2xl border-2 text-right transition-all flex flex-col justify-between gap-2 cursor-pointer ${
+                  className={`p-3 rounded-2xl border-2 text-right transition-all flex items-center justify-between gap-2 cursor-pointer ${
                     paymentMethod === 'WALLET'
-                      ? 'border-[#10B981] bg-[#ECFDF5] shadow-xs'
+                      ? 'border-[#10B981] bg-[#ECFDF5] shadow-2xs'
                       : 'border-[#CBD5E1] bg-white hover:border-[#94A3B8]'
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-extrabold text-[#061138]">
-                      <Wallet className="w-4 h-4 text-[#10B981]" />
-                      <span>پرداخت از کیف پول من</span>
-                    </span>
-                    <span
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-black tabular-nums ${
-                        hasEnoughWalletBalance
-                          ? 'bg-[#D1FAE5] text-[#065F46]'
-                          : 'bg-[#FEE2E2] text-[#991B1B]'
-                      }`}
-                    >
-                      موجودی: {formatPriceToman(customerWalletBalanceToman)}
-                    </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Wallet className="w-4 h-4 text-[#10B981] shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-xs font-extrabold text-[#061138] block truncate">
+                        کیف پول من
+                      </span>
+                      <span className="text-[10px] text-[#475569] tabular-nums block truncate">
+                        موجودی: {formatCompactPriceToman(customerWalletBalanceToman)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <span className="text-[11px] text-[#475569]">
-                      {hasEnoughWalletBalance
-                        ? 'کسر آنی بدون نیاز به رمز پویا'
-                        : `کسری موجودی: ${formatPriceToman(Math.max(0, totalOnlinePayableToman - customerWalletBalanceToman))}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuickTopUpAmount(
-                          Math.max(
-                            100000,
-                            totalOnlinePayableToman - customerWalletBalanceToman
-                          )
-                        );
-                        setQuickTopUpSuccess('');
-                        setIsQuickTopUpOpen(true);
-                      }}
-                      className="px-2.5 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>شارژ با زیبال</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQuickTopUpAmount(
+                        Math.max(
+                          100000,
+                          totalOnlinePayableToman - customerWalletBalanceToman
+                        )
+                      );
+                      setQuickTopUpSuccess('');
+                      setIsQuickTopUpOpen(true);
+                    }}
+                    className="px-2 py-1 rounded-xl bg-[#061138] hover:bg-[#0057FF] text-white text-[10px] font-extrabold inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>شارژ</span>
+                  </button>
                 </div>
               </div>
             </div>
 
             {isVerifyingZibal ? (
-              <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex items-center gap-3 text-xs font-extrabold text-[#1E40AF]">
-                <Loader2 className="w-5 h-5 animate-spin text-[#0057FF] shrink-0" />
-                <span>در حال استعلام و تایید تراکنش از درگاه پرداخت زیبال...</span>
+              <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex items-center gap-2.5 text-xs font-extrabold text-[#1E40AF]">
+                <Loader2 className="w-4 h-4 animate-spin text-[#0057FF] shrink-0" />
+                <span>در حال تایید تراکنش از درگاه زیبال...</span>
               </div>
             ) : null}
 
             {zibalGatewayRedirect ? (
-              <div className="p-4 rounded-2xl bg-[#EFF6FF] border-2 border-[#0057FF] space-y-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border-2 border-[#0057FF] space-y-2.5 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-extrabold text-[#061138] flex items-center gap-1.5">
                     <Lock className="w-4 h-4 text-[#0057FF]" />
                     <span>
-                      درگاه رسمی شاپرک زیبال (کد رهگیری:{' '}
+                      درگاه زیبال (کد:{' '}
                       <strong dir="ltr" className="font-mono">
                         {zibalGatewayRedirect.trackId}
                       </strong>
@@ -2138,17 +2009,14 @@ export const BookingConfirmPage: React.FC = () => {
                     {formatPriceToman(zibalGatewayRedirect.amountToman)}
                   </span>
                 </div>
-                <p className="text-[11px] text-[#475569] leading-relaxed">
-                  صفحه درگاه پرداخت اینترنتی زیبال (gateway.zibal.ir) در تب جدید باز شد. اگر مرورگر شما باز شدن خودکار را مسدود کرده است، روی دکمه زیر کلیک کنید تا مستقیماً وارد درگاه زیبال شوید:
-                </p>
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <a
                     href={zibalGatewayRedirect.paymentUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0057FF] hover:bg-[#061138] text-white font-extrabold text-xs transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0057FF] hover:bg-[#061138] text-white font-extrabold text-xs transition-colors"
                   >
-                    <span>ورود مستقیم به درگاه پرداخت زیبال (Zibal)</span>
+                    <span>ورود به درگاه زیبال</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                   <button
@@ -2163,61 +2031,45 @@ export const BookingConfirmPage: React.FC = () => {
                       nextParams.set('trackId', zibalGatewayRedirect.trackId);
                       setSearchParams(nextParams);
                     }}
-                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#061138] border border-[#CBD5E1] font-extrabold text-xs transition-colors cursor-pointer"
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-[#F8FAFC] text-[#061138] border border-[#CBD5E1] font-extrabold text-xs transition-colors cursor-pointer"
                   >
-                    پرداخت را در تب زیبال انجام دادم (بررسی وضعیت)
+                    پرداخت را انجام دادم (بررسی وضعیت)
                   </button>
                 </div>
               </div>
             ) : null}
 
-            {/* هشدار مهم خاموش کردن VPN پیش از ورود به درگاه بانکی */}
             {paymentMethod === 'GATEWAY' ? (
-              <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border-2 border-[#F59E0B] flex items-start gap-2.5 text-xs text-[#92400E] leading-relaxed">
-                <span className="text-base leading-none shrink-0 mt-0.5">⚠️</span>
-                <div>
-                  <strong className="font-extrabold text-[#78350F] block mb-0.5">
-                    لطفاً پیش از ورود به درگاه پرداخت، فیلترشکن (VPN) خود را خاموش کنید!
-                  </strong>
-                  <span>
-                    درگاه بانکی شاپرک و زیبال به آی‌پی‌های خارج از کشور حساس است و با روشن بودن VPN باز نمی‌شود یا خطا می‌دهد. پس از خاموش کردن VPN روی دکمه زیر بزنید.
-                  </span>
-                </div>
-              </div>
+              <p className="px-3 py-2 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[11px] font-bold text-[#92400E]">
+                ⚠️ پیش از ورود به درگاه بانکی شاپرک، لطفاً فیلترشکن (VPN) خود را خاموش کنید.
+              </p>
             ) : null}
 
-            <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-start gap-2.5 text-xs text-[#475569] leading-relaxed">
-              <ShieldCheck className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-              <span>
-                نوبت شما <strong>تنها پس از تکمیل پرداخت در درگاه زیبال (یا کیف پول)</strong> ثبت قطعی می‌شود. در صورت کنسلی نوبت در مهلت مجاز ({toPersianDigits(cancellationDeadlineHours)} ساعت قبل)، مبلغ بیعانه پایه به کیف پول شما بازمی‌گردد.
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <Link to={`/booking/${business.slug}`}>
-                <Button variant="outline" type="button">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+              <Link to={`/booking/${business.slug}?step=3`}>
+                <Button variant="outline" size="sm" type="button">
                   <ArrowRight className="w-4 h-4" />
-                  <span>بازگشت به مرحله قبل</span>
+                  <span>مرحله قبل</span>
                 </Button>
               </Link>
               <Button
                 type="submit"
                 variant="primary"
-                size="lg"
+                size="md"
                 isLoading={isSubmitting || isVerifyingZibal}
               >
                 {paymentMethod === 'GATEWAY' ? (
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      ورود به درگاه زیبال و پرداخت ({formatPriceToman(depositAmountToman)})
+                      پرداخت آنلاین و ثبت نوبت ({formatPriceToman(totalOnlinePayableToman)})
                     </span>
                   </>
                 ) : (
                   <>
                     <Wallet className="w-4 h-4" />
                     <span>
-                      پرداخت از کیف پول ({formatPriceToman(depositAmountToman)}) و ثبت قطعی
+                      پرداخت از کیف پول و ثبت نوبت ({formatPriceToman(totalOnlinePayableToman)})
                     </span>
                   </>
                 )}

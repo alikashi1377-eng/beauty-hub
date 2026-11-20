@@ -435,9 +435,40 @@ const PrototypeDataContext = createContext<PrototypeDataContextValue | null>(
   null
 );
 
+const TIMETO_SERVER_TRUTH_EPOCH_KEY = 'timeto_server_truth_epoch_v20';
+const STALE_ENTITY_CACHE_KEYS = [
+  'timeto_registered_accounts_v2',
+  'timeto_saved_appointments_v1',
+  'timeto_local_services_v1',
+  'timeto_local_specialists_v1',
+  'timeto_biz_overrides_v2',
+  'timeto_local_onboarded_businesses_v1',
+  'timeto_cached_registered_users_v1',
+  'timeto_settlement_requests_v1',
+  'timeto_daily_income_logs_v1',
+];
+
+function ensureCleanServerTruthCacheEpoch(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const currentEpoch = window.localStorage.getItem(TIMETO_SERVER_TRUTH_EPOCH_KEY);
+    if (currentEpoch !== '1') {
+      for (const key of STALE_ENTITY_CACHE_KEYS) {
+        window.localStorage.removeItem(key);
+      }
+      window.localStorage.setItem(TIMETO_SERVER_TRUTH_EPOCH_KEY, '1');
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+ensureCleanServerTruthCacheEpoch();
+
 export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  ensureCleanServerTruthCacheEpoch();
   const [dataMode, setDataMode] = useState<'mock' | 'real'>('mock');
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [isLoadingInitialData, setIsLoadingInitialData] =
@@ -550,7 +581,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [authUser?.phone]);
   const mergeBusinessOverrides = (
     list: BusinessItem[],
-    extraRegisteredUsers?: AdminUserRecord[]
+    extraRegisteredUsers?: AdminUserRecord[],
+    authoritativeFromServer = false
   ): BusinessItem[] => {
     try {
       const excludedSampleIds = new Set([
@@ -569,11 +601,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const permDeletedIds = new Set<string>(
         permDeletedRaw ? JSON.parse(permDeletedRaw) : []
       );
-      const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
+      const overridesRaw = authoritativeFromServer
+        ? null
+        : window.localStorage.getItem('timeto_biz_overrides_v2');
       const overrides = overridesRaw ? JSON.parse(overridesRaw) : {};
-      const localOnbRaw = window.localStorage.getItem(
-        'timeto_local_onboarded_businesses_v1'
-      );
+      const localOnbRaw = authoritativeFromServer
+        ? null
+        : window.localStorage.getItem('timeto_local_onboarded_businesses_v1');
       const localOnbList: BusinessItem[] = localOnbRaw
         ? JSON.parse(localOnbRaw)
         : [];
@@ -1606,23 +1640,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setOwnedBusinessId(ownedBiz.id);
         }
 
-        // ادغام هم‌زمان خدمات برای اعمال فوری شروع تعرفه و حفظ ترتیب ذخیره‌شده
-        let localSrvSnapshot: ServiceItem[] = [];
-        try {
-          const localRaw = window.localStorage.getItem('timeto_local_services_v1');
-          localSrvSnapshot = localRaw ? JSON.parse(localRaw) : [];
-        } catch {
-          localSrvSnapshot = [];
-        }
         const srvMap = new Map<string, ServiceItem>();
-        for (const s of localSrvSnapshot) {
-          if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
-            srvMap.set(s.id, s);
-          }
-        }
         for (const s of wsRes.data.services) {
-          const prevItem = srvMap.get(s.id);
-          srvMap.set(s.id, prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s);
+          srvMap.set(s.id, s);
         }
         const mergedServicesList = applySavedServiceSortOrder(
           Array.from(srvMap.values())
@@ -1661,7 +1681,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           mergeSavedGallery([...wsRes.data.gallery, ...prev])
         );
         setAppointments((prev) =>
-          mergeSavedAppointments([...wsRes.data.appointments, ...prev], freshBizPool)
+          mergeSavedAppointments(
+            [...wsRes.data.appointments, ...prev],
+            freshBizPool,
+            true
+          )
         );
         setCustomers(mergeManualCustomers(wsRes.data.customers));
         setCampaigns(wsRes.data.campaigns);
@@ -1675,7 +1699,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const adminRes = await realApiClient.fetchAdminOverview();
         const syncedAdminBusinesses = syncStartingPricesWithServices(
-          mergeBusinessOverrides(adminRes.data.businesses, adminRes.data.users),
+          mergeBusinessOverrides(
+            adminRes.data.businesses,
+            adminRes.data.users,
+            true
+          ),
           latestLoadedServices.length > 0 ? latestLoadedServices : services
         );
         setBusinesses(syncedAdminBusinesses);
@@ -1691,12 +1719,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         if (Array.isArray(adminRes.data.appointments)) {
           const adminAppointments = adminRes.data.appointments;
-          setAppointments((prev) =>
-            mergeSavedAppointments(
-              [...adminAppointments, ...prev],
-              syncedAdminBusinesses
-            )
-          );
+          setAppointments(() => {
+            const authoritativeApts = mergeSavedAppointments(
+              adminAppointments,
+              syncedAdminBusinesses,
+              true
+            );
+            persistSavedAppointments(authoritativeApts);
+            return authoritativeApts;
+          });
         }
         if (Array.isArray(adminRes.adminNotifications)) {
           setAdminNotifications((prev) => {
@@ -1764,17 +1795,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const nextServices = (() => {
           const map = new Map<string, ServiceItem>();
-          try {
-            const localSrvRaw = window.localStorage.getItem('timeto_local_services_v1');
-            const localSrvs: ServiceItem[] = localSrvRaw ? JSON.parse(localSrvRaw) : [];
-            for (const s of localSrvs) {
-              if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
-                map.set(s.id, s);
-              }
-            }
-          } catch {
-            // ignore
-          }
           for (const s of response.data!.services) {
             if (
               s &&
@@ -1782,21 +1802,29 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               !/^biz-[1-8]$/.test(s.businessId) &&
               !/^srv-[1-8]\d\d$/.test(s.id)
             ) {
-              const prevItem = map.get(s.id);
-              map.set(
-                s.id,
-                prevItem ? { ...s, sortOrder: prevItem.sortOrder } : s
-              );
+              map.set(s.id, s);
             }
           }
-          return applySavedServiceSortOrder(Array.from(map.values()));
+          const resolvedSrvs = applySavedServiceSortOrder(
+            Array.from(map.values())
+          );
+          try {
+            window.localStorage.setItem(
+              'timeto_local_services_v1',
+              JSON.stringify(resolvedSrvs)
+            );
+          } catch {
+            // ignore
+          }
+          return resolvedSrvs;
         })();
         setServices(nextServices);
 
         const nextBusinesses = syncStartingPricesWithServices(
           mergeBusinessOverrides(
             response.data.businesses,
-            response.data.registeredUsers
+            response.data.registeredUsers,
+            true
           ),
           nextServices
         );
@@ -1804,27 +1832,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
         setSpecialists(() => {
           const map = new Map<string, SpecialistItem>();
-          try {
-            const localSpcRaw = window.localStorage.getItem(
-              'timeto_local_specialists_v1'
-            );
-            const localSpcs: SpecialistItem[] = localSpcRaw
-              ? JSON.parse(localSpcRaw)
-              : [];
-            for (const sp of localSpcs) {
-              if (
-                sp &&
-                sp.id &&
-                !/^biz-[1-8]$/.test(sp.businessId) &&
-                !/^spc-[1-8]$/.test(sp.id) &&
-                sp.fullName?.trim() !== 'مریم فرهادی'
-              ) {
-                map.set(sp.id, sp);
-              }
-            }
-          } catch {
-            // ignore
-          }
           for (const sp of response.data!.specialists) {
             if (
               sp &&
@@ -1836,7 +1843,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               map.set(sp.id, sp);
             }
           }
-          return Array.from(map.values());
+          const resolvedSpcs = Array.from(map.values());
+          try {
+            window.localStorage.setItem(
+              'timeto_local_specialists_v1',
+              JSON.stringify(resolvedSpcs)
+            );
+          } catch {
+            // ignore
+          }
+          return resolvedSpcs;
         });
         setReviews(() => {
           let deletedRevIds = new Set<string>();
@@ -1891,10 +1907,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const serverApts = Array.isArray(response.data.appointments)
           ? response.data.appointments
           : [];
-        setAppointments((prev) => {
+        setAppointments(() => {
           const mergedApts = mergeSavedAppointments(
-            [...serverApts, ...prev],
-            nextBusinesses
+            serverApts,
+            nextBusinesses,
+            true
           );
           persistSavedAppointments(mergedApts);
           return mergedApts;
@@ -1978,189 +1995,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setAdminUsers(response.data.registeredUsers ?? []);
         setOwnedBusinessId(localOwnedBizId);
 
-        // همگام‌سازی خودکار حساب‌های ثبت‌نام‌شده قدیمی و جدید مرورگر با دیتابیس PostgreSQL
+        // دریافت داده قطعی دیتابیس PostgreSQL و تمدید کوکی نشست کاربر فعال (بدون ارسال کش قدیمی مرورگر تا نمایش عادی و Incognito صددرصد یکسان باشند)
         try {
-          const memoryAccounts = Object.values(getSavedMemoryAccounts());
-          const localOnbList: BusinessItem[] = (() => {
-            try {
-              return JSON.parse(
-                window.localStorage.getItem(
-                  'timeto_local_onboarded_businesses_v1'
-                ) || '[]'
-              );
-            } catch {
-              return [];
-            }
-          })();
-          const overrides: Record<string, Partial<BusinessItem>> = (() => {
-            try {
-              return JSON.parse(
-                window.localStorage.getItem('timeto_biz_overrides_v2') || '{}'
-              );
-            } catch {
-              return {};
-            }
-          })();
-
-          const syncPayloadAccounts: Parameters<
-            typeof realApiClient.syncRegisteredAccounts
-          >[0]['accounts'] = memoryAccounts.map((acc) => {
-            const matchedBiz = localOnbList.find(
-              (b) =>
-                b.id === acc.businessId ||
-                b.ownerPhone === acc.phone ||
-                b.phoneDisplay === acc.phone
-            );
-            const ov =
-              (acc.businessId ? overrides[acc.businessId] : undefined) ||
-              (matchedBiz ? overrides[matchedBiz.id] : undefined) ||
-              {};
-            return {
-              phone: acc.phone,
-              fullName: acc.fullName,
-              city: ov.city || matchedBiz?.city || acc.city || 'اصفهان',
-              role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
-                | 'owner'
-                | 'customer',
-              password: acc.password,
-              businessId: acc.businessId || matchedBiz?.id,
-              businessName: ov.name || acc.businessName || matchedBiz?.name,
-              businessType: acc.businessType || matchedBiz?.type,
-              categorySlug:
-                ov.categorySlug || acc.categorySlug || matchedBiz?.categorySlug,
-              typeLabel: ov.typeLabel || acc.typeLabel || matchedBiz?.typeLabel,
-              slug: ov.slug || acc.slug || matchedBiz?.slug,
-              approvalStatus:
-                ov.approvalStatus ||
-                acc.approvalStatus ||
-                matchedBiz?.approvalStatus,
-              neighborhood:
-                ov.neighborhood || acc.neighborhood || matchedBiz?.neighborhood,
-              address: ov.address || matchedBiz?.address,
-              mapLat: ov.mapLat ?? matchedBiz?.mapLat,
-              mapLng: ov.mapLng ?? matchedBiz?.mapLng,
-              avatarUrl: ov.avatarUrl || acc.avatarUrl || matchedBiz?.avatarUrl,
-              instagramHandle:
-                ov.instagramHandle || matchedBiz?.instagramHandle,
-              shortDescription:
-                ov.shortDescription || matchedBiz?.shortDescription,
-              depositEnabled:
-                ov.depositEnabled ?? matchedBiz?.depositEnabled,
-              depositPercent:
-                typeof ov.depositPercent === 'number'
-                  ? ov.depositPercent
-                  : matchedBiz?.depositPercent,
-              bankShebaNumber:
-                ov.bankShebaNumber || matchedBiz?.bankShebaNumber,
-              bankCardNumber:
-                ov.bankCardNumber || matchedBiz?.bankCardNumber,
-              bankAccountHolder:
-                ov.bankAccountHolder || matchedBiz?.bankAccountHolder,
-              contractAccepted:
-                ov.contractAccepted ?? matchedBiz?.contractAccepted,
-              contractAcceptedAtJalali:
-                ov.contractAcceptedAtJalali ||
-                matchedBiz?.contractAcceptedAtJalali,
-              isVipPartner: ov.isVipPartner ?? matchedBiz?.isVipPartner,
-              vipCommissionPercent:
-                typeof ov.vipCommissionPercent === 'number'
-                  ? ov.vipCommissionPercent
-                  : matchedBiz?.vipCommissionPercent,
-            };
-          });
-          // همچنین هر سالن محلی ثبت‌شده که هنوز در syncPayloadAccounts نیست را به دیتابیس سینک کن تا در گوشی سایر کاربران هم نمایش داده شود
-          for (const lb of localOnbList) {
-            if (!lb || lb.isSampleShowcase || /^biz-[1-8]$/.test(lb.id)) continue;
-            const lbPhone = toEnglishDigitsClient(
-              String(lb.ownerPhone || lb.phoneDisplay || '')
-            ).replace(/\D/g, '');
-            if (!/^09\d{9}$/.test(lbPhone)) continue;
-            if (syncPayloadAccounts.some((a) => a.phone === lbPhone)) continue;
-            const ov = overrides[lb.id] || overrides[lb.slug] || {};
-            syncPayloadAccounts.push({
-              phone: lbPhone,
-              fullName: ov.ownerName || lb.ownerName || lb.name || 'مدیر سالن',
-              city: ov.city || lb.city || 'اصفهان',
-              role: 'owner',
-              password: '',
-              businessId: lb.id,
-              businessName: ov.name || lb.name,
-              businessType: ov.type || lb.type,
-              categorySlug: ov.categorySlug || lb.categorySlug,
-              typeLabel: ov.typeLabel || lb.typeLabel,
-              slug: ov.slug || lb.slug,
-              approvalStatus: ov.approvalStatus || lb.approvalStatus,
-              neighborhood: ov.neighborhood || lb.neighborhood,
-              address: ov.address || lb.address,
-              mapLat: ov.mapLat ?? lb.mapLat,
-              mapLng: ov.mapLng ?? lb.mapLng,
-              avatarUrl: ov.avatarUrl || lb.avatarUrl,
-              instagramHandle: ov.instagramHandle || lb.instagramHandle,
-              shortDescription: ov.shortDescription || lb.shortDescription,
-              depositEnabled: ov.depositEnabled ?? lb.depositEnabled,
-              depositPercent:
-                typeof ov.depositPercent === 'number'
-                  ? ov.depositPercent
-                  : lb.depositPercent,
-              bankShebaNumber: ov.bankShebaNumber || lb.bankShebaNumber,
-              bankCardNumber: ov.bankCardNumber || lb.bankCardNumber,
-              bankAccountHolder: ov.bankAccountHolder || lb.bankAccountHolder,
-              contractAccepted: ov.contractAccepted ?? lb.contractAccepted,
-              contractAcceptedAtJalali:
-                ov.contractAcceptedAtJalali || lb.contractAcceptedAtJalali,
-              isVipPartner: ov.isVipPartner ?? lb.isVipPartner,
-              vipCommissionPercent:
-                typeof ov.vipCommissionPercent === 'number'
-                  ? ov.vipCommissionPercent
-                  : lb.vipCommissionPercent,
-            });
-          }
-          if (
-            localPersistedUser?.phone &&
-            !syncPayloadAccounts.some((a) => a.phone === localPersistedUser.phone)
-          ) {
-            const isSuperAdminPhone =
-              localPersistedUser.phone === '09138201042' ||
-              localPersistedUser.isPlatformAdmin ||
-              localPersistedUser.roles.includes('PLATFORM_ADMIN');
-            syncPayloadAccounts.push({
-              phone: localPersistedUser.phone,
-              fullName: localPersistedUser.fullName || 'کاربر تایم تو',
-              city: localPersistedUser.defaultCity || 'اصفهان',
-              role: (isSuperAdminPhone
-                ? 'admin'
-                : localPersistedUser.roles.includes('BUSINESS_OWNER')
-                  ? 'owner'
-                  : 'customer') as 'customer' | 'owner' | 'admin',
-              password: '',
-              businessId: localOwnedBizId || undefined,
-              businessName: undefined,
-              businessType: undefined,
-              categorySlug: undefined,
-              typeLabel: undefined,
-              slug: undefined,
-              approvalStatus: undefined,
-              neighborhood: undefined,
-              address: undefined,
-              mapLat: undefined,
-              mapLng: undefined,
-              avatarUrl: undefined,
-              instagramHandle: undefined,
-              shortDescription: undefined,
-            });
-          }
-          const localSavedApts = mergeSavedAppointments([], nextBusinesses).filter(
-            (a: AppointmentItem) =>
-              a &&
-              a.status !== 'CANCELLED' &&
-              !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
-              !/^biz-[1-8]$/.test(a.businessId)
-          );
           void realApiClient
             .syncRegisteredAccounts({
-              accounts: syncPayloadAccounts,
+              accounts: [],
               issueSessionForPhone: localPersistedUser?.phone || undefined,
-              appointments: localSavedApts,
+              appointments: [],
             })
             .then((syncRes) => {
               if (Array.isArray(syncRes.registeredUsers)) {
@@ -2172,9 +2013,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 syncRes.services.length > 0
               ) {
                 const srvMap = new Map<string, ServiceItem>();
-                for (const s of nextServices) {
-                  if (s && s.id) srvMap.set(s.id, s);
-                }
                 for (const s of syncRes.services) {
                   if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
                     srvMap.set(s.id, s);
@@ -2189,11 +2027,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 Array.isArray(syncRes.specialists) &&
                 syncRes.specialists.length > 0
               ) {
-                setSpecialists((prevSpcs) => {
+                setSpecialists(() => {
                   const spcMap = new Map<string, SpecialistItem>();
-                  for (const sp of prevSpcs) {
-                    if (sp && sp.id) spcMap.set(sp.id, sp);
-                  }
                   for (const sp of syncRes.specialists || []) {
                     if (
                       sp &&
@@ -2215,7 +2050,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                 latestBusinesses = syncStartingPricesWithServices(
                   mergeBusinessOverrides(
                     syncRes.businesses,
-                    syncRes.registeredUsers
+                    syncRes.registeredUsers,
+                    true
                   ),
                   latestServices
                 );
@@ -2361,28 +2197,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (typeof window === 'undefined' || dataMode !== 'real') return;
     const syncLiveFromServer = () => {
-      const localSavedApts = mergeSavedAppointments([], []).filter(
-        (a: AppointmentItem) =>
-          a &&
-          a.status !== 'CANCELLED' &&
-          !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
-          !/^biz-[1-8]$/.test(a.businessId)
-      );
       void realApiClient
         .syncRegisteredAccounts({
           accounts: [],
-          appointments: localSavedApts,
+          appointments: [],
         })
         .then((syncRes) => {
           if (Array.isArray(syncRes.registeredUsers)) {
             setAdminUsers(syncRes.registeredUsers);
           }
           if (Array.isArray(syncRes.services) && syncRes.services.length > 0) {
-            setServices((prevSrvs) => {
+            setServices(() => {
               const srvMap = new Map<string, ServiceItem>();
-              for (const s of prevSrvs) {
-                if (s && s.id) srvMap.set(s.id, s);
-              }
               for (const s of syncRes.services || []) {
                 if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
                   srvMap.set(s.id, s);
@@ -2398,18 +2224,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             setBusinesses((prevBiz) =>
               mergeBusinessOverrides(
                 syncRes.businesses || prevBiz,
-                syncRes.registeredUsers
+                syncRes.registeredUsers,
+                true
               )
             );
           }
-          if (
-            Array.isArray(syncRes.appointments) &&
-            syncRes.appointments.length > 0
-          ) {
-            setAppointments((prev) => {
+          if (Array.isArray(syncRes.appointments)) {
+            setAppointments(() => {
               const merged = mergeSavedAppointments(
-                [...(syncRes.appointments || []), ...prev],
-                syncRes.businesses || []
+                syncRes.appointments || [],
+                syncRes.businesses || [],
+                true
               );
               persistSavedAppointments(merged);
               return merged;

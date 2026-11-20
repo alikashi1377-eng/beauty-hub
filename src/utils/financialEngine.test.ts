@@ -237,10 +237,35 @@ test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit eve
 
 import {
   buildCustomerBookingTimeSlots,
+  formatCompactPriceToman,
+  formatCustomerWorkingHourMinimal,
   formatPriceToman,
+  formatServicePriceShort,
   formatWorkingHourDisplay,
   resolveEffectiveWorkingHour,
 } from './formatters';
+
+test('formatCompactPriceToman and formatCustomerWorkingHourMinimal strip 3 trailing zeros and hide break-time labels', () => {
+  assert.equal(formatCompactPriceToman(200_000), '۲۰۰ هزار تومان');
+  assert.equal(formatCompactPriceToman(400_000), '۴۰۰ هزار تومان');
+  assert.equal(formatCompactPriceToman(1_250_000), '۱,۲۵۰ هزار تومان');
+  assert.equal(
+    formatServicePriceShort({ priceToman: 350_000, pricingType: 'FIXED' }),
+    '۳۵۰ هزار تومان'
+  );
+  assert.equal(
+    formatCustomerWorkingHourMinimal({
+      dayName: 'شنبه',
+      isOpen: true,
+      openTime: '۰۹:۳۰',
+      closeTime: '۱۳:۳۰',
+      hasBreak: true,
+      secondOpenTime: '۱۶:۰۰',
+      secondCloseTime: '۲۱:۰۰',
+    }),
+    '۰۹:۳۰ تا ۱۳:۳۰ · ۱۶:۰۰ تا ۲۱:۰۰'
+  );
+});
 
 test('buildCustomerBookingTimeSlots generates both morning and afternoon shift slots when midday break is active', () => {
   // حالت ۱: دو شیفته صریح (۰۹:۳۰ تا ۱۳:۳۰ و ۱۶:۰۰ تا ۲۱:۰۰)

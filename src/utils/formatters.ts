@@ -54,12 +54,28 @@ export function formatPriceToman(amount: number): string {
   return `${toPersianDigits(formatted)} تومان`;
 }
 
+/**
+ * نمایش خلاصه و خلوت قیمت بدون ۳ صفر اضافه هزارگان (مثلاً ۲۰۰,۰۰۰ -> ۲۰۰ هزار تومان)
+ * برای جلوگیری از شلوغی کارت‌های انتخاب خدمت در موبایل
+ */
+export function formatCompactPriceToman(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return '۰ تومان';
+  }
+  const rounded = Math.round(amount);
+  if (rounded >= 1000 && rounded % 1000 === 0) {
+    const thousands = rounded / 1000;
+    return `${toPersianDigits(thousands.toLocaleString('en-US'))} هزار تومان`;
+  }
+  return formatPriceToman(rounded);
+}
+
 export function formatStartingTariff(priceToman?: number | null): string {
   const num = Number(priceToman) || 0;
   if (!Number.isFinite(num) || num <= 0) {
     return 'تعیین پس از انتخاب خدمت';
   }
-  return formatPriceToman(num);
+  return formatCompactPriceToman(num);
 }
 
 export function formatServicePriceDisplay(
@@ -68,14 +84,20 @@ export function formatServicePriceDisplay(
   const base = Number(service.priceToman) || 0;
   const max = Number(service.maxPriceToman) || 0;
   if (service.pricingType === 'RANGE' && max > base) {
-    return `از ${toPersianDigits(Math.round(base).toLocaleString('en-US'))} تا ${toPersianDigits(
-      Math.round(max).toLocaleString('en-US')
-    )} تومان`;
+    const baseK = base >= 1000 && base % 1000 === 0 ? base / 1000 : base;
+    const maxK = max >= 1000 && max % 1000 === 0 ? max / 1000 : max;
+    const unit =
+      base >= 1000 && base % 1000 === 0 && max >= 1000 && max % 1000 === 0
+        ? 'هزار تومان'
+        : 'تومان';
+    return `از ${toPersianDigits(Math.round(baseK).toLocaleString('en-US'))} تا ${toPersianDigits(
+      Math.round(maxK).toLocaleString('en-US')
+    )} ${unit}`;
   }
   if (service.pricingType === 'STARTING_FROM') {
-    return `شروع از ${formatPriceToman(base)} (تعیین دقیق پس از مشاوره)`;
+    return `از ${formatCompactPriceToman(base)}`;
   }
-  return formatPriceToman(base);
+  return formatCompactPriceToman(base);
 }
 
 export function formatServicePriceShort(
@@ -84,14 +106,20 @@ export function formatServicePriceShort(
   const base = Number(service.priceToman) || 0;
   const max = Number(service.maxPriceToman) || 0;
   if (service.pricingType === 'RANGE' && max > base) {
-    return `از ${toPersianDigits(Math.round(base).toLocaleString('en-US'))} تا ${toPersianDigits(
-      Math.round(max).toLocaleString('en-US')
-    )} تومان`;
+    const baseK = base >= 1000 && base % 1000 === 0 ? base / 1000 : base;
+    const maxK = max >= 1000 && max % 1000 === 0 ? max / 1000 : max;
+    const unit =
+      base >= 1000 && base % 1000 === 0 && max >= 1000 && max % 1000 === 0
+        ? 'هزار تومان'
+        : 'تومان';
+    return `${toPersianDigits(Math.round(baseK).toLocaleString('en-US'))} تا ${toPersianDigits(
+      Math.round(maxK).toLocaleString('en-US')
+    )} ${unit}`;
   }
   if (service.pricingType === 'STARTING_FROM') {
-    return `شروع از ${formatPriceToman(base)}`;
+    return `از ${formatCompactPriceToman(base)}`;
   }
-  return formatPriceToman(base);
+  return formatCompactPriceToman(base);
 }
 
 export function parseTimeToMinutes(rawTime?: string): number {
@@ -161,6 +189,18 @@ export function formatWorkingHourDisplay(wh: WorkingHourItem): string {
   return `${effective.openTime} تا ${effective.closeTime}`;
 }
 
+/**
+ * نمایش مینیمال ساعت کاری برای مشتری (بدون عبارت‌های اضافه شیفت صبح / شیفت عصر / تایم استراحت)
+ */
+export function formatCustomerWorkingHourMinimal(wh?: WorkingHourItem): string {
+  const effective = resolveEffectiveWorkingHour(wh);
+  if (!effective || !effective.isOpen) return 'تعطیل';
+  if (effective.hasBreak && effective.secondOpenTime && effective.secondCloseTime) {
+    return `${effective.openTime} تا ${effective.closeTime} · ${effective.secondOpenTime} تا ${effective.secondCloseTime}`;
+  }
+  return `${effective.openTime} تا ${effective.closeTime}`;
+}
+
 export function isTimeSlotWithinWorkingHours(
   timeSlot: string,
   wh?: WorkingHourItem,
@@ -195,7 +235,7 @@ export function isTimeSlotWithinWorkingHours(
 }
 
 /**
- * تولید یکپارچه اسلات‌های رزرو مشتری برای هر دو شیفت صبح و عصر (حذف خودکار بازه استراحت ظهر و حفظ کامل نوبت‌های عصر)
+ * تولید یکپارچه اسلات‌های رزرو مشتری (فقط ساعات حضور واقعی بدون نمایش تایم استراحت بین روز)
  */
 export function buildCustomerBookingTimeSlots(params: {
   dayWorkingHour?: WorkingHourItem;
@@ -250,7 +290,6 @@ export function buildCustomerBookingTimeSlots(params: {
     }
 
     if (srvMatch) {
-      // اگر سرور اسلات شیفت عصر را صرفاً به دلیل ثبت قبلی تک‌شیفت «خارج از ساعت کاری» علامت زده بود اما در شیفت دوم سالن است، آن را آزاد کن
       if (
         !srvMatch.available &&
         srvMatch.reason === 'خارج از ساعت کاری' &&
@@ -295,7 +334,9 @@ export function buildCustomerBookingTimeSlots(params: {
     }
   }
 
-  const allSlots = [...morningSlots, ...afternoonSlots];
+  const allSlots = [...morningSlots, ...afternoonSlots].filter(
+    (s) => s.available || s.reason !== 'خارج از ساعت کاری'
+  );
   return {
     allSlots,
     morningSlots,

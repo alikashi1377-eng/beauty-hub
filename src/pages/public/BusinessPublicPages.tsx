@@ -26,9 +26,11 @@ import {
 } from 'lucide-react';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import {
+  formatCompactPriceToman,
+  formatCustomerWorkingHourMinimal,
   formatPriceToman,
   formatStartingTariff,
-  formatWorkingHourDisplay,
+  getUpcomingJalaliDays,
   normalizeIranMobileInput,
   toPersianDigits,
 } from '../../utils/formatters';
@@ -46,7 +48,6 @@ import {
 import { EmptyState } from '../../components/ui/StateViews';
 import {
   Avatar,
-  PopularServicePastelCard,
   ProfessionalCard,
   ServiceCard,
   Tabs,
@@ -88,6 +89,11 @@ export const BusinessPublicProfileView: React.FC<{
     useState<string>('ALL');
   const [publicServiceQuery, setPublicServiceQuery] = useState<string>('');
   const [showAllPublicServices, setShowAllPublicServices] =
+    useState<boolean>(false);
+  const [selectedProfileServiceIds, setSelectedProfileServiceIds] = useState<
+    string[]
+  >([]);
+  const [showFullWeeklyHours, setShowFullWeeklyHours] =
     useState<boolean>(false);
   const [reviewRating, setReviewRating] = useState<number>(0);
   const [reviewHoverRating, setReviewHoverRating] = useState<number>(0);
@@ -139,15 +145,21 @@ export const BusinessPublicProfileView: React.FC<{
     pricedServiceValues.length > 0
       ? Math.min(...pricedServiceValues)
       : Number(business.startingPriceToman) || 0;
-  const popularServices = bizServices.slice(0, 3);
+  const popularServices = bizServices.filter((s) => s.isPopular).length > 0
+    ? bizServices.filter((s) => s.isPopular)
+    : bizServices.slice(0, Math.min(3, bizServices.length));
+  const popularServiceIdSet = new Set(popularServices.map((s) => s.id));
   const serviceCategories = Array.from(
     new Set(bizServices.map((s) => s.category))
   );
   const normalizedPubSrvQ = publicServiceQuery.trim().toLowerCase();
   const filteredServices = bizServices.filter((s) => {
     const matchCat =
-      selectedServiceCategory === 'ALL' ||
-      s.category === selectedServiceCategory;
+      selectedServiceCategory === 'ALL'
+        ? true
+        : selectedServiceCategory === 'POPULAR'
+          ? popularServiceIdSet.has(s.id)
+          : s.category === selectedServiceCategory;
     const matchQ =
       !normalizedPubSrvQ ||
       s.title.toLowerCase().includes(normalizedPubSrvQ) ||
@@ -155,6 +167,20 @@ export const BusinessPublicProfileView: React.FC<{
       s.description.toLowerCase().includes(normalizedPubSrvQ);
     return matchCat && matchQ;
   });
+
+  const handleToggleProfileService = (srvId: string) => {
+    setSelectedProfileServiceIds((prev) =>
+      prev.includes(srvId) ? prev.filter((id) => id !== srvId) : [...prev, srvId]
+    );
+  };
+  const selectedProfileServicesTotal = bizServices
+    .filter((s) => selectedProfileServiceIds.includes(s.id))
+    .reduce((acc, s) => acc + (Number(s.priceToman) || 0), 0);
+
+  const todayJalaliDayName = getUpcomingJalaliDays(1)[0]?.dayName || 'شنبه';
+  const todayWorkingHour =
+    business.workingHours.find((w) => w.dayName === todayJalaliDayName) ??
+    business.workingHours[0];
 
   const bizSpecialists = specialists.filter(
     (sp) => sp.businessId === business.id && sp.isActive !== false
@@ -778,41 +804,7 @@ export const BusinessPublicProfileView: React.FC<{
         );
       })()}
 
-      {/* ۲. بخش خدمات پرطرفدار با کارت‌های پاستلی رنگی — دقیقاً مطابق Capture1.PNG (Karikos Julieta Popular Services) */}
-      {popularServices.length > 0 ? (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-[#8B5CF6]" />
-              <h2 className="text-base sm:text-lg font-extrabold text-[#1E1B2E]">
-                خدمات پرطرفدار و منتخب مراجعان
-              </h2>
-            </div>
-            <Link
-              to={`/booking/${business.slug}`}
-              onClick={(e) =>
-                handleRequireAuthForBooking(e, `/booking/${business.slug}`)
-              }
-              className="text-xs font-bold text-[#8B5CF6] hover:underline"
-            >
-              رزرو مستقیم ←
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {popularServices.map((srv, idx) => (
-              <PopularServicePastelCard
-                key={srv.id}
-                service={srv}
-                toneIndex={idx}
-                bookingHref={`/booking/${business.slug}?service=${srv.id}`}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* ۳. چیدمان دو ستونی: تب‌های کپسولی آیکون‌دار + ماژول چسبان رزرو و گالری */}
+      {/* ۲. چیدمان دو ستونی: تب‌های کپسولی آیکون‌دار (با ادغام خدمات پرطرفدار و دسته‌بندی مستقیم داخل تعرفه‌ها) + ماژول چسبان رزرو */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <div className="lg:col-span-8 space-y-5">
           <Tabs
@@ -852,36 +844,77 @@ export const BusinessPublicProfileView: React.FC<{
           />
 
           {activeTab === 'services' ? (
-            <Card className="rounded-3xl space-y-4">
-              {bizServices.length > 5 || serviceCategories.length > 1 ? (
-                <div className="space-y-3 pb-3 border-b border-[#E6E0F5]">
-                  {bizServices.length > 5 ? (
-                    <div className="relative">
-                      <Input
-                        value={publicServiceQuery}
-                        onChange={(e) => setPublicServiceQuery(e.target.value)}
-                        placeholder="جست‌وجوی سریع خدمت یا ناحیه (مثلاً فول بادی، توتال، بیکینی، فیشیال...)"
-                      />
-                    </div>
+            <Card className="rounded-3xl space-y-3.5">
+              {/* هدر راهنمای سریع انتخاب تک یا چند خدمت + فیلتر دسته‌بندی و پرطرفدارها */}
+              <div className="space-y-2.5 pb-3 border-b border-[#E6E0F5]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#1E1B2E]">
+                    <Scissors className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                    <span>فهرست خدمات و تعرفه‌ها</span>
+                    <span className="text-[11px] font-normal text-[#6B6480]">
+                      (امکان انتخاب هم‌زمان چند خدمت)
+                    </span>
+                  </div>
+                  {selectedProfileServiceIds.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProfileServiceIds([])}
+                      className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                    >
+                      پاک کردن انتخاب ({toPersianDigits(selectedProfileServiceIds.length)})
+                    </button>
                   ) : null}
+                </div>
 
-                  {serviceCategories.length > 1 ? (
-                    <div className="flex flex-wrap items-center gap-2">
+                {bizServices.length > 3 ? (
+                  <div className="relative">
+                    <Input
+                      value={publicServiceQuery}
+                      onChange={(e) => setPublicServiceQuery(e.target.value)}
+                      placeholder="جست‌وجوی سریع خدمت (مثلاً اصلاح، فیشیال، فول‌بادی...)"
+                    />
+                  </div>
+                ) : null}
+
+                {bizServices.length > 1 ? (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedServiceCategory('ALL');
+                        setShowAllPublicServices(false);
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                        selectedServiceCategory === 'ALL'
+                          ? 'bg-[#8B5CF6] text-white'
+                          : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
+                      }`}
+                    >
+                      همه خدمات ({toPersianDigits(bizServices.length)})
+                    </button>
+
+                    {popularServices.length > 0 && bizServices.length > 2 ? (
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedServiceCategory('ALL');
+                          setSelectedServiceCategory('POPULAR');
                           setShowAllPublicServices(false);
                         }}
-                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                          selectedServiceCategory === 'ALL'
-                            ? 'bg-[#8B5CF6] text-white'
-                            : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                          selectedServiceCategory === 'POPULAR'
+                            ? 'bg-[#F59E0B] text-white'
+                            : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A] hover:bg-[#FEF3C7]'
                         }`}
                       >
-                        همه لاین‌ها ({toPersianDigits(bizServices.length)})
+                        ★ پرطرفدارها ({toPersianDigits(popularServices.length)})
                       </button>
-                      {serviceCategories.map((cat) => (
+                    ) : null}
+
+                    {serviceCategories.map((cat) => {
+                      const catCount = bizServices.filter(
+                        (s) => s.category === cat
+                      ).length;
+                      return (
                         <button
                           key={cat}
                           type="button"
@@ -889,25 +922,25 @@ export const BusinessPublicProfileView: React.FC<{
                             setSelectedServiceCategory(cat);
                             setShowAllPublicServices(false);
                           }}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                             selectedServiceCategory === cat
                               ? 'bg-[#8B5CF6] text-white'
-                              : 'bg-[#FAF8FF] text-[#6B6480] hover:bg-[#EDE9FE]'
+                              : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
                           }`}
                         >
-                          {cat}
+                          {cat} ({toPersianDigits(catCount)})
                         </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
 
               {filteredServices.length === 0 ? (
                 <EmptyState title="خدمتی در این دسته‌بندی ثبت نشده است" />
               ) : (
-                <div className="space-y-3">
-                  <div>
+                <div className="space-y-2.5">
+                  <div className="space-y-2">
                     {(showAllPublicServices
                       ? filteredServices
                       : filteredServices.slice(0, 8)
@@ -915,13 +948,17 @@ export const BusinessPublicProfileView: React.FC<{
                       <ServiceCard
                         key={srv.id}
                         service={srv}
-                        actionLabel="رزرو نوبت"
+                        actionLabel="رزرو"
+                        isPopularBadge={popularServiceIdSet.has(srv.id)}
+                        isSelected={selectedProfileServiceIds.includes(srv.id)}
+                        onToggleSelect={(s) => handleToggleProfileService(s.id)}
                         bookingHref={`/booking/${business.slug}?service=${srv.id}`}
                       />
                     ))}
                   </div>
+
                   {filteredServices.length > 8 ? (
-                    <div className="pt-2 text-center">
+                    <div className="pt-1 text-center">
                       <button
                         type="button"
                         onClick={() => setShowAllPublicServices((p) => !p)}
@@ -931,6 +968,36 @@ export const BusinessPublicProfileView: React.FC<{
                           ? 'نمایش خلاصه خدمات'
                           : `مشاهده همه ${toPersianDigits(filteredServices.length)} خدمت و تعرفه ↓`}
                       </button>
+                    </div>
+                  ) : null}
+
+                  {/* نوار جمع‌وجور رزرو گروهی در صورت انتخاب یک یا چند خدمت از روی کارت‌ها */}
+                  {selectedProfileServiceIds.length > 0 &&
+                  !business.isSampleShowcase ? (
+                    <div className="p-3 rounded-2xl bg-[#1E1B2E] text-white flex flex-wrap items-center justify-between gap-2.5 shadow-md">
+                      <div className="text-xs">
+                        <span className="text-[#C4B5FD] font-semibold">
+                          انتخاب شما:{' '}
+                        </span>
+                        <strong className="font-extrabold tabular-nums">
+                          {toPersianDigits(selectedProfileServiceIds.length)}{' '}
+                          خدمت ·{' '}
+                          {formatCompactPriceToman(selectedProfileServicesTotal)}
+                        </strong>
+                      </div>
+                      <Link
+                        to={`/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`}
+                        onClick={(e) =>
+                          handleRequireAuthForBooking(
+                            e,
+                            `/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`
+                          )
+                        }
+                        className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
+                      >
+                        <span>ادامه و انتخاب زمان</span>
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                      </Link>
                     </div>
                   ) : null}
                 </div>
@@ -1652,35 +1719,65 @@ export const BusinessPublicProfileView: React.FC<{
             </div>
           </Card>
 
-          <Card className="rounded-3xl space-y-3">
-            <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
-              <h3 className="text-sm font-extrabold text-[#1E1B2E] inline-flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-[#8B5CF6]" />
-                <span>ساعات کاری هفتگی</span>
-              </h3>
-              <span className="text-[11px] font-semibold text-[#10B981]">
-                پذیرش با نوبت قبلی
+          <Card className="rounded-3xl space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Clock className="w-4 h-4 text-[#8B5CF6] shrink-0" />
+                <h3 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E] truncate">
+                  ساعات کاری
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFullWeeklyHours((prev) => !prev)}
+                className="text-[11px] font-extrabold text-[#8B5CF6] hover:underline cursor-pointer shrink-0"
+              >
+                {showFullWeeklyHours ? 'بستن برنامه هفتگی ▴' : 'مشاهده همه روزها ▾'}
+              </button>
+            </div>
+
+            {/* نمایش خلاصه و مینیمال وضعیت امروز */}
+            <div className="p-2.5 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-center justify-between gap-2 text-xs">
+              <span className="font-bold text-[#6B6480]">
+                امروز ({todayWorkingHour?.dayName || todayJalaliDayName}):
+              </span>
+              <span
+                className={`font-extrabold tabular-nums ${
+                  todayWorkingHour?.isOpen ? 'text-[#10B981]' : 'text-rose-500'
+                }`}
+              >
+                {formatCustomerWorkingHourMinimal(todayWorkingHour)}
               </span>
             </div>
-            <div className="space-y-2 text-xs">
-              {business.workingHours.map((wh, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between gap-2 py-1.5 border-b border-[#F3EEFF] last:border-b-0"
-                >
-                  <span className="text-[#6B6480] font-medium shrink-0">
-                    {wh.dayName}
-                  </span>
-                  {wh.isOpen ? (
-                    <span className="text-[#1E1B2E] font-bold tabular-nums text-left">
-                      {formatWorkingHourDisplay(wh)}
-                    </span>
-                  ) : (
-                    <span className="text-[#6B6480]">تعطیل</span>
-                  )}
-                </div>
-              ))}
-            </div>
+
+            {showFullWeeklyHours ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-1.5 pt-1 text-xs">
+                {business.workingHours.map((wh, index) => {
+                  const isToday = wh.dayName === todayJalaliDayName;
+                  return (
+                    <div
+                      key={index}
+                      className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl ${
+                        isToday
+                          ? 'bg-[#EDE9FE]/60 font-extrabold text-[#1E1B2E]'
+                          : 'bg-[#FAF8FF] text-[#6B6480]'
+                      }`}
+                    >
+                      <span className="shrink-0">{wh.dayName}</span>
+                      <span
+                        className={`tabular-nums text-left ${
+                          wh.isOpen
+                            ? 'text-[#1E1B2E] font-bold'
+                            : 'text-rose-500 font-semibold'
+                        }`}
+                      >
+                        {formatCustomerWorkingHourMinimal(wh)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </Card>
 
           <div id="salon-map-section">
