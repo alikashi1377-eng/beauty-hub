@@ -845,7 +845,7 @@ export const PopularServicePastelCard: React.FC<{
   );
 };
 
-/** ۶. کارت خدمت جمع‌وجور و سریع (ServiceCard) — بهینه‌سازی‌شده برای انتخاب آسان مشتری و نمایش قیمت بدون ۳ صفر اضافی */
+/** ۶. کارت خدمت جمع‌وجور و سریع (ServiceCard) — مجهز به کشوی بازشوی مینیمال برای مشاهده نام کامل، توضیحات و محتویات پکیج */
 export const ServiceCard: React.FC<{
   service: ServiceItem;
   actionLabel?: string;
@@ -864,7 +864,14 @@ export const ServiceCard: React.FC<{
   onToggleSelect,
 }) => {
   const { authUser, openAuthModal } = usePrototypeData();
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const showPopular = Boolean(service.isPopular || isPopularBadge);
+  const cleanDescription = (service.description ?? '').trim();
+  const packageItems = (service.packageIncludes ?? []).filter(Boolean);
+  const hasRichDetails =
+    Boolean(cleanDescription) ||
+    packageItems.length > 0 ||
+    service.title.length > 26;
 
   return (
     <div
@@ -873,7 +880,7 @@ export const ServiceCard: React.FC<{
           onToggleSelect(service);
         }
       }}
-      className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+      className={`p-3 rounded-2xl border transition-all ${
         onToggleSelect ? 'cursor-pointer select-none' : ''
       } ${
         isSelected
@@ -881,104 +888,172 @@ export const ServiceCard: React.FC<{
           : 'border-[#E6E0F5] bg-white hover:border-[#C4B5FD] hover:bg-[#FAF8FF]'
       }`}
     >
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        {onToggleSelect ? (
-          <span
-            className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
-              isSelected
-                ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white'
-                : 'bg-white border-[#C4B5FD] text-transparent'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-          </span>
-        ) : null}
+      <div className="flex items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          {onToggleSelect ? (
+            <span
+              className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+                isSelected
+                  ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white'
+                  : 'bg-white border-[#C4B5FD] text-transparent'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            </span>
+          ) : null}
 
-        <div className="space-y-1 min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E] truncate">
-              {service.title}
-            </h3>
-            {showPopular ? (
-              <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
-                ★ پرطرفدار
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3
+                className={`text-xs sm:text-sm font-extrabold text-[#1E1B2E] ${
+                  isDetailsOpen ? ' leading-snug' : 'truncate'
+                }`}
+              >
+                {service.title}
+              </h3>
+              {showPopular ? (
+                <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
+                  ★ پرطرفدار
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6480]">
+              <span className="px-1.5 py-0.5 rounded-md bg-[#F3EEFF] font-bold text-[#7C3AED]">
+                {service.category}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1 tabular-nums font-semibold">
+                <Clock className="w-3 h-3 text-[#8B5CF6]" />
+                {formatDurationMinutes(service.durationMinutes)}
+              </span>
+
+              {/* دکمه مینیمال مشاهده توضیحات کامل و موارد شامل خدمت / پکیج */}
+              <button
+                type="button"
+                aria-expanded={isDetailsOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDetailsOpen((prev) => !prev);
+                }}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
+                  isDetailsOpen
+                    ? 'bg-[#8B5CF6] text-white'
+                    : hasRichDetails
+                      ? 'bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE]'
+                      : 'bg-[#F8FAFC] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
+                }`}
+              >
+                <Info className="w-3 h-3 shrink-0" />
+                <span>
+                  {isDetailsOpen
+                    ? 'بستن توضیحات ▴'
+                    : packageItems.length > 0
+                      ? `شامل ${toPersianDigits(packageItems.length)} مورد ▾`
+                      : 'توضیحات ▾'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="text-left">
+            <span className="text-xs sm:text-sm font-black text-[#1E1B2E] tabular-nums block">
+              {formatServicePriceShort(service)}
+            </span>
+            {service.pricingType === 'RANGE' ? (
+              <span className="text-[9px] font-bold text-amber-700 block">
+                بازه متغیر
+              </span>
+            ) : service.pricingType === 'STARTING_FROM' ? (
+              <span className="text-[9px] font-bold text-sky-700 block">
+                تعرفه پایه
               </span>
             ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6480]">
-            <span className="px-1.5 py-0.5 rounded-md bg-[#F3EEFF] font-bold text-[#7C3AED]">
-              {service.category}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1 tabular-nums font-semibold">
-              <Clock className="w-3 h-3 text-[#8B5CF6]" />
-              {formatDurationMinutes(service.durationMinutes)}
-            </span>
-            {service.description && service.description.trim() ? (
-              <>
-                <span aria-hidden="true" className="hidden sm:inline">
-                  ·
-                </span>
-                <span className="hidden sm:inline text-[11px] text-[#6B6480] truncate max-w-[240px]">
-                  {service.description}
-                </span>
-              </>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2.5 shrink-0">
-        <div className="text-left">
-          <span className="text-xs sm:text-sm font-black text-[#1E1B2E] tabular-nums block">
-            {formatServicePriceShort(service)}
-          </span>
-          {service.pricingType === 'RANGE' ? (
-            <span className="text-[9px] font-bold text-amber-700 block">
-              بازه متغیر
-            </span>
-          ) : service.pricingType === 'STARTING_FROM' ? (
-            <span className="text-[9px] font-bold text-sky-700 block">
-              تعرفه پایه
-            </span>
+          {bookingHref ? (
+            <Link
+              to={bookingHref}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!authUser) {
+                  e.preventDefault();
+                  openAuthModal({
+                    initialScreen: 'LOGIN',
+                    defaultRole: 'CUSTOMER',
+                    redirectTo: bookingHref,
+                    promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
+                  });
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+            >
+              <span>{actionLabel}</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+            </Link>
+          ) : onSelect ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(service);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors cursor-pointer shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+            >
+              <span>{actionLabel}</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
+            </button>
           ) : null}
         </div>
-
-        {bookingHref ? (
-          <Link
-            to={bookingHref}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!authUser) {
-                e.preventDefault();
-                openAuthModal({
-                  initialScreen: 'LOGIN',
-                  defaultRole: 'CUSTOMER',
-                  redirectTo: bookingHref,
-                  promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
-                });
-              }
-            }}
-            className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
-          >
-            <span>{actionLabel}</span>
-            <ArrowLeft className="w-3.5 h-3.5" />
-          </Link>
-        ) : onSelect ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(service);
-            }}
-            className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors cursor-pointer shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
-          >
-            <span>{actionLabel}</span>
-            <ArrowLeft className="w-3.5 h-3.5" />
-          </button>
-        ) : null}
       </div>
+
+      {/* کشوی بازشوی توضیحات کامل خدمت، نام کامل و اقلام شامل پکیج */}
+      {isDetailsOpen ? (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="mt-2.5 pt-2.5 border-t border-[#E6E0F5] rounded-xl bg-[#FAF8FF] p-2.5 space-y-2 text-xs cursor-default"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-extrabold text-[#1E1B2E] leading-relaxed">
+              {service.title}
+            </span>
+            <span className="text-[11px] font-bold text-[#7C3AED] tabular-nums">
+              مدت‌زمان: {formatDurationMinutes(service.durationMinutes)}
+            </span>
+          </div>
+
+          {cleanDescription ? (
+            <p className="text-[#4B445E] leading-relaxed whitespace-pre-line">
+              {cleanDescription}
+            </p>
+          ) : packageItems.length === 0 ? (
+            <p className="text-[#6B6480] leading-relaxed">
+              ارائه خدمت تخصصی «{service.title}» در لاین {service.category}.
+            </p>
+          ) : null}
+
+          {packageItems.length > 0 ? (
+            <div className="space-y-1.5 pt-0.5">
+              <span className="text-[11px] font-extrabold text-[#6D28D9] block">
+                این خدمت / پکیج شامل موارد زیر است:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {packageItems.map((item, idx) => (
+                  <span
+                    key={`${service.id}-inc-${idx}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-[#DDD6FE] text-[#1E1B2E] text-[11px] font-bold shadow-2xs"
+                  >
+                    <CheckCircle2 className="w-3 h-3 text-[#10B981] shrink-0" />
+                    <span>{item}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

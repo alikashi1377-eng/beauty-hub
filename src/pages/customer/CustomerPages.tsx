@@ -29,6 +29,7 @@ import {
   Plus,
   RotateCcw,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -261,6 +262,19 @@ export const BookingStepPage: React.FC = () => {
   const [serviceCatFilter, setServiceCatFilter] = useState<string>('ALL');
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
   const [activeStepIndicator, setActiveStepIndicator] = useState<1 | 2 | 3>(1);
+  const [expandedServiceIds, setExpandedServiceIds] = useState<string[]>([]);
+
+  const handleToggleServiceDetails = (
+    e: React.MouseEvent,
+    serviceId: string
+  ) => {
+    e.stopPropagation();
+    setExpandedServiceIds((prev) =>
+      prev.includes(serviceId)
+        ? prev.filter((id) => id !== serviceId)
+        : [...prev, serviceId]
+    );
+  };
 
   const business =
     businesses.find((b) => b.slug === businessSlug || b.id === businessSlug) ??
@@ -657,12 +671,17 @@ export const BookingStepPage: React.FC = () => {
             </div>
           ) : null}
 
-          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود و قیمت‌های کوتاه‌شده (بدون ۳ صفر اضافی) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
+          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود، قیمت‌های کوتاه‌شده و کشوی بازشوی توضیحات کامل هر خدمت */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
-              const stages = srv.packageIncludes ?? [];
+              const stages = (srv.packageIncludes ?? []).filter(Boolean);
+              const cleanDesc = (srv.description ?? '').trim();
               const isPop = popularServiceIdSet.has(srv.id);
+              const isDetailsExpanded = expandedServiceIds.includes(srv.id);
+              const hasRichDetails =
+                Boolean(cleanDesc) || stages.length > 0 || srv.title.length > 26;
+
               return (
                 <div
                   key={srv.id}
@@ -676,63 +695,129 @@ export const BookingStepPage: React.FC = () => {
                       handleToggleService(srv.id);
                     }
                   }}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none flex items-center justify-between gap-2.5 ${
+                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none ${
                     isSelected
                       ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
                       : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span
-                      className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
-                        isSelected
-                          ? 'bg-[#0057FF] border-[#0057FF] text-white'
-                          : 'bg-white border-[#94A3B8] text-transparent'
-                      }`}
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs sm:text-sm font-extrabold text-[#061138] leading-snug truncate">
-                          {srv.title}
-                        </p>
-                        {isPop ? (
-                          <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[9px] font-extrabold shrink-0">
-                            ★
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span
+                        className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                            : 'bg-white border-[#94A3B8] text-transparent'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <p
+                            className={`text-xs sm:text-sm font-extrabold text-[#061138] leading-snug ${
+                              isDetailsExpanded ? '' : 'truncate'
+                            }`}
+                          >
+                            {srv.title}
+                          </p>
+                          {isPop ? (
+                            <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[9px] font-extrabold shrink-0">
+                              ★
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
+                          <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
+                            {srv.category}
                           </span>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
-                        <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
-                          {srv.category}
-                        </span>
-                        <span className="inline-flex items-center gap-0.5">
-                          <Clock className="w-3 h-3 text-[#0057FF]" />
-                          {formatDurationMinutes(srv.durationMinutes)}
-                        </span>
-                        {stages.length > 0 ? (
-                          <span className="px-1.5 py-0.5 rounded bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-extrabold">
-                            پکیج {toPersianDigits(stages.length)} مرحله‌ای
+                          <span className="inline-flex items-center gap-0.5">
+                            <Clock className="w-3 h-3 text-[#0057FF]" />
+                            {formatDurationMinutes(srv.durationMinutes)}
                           </span>
-                        ) : null}
+
+                          {/* دکمه مینیمال باز کردن توضیحات و محتویات خدمت / پکیج */}
+                          <button
+                            type="button"
+                            aria-expanded={isDetailsExpanded}
+                            onClick={(e) => handleToggleServiceDetails(e, srv.id)}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
+                              isDetailsExpanded
+                                ? 'bg-[#0057FF] text-white'
+                                : hasRichDetails
+                                  ? 'bg-[#E0E7FF] text-[#0057FF] hover:bg-[#C7D2FE]'
+                                  : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1] hover:bg-[#E2E8F0]'
+                            }`}
+                          >
+                            <Info className="w-3 h-3 shrink-0" />
+                            <span>
+                              {isDetailsExpanded
+                                ? 'بستن ▴'
+                                : stages.length > 0
+                                  ? `شامل ${toPersianDigits(stages.length)} مورد ▾`
+                                  : 'توضیحات ▾'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-left shrink-0">
-                    <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums block">
-                      {formatServicePriceShort(srv)}
-                    </span>
-                    {srv.pricingType === 'RANGE' ? (
-                      <span className="text-[9px] font-bold text-amber-700">
-                        بازه متغیر
+                    <div className="text-left shrink-0">
+                      <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums block">
+                        {formatServicePriceShort(srv)}
                       </span>
-                    ) : srv.pricingType === 'STARTING_FROM' ? (
-                      <span className="text-[9px] font-bold text-sky-700">
-                        پایه + مشاوره
-                      </span>
-                    ) : null}
+                      {srv.pricingType === 'RANGE' ? (
+                        <span className="text-[9px] font-bold text-amber-700">
+                          بازه متغیر
+                        </span>
+                      ) : srv.pricingType === 'STARTING_FROM' ? (
+                        <span className="text-[9px] font-bold text-sky-700">
+                          پایه + مشاوره
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
+
+                  {/* کشوی توضیحات کامل خدمت، نام کامل و اقلام شامل پکیج */}
+                  {isDetailsExpanded ? (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-2.5 pt-2.5 border-t border-[#CBD5E1]/80 rounded-xl bg-white/90 p-2.5 space-y-1.5 text-xs cursor-default"
+                    >
+                      <p className="font-extrabold text-[#061138] leading-relaxed">
+                        {srv.title}
+                      </p>
+
+                      {cleanDesc ? (
+                        <p className="text-[#334155] leading-relaxed whitespace-pre-line">
+                          {cleanDesc}
+                        </p>
+                      ) : stages.length === 0 ? (
+                        <p className="text-[#475569] leading-relaxed">
+                          خدمت تخصصی «{srv.title}» در لاین {srv.category} (مدت‌زمان:{' '}
+                          {formatDurationMinutes(srv.durationMinutes)}).
+                        </p>
+                      ) : null}
+
+                      {stages.length > 0 ? (
+                        <div className="space-y-1 pt-0.5">
+                          <span className="text-[11px] font-extrabold text-[#0057FF] block">
+                            موارد شامل این خدمت / پکیج:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {stages.map((item, idx) => (
+                              <span
+                                key={`${srv.id}-st-${idx}`}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] text-[#061138] text-[11px] font-bold"
+                              >
+                                <Check className="w-3 h-3 text-[#10B981] shrink-0" />
+                                <span>{item}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
