@@ -55,19 +55,58 @@ export function formatPriceToman(amount: number): string {
 }
 
 /**
- * نمایش خلاصه و خلوت قیمت بدون ۳ صفر اضافه هزارگان (مثلاً ۲۰۰,۰۰۰ -> ۲۰۰ هزار تومان)
- * برای جلوگیری از شلوغی کارت‌های انتخاب خدمت در موبایل
+ * نمایش هوشمند، کوتاه و بدون ابهام قیمت خدمات:
+ * - زیر ۱ میلیون تومان: حذف ۳ صفر و درج «هزار تومان» (مثلاً ۴۰۰,۰۰۰ -> ۴۰۰ هزار تومان)
+ * - ۱ میلیون تومان و بالاتر: تبدیل به «میلیون تومان» (مثلاً ۱,۰۰۰,۰۰۰ -> ۱ میلیون تومان، ۱,۵۰۰,۰۰۰ -> ۱.۵ میلیون تومان، ۱,۲۵۰,۰۰۰ -> ۱.۲۵ میلیون تومان)
  */
 export function formatCompactPriceToman(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
     return '۰ تومان';
   }
   const rounded = Math.round(amount);
-  if (rounded >= 1000 && rounded % 1000 === 0) {
-    const thousands = rounded / 1000;
+
+  if (rounded >= 1_000_000) {
+    if (rounded % 10_000 === 0) {
+      const millions = Number((rounded / 1_000_000).toFixed(2));
+      return `${toPersianDigits(String(millions))} میلیون تومان`;
+    }
+    if (rounded % 1_000 === 0) {
+      const wholeMillions = Math.floor(rounded / 1_000_000);
+      const remThousands = (rounded % 1_000_000) / 1_000;
+      return `${toPersianDigits(wholeMillions)} میلیون و ${toPersianDigits(remThousands)} هزار تومان`;
+    }
+  }
+
+  if (rounded >= 1_000 && rounded % 1_000 === 0) {
+    const thousands = rounded / 1_000;
     return `${toPersianDigits(thousands.toLocaleString('en-US'))} هزار تومان`;
   }
+
   return formatPriceToman(rounded);
+}
+
+function formatCompactRangeBound(amount: number): {
+  valueText: string;
+  unit: 'میلیون' | 'هزار' | '';
+} {
+  const rounded = Math.round(amount);
+  if (rounded >= 1_000_000 && rounded % 10_000 === 0) {
+    const millions = Number((rounded / 1_000_000).toFixed(2));
+    return {
+      valueText: toPersianDigits(String(millions)),
+      unit: 'میلیون',
+    };
+  }
+  if (rounded >= 1_000 && rounded < 1_000_000 && rounded % 1_000 === 0) {
+    return {
+      valueText: toPersianDigits(String(rounded / 1_000)),
+      unit: 'هزار',
+    };
+  }
+  return {
+    valueText: toPersianDigits(rounded.toLocaleString('en-US')),
+    unit: '',
+  };
 }
 
 export function formatStartingTariff(priceToman?: number | null): string {
@@ -84,15 +123,14 @@ export function formatServicePriceDisplay(
   const base = Number(service.priceToman) || 0;
   const max = Number(service.maxPriceToman) || 0;
   if (service.pricingType === 'RANGE' && max > base) {
-    const baseK = base >= 1000 && base % 1000 === 0 ? base / 1000 : base;
-    const maxK = max >= 1000 && max % 1000 === 0 ? max / 1000 : max;
-    const unit =
-      base >= 1000 && base % 1000 === 0 && max >= 1000 && max % 1000 === 0
-        ? 'هزار تومان'
-        : 'تومان';
-    return `از ${toPersianDigits(Math.round(baseK).toLocaleString('en-US'))} تا ${toPersianDigits(
-      Math.round(maxK).toLocaleString('en-US')
-    )} ${unit}`;
+    const b = formatCompactRangeBound(base);
+    const m = formatCompactRangeBound(max);
+    if (b.unit && b.unit === m.unit) {
+      return `از ${b.valueText} تا ${m.valueText} ${m.unit} تومان`;
+    }
+    const bFull = b.unit ? `${b.valueText} ${b.unit}` : b.valueText;
+    const mFull = m.unit ? `${m.valueText} ${m.unit}` : m.valueText;
+    return `از ${bFull} تا ${mFull} تومان`;
   }
   if (service.pricingType === 'STARTING_FROM') {
     return `از ${formatCompactPriceToman(base)}`;
@@ -106,15 +144,14 @@ export function formatServicePriceShort(
   const base = Number(service.priceToman) || 0;
   const max = Number(service.maxPriceToman) || 0;
   if (service.pricingType === 'RANGE' && max > base) {
-    const baseK = base >= 1000 && base % 1000 === 0 ? base / 1000 : base;
-    const maxK = max >= 1000 && max % 1000 === 0 ? max / 1000 : max;
-    const unit =
-      base >= 1000 && base % 1000 === 0 && max >= 1000 && max % 1000 === 0
-        ? 'هزار تومان'
-        : 'تومان';
-    return `${toPersianDigits(Math.round(baseK).toLocaleString('en-US'))} تا ${toPersianDigits(
-      Math.round(maxK).toLocaleString('en-US')
-    )} ${unit}`;
+    const b = formatCompactRangeBound(base);
+    const m = formatCompactRangeBound(max);
+    if (b.unit && b.unit === m.unit) {
+      return `${b.valueText} تا ${m.valueText} ${m.unit} تومان`;
+    }
+    const bFull = b.unit ? `${b.valueText} ${b.unit}` : b.valueText;
+    const mFull = m.unit ? `${m.valueText} ${m.unit}` : m.valueText;
+    return `${bFull} تا ${mFull} تومان`;
   }
   if (service.pricingType === 'STARTING_FROM') {
     return `از ${formatCompactPriceToman(base)}`;

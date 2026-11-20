@@ -245,13 +245,31 @@ import {
   resolveEffectiveWorkingHour,
 } from './formatters';
 
-test('formatCompactPriceToman and formatCustomerWorkingHourMinimal strip 3 trailing zeros and hide break-time labels', () => {
+test('formatCompactPriceToman and formatCustomerWorkingHourMinimal format thousands (<1M) and millions (>=1M) clearly', () => {
   assert.equal(formatCompactPriceToman(200_000), '۲۰۰ هزار تومان');
   assert.equal(formatCompactPriceToman(400_000), '۴۰۰ هزار تومان');
-  assert.equal(formatCompactPriceToman(1_250_000), '۱,۲۵۰ هزار تومان');
+  assert.equal(formatCompactPriceToman(1_000_000), '۱ میلیون تومان');
+  assert.equal(formatCompactPriceToman(1_500_000), '۱.۵ میلیون تومان');
+  assert.equal(formatCompactPriceToman(1_250_000), '۱.۲۵ میلیون تومان');
   assert.equal(
     formatServicePriceShort({ priceToman: 350_000, pricingType: 'FIXED' }),
     '۳۵۰ هزار تومان'
+  );
+  assert.equal(
+    formatServicePriceShort({
+      priceToman: 800_000,
+      maxPriceToman: 1_500_000,
+      pricingType: 'RANGE',
+    }),
+    '۸۰۰ هزار تا ۱.۵ میلیون تومان'
+  );
+  assert.equal(
+    formatServicePriceShort({
+      priceToman: 1_200_000,
+      maxPriceToman: 2_500_000,
+      pricingType: 'RANGE',
+    }),
+    '۱.۲ تا ۲.۵ میلیون تومان'
   );
   assert.equal(
     formatCustomerWorkingHourMinimal({
