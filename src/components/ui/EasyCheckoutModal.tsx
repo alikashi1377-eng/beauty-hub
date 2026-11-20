@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  AlertCircle,
   CheckCircle2,
   CreditCard,
   ExternalLink,
@@ -12,6 +13,10 @@ import {
   formatPriceToman,
   toPersianDigits,
 } from '../../utils/formatters';
+import {
+  resolveBusinessSubscriptionQuotaStatus,
+  TIMETO_MONTHLY_PACKAGES,
+} from '../../utils/financialEngine';
 import { Button } from './Button';
 import { FormField } from './FormField';
 import { Input } from './Input';
@@ -47,10 +52,25 @@ export const EasyCheckoutModal: React.FC<{
   businessName,
   onPaymentSuccess,
 }) => {
-  const { paymentConfig, submitPaymentOrder } = usePrototypeData();
+  const {
+    paymentConfig,
+    submitPaymentOrder,
+    currentBusiness,
+    businesses,
+    appointments,
+    activePlanId,
+    updateBusinessProfile,
+  } = usePrototypeData();
+  const targetBiz =
+    businesses.find((b) => b.id === businessId) || currentBusiness;
+  const subQuotaStatus = resolveBusinessSubscriptionQuotaStatus({
+    business: targetBiz,
+    appointments,
+    activePlanId,
+  });
 
   const [durationDays, setDurationDays] = useState<number>(
-    item?.defaultDurationDays || 30
+    item?.defaultDurationDays && item.defaultDurationDays <= 7 ? 7 : 14
   );
   const [placementSlot, setPlacementSlot] = useState<SponsoredPlacementSlot>(
     item?.defaultPlacement || 'SEARCH_TOP'
@@ -58,15 +78,22 @@ export const EasyCheckoutModal: React.FC<{
   const [customBadgeLabel, setCustomBadgeLabel] = useState<string>(
     item?.defaultLabel || 'پیشنهاد ویژه · رزرو آنی'
   );
+  const [planContractAccepted, setPlanContractAccepted] =
+    useState<boolean>(false);
+  const [contractError, setContractError] = useState<string>('');
   const [isConnectingZibal, setIsConnectingZibal] = useState<boolean>(false);
   const [zibalPaymentUrl, setZibalPaymentUrl] = useState<string | null>(null);
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (item) {
-      setDurationDays(item.defaultDurationDays || 30);
+      setDurationDays(
+        item.defaultDurationDays && item.defaultDurationDays <= 7 ? 7 : 14
+      );
       setPlacementSlot(item.defaultPlacement || 'SEARCH_TOP');
       setCustomBadgeLabel(item.defaultLabel || 'پیشنهاد ویژه · رزرو آنی');
+      setPlanContractAccepted(false);
+      setContractError('');
       setZibalPaymentUrl(null);
       setCompletedOrderId(null);
     }
@@ -74,11 +101,21 @@ export const EasyCheckoutModal: React.FC<{
 
   if (!item) return null;
 
+  const selectedPlanSpec =
+    item.itemType === 'PLAN'
+      ? TIMETO_MONTHLY_PACKAGES.find((p) => p.id === item.itemId) ||
+        TIMETO_MONTHLY_PACKAGES.find((p) =>
+          item.itemTitle.includes(p.name)
+        ) ||
+        TIMETO_MONTHLY_PACKAGES[0]
+      : null;
+
   const dynamicAdCalc =
     item.itemType === 'AD_PACKAGE'
       ? computeAdPackagePriceAndTitle({
           placementSlot,
           durationDays,
+          discountPercent: subQuotaStatus.adDiscountPercent,
           fallbackBaseAmount: item.baseAmountToman,
           fallbackWeeklyAmount: item.weeklyAmountToman,
           fallbackTitle: item.itemTitle,
@@ -95,6 +132,15 @@ export const EasyCheckoutModal: React.FC<{
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setContractError('');
+
+    if (item.itemType === 'PLAN' && !planContractAccepted) {
+      setContractError(
+        `لطفاً ابتدا مفاد قرارداد اشتراک «${selectedPlanSpec?.name || resolvedItemTitle}» را مطالعه کرده و تیک پذیرش آن را فعال نمایید.`
+      );
+      return;
+    }
+
     setIsConnectingZibal(true);
 
     let zibalTrackId = `ZBL-${Math.floor(10000000 + Math.random() * 90000000)}`;
@@ -135,6 +181,14 @@ export const EasyCheckoutModal: React.FC<{
       // ادامه در صورت خطای شبکه
     } finally {
       setIsConnectingZibal(false);
+    }
+
+    if (item.itemType === 'PLAN' && targetBiz) {
+      updateBusinessProfile(targetBiz.id, {
+        contractAccepted: true,
+        contractAcceptedAtJalali:
+          targetBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴',
+      });
     }
 
     if (paymentGatewayUrl) {
@@ -195,7 +249,9 @@ export const EasyCheckoutModal: React.FC<{
       title={
         completedOrderId
           ? 'تایید تراکنش شتاب (درگاه زیبال) · فعال‌سازی آنی'
-          : 'درگاه پرداخت اینترنتی زیبال (Zibal) — شبکه شتاب'
+          : item.itemType === 'PLAN'
+            ? `تایید مفاد قرارداد و خرید ${resolvedItemTitle}`
+            : 'درگاه پرداخت اینترنتی زیبال (Zibal) — شبکه شتاب'
       }
       description={`${resolvedItemTitle} — پرداخت آنلاین با کلیه کارت‌های عضو شبکه شتاب`}
     >
@@ -260,23 +316,36 @@ export const EasyCheckoutModal: React.FC<{
                 <span className="text-[11px] text-[#64748B] block">
                   مبلغ قابل پرداخت (شاپرک):
                 </span>
-                <span className="text-base font-extrabold text-[#0057FF] tabular-nums">
-                  {formatPriceToman(computedAmount)}
-                </span>
+                {dynamicAdCalc && dynamicAdCalc.discountPercent > 0 ? (
+                  <div className="space-y-0.5">
+                    <span className="text-[11px] text-slate-400 line-through block tabular-nums">
+                      {formatPriceToman(dynamicAdCalc.originalAmountToman)}
+                    </span>
+                    <span className="text-base font-extrabold text-[#059669] tabular-nums">
+                      {formatPriceToman(computedAmount)}{' '}
+                      <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full">
+                        {toPersianDigits(dynamicAdCalc.discountPercent)}٪ تخفیف اشتراک
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-base font-extrabold text-[#0057FF] tabular-nums">
+                    {formatPriceToman(computedAmount)}
+                  </span>
+                )}
               </div>
             </div>
 
             {item.itemType === 'AD_PACKAGE' ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#CBD5E1]">
-                <FormField id="chk-duration" label="مدت زمان نمایش تبلیغ">
+                <FormField id="chk-duration" label="مدت زمان نمایش تبلیغ (حداکثر ۲ هفته)">
                   <Select
                     id="chk-duration"
-                    value={String(durationDays)}
+                    value={String(durationDays <= 7 ? 7 : 14)}
                     onChange={(e) => setDurationDays(Number(e.target.value))}
                     options={[
-                      { value: '7', label: '۷ روزه (هفتگی اقتصادی)' },
-                      { value: '14', label: '۱۴ روزه (دو هفته‌ای)' },
-                      { value: '30', label: '۳۰ روزه (یک ماه کامل)' },
+                      { value: '7', label: '۷ روزه (۱ هفته)' },
+                      { value: '14', label: '۱۴ روزه (۲ هفته — حداکثر مدت مجاز)' },
                     ]}
                   />
                 </FormField>
@@ -291,15 +360,15 @@ export const EasyCheckoutModal: React.FC<{
                     options={[
                       {
                         value: 'SEARCH_TOP',
-                        label: 'صدر نتایج جست‌وجو (۴۹۰ هزار ماهانه / ۱۹۰ هفتگی)',
+                        label: 'صدر نتایج جست‌وجو (۵۹۰ هزار هفتگی / ۹۹۰ هزار دو هفته‌ای)',
                       },
                       {
                         value: 'HOME_BANNER',
-                        label: 'بنر ویژه در صفحه اول سایت (۸۹۰ هزار ماهانه / ۳۵۰ هفتگی)',
+                        label: 'بنر ویژه در صفحه اول سایت (۸۹۰ هزار هفتگی / ۱.۴۹ میلیون دو هفته‌ای)',
                       },
                       {
                         value: 'HERO_SPOTLIGHT',
-                        label: 'ویترین اول هیرو + صدر جست‌وجو VIP (۱,۲۹۰ ماهانه / ۴۹۰ هفتگی)',
+                        label: 'ویترین طلایی اول صفحه اصلی + صدر جست‌وجو VIP (۱.۱۹ میلیون هفتگی / ۱.۹۹ میلیون دو هفته‌ای)',
                       },
                     ]}
                   />
@@ -321,6 +390,101 @@ export const EasyCheckoutModal: React.FC<{
               </div>
             ) : null}
           </div>
+
+          {/* باکس مفاد قرارداد اختصاصی پکیج اشتراک انتخابی + تیک الزامی پیش از پرداخت */}
+          {item.itemType === 'PLAN' && selectedPlanSpec ? (
+            <div className="p-4 rounded-2xl bg-[#F5F3FF] border-2 border-[#8B5CF6]/40 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DDD6FE] pb-2">
+                <div>
+                  <span className="text-[10px] font-black text-[#6D28D9] block">
+                    شرایط و تعهدات اختصاصی پکیج انتخابی شما (اعتبار: ۱ ماهه / ۳۰ روز)
+                  </span>
+                  <h3 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
+                    مفاد قرارداد اشتراک «{selectedPlanSpec.name}»
+                  </h3>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#059669] text-white text-[10px] font-black tabular-nums">
+                  کارمزد پلتفرم از نوبت‌ها: ۰٪
+                </span>
+              </div>
+
+              <ul className="space-y-1.5 text-[11px] text-[#3B0764] leading-relaxed list-disc pr-4">
+                <li>
+                  <strong>سقف نوبت آنلاین و پیامک‌های این پکیج:</strong>{' '}
+                  در طول دوره ۱ ماهه این اشتراک، پذیرش{' '}
+                  <strong>{selectedPlanSpec.monthlyBookingCapLabel}</strong> به همراه پیامک تایید و یادآوری خودکار دوطرفه
+                  {selectedPlanSpec.freeMarketingSmsMonthly > 0
+                    ? ` و ${toPersianDigits(selectedPlanSpec.freeMarketingSmsMonthly)} پیامک تبلیغاتی هدیه ماهانه`
+                    : ''}{' '}
+                  برای مجموعه شما فعال است.
+                </li>
+                <li>
+                  <strong>تعداد متخصص و پکیج‌های ترکیبی خدمات:</strong>{' '}
+                  در این پکیج امکان تعریف هم‌زمان{' '}
+                  <strong>{selectedPlanSpec.staffLimitLabel}</strong> و ساخت{' '}
+                  <strong>پکیج‌های ترکیبی و تخفیف‌دار خدمات</strong> در پروفایل شما باز است.
+                </li>
+                <li>
+                  <strong>وضعیت انتشار استوری و تخفیف جایگاه بنر (۷ و ۱۴ روزه):</strong>{' '}
+                  {selectedPlanSpec.code === 'BASIC' ? (
+                    <span>
+                      در پکیج پایه قابلیت انتشار استوری بالای پروفایل غیرفعال است و رزرو جایگاه بنر صفحه اول یا صدر جست‌وجو (۷ و ۱۴ روزه) با تعرفه پایه محاسبه می‌شود.
+                    </span>
+                  ) : selectedPlanSpec.code === 'PRO' ? (
+                    <span>
+                      در پکیج حرفه‌ای قابلیت انتشار{' '}
+                      <strong>«استوری بالای پروفایل»</strong>، نشان{' '}
+                      <strong>«مجموعه تاییدشده ✓»</strong> و{' '}
+                      <strong>۱۵٪ تخفیف دائمی</strong> خرید جایگاه بنر صفحه اول و صدر جست‌وجو (۷ و ۱۴ روزه) فعال می‌گردد.
+                    </span>
+                  ) : (
+                    <span>
+                      در پکیج VIP انتشار{' '}
+                      <strong>استوری نامحدود با کادر طلایی VIP</strong>، نشان طلایی{' '}
+                      <strong>«منتخب شهر ★»</strong>، اولویت نمایش بالاتر و{' '}
+                      <strong>۳۰٪ تخفیف دائمی</strong> خرید بنر صفحه اول و صدر جست‌وجو (۷ و ۱۴ روزه) فعال می‌گردد.
+                    </span>
+                  )}
+                </li>
+                <li>
+                  <strong>کارمزد ۰٪ و سیکل تسویه هفتگی شبا (پایا — شنبه‌ها):</strong>{' '}
+                  هیچ درصدی از مبلغ خدمت یا بیعانه شما به عنوان کمیسیون کسر نمی‌شود (کارمزد ۰٪). ۱۰۰٪ بیعانه پایه مشتری به کیف پول شما منظور شده و پس از انجام نوبت در{' '}
+                  <strong>سیکل هفتگی پایا (شنبه‌ها)</strong> به شماره شبای ثبت‌شده شما واریز می‌گردد (۲٪ کارمزد درگاه بانکی زیبال و مالیات توسط مشتری پرداخت می‌شود).
+                </li>
+              </ul>
+
+              {contractError ? (
+                <div
+                  role="alert"
+                  className="p-2.5 rounded-xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2 text-[11px] font-extrabold text-[#B91C1C]"
+                >
+                  <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                  <span>{contractError}</span>
+                </div>
+              ) : null}
+
+              <label
+                htmlFor="modal-plan-contract-checkbox"
+                className="flex items-start gap-2.5 p-3 rounded-xl bg-white border-2 border-[#8B5CF6] cursor-pointer select-none"
+              >
+                <input
+                  id="modal-plan-contract-checkbox"
+                  type="checkbox"
+                  checked={planContractAccepted}
+                  onChange={(e) => {
+                    setPlanContractAccepted(e.target.checked);
+                    if (e.target.checked) setContractError('');
+                  }}
+                  className="mt-0.5 w-4 h-4 accent-[#8B5CF6] rounded cursor-pointer shrink-0"
+                />
+                <span className="text-[11px] font-extrabold text-[#1E1B2E] leading-relaxed">
+                  مفاد قرارداد اشتراک ۱ ماهه «{selectedPlanSpec.name}» (شامل سقف{' '}
+                  {selectedPlanSpec.monthlyBookingCapLabel}،{' '}
+                  {selectedPlanSpec.staffLimitLabel}، کارمزد ۰٪ و تسویه هفتگی ۱۰۰٪ بیعانه‌ها به شبا) را مطالعه کرده و می‌پذیرم.
+                </span>
+              </label>
+            </div>
+          ) : null}
 
           {/* کارت اطلاعات درگاه رسمی زیبال (Zibal) */}
           <div className="p-4 rounded-2xl bg-[#061138] text-white space-y-2.5">
@@ -371,13 +535,18 @@ export const EasyCheckoutModal: React.FC<{
               type="submit"
               variant="primary"
               size="sm"
-              disabled={isConnectingZibal}
+              disabled={
+                isConnectingZibal ||
+                (item.itemType === 'PLAN' && !planContractAccepted)
+              }
             >
               <CreditCard className="w-4 h-4" />
               <span>
                 {isConnectingZibal
                   ? 'در حال اتصال به درگاه زیبال...'
-                  : 'پرداخت آنلاین با درگاه زیبال (شتاب)'}
+                  : item.itemType === 'PLAN'
+                    ? 'تایید قرارداد و پرداخت آنلاین اشتراک'
+                    : 'پرداخت آنلاین با درگاه زیبال (شتاب)'}
               </span>
             </Button>
           </div>

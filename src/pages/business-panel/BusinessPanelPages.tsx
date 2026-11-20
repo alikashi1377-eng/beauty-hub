@@ -89,24 +89,28 @@ import {
   CheckoutItemPayload,
 } from '../../components/ui/EasyCheckoutModal';
 import {
+  BusinessOnboardingWizardWorkspace,
   BusinessProfileCompletionBanner,
   computeBusinessProfileCompletion,
+  resolveNextOnboardingStepHref,
 } from '../../components/business/BusinessProfileCompletionWidget';
 import { BusinessStoriesBar } from '../../components/business/BusinessStoriesBar';
 import { BusinessQrCodeCard } from '../../components/business/BusinessQrCodeCard';
 import {
   ALLOWED_DEPOSIT_PERCENTS,
   calculateBookingFinancialBreakdown,
+  FREE_TRIAL_BOOKING_QUOTA,
   isAppointmentEligibleForSettlement,
   normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
+  resolveBusinessSubscriptionQuotaStatus,
+  TIMETO_MONTHLY_PACKAGES,
 } from '../../utils/financialEngine';
 
 /**
- * در مدل جدید درآمدی تایم تو (کمیسیونی از نوبت‌ها)، تمامی امکانات نرم‌افزاری هسته پنل
- * (تقویم، حسابداری دخل روزانه، باشگاه مشتریان و پرسنل نامحدود) برای همه کسب‌وکارها ۱۰۰٪ رایگان و باز است.
- * فقط «بسته پیامک تبلیغاتی گروهی» و «جایگاه‌های تبلیغاتی صدر جست‌وجو / بنر صفحه اول» به صورت افزودنی (Add-on) عرضه می‌شوند.
+ * در مدل جدید اشتراکی تایم تو (۱۰ نوبت هدیه شروع + ۳ پکیج ماهانه با کارمزد ۰٪)،
+ * تمامی ابزارهای پایه پنل (تقویم نوبت‌دهی، ساخت پکیج ترکیبی خدمات، حسابداری دخل روزانه و تسویه شبا) باز است.
  */
 const isFreeSubscriptionPlan = (
   _planId?: string,
@@ -115,12 +119,25 @@ const isFreeSubscriptionPlan = (
   return false;
 };
 
-/** در مدل جدید کمیسیونی، انتشار استوری بالای پروفایل برای تمام کسب‌وکارها آزاد و فعال است */
+/** انتشار استوری بالای پروفایل ویژه پکیج ۲ (حرفه‌ای ⭐) و پکیج ۳ (سالن و کلینیک VIP 👑) است */
 const isVipSubscriptionPlan = (
-  _planId?: string,
-  _planName?: string
+  planId?: string,
+  planName?: string
 ): boolean => {
-  return true;
+  const combined = `${planId ?? ''} ${planName ?? ''}`.toLowerCase();
+  if (
+    combined.includes('vip') ||
+    combined.includes('brand') ||
+    combined.includes('طلایی') ||
+    combined.includes('حرفه‌ای') ||
+    combined.includes('حرفه ای') ||
+    combined.includes('pro') ||
+    combined.includes('professional') ||
+    combined.includes('growth')
+  ) {
+    return true;
+  }
+  return false;
 };
 
 /** بنر قفل امکانات ویژه پلن‌های بالاتر (حرفه‌ای / VIP) */
@@ -233,10 +250,112 @@ export const BusinessDashboardPage: React.FC = () => {
       selectedStaffFilter === 'ALL' || apt.specialistName === selectedStaffFilter
   );
 
+  // تا زمانی که ۵ گام ویزارد راه‌اندازی و تایید قرارداد همکاری تکمیل نشده باشد، به جای پیشخوان شلوغ، ویزارد مرحله‌به‌مرحله نمایش داده می‌شود
+  if (!profileCompletion.isReadyForPublicShowcase) {
+    return (
+      <BusinessOnboardingWizardWorkspace
+        summary={profileCompletion}
+        businessName={currentBiz?.name}
+      />
+    );
+  }
+
+  const quotaStatus = resolveBusinessSubscriptionQuotaStatus({
+    business: currentBiz,
+    appointments: bizAppointments,
+  });
+
   return (
     <div className="space-y-5">
       {/* ۱. نوار استوری‌های آموزشی و اطلاعیه‌ها (به سبک اینستاگرام با پوستر تصویری و لینک مستقیم به بخش‌ها) */}
       <BusinessStoriesBar />
+
+      {/* ۱.۵ کارت شمارنده زنده ۱۰ نوبت هدیه شروع یا سقف نوبت پکیج ماهانه (کارمزد ۰٪) */}
+      <div
+        className={`rounded-3xl p-4 sm:p-5 border-2 flex flex-wrap items-center justify-between gap-4 shadow-2xs ${
+          quotaStatus.isQuotaExhausted
+            ? 'bg-[#FEF2F2] border-[#EF4444]'
+            : quotaStatus.isFreeTrial
+              ? 'bg-gradient-to-l from-[#ECFDF5] via-white to-[#EFF6FF] border-[#10B981]/50'
+              : 'bg-gradient-to-l from-[#EFF6FF] via-white to-[#F5F3FF] border-[#0057FF]/40'
+        }`}
+      >
+        <div className="space-y-1.5 flex-1 min-w-[240px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-black ${
+                quotaStatus.isQuotaExhausted
+                  ? 'bg-[#EF4444] text-white'
+                  : quotaStatus.isFreeTrial
+                    ? 'bg-[#10B981] text-white'
+                    : 'bg-[#0057FF] text-white'
+              }`}
+            >
+              {quotaStatus.isFreeTrial
+                ? `🎁 هدیه شروع فعالیت (${toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان)`
+                : `📦 ${quotaStatus.planTitle}`}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full bg-[#061138] text-[#00E5FF] text-[11px] font-black">
+              کارمزد پلتفرم: ۰٪ (واریز ۱۰۰٪ بیعانه به کیف پول)
+            </span>
+            {quotaStatus.adDiscountPercent > 0 ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black">
+                ★ {toPersianDigits(quotaStatus.adDiscountPercent)}٪ تخفیف خرید بنر و صدر جست‌وجو
+              </span>
+            ) : null}
+          </div>
+          <p className="text-xs sm:text-sm font-black text-[#061138] tabular-nums">
+            {quotaStatus.isQuotaExhausted
+              ? quotaStatus.isFreeTrial
+                ? '⚠️ سقف ۱۰ نوبت رایگان هدیه شروع شما به پایان رسیده است! جهت ادامه پذیرش نوبت آنلاین، یکی از ۳ پکیج ماهانه را فعال کنید.'
+                : '⚠️ سقف نوبت ماهانه پکیج فعلی شما تکمیل شده است. جهت ادامه رزرو آنلاین، پکیج خود را ارتقا یا تمدید نمایید.'
+              : quotaStatus.isFreeTrial
+                ? `${toPersianDigits(quotaStatus.remainingBookingsCount)} نوبت از ${toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان شروع باقی‌مانده (${toPersianDigits(quotaStatus.usedBookingsCount)} نوبت استفاده شده)`
+                : `${toPersianDigits(quotaStatus.remainingBookingsCount)} نوبت از سقف ${toPersianDigits(quotaStatus.quotaLimit)} نوبت ماهانه باقی‌مانده (${toPersianDigits(quotaStatus.usedBookingsCount)} نوبت ثبت شده)`}
+          </p>
+          <div className="w-full max-w-md h-2 rounded-full bg-slate-200 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                quotaStatus.isQuotaExhausted
+                  ? 'bg-[#EF4444]'
+                  : quotaStatus.isFreeTrial
+                    ? 'bg-[#10B981]'
+                    : 'bg-[#0057FF]'
+              }`}
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.round(
+                    (quotaStatus.usedBookingsCount /
+                      Math.max(1, quotaStatus.quotaLimit)) *
+                      100
+                  )
+                )}%`,
+              }}
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={
+              quotaStatus.isFreeTrial || quotaStatus.isQuotaExhausted
+                ? '/app/subscription?tab=plans'
+                : '/app/subscription'
+            }
+          >
+            <Button
+              variant={quotaStatus.isQuotaExhausted ? 'danger' : 'primary'}
+              size="sm"
+            >
+              <span>
+                {quotaStatus.isFreeTrial
+                  ? 'مشاهده و خرید پکیج ماهانه ←'
+                  : 'تنظیمات شبا و بیعانه ←'}
+              </span>
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       {/* بنر روزشمار زنده جایگاه تبلیغاتی ویژه */}
       {currentBiz &&
@@ -1466,10 +1585,12 @@ export const BusinessAppointmentsPage: React.FC = () => {
 
 /** ۴. خدمات و تعرفه‌ها (/app/services) — مجهز به ۳ مدل قیمت‌گذاری، شخصی‌سازی کامل پکیج و خدمت، و نمایش کیت آماده فقط متناسب با حوزه تخصصی کسب‌وکار */
 export const BusinessServicesPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentBusiness,
     businesses,
     services,
+    specialists,
     categories,
     addService,
     updateService,
@@ -2013,7 +2134,8 @@ export const BusinessServicesPage: React.FC = () => {
         description: description.trim() || 'خدمت تخصصی زیبایی',
       });
     } else {
-      addService({
+      const createdSrv: ServiceItem = {
+        id: `temp-${Date.now()}`,
         businessId: currentBiz?.id ?? 'biz-owner-zero',
         categorySlug: resolvedCategorySlug,
         title: title.trim(),
@@ -2025,10 +2147,57 @@ export const BusinessServicesPage: React.FC = () => {
         packageIncludes: finalStages.length > 0 ? finalStages : undefined,
         description: description.trim() || 'خدمت تخصصی سالن زیبایی',
         isActive: true,
+      };
+      addService({
+        businessId: createdSrv.businessId,
+        categorySlug: createdSrv.categorySlug,
+        title: createdSrv.title,
+        category: createdSrv.category,
+        durationMinutes: createdSrv.durationMinutes,
+        pricingType: createdSrv.pricingType,
+        priceToman: createdSrv.priceToman,
+        maxPriceToman: createdSrv.maxPriceToman,
+        packageIncludes: createdSrv.packageIncludes,
+        description: createdSrv.description,
+        isActive: true,
       });
+
+      const currentCompletion = computeBusinessProfileCompletion({
+        business: currentBiz,
+        services,
+        specialists,
+      });
+      if (!currentCompletion.isReadyForPublicShowcase) {
+        const nextTarget = resolveNextOnboardingStepHref({
+          business: currentBiz,
+          services: [...services, createdSrv],
+          specialists,
+          currentStepId: 'services',
+        });
+        showToast(
+          nextTarget.isAllCompleted
+            ? 'گام ۲ تکمیل شد ✓ تمام مراحل راه‌اندازی کامل شد؛ ورود به پیشخوان!'
+            : `خدمت ثبت شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
+        );
+        setModalOpen(false);
+        setTimeout(() => navigate(nextTarget.nextHref), 400);
+        return;
+      }
     }
     setModalOpen(false);
   };
+
+  const servicesPageCompletion = computeBusinessProfileCompletion({
+    business: currentBiz,
+    services,
+    specialists,
+  });
+  const nextStepFromServices = resolveNextOnboardingStepHref({
+    business: currentBiz,
+    services,
+    specialists,
+    currentStepId: 'services',
+  });
 
   const activeLaserPresets = LASER_SERVICE_PRESETS.filter(
     (p) => p.group === laserFilterTab
@@ -2051,10 +2220,28 @@ export const BusinessServicesPage: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {!servicesPageCompletion.isReadyForPublicShowcase &&
+      bizServices.length > 0 ? (
+        <div className="rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+          <p className="text-xs sm:text-sm font-black text-emerald-950">
+            ✓ {toPersianDigits(bizServices.length)} خدمت ثبت شد؛ می‌توانید به مرحله بعد بروید:
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate(nextStepFromServices.nextHref)}
+          >
+            <span>
+              ذخیره و رفتن به مرحله بعد ({nextStepFromServices.nextTitle}) ←
+            </span>
+          </Button>
+        </div>
+      ) : null}
+
       <PageHeader
-        title="مدیریت خدمات، ساخت پکیج و تعرفه‌های هوشمند"
-        subtitle={`حوزه تخصصی تشخیص‌داده‌شده برای مجموعه شما: «${detectedPrimaryCategory}» — امکان تعریف پکیج چندمرحله‌ای، شخصی‌سازی کامل آیتم‌ها و تعیین بازه قیمتی`}
+        title="خدمات و تعرفه‌های سالن"
+        subtitle={`حوزه تخصصی: «${detectedPrimaryCategory}»`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -3370,9 +3557,11 @@ export const BusinessServicesPage: React.FC = () => {
 
 /** ۵. متخصصان و پرسنل (/app/staff) */
 export const BusinessStaffPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     currentBusiness,
     businesses,
+    services,
     specialists,
     plans,
     activePlanId,
@@ -3405,6 +3594,18 @@ export const BusinessStaffPage: React.FC = () => {
     activePlanId,
     currentBiz?.subscriptionPlan
   );
+
+  const staffPageCompletion = computeBusinessProfileCompletion({
+    business: currentBiz,
+    services,
+    specialists,
+  });
+  const nextStepFromStaff = resolveNextOnboardingStepHref({
+    business: currentBiz,
+    services,
+    specialists,
+    currentStepId: 'specialists',
+  });
 
   const openAdd = () => {
     setEditingStaff(null);
@@ -3451,8 +3652,10 @@ export const BusinessStaffPage: React.FC = () => {
         bio: staffBio.trim() || editingStaff.bio,
         specialties: specs.length ? specs : editingStaff.specialties,
       });
+      setModalOpen(false);
     } else {
-      addSpecialist({
+      const createdSpec: SpecialistItem = {
+        id: `temp-staff-${Date.now()}`,
         businessId: currentBiz?.id ?? 'biz-1',
         slug: `staff-${Date.now()}`,
         fullName: fullName.trim(),
@@ -3465,24 +3668,52 @@ export const BusinessStaffPage: React.FC = () => {
         bio: staffBio.trim() || 'عضو تیم تخصصی مجموعه.',
         isIndependent: false,
         isActive: true,
-      });
+      };
+      addSpecialist(createdSpec);
+      setModalOpen(false);
+
+      if (!staffPageCompletion.isReadyForPublicShowcase) {
+        const nextTarget = resolveNextOnboardingStepHref({
+          business: currentBiz,
+          services,
+          specialists: [...specialists, createdSpec],
+          currentStepId: 'specialists',
+        });
+        showToast(
+          nextTarget.isAllCompleted
+            ? 'گام ۴ تکمیل شد ✓ تمام مراحل راه‌اندازی کامل شد؛ ورود به پیشخوان!'
+            : `متخصص ثبت شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
+        );
+        setTimeout(() => navigate(nextTarget.nextHref), 400);
+      }
     }
-    setModalOpen(false);
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {!staffPageCompletion.isReadyForPublicShowcase &&
+      effectiveStaffList.length > 0 ? (
+        <div className="rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-3.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+          <p className="text-xs sm:text-sm font-black text-emerald-950">
+            ✓ متخصص سالن ثبت شده است؛ می‌توانید به مرحله بعد بروید:
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate(nextStepFromStaff.nextHref)}
+          >
+            <span>
+              ذخیره و رفتن به مرحله بعد ({nextStepFromStaff.nextTitle}) ←
+            </span>
+          </Button>
+        </div>
+      ) : null}
+
       <PageHeader
-        kicker="کسب‌وکار · اعضای تیم"
-        title="مدیریت متخصصان و پرسنل"
-        subtitle={`تعداد متخصصان فعال ثبت‌شده در مجموعه شما: ${toPersianDigits(
+        title="متخصصان و پرسنل سالن"
+        subtitle={`تعداد متخصصان فعال: ${toPersianDigits(
           effectiveStaffList.length
-        )} نفر (امکان تعیین تصویر پروفایل اختصاصی یا همگام‌سازی با لوگوی سالن)`}
-        routePattern="/app/staff"
-        breadcrumbs={[
-          { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'متخصصان و پرسنل' },
-        ]}
+        )} نفر`}
         actions={
           <Button variant="primary" size="sm" onClick={openAdd}>
             <Plus className="w-4 h-4" />
@@ -3513,12 +3744,68 @@ export const BusinessStaffPage: React.FC = () => {
       ) : null}
 
       {effectiveStaffList.length === 0 ? (
-        <EmptyState
-          title="هنوز متخصصی برای سالن شما ثبت نشده است"
-          description="اولین متخصص یا عضو تیم سالن خود را اضافه کنید تا مشتریان بتوانند هنگام رزرو آنلاین، متخصص دلخواهشان را انتخاب نمایند."
-          actionLabel="افزودن اولین متخصص"
-          onAction={openAdd}
-        />
+        <div className="space-y-3">
+          <div className="rounded-3xl border-2 border-[#0057FF] bg-[#EFF6FF] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-sm font-black text-[#061138]">
+                آیا خودتان به عنوان متخصص اصلی خدمات را انجام می‌دهید؟
+              </p>
+              <p className="text-xs text-[#334155] leading-relaxed">
+                با یک کلیک، نام و تصویر پروفایل شما به عنوان متخصص اصلی ثبت شده و مستقیم به مرحله بعد می‌روید.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                if (!currentBiz) return;
+                const ownerSpec: SpecialistItem = {
+                  id: `temp-owner-${Date.now()}`,
+                  businessId: currentBiz.id,
+                  slug: `staff-owner-${Date.now()}`,
+                  fullName:
+                    currentBiz.ownerName?.trim() ||
+                    currentBiz.name?.trim() ||
+                    'متخصص اصلی سالن',
+                  roleTitle: 'متخصص و مدیر مجموعه',
+                  avatarUrl: currentBiz.avatarUrl || undefined,
+                  experienceYears: 5,
+                  rating: 5,
+                  reviewCount: 1,
+                  specialties: ['خدمات تخصصی زیبایی'],
+                  bio:
+                    currentBiz.shortDescription ||
+                    'ارائه خدمات تخصصی با وقت قبلی.',
+                  isIndependent: false,
+                  isActive: true,
+                };
+                addSpecialist(ownerSpec);
+                const nextTarget = resolveNextOnboardingStepHref({
+                  business: currentBiz,
+                  services,
+                  specialists: [...specialists, ownerSpec],
+                  currentStepId: 'specialists',
+                });
+                showToast(
+                  nextTarget.isAllCompleted
+                    ? 'گام ۴ تکمیل شد ✓ تمام مراحل کامل شد؛ ورود به پیشخوان!'
+                    : `شما به عنوان متخصص اصلی ثبت شدید ✓ انتقال به مرحله بعد (${nextTarget.nextTitle})`
+                );
+                setTimeout(() => navigate(nextTarget.nextHref), 400);
+              }}
+            >
+              <Check className="w-4 h-4" />
+              <span>ثبت سریع خودم و رفتن به مرحله بعد ←</span>
+            </Button>
+          </div>
+
+          <EmptyState
+            title="یا متخصص جدیدی به تیم سالن اضافه کنید"
+            description="اولین متخصص یا عضو تیم سالن خود را اضافه کنید تا مشتریان بتوانند هنگام رزرو آنلاین، متخصص دلخواهشان را انتخاب نمایند."
+            actionLabel="افزودن متخصص با فرم کامل"
+            onAction={openAdd}
+          />
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {effectiveStaffList.map((sp) => {
@@ -5318,7 +5605,7 @@ export const BusinessGalleryPage: React.FC = () => {
   );
 };
 
-/** ۸. اطلاعات سالن (/app/profile) — فقط تصویر، مشخصات پایه و نشانی سالن (مجزا از بخش شبا و بیعانه) */
+/** ۸. اطلاعات سالن (/app/profile) — فرم یکپارچه، خلوت و سریع مشخصات و نشانی سالن با انتقال خودکار به مرحله بعد */
 export const BusinessProfileEditPage: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -5326,7 +5613,6 @@ export const BusinessProfileEditPage: React.FC = () => {
     businesses,
     specialists,
     services,
-    gallery,
     updateBusinessProfile,
     updateSpecialist,
     updateOnboardingDraft,
@@ -5334,7 +5620,6 @@ export const BusinessProfileEditPage: React.FC = () => {
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
 
-  const [activeStep, setActiveStep] = useState<'INFO' | 'LOCATION'>('INFO');
   const [name, setName] = useState(currentBiz?.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(currentBiz?.avatarUrl ?? '');
   const [coverUrl, setCoverUrl] = useState(currentBiz?.coverUrl ?? '');
@@ -5353,11 +5638,9 @@ export const BusinessProfileEditPage: React.FC = () => {
   const [shortDesc, setShortDesc] = useState(
     currentBiz?.shortDescription ?? ''
   );
-  const [aboutText, setAboutText] = useState(currentBiz?.aboutText ?? '');
   const [savedNotice, setSavedNotice] = useState(false);
   const [stepValidationError, setStepValidationError] = useState('');
 
-  // اگر لینک قدیمی با #financial-section باز شد، مستقیماً به صفحه اختصاصی شبا و بیعانه هدایت شود
   useEffect(() => {
     if (
       typeof window !== 'undefined' &&
@@ -5379,7 +5662,6 @@ export const BusinessProfileEditPage: React.FC = () => {
     setMapLat(currentBiz.mapLat ?? 32.6288);
     setMapLng(currentBiz.mapLng ?? 51.6621);
     setShortDesc(currentBiz.shortDescription ?? '');
-    setAboutText(currentBiz.aboutText ?? '');
   }, [currentBiz?.id]);
 
   if (!currentBiz) {
@@ -5392,17 +5674,11 @@ export const BusinessProfileEditPage: React.FC = () => {
     );
   }
 
-  const isStep1Done = Boolean(
-    name.trim().length >= 2 && (avatarUrl || currentBiz.avatarUrl)
-  );
-  const isStep2Done = Boolean(address.trim().length >= 5 && mapLat && mapLng);
-
-  const bizServicesCount = services.filter(
-    (s) => s.businessId === currentBiz.id
-  ).length;
-  const bizGalleryCount = gallery.filter(
-    (g) => g.businessId === currentBiz.id
-  ).length;
+  const profileCompletion = computeBusinessProfileCompletion({
+    business: currentBiz,
+    services,
+    specialists,
+  });
 
   const syncPrimarySpecialistAvatar = (nextAvatar: string) => {
     if (!nextAvatar) return;
@@ -5429,115 +5705,90 @@ export const BusinessProfileEditPage: React.FC = () => {
     e.preventDefault();
     setStepValidationError('');
 
-    if (activeStep === 'INFO') {
-      if (!name.trim() || name.trim().length < 2) {
-        const msg =
-          'هنوز «نام سالن، کلینیک یا مرکز زیبایی» را وارد نکرده‌اید. لطفاً ابتدا این کادر را پر کنید.';
-        setStepValidationError(msg);
-        showToast(msg, 'warning');
-        return;
-      }
-      if (!avatarUrl && !currentBiz.avatarUrl) {
-        const msg =
-          'هنوز «تصویر پروفایل سالن» را انتخاب نکرده‌اید. لطفاً ابتدا عکس پروفایل را بارگذاری کنید.';
-        setStepValidationError(msg);
-        showToast(msg, 'warning');
-        return;
-      }
-      if (!shortDesc.trim()) {
-        const msg =
-          'کادر «معرفی کوتاه یک‌خطی» خالی است. لطفاً یک جمله کوتاه برای نمایش در کارت سالن بنویسید.';
-        setStepValidationError(msg);
-        showToast(msg, 'warning');
-        return;
-      }
-    } else if (activeStep === 'LOCATION') {
-      if (!address.trim() || address.trim().length < 5) {
-        const msg =
-          'کادر «نشانی دقیق متنی» هنوز خالی یا ناقص است. لطفاً آدرس دقیق سالن را وارد نمایید.';
-        setStepValidationError(msg);
-        showToast(msg, 'warning');
-        return;
-      }
+    if (!name.trim() || name.trim().length < 2) {
+      const msg =
+        'لطفاً «نام سالن، کلینیک یا مرکز زیبایی» را وارد کنید.';
+      setStepValidationError(msg);
+      showToast(msg, 'warning');
+      return;
+    }
+    if (!address.trim() || address.trim().length < 4) {
+      const msg =
+        'لطفاً «نشانی دقیق متنی سالن» را وارد نمایید.';
+      setStepValidationError(msg);
+      showToast(msg, 'warning');
+      return;
     }
 
     const cleanedInsta = instagramHandle.trim();
-    updateBusinessProfile(currentBiz.id, {
+    const resolvedShortDesc =
+      shortDesc.trim() ||
+      `ارائه خدمات تخصصی زیبایی در ${neighborhood.trim() || 'اصفهان'}`;
+    const safeLat = mapLat || 32.6288;
+    const safeLng = mapLng || 51.6621;
+
+    const updatedBizSnapshot = {
+      ...currentBiz,
       name: name.trim(),
-      avatarUrl: avatarUrl || undefined,
-      coverUrl: coverUrl || undefined,
+      avatarUrl: avatarUrl || currentBiz.avatarUrl || undefined,
+      coverUrl: coverUrl || currentBiz.coverUrl || undefined,
       targetGender,
       instagramHandle: cleanedInsta,
       neighborhood: neighborhood.trim() || currentBiz.neighborhood,
       address: address.trim(),
-      mapLat,
-      mapLng,
-      shortDescription: shortDesc.trim(),
-      aboutText: aboutText.trim(),
+      mapLat: safeLat,
+      mapLng: safeLng,
+      shortDescription: resolvedShortDesc,
+    };
+
+    updateBusinessProfile(currentBiz.id, {
+      name: updatedBizSnapshot.name,
+      avatarUrl: updatedBizSnapshot.avatarUrl,
+      coverUrl: updatedBizSnapshot.coverUrl,
+      targetGender: updatedBizSnapshot.targetGender,
+      instagramHandle: updatedBizSnapshot.instagramHandle,
+      neighborhood: updatedBizSnapshot.neighborhood,
+      address: updatedBizSnapshot.address,
+      mapLat: updatedBizSnapshot.mapLat,
+      mapLng: updatedBizSnapshot.mapLng,
+      shortDescription: updatedBizSnapshot.shortDescription,
     });
     if (avatarUrl) {
       syncPrimarySpecialistAvatar(avatarUrl);
     }
     updateOnboardingDraft({
-      businessName: name.trim(),
+      businessName: updatedBizSnapshot.name,
       avatarUrl,
       instagramHandle: cleanedInsta,
-      neighborhood: neighborhood.trim() || currentBiz.neighborhood,
-      address: address.trim(),
-      mapLat,
-      mapLng,
-      shortDescription: shortDesc.trim(),
+      neighborhood: updatedBizSnapshot.neighborhood,
+      address: updatedBizSnapshot.address,
+      mapLat: safeLat,
+      mapLng: safeLng,
+      shortDescription: resolvedShortDesc,
     });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
 
-    const nextStep1Done = Boolean(
-      name.trim().length >= 2 && (avatarUrl || currentBiz.avatarUrl)
-    );
-    const nextStep2Done = Boolean(address.trim().length >= 5);
+    const nextTarget = resolveNextOnboardingStepHref({
+      business: updatedBizSnapshot,
+      services,
+      specialists,
+      currentStepId: 'basic_location',
+    });
 
-    if (activeStep === 'INFO' && !nextStep2Done) {
-      setActiveStep('LOCATION');
+    if (!nextTarget.isAllCompleted) {
       showToast(
-        'تصویر و مشخصات ذخیره شد ✓ انتقال خودکار به گام ۲: ثبت نشانی دقیق سالن'
+        `گام ۱ ذخیره شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
       );
-      return;
-    }
-    if (activeStep === 'LOCATION' && !nextStep1Done) {
-      setActiveStep('INFO');
-      showToast(
-        'نشانی ذخیره شد ✓ لطفاً اکنون گام ۱ (تصویر و مشخصات پایه) را تکمیل کنید.'
-      );
+      setTimeout(() => navigate(nextTarget.nextHref), 350);
       return;
     }
 
-    const hasBankInfo = Boolean(
-      (currentBiz.bankCardNumber &&
-        currentBiz.bankCardNumber.replace(/\D/g, '').length >= 16) ||
-        (currentBiz.bankShebaNumber &&
-          currentBiz.bankShebaNumber.replace(/\D/g, '').length >= 24)
-    );
-
-    if (!hasBankInfo) {
+    if (!profileCompletion.isReadyForPublicShowcase) {
       showToast(
-        'اطلاعات سالن ذخیره شد ✓ انتقال به بخش «شبا، بیعانه و تسویه» جهت تکمیل حساب بانکی'
+        'تبریک! تمام ۵ مرحله راه‌اندازی تکمیل شد ✓ ورود به پیشخوان کامل کسب‌وکار'
       );
-      setTimeout(() => navigate('/app/subscription'), 500);
-      return;
-    }
-
-    if (bizServicesCount === 0) {
-      showToast(
-        'اطلاعات سالن کامل شد ✓ انتقال خودکار به بخش بعدی: تعریف خدمات و تعرفه‌ها'
-      );
-      setTimeout(() => navigate('/app/services'), 500);
-      return;
-    }
-    if (bizGalleryCount === 0) {
-      showToast(
-        'اطلاعات سالن ذخیره شد ✓ انتقال به بخش آپلود گالری نمونه‌کارها'
-      );
-      setTimeout(() => navigate('/app/gallery'), 500);
+      setTimeout(() => navigate('/app'), 350);
       return;
     }
 
@@ -5547,8 +5798,7 @@ export const BusinessProfileEditPage: React.FC = () => {
   return (
     <div className="space-y-4 max-w-3xl">
       <PageHeader
-        title="اطلاعات و نشانی سالن"
-        subtitle="ویرایش تصویر پروفایل، معرفی کوتاه، آدرس اینستاگرام و نشانی دقیق سالن"
+        title="مشخصات و نشانی سالن"
         actions={
           <Link to={`/salon/${currentBiz.slug}`}>
             <Button variant="outline" size="sm">
@@ -5559,266 +5809,145 @@ export const BusinessProfileEditPage: React.FC = () => {
         }
       />
 
-      {/* نوار ۲ گام مجزا ویژه اطلاعات سالن (تصویر و مشخصات | نقشه و نشانی) */}
-      <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-white border border-[#E6E0F5] shadow-xs">
-        {[
-          {
-            id: 'INFO' as const,
-            stepNum: '۱',
-            title: 'تصویر و مشخصات سالن',
-            done: isStep1Done,
-          },
-          {
-            id: 'LOCATION' as const,
-            stepNum: '۲',
-            title: 'نقشه و نشانی سالن',
-            done: isStep2Done,
-          },
-        ].map((st) => {
-          const isCurrent = activeStep === st.id;
-          return (
-            <button
-              key={st.id}
-              type="button"
-              onClick={() => setActiveStep(st.id)}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                isCurrent
-                  ? 'bg-[#8B5CF6] text-white shadow-sm'
-                  : 'bg-[#FAF9FE] text-[#6B6480] hover:text-[#1E1B2E]'
-              }`}
-            >
-              <span
-                className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[11px] font-black shrink-0 ${
-                  isCurrent
-                    ? 'bg-white text-[#8B5CF6]'
-                    : st.done
-                    ? 'bg-[#10B981] text-white'
-                    : 'bg-[#E6E0F5] text-[#6B6480]'
-                }`}
-              >
-                {st.done && !isCurrent ? '✓' : st.stepNum}
-              </span>
-              <span className="truncate">{st.title}</span>
-            </button>
-          );
-        })}
-      </div>
-
       <Card padding="lg">
         <form onSubmit={handleSave} className="space-y-4">
           {stepValidationError ? (
             <div
               role="alert"
-              className="p-3.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2.5 text-xs font-extrabold text-[#B91C1C]"
+              className="p-3 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2 text-xs font-extrabold text-[#B91C1C]"
             >
               <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
               <span>{stepValidationError}</span>
             </div>
           ) : null}
 
-          {/* گام ۱: تصویر پروفایل و مشخصات پایه */}
-          {activeStep === 'INFO' ? (
-            <div className="space-y-4">
-              <ProfilePhotoUploader
-                value={avatarUrl}
-                businessName={name || currentBiz.name}
-                enableCoverBannerOption={true}
-                coverValue={coverUrl}
-                onCoverChange={(newCover) => {
-                  setCoverUrl(newCover);
-                  updateBusinessProfile(currentBiz.id, {
-                    coverUrl: newCover || undefined,
-                  });
-                  showToast(
-                    newCover
-                      ? 'تصویر افقی کارت صفحه اصلی و بنر پروفایل ذخیره شد ✓'
-                      : 'تصویر کارت صفحه اصلی با تصویر اصلی پروفایل یکسان شد ✓'
-                  );
-                }}
-                onChange={(url) => {
-                  setAvatarUrl(url);
-                  updateBusinessProfile(currentBiz.id, {
-                    avatarUrl: url || undefined,
-                  });
-                  syncPrimarySpecialistAvatar(url);
-                  updateOnboardingDraft({
-                    avatarUrl: url,
-                  });
-                  if (url) {
-                    showToast('تصویر پروفایل سالن و متخصص بلافاصله ذخیره و ثبت شد ✓');
-                  }
-                }}
-                label="تصویر پروفایل و ویترین سالن"
+          <ProfilePhotoUploader
+            value={avatarUrl}
+            businessName={name || currentBiz.name}
+            enableCoverBannerOption={true}
+            coverValue={coverUrl}
+            onCoverChange={(newCover) => {
+              setCoverUrl(newCover);
+              updateBusinessProfile(currentBiz.id, {
+                coverUrl: newCover || undefined,
+              });
+            }}
+            onChange={(url) => {
+              setAvatarUrl(url);
+              updateBusinessProfile(currentBiz.id, {
+                avatarUrl: url || undefined,
+              });
+              syncPrimarySpecialistAvatar(url);
+              updateOnboardingDraft({
+                avatarUrl: url,
+              });
+            }}
+            label="تصویر پروفایل سالن"
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <FormField
+              id="prof-name"
+              label="نام سالن، کلینیک یا مرکز زیبایی"
+              required
+            >
+              <Input
+                id="prof-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="مثال: سالن زیبایی رویال"
               />
+            </FormField>
+            <FormField
+              id="prof-instagram"
+              label="آدرس اینستاگرام (اختیاری)"
+            >
+              <Input
+                id="prof-instagram"
+                dir="ltr"
+                value={instagramHandle}
+                onChange={(e) => setInstagramHandle(e.target.value)}
+                placeholder="@salon_name"
+              />
+            </FormField>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  id="prof-name"
-                  label="نام سالن، کلینیک یا مرکز لیزر"
-                  required
+          <div className="space-y-1.5">
+            <label className="text-xs font-extrabold text-[#1E1B2E] block">
+              مخاطب خدمات:
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'FEMALE' as const, label: 'ویژه بانوان' },
+                { value: 'MALE' as const, label: 'ویژه آقایان' },
+                { value: 'BOTH' as const, label: 'بانوان و آقایان' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setTargetGender(opt.value)}
+                  className={`py-2 px-2.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                    targetGender === opt.value
+                      ? 'bg-[#1E1B2E] text-white border-[#1E1B2E]'
+                      : 'bg-[#FAF9FE] text-[#6B6480] border-[#E6E0F5] hover:border-[#8B5CF6]'
+                  }`}
                 >
-                  <Input
-                    id="prof-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </FormField>
-                <FormField
-                  id="prof-instagram"
-                  label="آدرس اینستاگرام (اختیاری)"
-                >
-                  <Input
-                    id="prof-instagram"
-                    dir="ltr"
-                    value={instagramHandle}
-                    onChange={(e) => setInstagramHandle(e.target.value)}
-                    placeholder="@goldenn_laserr"
-                  />
-                </FormField>
-              </div>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-extrabold text-[#1E1B2E] block">
-                  مخاطب خدمات مرکز شما کیست؟
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'FEMALE' as const, label: 'ویژه بانوان' },
-                    { value: 'MALE' as const, label: 'ویژه آقایان' },
-                    {
-                      value: 'BOTH' as const,
-                      label: 'بانوان و آقایان (مراکز لیزر)',
-                    },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTargetGender(opt.value)}
-                      className={`py-2 px-2.5 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
-                        targetGender === opt.value
-                          ? 'bg-[#1E1B2E] text-white border-[#1E1B2E]'
-                          : 'bg-[#FAF9FE] text-[#6B6480] border-[#E6E0F5] hover:border-[#8B5CF6]'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-[#E2E8F0]">
+            <FormField
+              id="prof-neighborhood"
+              label="محله یا محدوده فعالیت"
+              required
+            >
+              <Input
+                id="prof-neighborhood"
+                value={neighborhood}
+                onChange={(e) => setNeighborhood(e.target.value)}
+                placeholder="مثال: چهارباغ بالا، مرداویج..."
+              />
+            </FormField>
 
-              <FormField
+            <FormField
+              id="prof-short"
+              label="معرفی کوتاه یک‌خطی (اختیاری)"
+            >
+              <Input
                 id="prof-short"
-                label="معرفی کوتاه یک‌خطی (نمایش در کارت سالن)"
-              >
-                <Input
-                  id="prof-short"
-                  value={shortDesc}
-                  onChange={(e) => setShortDesc(e.target.value)}
-                />
-              </FormField>
+                value={shortDesc}
+                onChange={(e) => setShortDesc(e.target.value)}
+                placeholder="مثال: مرکز تخصصی رنگ، لایت و فیشیال"
+              />
+            </FormField>
+          </div>
 
-              <FormField
-                id="prof-about"
-                label="توضیحات تکمیلی درباره سالن (اختیاری)"
-              >
-                <Textarea
-                  id="prof-about"
-                  rows={2}
-                  value={aboutText}
-                  onChange={(e) => setAboutText(e.target.value)}
-                />
-              </FormField>
+          <FormField
+            id="prof-address"
+            label="نشانی دقیق متنی (خیابان، کوچه، ساختمان، طبقه و واحد)"
+            required
+          >
+            <Textarea
+              id="prof-address"
+              rows={2}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="مثال: اصفهان، خیابان چهارباغ بالا، روبه‌روی مجتمع کوثر، ساختمان پارسیان، طبقه ۲"
+            />
+          </FormField>
 
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
-                <Button type="submit" variant="primary" size="sm">
-                  ذخیره مشخصات سالن
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setActiveStep('LOCATION')}
-                >
-                  <span>گام بعدی: نقشه و نشانی</span>
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {/* گام ۲: ثبت دستی محله و نشانی دقیق متنی */}
-          {activeStep === 'LOCATION' ? (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-[#F5F3FF] border border-[#DDD6FE] text-xs text-[#4C1D95] leading-relaxed">
-                <p className="font-extrabold mb-1">
-                  ثبت دستی نشانی دقیق کسب‌وکار (بدون نیاز به درگیری با پین نقشه)
-                </p>
-                <p className="text-[11px] text-[#5B21B6]">
-                  محله و آدرس دقیق متنی خود را در کادرهای زیر بنویسید. سیستم به صورت خودکار بخش نقشه و دکمه مسیریابی (گوگل‌مپ، نشان و بلد) را در ویترین عمومی شما برای مشتریان فعال می‌کند.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <FormField id="prof-city" label="شهر">
-                  <Input
-                    id="prof-city"
-                    value={currentBiz.city || 'اصفهان'}
-                    disabled
-                  />
-                </FormField>
-
-                <FormField
-                  id="prof-neighborhood"
-                  label="محله یا محدوده فعالیت"
-                  required
-                >
-                  <Input
-                    id="prof-neighborhood"
-                    value={neighborhood}
-                    onChange={(e) => setNeighborhood(e.target.value)}
-                    placeholder="مثال: چهارباغ بالا، مرداویج، نظر میانی..."
-                  />
-                </FormField>
-              </div>
-
-              <FormField
-                id="prof-address"
-                label="نشانی دقیق متنی (خیابان، کوچه، مجتمع، طبقه و واحد)"
-                required
-              >
-                <Textarea
-                  id="prof-address"
-                  rows={3}
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="مثال: اصفهان، خیابان چهارباغ بالا، روبه‌روی مجتمع کوثر، ساختمان پارسیان، طبقه ۲، واحد ۴"
-                />
-              </FormField>
-
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setActiveStep('INFO')}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                  <span>گام قبلی: مشخصات سالن</span>
-                </Button>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link to={`/salon/${currentBiz.slug}`}>
-                    <Button type="button" variant="outline" size="sm">
-                      <span>مشاهده ویترین</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
-                  <Button type="submit" variant="primary" size="sm">
-                    ذخیره نشانی و اطلاعات سالن
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <div className="pt-3 border-t border-[#E6E0F5] flex items-center justify-end gap-2">
+            <Button type="submit" variant="primary">
+              <span>
+                {!profileCompletion.isReadyForPublicShowcase
+                  ? 'ذخیره و رفتن به مرحله بعد ←'
+                  : 'ذخیره مشخصات و نشانی سالن ✓'}
+              </span>
+            </Button>
+          </div>
 
           {savedNotice ? (
             <div className="p-2.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs font-extrabold text-[#059669] text-center">
@@ -5828,12 +5957,14 @@ export const BusinessProfileEditPage: React.FC = () => {
         </form>
       </Card>
 
-      <BusinessQrCodeCard
-        businessName={name || currentBiz.name}
-        slug={currentBiz.slug}
-        city={currentBiz.city}
-        neighborhood={neighborhood || currentBiz.neighborhood}
-      />
+      {profileCompletion.isReadyForPublicShowcase ? (
+        <BusinessQrCodeCard
+          businessName={name || currentBiz.name}
+          slug={currentBiz.slug}
+          city={currentBiz.city}
+          neighborhood={neighborhood || currentBiz.neighborhood}
+        />
+      ) : null}
     </div>
   );
 };
@@ -5845,6 +5976,7 @@ export const BusinessWorkingHoursPage: React.FC = () => {
     currentBusiness,
     businesses,
     services,
+    specialists,
     updateBusinessWorkingHours,
     showToast,
   } = usePrototypeData();
@@ -6127,33 +6259,30 @@ export const BusinessWorkingHoursPage: React.FC = () => {
 
                 updateBusinessWorkingHours(currentBiz.id, hours);
 
-                const bizSrvCount = services.filter(
-                  (s) => s.businessId === currentBiz.id
-                ).length;
-                const hasBank = Boolean(
-                  (currentBiz.bankCardNumber &&
-                    currentBiz.bankCardNumber.replace(/\D/g, '').length >= 16) ||
-                    (currentBiz.bankShebaNumber &&
-                      currentBiz.bankShebaNumber.replace(/\D/g, '').length >= 24)
-                );
+                const updatedBizSnapshot = {
+                  ...currentBiz,
+                  workingHours: hours,
+                  workingHoursConfigured: true,
+                };
+                const nextTarget = resolveNextOnboardingStepHref({
+                  business: updatedBizSnapshot,
+                  services,
+                  specialists,
+                  currentStepId: 'working_hours',
+                });
 
-                if (bizSrvCount === 0) {
+                if (!nextTarget.isAllCompleted) {
                   showToast(
-                    'ساعات کاری ذخیره شد ✓ انتقال خودکار به بخش بعدی: تعریف خدمات و تعرفه‌ها'
+                    `گام ۳ (ساعات کاری) ذخیره شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
                   );
-                  setTimeout(() => navigate('/app/services'), 450);
-                } else if (!hasBank) {
-                  showToast(
-                    'ساعات کاری ذخیره شد ✓ انتقال خودکار به بخش تکمیل شماره کارت و شبا'
-                  );
-                  setTimeout(
-                    () => navigate('/app/subscription'),
-                    450
-                  );
+                  setTimeout(() => navigate(nextTarget.nextHref), 350);
+                } else {
+                  showToast('ساعات کاری هفتگی سالن با موفقیت ذخیره شد ✓');
+                  setTimeout(() => navigate('/app'), 350);
                 }
               }}
             >
-              ذخیره ساعات کاری و ادامه به مرحله بعد
+              ذخیره ساعات کاری و رفتن به مرحله بعد ←
             </Button>
           </div>
         </Card>
@@ -6753,19 +6882,18 @@ export const BusinessMarketingPage: React.FC = () => {
         ) : null}
       </Card>
 
-      {/* بخش ۱: بسته‌های تبلیغاتی و ارتقای جایگاه (Sponsored Boost & Add-on SMS) */}
+      {/* بخش ۱: بسته‌های تبلیغاتی و ارتقای جایگاه (۷ روزه و ۱۴ روزه — حداکثر ۲ هفته) */}
       <div className="rounded-3xl bg-[#061138] text-white p-5 sm:p-6 space-y-5 border border-[#1E293B] shadow-md">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-4">
           <div className="space-y-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
               <Megaphone className="w-4 h-4" />
               <span>
-                جایگاه‌های تبلیغاتی پربازده تایم تو (پرداخت آسان با بله‌پی و
-                کارت‌به‌کارت)
+                جایگاه‌های تبلیغاتی ۷ روزه و ۱۴ روزه (حداکثر ۲ هفته جهت گردش عادلانه ویترین)
               </span>
             </span>
             <h2 className="text-base sm:text-xl font-extrabold text-white">
-              بنر و کارت سالن خود را بالاتر از سایر رقبا به مشتریان اصفهان نشان دهید
+              بنر صفحه اول و صدر جست‌وجوی شهر را برای ۱ یا ۲ هفته رزرو کنید (با ۱۵٪ تا ۳۰٪ تخفیف ویژه مشترکین حرفه‌ای و VIP)
             </h2>
           </div>
           <Link to="/search">
@@ -6776,7 +6904,7 @@ export const BusinessMarketingPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
-          {/* کارت ۱: صدرنشینی در نتایج جست‌وجو (Search Pin Boost) */}
+          {/* کارت ۱: صدرنشینی در نتایج جست‌وجو (Search Pin Boost — ۷ یا ۱۴ روزه) */}
           <div className="rounded-2xl bg-white text-[#061138] p-5 flex flex-col justify-between space-y-4 border-2 border-[#00E5FF]">
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -6794,15 +6922,15 @@ export const BusinessMarketingPage: React.FC = () => {
                 {searchBoostPkg.description}
               </p>
               <div className="pt-2 border-t border-[#E2E8F0] flex items-baseline justify-between">
-                <span className="text-xs text-[#64748B]">تعرفه جایگاه:</span>
+                <span className="text-xs text-[#64748B]">تعرفه جایگاه (حداکثر ۲ هفته):</span>
                 <div className="text-left">
                   <span className="text-lg font-extrabold text-[#0057FF] tabular-nums">
                     {formatPriceToman(searchBoostPkg.priceToman)}
                   </span>
                   <span className="text-[11px] text-[#64748B] block tabular-nums">
-                    ماهانه (یا{' '}
-                    {formatPriceToman(searchBoostPkg.weeklyPriceToman ?? 190000)}{' '}
-                    هفتگی)
+                    ۱۴ روزه / ۲ هفته (یا{' '}
+                    {formatPriceToman(searchBoostPkg.weeklyPriceToman ?? 590000)}{' '}
+                    برای ۷ روز)
                   </span>
                 </div>
               </div>
@@ -6897,9 +7025,9 @@ export const BusinessMarketingPage: React.FC = () => {
                   itemId: searchBoostPkg.id,
                   itemTitle: searchBoostPkg.title,
                   baseAmountToman: searchBoostPkg.priceToman,
-                  weeklyAmountToman: searchBoostPkg.weeklyPriceToman ?? 190000,
+                  weeklyAmountToman: searchBoostPkg.weeklyPriceToman ?? 590000,
                   defaultPlacement: 'SEARCH_TOP',
-                  defaultDurationDays: 30,
+                  defaultDurationDays: 14,
                   defaultLabel: sponsoredLabelInput,
                 })
               }
@@ -6907,13 +7035,13 @@ export const BusinessMarketingPage: React.FC = () => {
               <CreditCard className="w-4 h-4" />
               <span>
                 {isSponsoredActive
-                  ? 'تمدید / ارتقای جایگاه صدر جست‌وجو'
-                  : 'رزرو و پرداخت جایگاه صدر جست‌وجو'}
+                  ? 'تمدید جایگاه صدر جست‌وجو (۷ یا ۱۴ روزه)'
+                  : 'رزرو جایگاه صدر جست‌وجو (۷ یا ۱۴ روزه)'}
               </span>
             </Button>
           </div>
 
-          {/* کارت ۲: بنر بزرگ در صفحه اول (Home Featured Banner) */}
+          {/* کارت ۲: بنر بزرگ در صفحه اول (Home Featured Banner — ۷ یا ۱۴ روزه) */}
           <div className="rounded-2xl bg-white/10 border border-white/20 p-5 flex flex-col justify-between space-y-4 text-white">
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -6931,15 +7059,15 @@ export const BusinessMarketingPage: React.FC = () => {
                 {homeBannerPkg.description}
               </p>
               <div className="pt-2 border-t border-white/15 flex items-baseline justify-between">
-                <span className="text-xs text-slate-300">تعرفه جایگاه:</span>
+                <span className="text-xs text-slate-300">تعرفه جایگاه (حداکثر ۲ هفته):</span>
                 <div className="text-left">
                   <span className="text-lg font-extrabold text-[#00E5FF] tabular-nums">
                     {formatPriceToman(homeBannerPkg.priceToman)}
                   </span>
                   <span className="text-[11px] text-slate-300 block tabular-nums">
-                    ماهانه (یا{' '}
-                    {formatPriceToman(homeBannerPkg.weeklyPriceToman ?? 350000)}{' '}
-                    هفتگی)
+                    ۱۴ روزه / ۲ هفته (یا{' '}
+                    {formatPriceToman(homeBannerPkg.weeklyPriceToman ?? 890000)}{' '}
+                    برای ۷ روز)
                   </span>
                 </div>
               </div>
@@ -6956,16 +7084,16 @@ export const BusinessMarketingPage: React.FC = () => {
                   itemId: homeBannerPkg.id,
                   itemTitle: homeBannerPkg.title,
                   baseAmountToman: homeBannerPkg.priceToman,
-                  weeklyAmountToman: homeBannerPkg.weeklyPriceToman ?? 350000,
+                  weeklyAmountToman: homeBannerPkg.weeklyPriceToman ?? 890000,
                   defaultPlacement: 'HOME_BANNER',
-                  defaultDurationDays: 30,
+                  defaultDurationDays: 14,
                   defaultLabel:
                     sponsoredLabelInput.trim() || 'بنر ویژه صفحه اول',
                 })
               }
             >
               <CreditCard className="w-4 h-4" />
-              <span>رزرو و پرداخت بنر صفحه اول</span>
+              <span>رزرو بنر صفحه اول (۷ یا ۱۴ روزه)</span>
             </Button>
           </div>
 
@@ -7482,9 +7610,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · حسابداری خالص بیعانه، دخل روزانه و سیکل تسویه هفتگی شبا"
-        title="حسابداری دخل روزانه، خالص بیعانه‌ها و گزارش تسویه هفتگی شبا"
-        subtitle="تمامی امکانات نرم‌افزاری حسابداری رایگان است. کارمزد پلتفرم از محل بیعانه کسر شده و خالص بیعانه نوبت‌های انجام‌شده در سیکل هفتگی پایا (شنبه‌ها) به شبای شما واریز می‌شود."
+        kicker="مالی · حسابداری ۱۰۰٪ بیعانه (کارمزد ۰٪)، دخل روزانه و سیکل تسویه هفتگی شبا"
+        title="حسابداری دخل روزانه، بیعانه‌ها و گزارش تسویه هفتگی شبا"
+        subtitle="در تایم تو هیچ کارمزد درصدی از نوبت‌های شما کسر نمی‌شود (کارمزد ۰٪). ۱۰۰٪ بیعانه دریافتی مشتریان پس از انجام نوبت در سیکل هفتگی پایا (شنبه‌ها) به شبای شما واریز می‌شود."
         routePattern="/app/analytics"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -7495,13 +7623,13 @@ export const BusinessAnalyticsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            خالص دریافتی واقعی سالن (خالص بیعانه + دریافتی حضوری)
+            کل دریافتی واقعی سالن (۱۰۰٪ بیعانه آنلاین + دریافتی حضوری)
           </p>
           <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {totalRevenueToman > 0 ? formatPriceToman(totalRevenueToman) : '۰ تومان'}
           </p>
           <p className="text-xs text-[#64748B] font-semibold tabular-nums">
-            خالص بیعانه پس از کسر کارمزد:{' '}
+            بیعانه آنلاین (کارمزد ۰٪):{' '}
             {netSalonDepositsCreditedToman > 0
               ? formatPriceToman(netSalonDepositsCreditedToman)
               : '۰ تومان'}{' '}
@@ -7538,19 +7666,16 @@ export const BusinessAnalyticsPage: React.FC = () => {
         </Card>
         <Card className="space-y-2">
           <p className="text-xs font-bold text-[#6B6480]">
-            کل بیعانه پایه مشتریان و سهم کارمزد پلتفرم
+            کل بیعانه پایه واریزی مشتریان به کیف پول شما
           </p>
           <p className="text-2xl font-extrabold text-[#059669] tabular-nums">
             {onlineDepositsTotalToman > 0
               ? formatPriceToman(onlineDepositsTotalToman)
               : '۰ تومان'}
           </p>
-          <p className="text-xs text-[#6B6480] tabular-nums">
-            کمیسیون کسرشده پلتفرم:{' '}
-            {totalPlatformCommissionDeductedToman > 0
-              ? formatPriceToman(totalPlatformCommissionDeductedToman)
-              : '۰ تومان'}{' '}
-            · بازگشت مجدد: {toPersianDigits(repeatRatePct)}٪
+          <p className="text-xs text-[#059669] font-bold tabular-nums">
+            کارمزد کسرشده پلتفرم: ۰ تومان (۰٪) · بازگشت مجدد:{' '}
+            {toPersianDigits(repeatRatePct)}٪
           </p>
         </Card>
       </div>
@@ -8232,16 +8357,19 @@ export const BusinessAnalyticsPage: React.FC = () => {
   );
 };
 
-/** ۱۲. شبا، بیعانه و تسویه هفتگی (/app/subscription) — صفحه مستقل مالی و قرارداد همکاری */
+/** ۱۲. اطلاعات بانکی (شبا/کارت) و تعیین درصد بیعانه (/app/subscription) */
 export const BusinessSubscriptionPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showPlansView = searchParams.get('tab') === 'plans';
+
   const {
     currentBusiness,
     businesses,
+    services,
+    specialists,
     appointments,
-    paymentConfig,
     updateBusinessProfile,
-    settlementRequests,
-    requestWalletSettlement,
     showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
@@ -8258,17 +8386,17 @@ export const BusinessSubscriptionPage: React.FC = () => {
   const [depositPercentRule, setDepositPercentRule] = useState<number>(() =>
     normalizeDepositPercent(currentBiz?.depositPercent)
   );
-  const [contractAccepted, setContractAccepted] = useState<boolean>(
-    Boolean(currentBiz?.contractAccepted)
-  );
   const [cancellationDeadlineHours, setCancellationDeadlineHours] =
     useState<number>(currentBiz?.cancellationDeadlineHours ?? 24);
   const [lateCancellationPenaltyPercent, setLateCancellationPenaltyPercent] =
     useState<number>(currentBiz?.lateCancellationPenaltyPercent ?? 30);
   const [validationError, setValidationError] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
-  const [showShebaConfirmModal, setShowShebaConfirmModal] = useState(false);
-  const [dontAskShebaAgain, setDontAskShebaAgain] = useState(false);
+  const [planCheckoutItem, setPlanCheckoutItem] = useState<{
+    planId: string;
+    title: string;
+    priceToman: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!currentBiz) return;
@@ -8278,7 +8406,6 @@ export const BusinessSubscriptionPage: React.FC = () => {
       currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
     );
     setDepositPercentRule(normalizeDepositPercent(currentBiz.depositPercent));
-    setContractAccepted(Boolean(currentBiz.contractAccepted));
     setCancellationDeadlineHours(currentBiz.cancellationDeadlineHours ?? 24);
     setLateCancellationPenaltyPercent(
       currentBiz.lateCancellationPenaltyPercent ?? 30
@@ -8304,19 +8431,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
     .slice(0, 24);
   const isBankSetupDone =
     (cleanCardDigits.length === 16 || cleanShebaDigits.length === 24) &&
-    Boolean(bankAccountHolder.trim()) &&
-    contractAccepted;
-
-  const commissionMeta = resolveBusinessCommissionMeta(
-    currentBiz,
-    paymentConfig
-  );
-  const sampleServiceBreakdown = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 1_000_000,
-    depositPercent: depositPercentRule,
-    business: currentBiz,
-    commissionConfig: paymentConfig,
-  });
+    Boolean(bankAccountHolder.trim());
 
   const bizNonCancelledApts = appointments.filter(
     (a) =>
@@ -8325,36 +8440,10 @@ export const BusinessSubscriptionPage: React.FC = () => {
         a.businessName === currentBiz.name) &&
       a.status !== AppointmentStatus.Cancelled
   );
-  const bizTotalNetCreditedToman = bizNonCancelledApts.reduce((sum, a) => {
-    const bd = resolveAppointmentFinancialBreakdown({
-      appointment: a,
-      business: currentBiz,
-      commissionConfig: paymentConfig,
-    });
-    return sum + bd.salonNetDepositCreditedToman;
-  }, 0);
-  const bizPaidSettlementsToman = settlementRequests
-    .filter((s) => s.businessId === currentBiz.id && s.status === 'PAID')
-    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-  const bizFutureLockedEscrowToman = bizNonCancelledApts
-    .filter((a) => !isAppointmentEligibleForSettlement(a))
-    .reduce((sum, a) => {
-      const bd = resolveAppointmentFinancialBreakdown({
-        appointment: a,
-        business: currentBiz,
-        commissionConfig: paymentConfig,
-      });
-      return sum + bd.salonNetDepositCreditedToman;
-    }, 0);
-
-  const totalWalletBalanceToman = Math.max(
-    0,
-    bizTotalNetCreditedToman - bizPaidSettlementsToman
-  );
-  const releasableWalletToman = Math.max(
-    0,
-    totalWalletBalanceToman - bizFutureLockedEscrowToman
-  );
+  const quotaStatus = resolveBusinessSubscriptionQuotaStatus({
+    business: currentBiz,
+    appointments: bizNonCancelledApts,
+  });
 
   const handleSaveFinancialSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -8362,7 +8451,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
 
     if (cleanCardDigits.length === 0 && cleanShebaDigits.length === 0) {
       const msg =
-        'هنوز «شماره کارت بانکی ۱۶ رقمی» یا «شماره شبا ۲۴ رقمی» را وارد نکرده‌اید. لطفاً حداقل یکی از این دو را تکمیل کنید.';
+        'هنوز «شماره کارت بانکی ۱۶ رقمی» یا «شماره شبا ۲۴ رقمی» را وارد نکرده‌اید. لطفاً حداقل یکی از این دو را جهت واریز بیعانه‌ها تکمیل کنید.';
       setValidationError(msg);
       showToast(msg, 'warning');
       return;
@@ -8386,646 +8475,501 @@ export const BusinessSubscriptionPage: React.FC = () => {
       showToast(msg, 'warning');
       return;
     }
-    if (!contractAccepted) {
-      const msg =
-        'لطفاً تیک «مفاد قرارداد همکاری، نحوه محاسبه کارمزد از کل مبلغ خدمت و سیکل تسویه هفتگی شبا را می‌پذیرم» را فعال نمایید.';
-      setValidationError(msg);
-      showToast(msg, 'warning');
-      return;
-    }
 
     const safeDepositPercent = normalizeDepositPercent(depositPercentRule);
-    updateBusinessProfile(currentBiz.id, {
+    const updatedBizSnapshot = {
+      ...currentBiz,
       bankCardNumber: cleanCardDigits || undefined,
       bankShebaNumber: cleanShebaDigits ? `IR${cleanShebaDigits}` : undefined,
       bankAccountHolder: bankAccountHolder.trim() || undefined,
       depositEnabled: true,
       depositPercent: safeDepositPercent,
-      contractAccepted,
-      contractAcceptedAtJalali: contractAccepted
-        ? currentBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴'
-        : undefined,
+      contractAccepted: true,
+      contractAcceptedAtJalali:
+        currentBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴',
+      cancellationDeadlineHours,
+      lateCancellationPenaltyPercent,
+    };
+
+    updateBusinessProfile(currentBiz.id, {
+      bankCardNumber: updatedBizSnapshot.bankCardNumber,
+      bankShebaNumber: updatedBizSnapshot.bankShebaNumber,
+      bankAccountHolder: updatedBizSnapshot.bankAccountHolder,
+      depositEnabled: true,
+      depositPercent: safeDepositPercent,
+      contractAccepted: true,
+      contractAcceptedAtJalali: updatedBizSnapshot.contractAcceptedAtJalali,
       cancellationDeadlineHours,
       lateCancellationPenaltyPercent,
     });
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 3000);
-    showToast('اطلاعات شبا، درصد بیعانه و قوانین تسویه با موفقیت ذخیره شد ✓');
+
+    const nextTarget = resolveNextOnboardingStepHref({
+      business: updatedBizSnapshot,
+      services,
+      specialists,
+      currentStepId: 'financial_info',
+    });
+
+    if (!nextTarget.isAllCompleted) {
+      showToast(
+        `شبا و بیعانه ذخیره شد ✓ انتقال به مرحله باقی‌مانده (${nextTarget.nextTitle})`
+      );
+      setTimeout(() => navigate(nextTarget.nextHref), 400);
+      return;
+    }
+
+    showToast(
+      'تبریک! راه‌اندازی ۵ مرحله‌ای تکمیل شد ✓ ۱۰ نوبت هدیه شروع (کارمزد ۰٪) و پیشخوان کامل کسب‌وکار شما فعال گردید.'
+    );
+    setTimeout(() => navigate('/app'), 400);
   };
 
   return (
     <div className="space-y-6 max-w-4xl">
       <PageHeader
-        kicker="مالی · حساب بانکی، درصد بیعانه و سیکل تسویه هفتگی شبا (پایا)"
-        title="شبا، بیعانه و تسویه هفتگی"
-        subtitle="ثبت شماره کارت و شبا جهت واریز بیعانه‌ها، انتخاب درصد بیعانه آنلاین و مشاهده موجودی کیف پول"
+        kicker="مالی · ثبت شماره کارت و شبا جهت واریز بیعانه‌های مشتریان و تعیین درصد بیعانه آنلاین"
+        title={
+          showPlansView
+            ? 'انتخاب و خرید پکیج اشتراک ماهانه'
+            : 'اطلاعات بانکی (شبا / کارت) و تعیین بیعانه'
+        }
+        subtitle={
+          showPlansView
+            ? 'پس از استفاده از ۱۰ نوبت هدیه شروع، یکی از ۳ پکیج اشتراک ۱ ماهه (با کارمزد ۰٪) را انتخاب و فعال نمایید.'
+            : 'ثبت شماره کارت و شبا جهت واریز مستقیم ۱۰۰٪ بیعانه نوبت‌های مشتریان به حساب شما و انتخاب درصد بیعانه آنلاین'
+        }
         routePattern="/app/subscription"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
-          { label: 'شبا، بیعانه و تسویه' },
+          {
+            label: showPlansView
+              ? 'خرید پکیج اشتراک ماهانه'
+              : 'شبا و تعیین بیعانه',
+          },
         ]}
         actions={
-          <Link to={`/salon/${currentBiz.slug}`}>
-            <Button variant="outline" size="sm">
-              <span>مشاهده ویترین</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+          showPlansView ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setSearchParams({})}
+            >
+              <span>بازگشت به تنظیمات شبا و بیعانه ←</span>
             </Button>
-          </Link>
+          ) : null
         }
       />
 
-      <Card padding="lg">
-        <form onSubmit={handleSaveFinancialSettings} className="space-y-5">
-          {validationError ? (
-            <div
-              role="alert"
-              className="p-3.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2.5 text-xs font-extrabold text-[#B91C1C]"
-            >
-              <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
-              <span>{validationError}</span>
-            </div>
-          ) : null}
-
-          <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
-            <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
-              <h2 className="text-xs sm:text-sm font-extrabold text-[#061138]">
-                ۱. حساب بانکی و شماره شبا جهت واریز بیعانه‌ها
+      {showPlansView ? (
+        /* نمای انتخاب پکیج اشتراک ماهانه (فقط زمانی که کاربر روی خرید اشتراک کلیک کرده باشد) */
+        <div className="rounded-3xl bg-gradient-to-l from-[#061138] via-[#0B1E5B] to-[#1E1B4B] text-white p-5 sm:p-6 space-y-5 border border-[#0057FF]/40 shadow-md">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/15 pb-4">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-[#10B981] text-white text-xs font-black">
+                  {quotaStatus.isFreeTrial
+                    ? `🎁 هدیه شروع فعالیت: ${toPersianDigits(quotaStatus.remainingBookingsCount)} از ${toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان باقی‌مانده`
+                    : `✓ اشتراک فعال: ${quotaStatus.planTitle} (${toPersianDigits(quotaStatus.remainingBookingsCount)} نوبت باقی‌مانده از ${toPersianDigits(quotaStatus.quotaLimit)})`}
+                </span>
+                <span className="px-3 py-1 rounded-full bg-white/10 text-[#00E5FF] text-xs font-extrabold">
+                  کارمزد پلتفرم از تمامی نوبت‌ها: ۰٪ (واریز ۱۰۰٪ بیعانه به شبا)
+                </span>
+              </div>
+              <h2 className="text-base sm:text-xl font-black text-white">
+                انتخاب پکیج اشتراک ۱ ماهه (مطالعه و تیک تایید مفاد قرارداد پس از انتخاب هر پکیج)
               </h2>
-              {isBankSetupDone ? (
-                <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
-                  تکمیل‌شده ✓
-                </span>
-              ) : (
-                <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
-                  نیاز به تکمیل
-                </span>
-              )}
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <FormField
-                id="sub-bank-card"
-                label="شماره کارت بانکی (۱۶ رقم)"
-              >
-                <Input
-                  id="sub-bank-card"
-                  dir="ltr"
-                  inputMode="numeric"
-                  maxLength={19}
-                  value={bankCardNumber}
-                  onChange={(e) =>
-                    setBankCardNumber(
-                      e.target.value.replace(/[^\d-]/g, '').slice(0, 19)
-                    )
-                  }
-                  placeholder="6037997512345678"
-                />
-              </FormField>
-
-              <FormField id="sub-bank-holder" label="نام صاحب حساب">
-                <Input
-                  id="sub-bank-holder"
-                  value={bankAccountHolder}
-                  onChange={(e) => setBankAccountHolder(e.target.value)}
-                  placeholder="نام و نام خانوادگی صاحب حساب"
-                />
-              </FormField>
-            </div>
-
-            <FormField
-              id="sub-bank-sheba"
-              label="شماره شبا (۲۴ رقم بدون یا با IR)"
-            >
-              <Input
-                id="sub-bank-sheba"
-                dir="ltr"
-                maxLength={26}
-                value={bankShebaNumber}
-                onChange={(e) => setBankShebaNumber(e.target.value)}
-                placeholder="IR120170000000123456789012"
-              />
-            </FormField>
-
-            {/* انتخاب الزامی یکی از ۴ درصد استاندارد بیعانه آنلاین + قوانین کنسلی */}
-            <div className="pt-3 border-t border-[#E2E8F0] space-y-4">
-              <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0]">
-                  <div className="space-y-0.5">
-                    <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
-                      ۲. تعیین درصد بیعانه آنلاین هنگام رزرو نوبت:{' '}
-                      <span className="text-[#0057FF]">
-                        ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+            {TIMETO_MONTHLY_PACKAGES.map((pkg) => {
+              const isCurrentActive =
+                !quotaStatus.isFreeTrial &&
+                quotaStatus.activePackage?.id === pkg.id;
+              return (
+                <div
+                  key={pkg.id}
+                  className={`rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all ${
+                    pkg.isRecommended
+                      ? 'bg-white text-[#061138] border-2 border-[#00E5FF] shadow-lg'
+                      : 'bg-white/10 text-white border border-white/20'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-black ${
+                          pkg.isRecommended
+                            ? 'bg-[#0057FF] text-white'
+                            : 'bg-[#00E5FF]/20 text-[#00E5FF]'
+                        }`}
+                      >
+                        {pkg.badge || pkg.monthlyBookingCapLabel}
                       </span>
-                    </span>
-                    <span className="text-[11px] text-[#64748B] block">
-                      دریافت بیعانه آنلاین (حداقل ۲۰٪) برای تضمین حضور مشتری و جلوگیری از سوخت شدن وقت سالن در تایم تو الزامی است. یکی از ۴ ضریب پیشنهادی زیر را انتخاب کنید:
-                    </span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
-                    بیعانه آنلاین الزامی: {toPersianDigits(depositPercentRule)}٪ ✓
-                  </span>
-                </div>
+                      {isCurrentActive ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#10B981] text-white text-[11px] font-black">
+                          پکیج فعال شما ✓
+                        </span>
+                      ) : null}
+                    </div>
 
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {ALLOWED_DEPOSIT_PERCENTS.map((pct) => {
-                      const isSelected = depositPercentRule === pct;
-                      const labelMap: Record<number, string> = {
-                        20: '۲۰٪ (حداقل پیشنهاد)',
-                        30: '۳۰٪ (متعادل)',
-                        50: '۵۰٪ (نصف مبلغ)',
-                        100: '۱۰۰٪ (پرداخت کامل)',
-                      };
-                      return (
-                        <button
-                          key={pct}
-                          id={`sub-deposit-preset-${pct}`}
-                          type="button"
-                          onClick={() => {
-                            setDepositPercentRule(pct);
-                            updateBusinessProfile(currentBiz.id, {
-                              depositEnabled: true,
-                              depositPercent: pct,
-                            });
-                          }}
-                          className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
-                              : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                    <div>
+                      <h3
+                        className={`text-base font-black ${
+                          pkg.isRecommended ? 'text-[#061138]' : 'text-white'
+                        }`}
+                      >
+                        {pkg.name}
+                      </h3>
+                      <p
+                        className={`text-[11px] mt-0.5 ${
+                          pkg.isRecommended ? 'text-[#475569]' : 'text-slate-300'
+                        }`}
+                      >
+                        {pkg.audience}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`py-2.5 border-y flex items-baseline justify-between ${
+                        pkg.isRecommended
+                          ? 'border-[#E2E8F0]'
+                          : 'border-white/15'
+                      }`}
+                    >
+                      <span
+                        className={`text-xs font-bold ${
+                          pkg.isRecommended ? 'text-[#64748B]' : 'text-slate-300'
+                        }`}
+                      >
+                        حق اشتراک ۱ ماهه:
+                      </span>
+                      <div className="text-left">
+                        <span
+                          className={`text-lg font-black tabular-nums ${
+                            pkg.isRecommended
+                              ? 'text-[#0057FF]'
+                              : 'text-[#00E5FF]'
                           }`}
                         >
-                          {labelMap[pct] || `${toPersianDigits(pct)}٪`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <FormField
-                    id="sub-cancel-deadline"
-                    label="مهلت لغو نوبت با بازگشت کامل بیعانه"
-                  >
-                    <Select
-                      id="sub-cancel-deadline"
-                      value={String(cancellationDeadlineHours)}
-                      onChange={(e) => {
-                        const hrs = Number(e.target.value);
-                        setCancellationDeadlineHours(hrs);
-                        updateBusinessProfile(currentBiz.id, {
-                          cancellationDeadlineHours: hrs,
-                        });
-                      }}
-                      options={[
-                        { value: '3', label: 'تا ۳ ساعت قبل از نوبت' },
-                        { value: '6', label: 'تا ۶ ساعت قبل از نوبت' },
-                        { value: '12', label: 'تا ۱۲ ساعت قبل از نوبت' },
-                        {
-                          value: '24',
-                          label: 'تا ۲۴ ساعت قبل از نوبت (پیشنهادی)',
-                        },
-                        { value: '48', label: 'تا ۴۸ ساعت قبل از نوبت' },
-                      ]}
-                    />
-                  </FormField>
-
-                  <FormField
-                    id="sub-late-penalty"
-                    label="قانون کنسلی دیرهنگام (کمتر از مهلت مجاز)"
-                  >
-                    <Select
-                      id="sub-late-penalty"
-                      value={String(lateCancellationPenaltyPercent)}
-                      onChange={(e) => {
-                        const pen = Number(e.target.value);
-                        setLateCancellationPenaltyPercent(pen);
-                        updateBusinessProfile(currentBiz.id, {
-                          lateCancellationPenaltyPercent: pen,
-                        });
-                      }}
-                      options={[
-                        {
-                          value: '0',
-                          label: 'بدون جریمه (بازگشت ۱۰۰٪ بیعانه)',
-                        },
-                        {
-                          value: '30',
-                          label: 'کسر ۳۰٪ خسارت دیرکرد برای سالن',
-                        },
-                        {
-                          value: '50',
-                          label: 'کسر ۵۰٪ خسارت دیرکرد برای سالن',
-                        },
-                        {
-                          value: '100',
-                          label: 'عدم بازگشت بیعانه در کنسلی دقیقه نودی',
-                        },
-                      ]}
-                    />
-                  </FormField>
-                </div>
-              </div>
-
-              {/* باکس شفاف مفاد قرارداد همکاری، ماشین‌حساب زنده کارمزد و سیکل تسویه هفتگی پایا */}
-              <div className="p-4 rounded-2xl bg-[#F5F3FF] border-2 border-[#8B5CF6]/40 space-y-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#DDD6FE] pb-2.5">
-                  <div>
-                    <span className="text-[10px] font-black text-[#6D28D9] block">
-                      مدل همکاری رایگان مادام‌العمر پنل · کسر کارمزد هوشمند از بیعانه
-                    </span>
-                    <h3 className="text-xs sm:text-sm font-extrabold text-[#1E1B2E]">
-                      ۳. مفاد قرارداد همکاری، نحوه محاسبه کارمزد و سیکل تسویه هفتگی شبا
-                    </h3>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-[#1E1B2E] text-white text-[11px] font-black tabular-nums">
-                    نرخ کارمزد رسته شما ({commissionMeta.segmentTitle}):{' '}
-                    {toPersianDigits(commissionMeta.commissionPercent)}٪ از کل خدمت
-                  </span>
-                </div>
-
-                <ul className="space-y-1.5 text-xs text-[#3B0764] leading-relaxed list-disc pr-4">
-                  <li>
-                    <strong>استفاده ۱۰۰٪ رایگان از تمامی ابزارهای نرم‌افزاری پنل:</strong>{' '}
-                    تقویم نوبت‌دهی، حسابداری دوحالته دخل روزانه، ثبت نامحدود پرسنل و پرونده مشتریان بدون هیچ حق اشتراک ماهانه‌ای برای همیشه باز است.
-                  </li>
-                  <li>
-                    <strong>نحوه محاسبه کارمزد پلتفرم بر اساس کل مبلغ خدمت:</strong>{' '}
-                    کارمزد معرفی و رزرو آنلاین معادل{' '}
-                    <strong>
-                      {toPersianDigits(commissionMeta.commissionPercent)}٪ از کل قیمت خدمت
-                    </strong>{' '}
-                    (حداقل ۱۰,۰۰۰ تومان) است که در لحظه رزرو از محل بیعانه پرداختی مشتری کسر شده و مابقی بیعانه عیناً به کیف پول شما واریز می‌گردد. (کارمزد ۳٪ آقایان، ۴٪ مراکز لیزر، ۵٪ سالن‌های بانوان).
-                  </li>
-                  <li>
-                    <strong>پوشش کارمزد درگاه شاپرک (زیبال) و مالیات توسط مشتری:</strong>{' '}
-                    مبلغ ۲٪ (حداقل ۳,۲۰۰ تومان) بابت کارمزد درگاه بانکی زیبال، مالیات و پیامک دوطرفه در فاکتور آنلاین به پرداختی مشتری اضافه می‌شود تا از سهم سالن کسر نگردد.
-                  </li>
-                  <li>
-                    <strong>قفل امنیتی نوبت‌های آینده و سیکل تسویه هفتگی پایا (شنبه‌ها):</strong>{' '}
-                    بیعانه نوبت‌هایی که زمان انجام آن‌ها هنوز فرانرسیده تا موعد نوبت در وضعیت «در انتظار انجام خدمت» نگهداری شده و موجودی آزادشده در{' '}
-                    <strong>سیکل هفتگی پایا (شنبه‌ها)</strong> به شماره شبای ثبت‌شده واریز می‌شود.
-                  </li>
-                </ul>
-
-                <div className="p-3 rounded-xl bg-white border border-[#DDD6FE] space-y-2 text-xs">
-                  <p className="font-extrabold text-[#1E1B2E] tabular-nums">
-                    🧮 نمونه محاسبه زنده برای خدمت ۱,۰۰۰,۰۰۰ تومانی با بیعانه انتخابی شما ({toPersianDigits(depositPercentRule)}٪):
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                    <div className="p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                      <span className="text-[10px] text-[#64748B] block">
-                        بیعانه پایه ({toPersianDigits(depositPercentRule)}٪)
-                      </span>
-                      <span className="font-black text-[#061138] tabular-nums">
-                        {formatPriceToman(sampleServiceBreakdown.baseDepositToman)}
-                      </span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#FEF2F2] border border-[#FECACA]">
-                      <span className="text-[10px] text-[#B91C1C] block">
-                        کمیسیون ({toPersianDigits(commissionMeta.commissionPercent)}٪ کل خدمت)
-                      </span>
-                      <span className="font-black text-[#DC2626] tabular-nums">
-                        {formatPriceToman(
-                          sampleServiceBreakdown.platformCommissionToman
-                        )}
-                      </span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#ECFDF5] border border-[#A7F3D0]">
-                      <span className="text-[10px] text-[#047857] block">
-                        خالص واریزی به کیف پول شما
-                      </span>
-                      <span className="font-black text-[#059669] tabular-nums">
-                        {formatPriceToman(
-                          sampleServiceBreakdown.salonNetDepositCreditedToman
-                        )}
-                      </span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-[#FFFBEB] border border-[#FDE68A]">
-                      <span className="text-[10px] text-[#B45309] block">
-                        دریافتی حضوری شما در سالن
-                      </span>
-                      <span className="font-black text-[#D97706] tabular-nums">
-                        {formatPriceToman(
-                          sampleServiceBreakdown.remainingInSalonToman
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <label
-                  htmlFor="sub-contract-accept-checkbox"
-                  className="flex items-start gap-2.5 p-3 rounded-xl bg-white border-2 border-[#8B5CF6] cursor-pointer select-none"
-                >
-                  <input
-                    id="sub-contract-accept-checkbox"
-                    type="checkbox"
-                    checked={contractAccepted}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setContractAccepted(checked);
-                      updateBusinessProfile(currentBiz.id, {
-                        contractAccepted: checked,
-                        contractAcceptedAtJalali: checked
-                          ? currentBiz.contractAcceptedAtJalali || '۱۴۰۵/۰۸/۲۴'
-                          : undefined,
-                      });
-                    }}
-                    className="mt-0.5 w-4 h-4 accent-[#8B5CF6] rounded cursor-pointer shrink-0"
-                  />
-                  <span className="text-xs font-extrabold text-[#1E1B2E] leading-relaxed">
-                    مفاد قرارداد همکاری، نحوه محاسبه کارمزد ({toPersianDigits(commissionMeta.commissionPercent)}٪ از کل مبلغ خدمت از محل بیعانه) و واریز در سیکل تسویه هفتگی شبا (پایا شنبه‌ها پس از انجام نوبت) را مطالعه کرده و می‌پذیرم.
-                  </span>
-                </label>
-              </div>
-
-              {/* کارت موجودی کیف پول بیعانه و ثبت در سیکل تسویه هفتگی شبا */}
-              <div className="p-4 rounded-2xl bg-gradient-to-l from-[#061138] to-[#0B1E5B] text-white space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <CreditCard className="w-5 h-5 text-[#00E5FF] shrink-0" />
-                    <div>
-                      <p className="text-xs font-bold text-[#BAE6FD]">
-                        موجودی کل کیف پول (پس از کسر کارمزد پلتفرم)
-                      </p>
-                      <p className="text-base sm:text-lg font-black text-white tabular-nums mt-0.5">
-                        {totalWalletBalanceToman > 0
-                          ? formatPriceToman(totalWalletBalanceToman)
-                          : '۰ تومان'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (
-                        cleanShebaDigits.length !== 24 &&
-                        cleanCardDigits.length !== 16
-                      ) {
-                        showToast(
-                          'ابتدا شماره شبا ۲۴ رقمی یا شماره کارت ۱۶ رقمی خود را در کادرهای بالا وارد کنید.',
-                          'warning'
-                        );
-                        return;
-                      }
-                      if (!contractAccepted) {
-                        showToast(
-                          'لطفاً ابتدا تیک تایید «مفاد قرارداد همکاری و قوانین تسویه شبا» را در کادر بنفش بالا فعال کنید.',
-                          'warning'
-                        );
-                        return;
-                      }
-                      if (totalWalletBalanceToman <= 0) {
-                        showToast(
-                          'موجودی کیف پول بیعانه در حال حاضر صفر است.',
-                          'warning'
-                        );
-                        return;
-                      }
-                      if (releasableWalletToman <= 0) {
-                        showToast(
-                          `موجودی فعلی شما (${formatPriceToman(totalWalletBalanceToman)}) مربوط به نوبت‌های آینده است و پس از انجام نوبت برای تسویه هفتگی شبا آزاد می‌شود.`,
-                          'warning'
-                        );
-                        return;
-                      }
-                      updateBusinessProfile(currentBiz.id, {
-                        bankCardNumber: cleanCardDigits || undefined,
-                        bankShebaNumber: cleanShebaDigits
-                          ? `IR${cleanShebaDigits}`
-                          : undefined,
-                        bankAccountHolder:
-                          bankAccountHolder.trim() || undefined,
-                        contractAccepted: true,
-                      });
-                      const skipKey = `timeto_skip_sheba_confirm_${currentBiz.id}_${cleanShebaDigits || cleanCardDigits}`;
-                      const shouldSkipModal =
-                        typeof window !== 'undefined' &&
-                        window.localStorage.getItem(skipKey) === '1';
-                      if (shouldSkipModal) {
-                        requestWalletSettlement(currentBiz.id);
-                      } else {
-                        setDontAskShebaAgain(false);
-                        setShowShebaConfirmModal(true);
-                      }
-                    }}
-                    className="px-4 py-2 rounded-xl bg-[#00E5FF] hover:bg-white text-[#061138] text-xs font-black transition-colors cursor-pointer"
-                  >
-                    ثبت در سیکل تسویه هفتگی شبا (پایا) ←
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-white/15 text-xs">
-                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/15 flex items-center justify-between">
-                    <span className="text-[#BAE6FD]">
-                      آزادشده قابل تسویه در سیکل هفتگی:
-                    </span>
-                    <span className="font-black text-[#34D399] tabular-nums">
-                      {releasableWalletToman > 0
-                        ? formatPriceToman(releasableWalletToman)
-                        : '۰ تومان'}
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-white/10 border border-white/15 flex items-center justify-between">
-                    <span className="text-[#FDE68A]">
-                      در انتظار انجام نوبت آینده (بلوکه):
-                    </span>
-                    <span className="font-black text-[#FBBF24] tabular-nums">
-                      {bizFutureLockedEscrowToman > 0
-                        ? formatPriceToman(bizFutureLockedEscrowToman)
-                        : '۰ تومان'}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-[#BAE6FD]/90 leading-relaxed pt-1">
-                  توجه بانکی: تسویه‌حساب کیف پول سالن‌ها در سیکل هفتگی شبا (پایا — شنبه‌ها) برای تمامی نوبت‌های انجام‌شده واریز می‌گردد. گزارش کامل برداشت‌ها در بخش «گزارش‌ها و درآمد» قابل مشاهده است.
-                </p>
-              </div>
-
-              {/* نمایش خلاصه آخرین برداشت‌های شبا */}
-              {(() => {
-                const mySettlements = settlementRequests.filter(
-                  (r) => r.businessId === currentBiz.id
-                );
-                if (mySettlements.length === 0) return null;
-                return (
-                  <div className="p-3.5 rounded-2xl bg-white border border-[#CBD5E1] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold text-[#061138]">
-                        آخرین درخواست‌های برداشت شبا ({toPersianDigits(mySettlements.length)} مورد)
-                      </span>
-                      <Link
-                        to="/app/analytics"
-                        className="text-[11px] font-extrabold text-[#0057FF] hover:underline"
-                      >
-                        مشاهده گزارش روزانه برداشت‌ها ←
-                      </Link>
-                    </div>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                      {mySettlements.slice(0, 4).map((item) => (
-                        <div
-                          key={item.id}
-                          className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs"
-                        >
-                          <div className="space-y-0.5">
-                            <p className="font-extrabold text-[#061138] tabular-nums">
-                              {formatPriceToman(item.amountToman)} ·{' '}
-                              <span className="font-mono text-[11px] text-[#475569]">
-                                {item.shebaNumber}
-                              </span>
-                            </p>
-                            <p className="text-[11px] text-[#64748B]">
-                              تاریخ ثبت درخواست: {item.createdAtJalali}
-                            </p>
-                          </div>
-                          {item.status === 'PAID' ? (
-                            <span className="px-2.5 py-1 rounded-lg bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-black">
-                              ✓ واریز شده به حساب ({item.paidAtJalali || 'تسویه پایا'})
-                            </span>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A] text-[11px] font-black">
-                              ⏳ در سیکل هفتگی شبا (پایا — شنبه‌ها)
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {showShebaConfirmModal ? (
-              <div
-                className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-                role="dialog"
-                aria-modal="true"
-              >
-                <div className="w-full max-w-md rounded-2xl bg-white border border-[#CBD5E1] shadow-2xl p-5 space-y-4">
-                  <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-black">
-                      تایید نهایی اطلاعات حساب مقصد
-                    </span>
-                    <h3 className="text-base font-black text-[#061138]">
-                      آیا واریز بیعانه به این حساب بانکی مورد تایید شماست؟
-                    </h3>
-                    <p className="text-xs text-[#64748B] leading-relaxed">
-                      لطفاً پیش از ارسال به سیکل هفتگی پایا (شبا)، شماره شبا و نام صاحب حساب زیر را بررسی فرمایید:
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[#64748B] font-semibold">
-                        مبلغ آزاد قابل واریز به شبا:
-                      </span>
-                      <span className="font-black text-[#059669] text-sm tabular-nums">
-                        {formatPriceToman(releasableWalletToman)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[#64748B] font-semibold">
-                        نام صاحب حساب:
-                      </span>
-                      <span className="font-extrabold text-[#061138]">
-                        {bankAccountHolder.trim() ||
-                          currentBiz.bankAccountHolder ||
-                          currentBiz.ownerName}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[#64748B] font-semibold">
-                        شماره شبا مقصد:
-                      </span>
-                      <span
-                        dir="ltr"
-                        className="font-mono font-bold text-[#061138]"
-                      >
-                        {cleanShebaDigits
-                          ? `IR${cleanShebaDigits}`
-                          : currentBiz.bankShebaNumber || '—'}
-                      </span>
-                    </div>
-                    {cleanCardDigits ? (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[#64748B] font-semibold">
-                          شماره کارت:
+                          {formatPriceToman(pkg.monthlyPriceToman)}
                         </span>
                         <span
-                          dir="ltr"
-                          className="font-mono font-bold text-[#475569]"
+                          className={`text-[10px] block font-bold ${
+                            pkg.isRecommended
+                              ? 'text-[#059669]'
+                              : 'text-emerald-300'
+                          }`}
                         >
-                          {cleanCardDigits}
+                          + کارمزد ۰٪ از نوبت‌ها
                         </span>
                       </div>
-                    ) : null}
-                    <div className="pt-2 border-t border-[#E2E8F0] text-[11px] text-[#B45309] font-bold">
-                      ⏰ زمان واریز: انتقال شبا در سیکل تسویه هفتگی پایا (شنبه‌ها) به حساب شما واریز می‌گردد.
                     </div>
+
+                    <ul className="space-y-2 text-xs">
+                      {pkg.features.map((feat, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <Check
+                            className={`w-4 h-4 shrink-0 mt-0.5 ${
+                              pkg.isRecommended
+                                ? 'text-[#059669]'
+                                : 'text-[#00E5FF]'
+                            }`}
+                          />
+                          <span
+                            className={
+                              pkg.isRecommended
+                                ? 'text-[#1E293B] font-semibold'
+                                : 'text-slate-100'
+                            }
+                          >
+                            {feat}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
-                  <label className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#F1F5F9] border border-[#CBD5E1] cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={dontAskShebaAgain}
-                      onChange={(e) => setDontAskShebaAgain(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-[#0057FF] rounded cursor-pointer"
-                    />
-                    <span className="text-xs font-bold text-[#061138] leading-relaxed">
-                      دیگر این پیام را به من نمایش نده (برای این شماره شبا، دفعات بعد بدون سوال ثبت شود)
+                  <Button
+                    type="button"
+                    variant={pkg.isRecommended ? 'primary' : 'accent'}
+                    size="sm"
+                    fullWidth
+                    onClick={() =>
+                      setPlanCheckoutItem({
+                        planId: pkg.id,
+                        title: `${pkg.name} (اشتراک ۱ ماهه)`,
+                        priceToman: pkg.monthlyPriceToman,
+                      })
+                    }
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      {isCurrentActive
+                        ? 'تمدید اشتراک ۱ ماهه'
+                        : `مشاهده قرارداد و خرید ${pkg.shortTitle}`}
                     </span>
-                  </label>
-
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowShebaConfirmModal(false)}
-                    >
-                      انصراف و ویرایش شماره شبا
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        if (dontAskShebaAgain && typeof window !== 'undefined') {
-                          const skipKey = `timeto_skip_sheba_confirm_${currentBiz.id}_${cleanShebaDigits || cleanCardDigits}`;
-                          window.localStorage.setItem(skipKey, '1');
-                        }
-                        setShowShebaConfirmModal(false);
-                        requestWalletSettlement(currentBiz.id);
-                      }}
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>بله، به همین حساب شبا واریز شود</span>
-                    </Button>
-                  </div>
+                  </Button>
                 </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        /* نمای اصلی و خلوت: توضیح ۱۰ نوبت هدیه + دریافت شماره کارت/شبا جهت واریز بیعانه‌ها + تعیین درصد بیعانه */
+        <Card padding="lg">
+          <form onSubmit={handleSaveFinancialSettings} className="space-y-5">
+            {/* بنر شفاف ۱۰ نوبت هدیه شروع و علت دریافت شماره کارت و شبا */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-l from-[#ECFDF5] via-[#F0FDF4] to-[#EFF6FF] border-2 border-[#10B981]/50 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10B981] text-white text-xs font-black">
+                  🎁 هدیه شروع فعالیت شما: {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت اول کاملاً رایگان (با کارمزد ۰٪)
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-white text-[#059669] border border-[#A7F3D0] text-[11px] font-extrabold tabular-nums">
+                  {toPersianDigits(quotaStatus.remainingBookingsCount)} نوبت از{' '}
+                  {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت هدیه باقی‌مانده
+                </span>
+              </div>
+              <h2 className="text-sm sm:text-base font-black text-[#061138]">
+                ما ۱۰ نوبت اول را کاملاً رایگان به شما هدیه داده‌ایم؛ شماره کارت و شبا صرفاً برای واریز بیعانه‌ها به حساب شماست
+              </h2>
+              <p className="text-xs text-[#334155] leading-relaxed">
+                برای شروع فعالیت نیازی به خرید اشتراک یا پرداخت هیچ هزینه‌ای ندارید. شماره کارت و شماره شبایی که در کادر زیر وارد می‌کنید{' '}
+                <strong className="text-[#061138]">
+                  صرفاً جهت واریز ۱۰۰٪ بیعانه‌های پرداختی مشتریان به حساب بانکی شما
+                </strong>{' '}
+                (در سیکل تسویه هفتگی شبا — شنبه‌ها) استفاده می‌شود و هیچ کارمزدی از بیعانه‌های شما کسر نخواهد شد.
+              </p>
+            </div>
+
+            {validationError ? (
+              <div
+                role="alert"
+                className="p-3.5 rounded-2xl bg-[#FEF2F2] border border-[#FECACA] flex items-start gap-2.5 text-xs font-extrabold text-[#B91C1C]"
+              >
+                <AlertCircle className="w-4 h-4 text-[#EF4444] shrink-0 mt-0.5" />
+                <span>{validationError}</span>
               </div>
             ) : null}
-          </div>
 
-          <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#E6E0F5]">
-            <Link to="/app/analytics">
-              <Button type="button" variant="ghost" size="sm">
-                <span>گزارش درآمد و دخل روزانه ←</span>
-              </Button>
-            </Link>
-            <Button type="submit" variant="primary">
-              ذخیره اطلاعات شبا، بیعانه و قرارداد همکاری
-            </Button>
-          </div>
+            {/* ۱. اطلاعات حساب بانکی جهت واریز بیعانه نوبت‌ها */}
+            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+                <div>
+                  <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    ۱. اطلاعات حساب بانکی شما (جهت واریز هفتگی بیعانه‌های مشتریان)
+                  </h3>
+                  <p className="text-[11px] text-[#64748B] mt-0.5">
+                    بیعانه‌ای که مشتریان هنگام رزرو نوبت می‌پردازند، به این شماره کارت و شبا واریز می‌گردد:
+                  </p>
+                </div>
+                {isBankSetupDone ? (
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
+                    تکمیل‌شده ✓
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] border border-[#F59E0B]/40 text-[10px] font-extrabold shrink-0">
+                    نیاز به تکمیل
+                  </span>
+                )}
+              </div>
 
-          {savedNotice ? (
-            <div className="p-2.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs font-extrabold text-[#059669] text-center">
-              اطلاعات شبا و بیعانه با موفقیت ذخیره شد ✓
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <FormField
+                  id="sub-bank-card"
+                  label="شماره کارت بانکی (۱۶ رقم جهت تسویه)"
+                >
+                  <Input
+                    id="sub-bank-card"
+                    dir="ltr"
+                    inputMode="numeric"
+                    maxLength={19}
+                    value={bankCardNumber}
+                    onChange={(e) =>
+                      setBankCardNumber(
+                        e.target.value.replace(/[^\d-]/g, '').slice(0, 19)
+                      )
+                    }
+                    placeholder="6037997512345678"
+                  />
+                </FormField>
+
+                <FormField id="sub-bank-holder" label="نام و نام خانوادگی صاحب حساب">
+                  <Input
+                    id="sub-bank-holder"
+                    value={bankAccountHolder}
+                    onChange={(e) => setBankAccountHolder(e.target.value)}
+                    placeholder="نام و نام خانوادگی صاحب حساب"
+                  />
+                </FormField>
+              </div>
+
+              <FormField
+                id="sub-bank-sheba"
+                label="شماره شبا بانکی (۲۴ رقم جهت واریز پایا بیعانه‌ها)"
+              >
+                <Input
+                  id="sub-bank-sheba"
+                  dir="ltr"
+                  maxLength={26}
+                  value={bankShebaNumber}
+                  onChange={(e) => setBankShebaNumber(e.target.value)}
+                  placeholder="IR120170000000123456789012"
+                />
+              </FormField>
             </div>
-          ) : null}
-        </form>
-      </Card>
+
+            {/* ۲. تعیین درصد بیعانه آنلاین و مهلت لغو نوبت */}
+            <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0]">
+                <div className="space-y-0.5">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
+                    ۲. تعیین درصد بیعانه آنلاین هنگام رزرو نوبت:{' '}
+                    <span className="text-[#0057FF]">
+                      ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
+                    </span>
+                  </span>
+                  <span className="text-[11px] text-[#64748B] block">
+                    مشتری هنگام رزرو آنلاین این درصد را به عنوان بیعانه پرداخت می‌کند تا حضورش تضمین شود و وقت شما نسوزد:
+                  </span>
+                </div>
+                <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
+                  بیعانه انتخابی: {toPersianDigits(depositPercentRule)}٪ ✓
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {ALLOWED_DEPOSIT_PERCENTS.map((pct) => {
+                  const isSelected = depositPercentRule === pct;
+                  const labelMap: Record<number, string> = {
+                    20: '۲۰٪ (حداقل پیشنهاد)',
+                    30: '۳۰٪ (متعادل)',
+                    50: '۵۰٪ (نصف مبلغ)',
+                    100: '۱۰۰٪ (پرداخت کامل)',
+                  };
+                  return (
+                    <button
+                      key={pct}
+                      id={`sub-deposit-preset-${pct}`}
+                      type="button"
+                      onClick={() => {
+                        setDepositPercentRule(pct);
+                        updateBusinessProfile(currentBiz.id, {
+                          depositEnabled: true,
+                          depositPercent: pct,
+                        });
+                      }}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-xs'
+                          : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                      }`}
+                    >
+                      {labelMap[pct] || `${toPersianDigits(pct)}٪`}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <FormField
+                  id="sub-cancel-deadline"
+                  label="مهلت لغو نوبت با بازگشت کامل بیعانه"
+                >
+                  <Select
+                    id="sub-cancel-deadline"
+                    value={String(cancellationDeadlineHours)}
+                    onChange={(e) => {
+                      const hrs = Number(e.target.value);
+                      setCancellationDeadlineHours(hrs);
+                      updateBusinessProfile(currentBiz.id, {
+                        cancellationDeadlineHours: hrs,
+                      });
+                    }}
+                    options={[
+                      { value: '3', label: 'تا ۳ ساعت قبل از نوبت' },
+                      { value: '6', label: 'تا ۶ ساعت قبل از نوبت' },
+                      { value: '12', label: 'تا ۱۲ ساعت قبل از نوبت' },
+                      {
+                        value: '24',
+                        label: 'تا ۲۴ ساعت قبل از نوبت (پیشنهادی)',
+                      },
+                      { value: '48', label: 'تا ۴۸ ساعت قبل از نوبت' },
+                    ]}
+                  />
+                </FormField>
+
+                <FormField
+                  id="sub-late-penalty"
+                  label="قانون کنسلی دیرهنگام (کمتر از مهلت مجاز)"
+                >
+                  <Select
+                    id="sub-late-penalty"
+                    value={String(lateCancellationPenaltyPercent)}
+                    onChange={(e) => {
+                      const pen = Number(e.target.value);
+                      setLateCancellationPenaltyPercent(pen);
+                      updateBusinessProfile(currentBiz.id, {
+                        lateCancellationPenaltyPercent: pen,
+                      });
+                    }}
+                    options={[
+                      {
+                        value: '0',
+                        label: 'بدون جریمه (بازگشت ۱۰۰٪ بیعانه)',
+                      },
+                      {
+                        value: '30',
+                        label: 'کسر ۳۰٪ خسارت دیرکرد برای سالن',
+                      },
+                      {
+                        value: '50',
+                        label: 'کسر ۵۰٪ خسارت دیرکرد برای سالن',
+                      },
+                      {
+                        value: '100',
+                        label: 'عدم بازگشت بیعانه در کنسلی دقیقه نودی',
+                      },
+                    ]}
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-wrap items-center justify-end gap-2 border-t border-[#E6E0F5]">
+              <Button type="submit" variant="primary">
+                ذخیره اطلاعات بانکی و درصد بیعانه
+              </Button>
+            </div>
+
+            {savedNotice ? (
+              <div className="p-2.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs font-extrabold text-[#059669] text-center">
+                اطلاعات بانکی و درصد بیعانه با موفقیت ذخیره شد ✓
+              </div>
+            ) : null}
+          </form>
+        </Card>
+      )}
+
+      <EasyCheckoutModal
+        isOpen={Boolean(planCheckoutItem)}
+        onClose={() => setPlanCheckoutItem(null)}
+        businessId={currentBiz.id}
+        businessName={currentBiz.name}
+        item={
+          planCheckoutItem
+            ? {
+                itemType: 'PLAN',
+                itemId: planCheckoutItem.planId,
+                itemTitle: planCheckoutItem.title,
+                baseAmountToman: planCheckoutItem.priceToman,
+              }
+            : null
+        }
+      />
     </div>
   );
 };

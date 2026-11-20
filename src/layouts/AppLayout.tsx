@@ -24,8 +24,10 @@ import {
 } from '../utils/formatters';
 import { AppointmentStatus } from '../types';
 import {
+  BusinessOnboardingWizardWorkspace,
   BusinessProfileCompletionBanner,
   computeBusinessProfileCompletion,
+  isBusinessOnboardingRouteAllowed,
 } from '../components/business/BusinessProfileCompletionWidget';
 
 const BusinessSidebar = React.lazy(() =>
@@ -342,14 +344,27 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               }
               className="flex-1 w-full px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-12 min-w-0"
             >
-              {pathname !== '/app' ? (
-                <div className="mb-4">
-                  <BusinessProfileCompletionBanner
-                    summary={businessProfileCompletion}
-                  />
-                </div>
-              ) : null}
-              {children}
+              {!businessProfileCompletion.isReadyForPublicShowcase &&
+              !isBusinessOnboardingRouteAllowed(pathname) ? (
+                <BusinessOnboardingWizardWorkspace
+                  summary={businessProfileCompletion}
+                  businessName={currentBusiness?.name}
+                  lockedFeatureTitle={
+                    currentRouteMeta?.title ?? 'این بخش از پیشخوان'
+                  }
+                />
+              ) : (
+                <>
+                  {pathname !== '/app' ? (
+                    <div className="mb-4">
+                      <BusinessProfileCompletionBanner
+                        summary={businessProfileCompletion}
+                      />
+                    </div>
+                  ) : null}
+                  {children}
+                </>
+              )}
               <div className="h-20 shrink-0 lg:hidden" aria-hidden="true" />
             </main>
           </div>

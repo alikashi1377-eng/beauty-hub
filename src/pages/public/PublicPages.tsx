@@ -543,50 +543,62 @@ export const CategoriesPage: React.FC = () => {
   );
 };
 
-/** ۴. صفحه شرایط همکاری ویژه سالن‌داران (/pricing) */
+/** ۴. صفحه شرایط همکاری و تعرفه پکیج‌های ماهانه ویژه سالن‌داران و متخصصان (/pricing) */
 export const PricingPage: React.FC = () => {
-  const commissionTiers = [
+  const subscriptionPackages = [
     {
-      id: 'tier-men',
-      title: 'آرایشگاه و پیرایش آقایان',
-      percent: 3,
-      badge: '۳٪ از کل مبلغ خدمت',
+      id: 'plan-independent',
+      title: 'پکیج ۱: پایه (متخصص مستقل)',
+      priceLabel: '۶۹۰,۰۰۰ تومان',
+      periodLabel: '/ ماهانه (۱ ماهه)',
+      badge: 'تا ۵۰ نوبت در ماه · کارمزد ۰٪',
+      isRecommended: false,
       description:
-        'مناسب آرایشگاه‌های مردانه، استایل مو و گریم داماد با ثبت نامحدود آرایشگر و تقویم نوبت‌دهی اختصاصی.',
+        'مناسب متخصصان مستقل (ناخن، مژه، فیشیال، میکاپ و پیرایشگر مستقل) با امکان ساخت پکیج‌های ترکیبی خدمات و بدون کسر هیچ کارمزدی از نوبت‌ها.',
       features: [
-        'پنل مدیریت، تقویم نوبت‌دهی و حسابداری دخل روزانه ۱۰۰٪ رایگان همیشگی',
-        'دریافت بیعانه آنلاین الزامی (۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪) جهت تضمین حضور مشتری',
-        'کسر تنها ۳٪ کارمزد از کل مبلغ خدمت از محل بیعانه دریافتی',
-        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+        '۱۰ نوبت اول کاملاً رایگان هدیه شروع فعالیت (با کارمزد ۰٪)',
+        'پذیرش تا ۵۰ نوبت آنلاین در ماه + پیامک تایید و یادآوری دوطرفه',
+        'کارمزد ۰٪ از نوبت‌ها — واریز ۱۰۰٪ بیعانه به کیف پول و تسویه هفتگی شبا',
+        'امکان ساخت پکیج‌های ترکیبی و تخفیف‌دار خدمات ✓',
+        'ثبت ۱ متخصص فعال + تقویم نوبت‌دهی، لینک اختصاصی بایو و QR کد',
+        'حسابداری دخل روزانه (آنلاین و حضوری) و پرونده مشتریان',
       ],
     },
     {
-      id: 'tier-laser',
-      title: 'مراکز لیزر موهای زائد',
-      percent: 4,
-      badge: '۴٪ از کل مبلغ خدمت',
+      id: 'plan-professional',
+      title: 'پکیج ۲: حرفه‌ای ⭐ (پرفروش)',
+      priceLabel: '۱,۰۹۰,۰۰۰ تومان',
+      periodLabel: '/ ماهانه (۱ ماهه)',
+      badge: 'تا ۱۳۰ نوبت · استوری + ۱۵٪ تخفیف بنر',
       isRecommended: true,
       description:
-        'ویژه مراکز تخصصی لیزر بانوان و آقایان با کیت‌های آماده نواحی بدن و پکیج‌های فول‌بادی.',
+        'بهترین انتخاب برای متخصصان پرمشتری و سالن‌های رو به رشد؛ شامل استوری بالای پروفایل، تیک آبی و ۱۵٪ تخفیف دائمی خرید جایگاه بنر و صدر جست‌وجو.',
       features: [
-        'پنل مدیریت، پرونده جلسات لیزر و حسابداری ۱۰۰٪ رایگان همیشگی',
-        'کیت‌های آماده خدمات لیزر بر اساس مدل دستگاه و نواحی کاربردی',
-        'کسر تنها ۴٪ کارمزد از کل مبلغ خدمت از محل بیعانه آنلاین',
-        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+        '۱۰ نوبت اول کاملاً رایگان هدیه شروع فعالیت (با کارمزد ۰٪)',
+        'پذیرش تا ۱۳۰ نوبت آنلاین در ماه + پیامک تایید و یادآوری خودکار',
+        'کارمزد ۰٪ از تمامی نوبت‌ها (واریز ۱۰۰٪ بیعانه به کیف پول)',
+        'امکان ساخت پکیج‌های ترکیبی خدمات + ثبت تا ۳ متخصص با تقویم مجزا',
+        'فعال شدن قابلیت انتشار «استوری نمونه کار و تخفیف» بالای پروفایل ✓',
+        '۱۵٪ تخفیف دائمی خرید جایگاه بنر صفحه اول و صدر نتایج جست‌وجو',
+        'تیک آبی «مجموعه تاییدشده ✓» + ۱۰۰ پیامک تبلیغاتی هدیه ماهانه',
       ],
     },
     {
-      id: 'tier-women',
-      title: 'سالن‌های زیبایی و متخصصان بانوان',
-      percent: 5,
-      badge: '۵٪ از کل مبلغ خدمت',
+      id: 'plan-vip-brand',
+      title: 'پکیج ۳: سالن و کلینیک VIP 👑',
+      priceLabel: '۱,۶۹۰,۰۰۰ تومان',
+      periodLabel: '/ ماهانه (۱ ماهه)',
+      badge: 'نوبت نامحدود · ۳۰٪ تخفیف بنر',
+      isRecommended: false,
       description:
-        'ویژه سالن‌های زیبایی بانوان، رنگ و لایت، ناخن، مژه، فیشیال و میکاپ عروس با پرسنل نامحدود.',
+        'ویژه سالن‌های بزرگ، کلینیک‌های زیبایی و مراکز لیزر پرمراجعه با تقویم چندمتخصصه، استوری طلایی و ۳۰٪ تخفیف خرید بنر و صدرنشینی.',
       features: [
-        'تقویم چندمتخصصه، گالری نمونه‌کار و حسابداری دوحالته ۱۰۰٪ رایگان همیشگی',
-        'پیامک دوطرفه خودکار ثبت نوبت برای مشتری و مدیر سالن',
-        'کسر تنها ۵٪ کارمزد از کل مبلغ خدمت از محل بیعانه آنلاین',
-        'تسویه منظم در سیکل هفتگی شبا (پایا — شنبه‌ها) پس از انجام نوبت',
+        'پذیرش نوبت آنلاین نامحدود (تا ۴۰۰ نوبت در ماه) با کارمزد ۰٪',
+        'ساخت پکیج‌های ترکیبی خدمات VIP + ثبت تا ۱۰ متخصص هم‌زمان با تقویم مجزا',
+        'انتشار استوری نامحدود با کادر طلایی VIP + نشان طلایی منتخب شهر ★',
+        '۳۰٪ تخفیف دائمی خرید بنر صفحه اول و صدر نتایج جست‌وجو (۷ و ۱۴ روزه)',
+        'اولویت نمایش بالاتر در لیست جست‌وجوی شهر + ۳۰۰ پیامک تبلیغاتی هدیه',
+        'گزارش تفکیکی عملکرد و سهم درآمد هر متخصص + تسویه هفتگی شبا',
       ],
     },
   ];
@@ -594,40 +606,40 @@ export const PricingPage: React.FC = () => {
   return (
     <div className="space-y-10">
       <PageHeader
-        kicker="ویژه مدیران سالن، مراکز لیزر و متخصصان زیبایی"
-        title="پنل مدیریت ۱۰۰٪ رایگان همیشگی — بدون حق اشتراک ماهانه"
-        subtitle="در تایم تو هیچ هزینه اشتراک ماهانه‌ای پرداخت نمی‌کنید! تمامی امکانات نرم‌افزاری پنل (تقویم نوبت‌دهی، حسابداری دخل روزانه، پرسنل نامحدود و پرونده مشتریان) کاملاً رایگان است و تنها زمانی که ما برای شما مشتری بیاوریم، درصد کارمزد توافقی از محل بیعانه کسر می‌شود."
+        kicker="ویژه متخصصان مستقل، مدیران سالن و مراکز لیزر · کارمزد ۰٪ از نوبت‌ها"
+        title="شروع با ۱۰ نوبت هدیه رایگان — سپس اشتراک شفاف ماهانه بدون کسر کارمزد"
+        subtitle="در تایم تو هیچ کارمزد درصدی از خدمات و بیعانه شما کسر نمی‌شود (کارمزد ۰٪)! ابتدا ۱۰ نوبت واقعی را کاملاً رایگان تست کنید و پس از آن با یکی از ۳ پکیج ماهانه، ۱۰۰٪ درآمد نوبت‌های خود را حفظ نمایید."
         breadcrumbs={[
           { label: 'صفحه اصلی', href: '/' },
-          { label: 'شرایط همکاری سالن‌داران' },
+          { label: 'تعرفه و شرایط همکاری' },
         ]}
       />
 
-      {/* بخش ارزش همکاری بدون ریسک برای سالن‌دار */}
+      {/* بخش ارزش همکاری بدون ریسک برای متخصص و سالن‌دار */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#ECFDF5] text-[#059669] text-xs font-extrabold">
             <CalendarCheck className="w-4 h-4" />
-            <span>صفر تومان هزینه ثابت ماهانه</span>
+            <span>۱۰ نوبت اول کاملاً رایگان</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            همه امکانات پنل از روز اول باز و رایگان است
+            ابتدا در عمل تست کنید، سپس اشتراک تهیه نمایید
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            برخلاف نرم‌افزارهای اشتراکی، نیازی به خرید پلن ماهانه ندارید؛ تقویم نامحدود پرسنل، حسابداری دخل روزانه و پرونده مشتریان برای همیشه رایگان است.
+            هر کسب‌وکار پس از تکمیل پروفایل ۵ مرحله‌ای، ۱۰ نوبت هدیه شروع با پیامک دوطرفه و کارمزد ۰٪ دریافت می‌کند تا بدون هیچ هزینه‌ای روند کار را تجربه کند.
           </p>
         </div>
 
         <div className="p-5 rounded-3xl bg-white border border-[#CBD5E1] shadow-2xs space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#E0ECFF] text-[#0057FF] text-xs font-extrabold">
             <TrendingUp className="w-4 h-4" />
-            <span>تضمین حضور مشتری با بیعانه آنلاین</span>
+            <span>کارمزد ۰٪ از بیعانه و خدمات</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            بیعانه استاندارد ۲۰٪، ۳۰٪، ۵۰٪ یا ۱۰۰٪
+            حتی روی خدمات میلیونی، هیچ درصدی کسر نمی‌شود
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            مشتری هنگام رزرو نوبت، بیعانه انتخابی شما را آنلاین پرداخت می‌کند تا وقت سالن شما هرگز با کنسلی‌های لحظه آخری نسوزد.
+            برخلاف پلتفرم‌های کمیسیونی، ۱۰۰٪ بیعانه پایه مشتری بدون کسر حتی یک ریال کمیسیون به کیف پول شما واریز می‌شود و مشتری ۲٪ هزینه درگاه بانکی را می‌پردازد.
           </p>
         </div>
 
@@ -637,21 +649,21 @@ export const PricingPage: React.FC = () => {
             <span>تسویه منظم هفتگی شبا (پایا)</span>
           </div>
           <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-            واریز خالص بیعانه‌ها در سیکل هفتگی شنبه‌ها
+            واریز ۱۰۰٪ بیعانه‌ها در سیکل هفتگی شنبه‌ها
           </h2>
           <p className="text-xs text-[#334155] leading-relaxed">
-            پس از انجام نوبت مشتری، خالص بیعانه‌های جمع‌شده در کیف پول شما در سیکل هفتگی پایا (شنبه‌ها) مستقیماً به شماره شبای ثبت‌شده شما واریز می‌گردد.
+            پس از انجام نوبت مشتری، کل بیعانه‌های جمع‌شده در کیف پول شما در سیکل هفتگی پایا (شنبه‌ها) مستقیماً به شماره شبای ثبت‌شده شما واریز می‌گردد.
           </p>
         </div>
       </div>
 
-      {/* کارت‌های نرخ کمیسیون ۳ دسته کسب‌وکار به جای پلن‌های ماهانه */}
+      {/* کارت‌های ۳ پکیج اشتراک ماهانه (فقط ۱ ماهه) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-        {commissionTiers.map((tier) => (
+        {subscriptionPackages.map((pkg) => (
           <Card
-            key={tier.id}
+            key={pkg.id}
             className={`rounded-3xl flex flex-col justify-between space-y-6 ${
-              tier.isRecommended
+              pkg.isRecommended
                 ? 'border-[#0057FF] ring-2 ring-[#0057FF]/15'
                 : ''
             }`}
@@ -659,27 +671,36 @@ export const PricingPage: React.FC = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-extrabold text-[#061138]">
-                  {tier.title}
+                  {pkg.title}
                 </h2>
-                <span className="px-3 py-1 rounded-full bg-[#E0ECFF] text-xs font-black text-[#0057FF] shrink-0">
-                  {tier.badge}
+                <span
+                  className={`px-3 py-1 rounded-full text-[11px] font-black shrink-0 ${
+                    pkg.isRecommended
+                      ? 'bg-[#0057FF] text-white'
+                      : 'bg-[#E0ECFF] text-[#0057FF]'
+                  }`}
+                >
+                  {pkg.badge}
                 </span>
               </div>
               <p className="text-xs text-[#475569] leading-relaxed">
-                {tier.description}
+                {pkg.description}
               </p>
 
               <div className="pt-2 pb-4 border-b border-[#E2E8F0]">
-                <span className="text-2xl sm:text-3xl font-extrabold text-[#059669] tabular-nums">
-                  پنل رایگان
+                <span className="text-2xl sm:text-3xl font-extrabold text-[#061138] tabular-nums">
+                  {pkg.priceLabel}
                 </span>
                 <span className="text-xs font-bold text-[#64748B] mr-1.5">
-                  + {toPersianDigits(tier.percent)}٪ کارمزد از رزرو موفق
+                  {pkg.periodLabel}
+                </span>
+                <span className="block text-xs font-extrabold text-[#059669] mt-1">
+                  ✓ همراه با ۱۰ نوبت اول رایگان + کارمزد ۰٪
                 </span>
               </div>
 
               <ul className="space-y-2.5 pt-2">
-                {tier.features.map((feat, idx) => (
+                {pkg.features.map((feat, idx) => (
                   <li
                     key={idx}
                     className="flex items-start gap-2 text-xs text-[#061138]"
@@ -693,26 +714,28 @@ export const PricingPage: React.FC = () => {
 
             <Link to="/business/register">
               <Button
-                variant={tier.isRecommended ? 'primary' : 'outline'}
+                variant={pkg.isRecommended ? 'primary' : 'outline'}
                 fullWidth
               >
-                ثبت رایگان {tier.title}
+                شروع با ۱۰ نوبت رایگان و انتخاب پکیج
               </Button>
             </Link>
           </Card>
         ))}
       </div>
 
-      {/* بخش جایگاه‌های تبلیغاتی و ارتقای جایگاه سالن‌ها */}
+      {/* بخش جایگاه‌های تبلیغاتی ۷ روزه و ۱۴ روزه (حداکثر ۲ هفته) */}
       <div className="rounded-3xl bg-[#061138] text-white p-6 sm:p-8 space-y-5 border border-[#1E293B]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
               <Sparkles className="w-4 h-4" />
-              <span>خدمات تبلیغاتی اختیاری (صدرنشینی در جست‌وجو، بنر صفحه اول و بسته پیامک)</span>
+              <span>
+                جایگاه‌های تبلیغاتی ۷ روزه و ۱۴ روزه (حداکثر ۲ هفته جهت گردش منصفانه ویترین)
+              </span>
             </span>
             <h2 className="text-lg sm:text-xl font-extrabold text-white">
-              چگونه سالن خود را بالاتر از همه رقبا در صفحه اول و صدر جست‌وجوی اصفهان نمایش دهید؟
+              بنر صفحه اول و صدر نتایج جست‌وجو با ۱۵٪ تا ۳۰٪ تخفیف ویژه مشترکین حرفه‌ای و VIP
             </h2>
           </div>
           <Link to="/app/marketing">
@@ -725,46 +748,46 @@ export const PricingPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] font-extrabold">
-              ★ صدرنشینی در جست‌وجو
+              ★ صدرنشینی در جست‌وجو (حداکثر ۲ هفته)
             </span>
             <h3 className="text-sm font-extrabold text-white">
               پین در ردیف اول نتایج جست‌وجو (/search)
             </h3>
             <p className="text-slate-200 leading-relaxed">
-              نمایش تضمینی سالن شما در بالای فهرست جست‌وجوی خدمات و محله‌ها به همراه نشان «★ آگهی ویژه».
+              نمایش تضمینی سالن شما در بالای فهرست جست‌وجوی خدمات و محله‌ها به مدت ۷ یا ۱۴ روز (حداکثر ۲ هفته).
             </p>
             <p className="font-extrabold text-[#00E5FF] pt-1 tabular-nums">
-              ۴۹۰,۰۰۰ تومان / ماهانه (یا ۱۹۰,۰۰۰ هفتگی)
+              ۵۹۰,۰۰۰ تومان (۷ روزه) | ۹۹۰,۰۰۰ تومان (۱۴ روزه)
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#00E5FF]/20 text-[#00E5FF] font-extrabold">
-              ویترین صفحه اول
+              ویترین صفحه اول (حداکثر ۲ هفته)
             </span>
             <h3 className="text-sm font-extrabold text-white">
               بنر اختصاصی در صفحه اول تایم تو
             </h3>
             <p className="text-slate-200 leading-relaxed">
-              قرارگیری بنر تصویری بزرگ سالن شما در بخش «پیشنهادهای ویژه رزرو آنلاین» صفحه اصلی با ۳.۵ برابر بازدید بیشتر.
+              قرارگیری بنر تصویری بزرگ سالن شما در بخش «پیشنهادهای ویژه رزرو آنلاین» صفحه اصلی به مدت ۱ یا ۲ هفته.
             </p>
             <p className="font-extrabold text-[#00E5FF] pt-1 tabular-nums">
-              ۸۹۰,۰۰۰ تومان / ماهانه (یا ۳۵۰,۰۰۰ هفتگی)
+              ۸۹۰,۰۰۰ تومان (۷ روزه) | ۱,۴۹۰,۰۰۰ تومان (۱۴ روزه)
             </p>
           </div>
 
           <div className="p-4 rounded-2xl bg-white/10 border border-white/15 space-y-2">
-            <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-extrabold">
-              بسته افزونه پیامک
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-extrabold">
+              پکیج ترکیبی VIP (حداکثر ۲ هفته)
             </span>
             <h3 className="text-sm font-extrabold text-white">
-              بسته ۲۰۰ پیامک خدماتی و یادآور اضافه
+              ویترین طلایی اول صفحه اصلی + صدر جست‌وجو
             </h3>
             <p className="text-slate-200 leading-relaxed">
-              شارژ فوری اعتبار پیامک سالن در هر زمان که سهمیه ماهانه پلن شما به پایان رسید.
+              جایگاه اول اسلایدر صفحه اصلی به همراه پین هم‌زمان در صدر نتایج جست‌وجوی شهر (با ۱۵٪ و ۳۰٪ تخفیف پکیج‌های ۲ و ۳).
             </p>
-            <p className="font-extrabold text-emerald-300 pt-1 tabular-nums">
-              ۱۸۰,۰۰۰ تومان / بسته ۲۰۰ عددی
+            <p className="font-extrabold text-amber-300 pt-1 tabular-nums">
+              ۱,۱۹۰,۰۰۰ تومان (۷ روزه) | ۱,۹۹۰,۰۰۰ تومان (۱۴ روزه)
             </p>
           </div>
         </div>

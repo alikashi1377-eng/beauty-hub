@@ -4,6 +4,7 @@ import {
   BarChart3,
   CalendarClock,
   CalendarDays,
+  Check,
   ChevronDown,
   ClipboardList,
   CreditCard,
@@ -341,12 +342,6 @@ export const BusinessCategorySubTabs: React.FC = () => {
   const { currentBusiness, services, specialists, gallery, plans } =
     usePrototypeData();
 
-  const activeGroup = resolveActiveBusinessGroup(location.pathname);
-
-  if (activeGroup.subTabs.length === 0) {
-    return null;
-  }
-
   const completionSummary = computeBusinessProfileCompletion({
     business: currentBusiness,
     services,
@@ -355,11 +350,16 @@ export const BusinessCategorySubTabs: React.FC = () => {
     plans,
   });
 
-  const incompleteStepByHref = new Map(
-    completionSummary.steps
-      .filter((s) => !s.completed)
-      .map((s) => [s.href.split('#')[0], s.weightPercent])
-  );
+  // در حالت ویزارد ۵ مرحله‌ای راه‌اندازی، تب‌های اضافی مخفی می‌شوند تا تمرکز فقط روی تکمیل گام‌به‌گام پروفایل باشد
+  if (!completionSummary.isReadyForPublicShowcase) {
+    return null;
+  }
+
+  const activeGroup = resolveActiveBusinessGroup(location.pathname);
+
+  if (activeGroup.subTabs.length === 0) {
+    return null;
+  }
 
   return (
     <div
@@ -370,31 +370,23 @@ export const BusinessCategorySubTabs: React.FC = () => {
         <span className="text-[11px] font-black text-[#64748B] shrink-0 pl-2 border-l border-[#E2E8F0]">
           بخش {activeGroup.label}:
         </span>
-        {activeGroup.subTabs.map((sub) => {
-          const bonusPct = incompleteStepByHref.get(sub.to);
-          return (
-            <NavLink
-              key={sub.to}
-              to={sub.to}
-              end={sub.end}
-              className={({ isActive }) =>
-                `inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-extrabold whitespace-nowrap transition-all shrink-0 ${
-                  isActive
-                    ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
-                    : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF] hover:text-[#0057FF]'
-                }`
-              }
-            >
-              {sub.icon}
-              <span>{sub.label}</span>
-              {bonusPct ? (
-                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-black">
-                  +{toPersianDigits(bonusPct)}٪
-                </span>
-              ) : null}
-            </NavLink>
-          );
-        })}
+        {activeGroup.subTabs.map((sub) => (
+          <NavLink
+            key={sub.to}
+            to={sub.to}
+            end={sub.end}
+            className={({ isActive }) =>
+              `inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-extrabold whitespace-nowrap transition-all shrink-0 ${
+                isActive
+                  ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
+                  : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF] hover:text-[#0057FF]'
+              }`
+            }
+          >
+            {sub.icon}
+            <span>{sub.label}</span>
+          </NavLink>
+        ))}
       </div>
     </div>
   );
@@ -402,7 +394,7 @@ export const BusinessCategorySubTabs: React.FC = () => {
 
 /**
  * ۳. منوی نواری چسبان پایین صفحه (Sticky Bottom Navigation Bar)
- * شامل ۵ دسته اصلی کسب‌وکار: پیشخوان | نوبت‌ها | سالن من | مشتریان | مالی و پلن
+ * در حین ویزارد ۵ مرحله‌ای، ۵ گام راه‌اندازی را با تیک سبز نمایش می‌دهد و پس از تکمیل، ۵ دسته اصلی پنل باز می‌شوند.
  */
 export const BusinessStickyBottomNav: React.FC = () => {
   const location = useLocation();
@@ -428,6 +420,10 @@ export const BusinessStickyBottomNav: React.FC = () => {
     gallery,
     plans,
   });
+
+  if (!completionSummary.isReadyForPublicShowcase) {
+    return null;
+  }
 
   const incompleteSalonStepsCount = completionSummary.steps.filter(
     (s) => !s.completed

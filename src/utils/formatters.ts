@@ -40,10 +40,30 @@ export function isValidIranMobile(phone: string): boolean {
 }
 
 /**
- * در مدل جدید کارمزدی تایم تو، محدودیتی برای تعداد متخصصان ثبت‌شده در سالن وجود ندارد
+ * سقف تعداد متخصص مجاز بر اساس پکیج اشتراک ماهانه:
+ * - پکیج ۱ (پایه · متخصص مستقل) یا دوره ۱۰ نوبت هدیه شروع: ۱ متخصص
+ * - پکیج ۲ (حرفه‌ای ⭐): تا ۳ متخصص
+ * - پکیج ۳ (سالن و کلینیک VIP 👑): تا ۱۰ متخصص
  */
-export function getPlanStaffLimitCount(_planIdOrName?: string): number {
-  return 50;
+export function getPlanStaffLimitCount(planIdOrName?: string): number {
+  const text = (planIdOrName || '').trim().toLowerCase();
+  if (
+    text.includes('vip') ||
+    text.includes('کلینیک') ||
+    text.includes('پیشرفته') ||
+    text.includes('سفیر')
+  ) {
+    return 10;
+  }
+  if (
+    text.includes('professional') ||
+    text.includes('حرفه‌ای') ||
+    text.includes('حرفه ای') ||
+    text.includes('پرفروش')
+  ) {
+    return 3;
+  }
+  return 1;
 }
 
 export function formatPriceToman(amount: number): string {
@@ -964,58 +984,81 @@ export const STANDARD_WORKING_TIME_OPTIONS: string[] = [
 ];
 
 /**
- * محاسبه پویا قیمت و عنوان بسته تبلیغاتی بر اساس جایگاه انتخاب‌شده (SEARCH_TOP, HOME_BANNER, HERO_SPOTLIGHT) و مدت زمان (۷، ۱۴، ۳۰ روز)
+ * محاسبه پویا قیمت و عنوان بسته تبلیغاتی بر اساس جایگاه انتخاب‌شده (SEARCH_TOP, HOME_BANNER, HERO_SPOTLIGHT)
+ * و مدت زمان مجاز (۷ روزه = ۱ هفته، ۱۴ روزه = ۲ هفته حداکثر مدت مجاز) به همراه اعمال تخفیف اشتراک (۱۵٪ در پکیج حرفه‌ای، ۳۰٪ در پکیج VIP)
  */
 export function computeAdPackagePriceAndTitle(params: {
   placementSlot: 'SEARCH_TOP' | 'HOME_BANNER' | 'HERO_SPOTLIGHT' | 'SMS_ADDON';
   durationDays: number;
+  discountPercent?: number;
   fallbackBaseAmount?: number;
   fallbackWeeklyAmount?: number;
   fallbackTitle?: string;
-}): { amountToman: number; title: string; baseMonthlyToman: number; weeklyToman: number } {
+}): {
+  amountToman: number;
+  originalAmountToman: number;
+  discountPercent: number;
+  discountAmountToman: number;
+  title: string;
+  baseTwoWeeksToman: number;
+  weeklyToman: number;
+  normalizedDurationDays: 7 | 14;
+} {
   const { placementSlot, durationDays } = params;
+  const normalizedDurationDays: 7 | 14 = durationDays <= 7 ? 7 : 14;
 
   const slotPricing: Record<
     string,
-    { title: string; monthly: number; weekly: number }
+    { title: string; twoWeeks: number; weekly: number }
   > = {
     SEARCH_TOP: {
       title: 'صدرنشینی در نتایج جست‌وجوی شهر',
-      monthly: 490000,
-      weekly: 190000,
+      twoWeeks: 990_000,
+      weekly: 590_000,
     },
     HOME_BANNER: {
       title: 'بنر ویژه در صفحه اول تایم تو',
-      monthly: 890000,
-      weekly: 350000,
+      twoWeeks: 1_490_000,
+      weekly: 890_000,
     },
     HERO_SPOTLIGHT: {
-      title: 'ویترین طلایی اول هیرو + صدر جست‌وجو (VIP)',
-      monthly: 1290000,
-      weekly: 490000,
+      title: 'ویترین طلایی اول صفحه اصلی + صدر جست‌وجو (VIP)',
+      twoWeeks: 1_990_000,
+      weekly: 1_190_000,
     },
   };
 
   const matched = slotPricing[placementSlot];
-  const baseMonthly = matched?.monthly ?? params.fallbackBaseAmount ?? 490000;
+  const baseTwoWeeks =
+    matched?.twoWeeks ?? params.fallbackBaseAmount ?? 990_000;
   const weekly =
     matched?.weekly ??
     params.fallbackWeeklyAmount ??
-    Math.round(baseMonthly * 0.4);
-  const resolvedTitle = matched?.title ?? params.fallbackTitle ?? 'بسته تبلیغاتی ویژه';
+    Math.round(baseTwoWeeks * 0.6);
+  const resolvedTitle =
+    matched?.title ?? params.fallbackTitle ?? 'بسته تبلیغاتی ویژه';
 
-  const amountToman =
-    durationDays === 7
-      ? weekly
-      : durationDays === 14
-      ? Math.round(baseMonthly * 0.6)
-      : baseMonthly;
+  const originalAmountToman =
+    normalizedDurationDays === 7 ? weekly : baseTwoWeeks;
+
+  const safeDiscountPercent = Math.max(
+    0,
+    Math.min(50, Math.round(Number(params.discountPercent) || 0))
+  );
+  const discountAmountToman = Math.round(
+    (originalAmountToman * safeDiscountPercent) / 100
+  );
+  const amountToman = Math.max(0, originalAmountToman - discountAmountToman);
 
   return {
     amountToman,
+    originalAmountToman,
+    discountPercent: safeDiscountPercent,
+    discountAmountToman,
     title: resolvedTitle,
-    baseMonthlyToman: baseMonthly,
+    baseTwoWeeksToman: baseTwoWeeks,
     weeklyToman: weekly,
+    normalizedDurationDays,
   };
 }
 

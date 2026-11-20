@@ -3,13 +3,27 @@ import assert from 'node:assert/strict';
 import {
   ALLOWED_DEPOSIT_PERCENTS,
   calculateBookingFinancialBreakdown,
+  FREE_TRIAL_BOOKING_QUOTA,
   isAppointmentEligibleForSettlement,
   normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
+  resolveBusinessSubscriptionQuotaStatus,
+  TIMETO_MONTHLY_PACKAGES,
   validateServiceAntiFraud,
 } from './financialEngine';
 import { AppointmentStatus, BusinessType } from '../types';
+import {
+  buildCustomerBookingTimeSlots,
+  computeAdPackagePriceAndTitle,
+  formatCompactPriceToman,
+  formatCustomerWorkingHourMinimal,
+  formatPriceToman,
+  formatServicePriceShort,
+  formatWorkingHourDisplay,
+  getPlanStaffLimitCount,
+  resolveEffectiveWorkingHour,
+} from './formatters';
 
 test('normalizeDepositPercent enforces 20..100% deposit range (preserving presets 20, 30, 50, 100) and defaults invalid/0 to 30', () => {
   assert.deepEqual(ALLOWED_DEPOSIT_PERCENTS, [20, 30, 50, 100]);
@@ -39,12 +53,12 @@ test('normalizeDepositPercent enforces 20..100% deposit range (preserving preset
   assert.equal(custom25.depositPercent, 25);
   assert.equal(custom25.baseDepositToman, 100_000);
   assert.equal(custom25.remainingInSalonToman, 300_000);
-  assert.equal(custom25.platformCommissionPercent, 3);
-  assert.equal(custom25.platformCommissionToman, 12_000);
-  assert.equal(custom25.salonNetDepositCreditedToman, 88_000);
+  assert.equal(custom25.platformCommissionPercent, 0);
+  assert.equal(custom25.platformCommissionToman, 0);
+  assert.equal(custom25.salonNetDepositCreditedToman, 100_000);
 });
 
-test('resolveBusinessCommissionMeta differentiates Men (3%), Laser (4%), and Women (5%) accurately', () => {
+test('resolveBusinessCommissionMeta differentiates Men, Laser, and Women segments while enforcing 0% commission in the subscription model', () => {
   const menMeta = resolveBusinessCommissionMeta({
     type: BusinessType.MenBarbershop,
     typeLabel: 'آرایشگاه مردانه',
@@ -53,7 +67,7 @@ test('resolveBusinessCommissionMeta differentiates Men (3%), Laser (4%), and Wom
     name: 'پیرایش رویال',
   });
   assert.equal(menMeta.segment, 'MEN');
-  assert.equal(menMeta.commissionPercent, 3);
+  assert.equal(menMeta.commissionPercent, 0);
 
   const laserMeta = resolveBusinessCommissionMeta({
     type: BusinessType.WomenSalon,
@@ -63,7 +77,7 @@ test('resolveBusinessCommissionMeta differentiates Men (3%), Laser (4%), and Wom
     name: 'کلینیک لیزر الکساندرایت',
   });
   assert.equal(laserMeta.segment, 'LASER');
-  assert.equal(laserMeta.commissionPercent, 4);
+  assert.equal(laserMeta.commissionPercent, 0);
 
   const womenMeta = resolveBusinessCommissionMeta({
     type: BusinessType.WomenSalon,
@@ -73,10 +87,10 @@ test('resolveBusinessCommissionMeta differentiates Men (3%), Laser (4%), and Wom
     name: 'سالن زیبایی گلها',
   });
   assert.equal(womenMeta.segment, 'WOMEN');
-  assert.equal(womenMeta.commissionPercent, 5);
+  assert.equal(womenMeta.commissionPercent, 0);
 });
 
-test('calculateBookingFinancialBreakdown computes exact 1M service with 20% deposit, 2% Zibal+Tax customer fee, and 5% total-service commission', () => {
+test('calculateBookingFinancialBreakdown computes exact 1M service with 20% deposit, 2% Zibal+Tax customer fee, and 0% salon commission (100% deposit credited)', () => {
   const result = calculateBookingFinancialBreakdown({
     totalServicePriceToman: 1_000_000,
     depositPercent: 20,
@@ -99,33 +113,113 @@ test('calculateBookingFinancialBreakdown computes exact 1M service with 20% depo
   assert.equal(result.customerGatewayAndTaxFeeToman, 4_200);
   // پرداختی کل مشتری در درگاه = ۲۰۴,۲۰۰ تومان
   assert.equal(result.totalCustomerOnlinePayableToman, 204_200);
-  // کمیسیون پلتفرم: ۵٪ از کل خدمت ۱,۰۰۰,۰۰۰ تومان = ۵۰,۰۰۰ تومان
-  assert.equal(result.platformCommissionPercent, 5);
-  assert.equal(result.platformCommissionToman, 50_000);
-  // واریزی خالص به کیف پول سالن‌دار = ۲۰۰,۰۰۰ - ۵۰,۰۰۰ = ۱۵۰,۰۰۰ تومان
-  assert.equal(result.salonNetDepositCreditedToman, 150_000);
+  // در مدل اشتراک ماهانه، کمیسیون کسرشده از سالن ۰٪ است و ۱۰۰٪ بیعانه (۲۰۰,۰۰۰ تومان) به کیف پول سالن واریز می‌شود
+  assert.equal(result.platformCommissionPercent, 0);
+  assert.equal(result.platformCommissionToman, 0);
+  assert.equal(result.salonNetDepositCreditedToman, 200_000);
 });
 
-test('calculateBookingFinancialBreakdown enforces 10,000 Toman minimum commission floor on Men 3% service', () => {
-  const result = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 200_000,
-    depositPercent: 30,
-    business: {
-      type: BusinessType.MenBarbershop,
-      typeLabel: 'پیرایش مردانه',
-      categorySlug: 'mens-barbershop',
-      targetGender: 'MALE',
-      name: 'پیرایش داماد',
-    },
-  });
+test('resolveBusinessSubscriptionQuotaStatus tracks 10 free trial bookings and 3 monthly subscription packages (690k, 1,090k, 1,690k)', () => {
+  assert.equal(FREE_TRIAL_BOOKING_QUOTA, 10);
+  assert.equal(TIMETO_MONTHLY_PACKAGES.length, 3);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[0].monthlyPriceToman, 690_000);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[0].monthlyBookingCap, 50);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[0].canCreateComboPackages, true);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[0].canPublishStories, false);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[0].adDiscountPercent, 0);
 
-  // ۳۰٪ از ۲۰۰,۰۰۰ تومان = ۶۰,۰۰۰ تومان بیعانه
-  assert.equal(result.baseDepositToman, 60_000);
-  // ۳٪ از ۲۰۰,۰۰۰ تومان می‌شود ۶,۰۰۰ تومان اما کف کمیسیون ۱۰,۰۰۰ تومان است
-  assert.equal(result.platformCommissionPercent, 3);
-  assert.equal(result.platformCommissionToman, 10_000);
-  // خالص واریزی به کیف پول آرایشگر = ۶۰,۰۰۰ - ۱۰,۰۰۰ = ۵۰,۰۰۰ تومان
-  assert.equal(result.salonNetDepositCreditedToman, 50_000);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[1].monthlyPriceToman, 1_090_000);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[1].monthlyBookingCap, 130);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[1].canCreateComboPackages, true);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[1].canPublishStories, true);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[1].adDiscountPercent, 15);
+
+  assert.equal(TIMETO_MONTHLY_PACKAGES[2].monthlyPriceToman, 1_690_000);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[2].monthlyBookingCap, 400);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[2].canCreateComboPackages, true);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[2].canPublishStories, true);
+  assert.equal(TIMETO_MONTHLY_PACKAGES[2].adDiscountPercent, 30);
+
+  // ۱. وضعیت ۱۰ نوبت هدیه شروع (مثلاً ۳ نوبت استفاده شده -> ۷ نوبت باقی‌مانده)
+  const sampleAppointments = Array.from({ length: 3 }, () => ({
+    businessId: 'biz-trial',
+    businessSlug: 'trial-salon',
+    businessName: 'سالن تست',
+    status: AppointmentStatus.Confirmed,
+  }));
+  const trialStatus = resolveBusinessSubscriptionQuotaStatus({
+    business: {
+      id: 'biz-trial',
+      slug: 'trial-salon',
+      name: 'سالن تست',
+      subscriptionPlan: '',
+    },
+    appointments: sampleAppointments,
+  });
+  assert.equal(trialStatus.isFreeTrial, true);
+  assert.equal(trialStatus.quotaLimit, 10);
+  assert.equal(trialStatus.remainingBookingsCount, 7);
+  assert.equal(trialStatus.isQuotaExhausted, false);
+  assert.equal(trialStatus.canCreateComboPackages, true);
+  assert.equal(trialStatus.canPublishStories, false);
+
+  // ۲. وضعیت پکیج حرفه‌ای (تا ۱۳۰ نوبت، استوری فعال، ۱۵٪ تخفیف بنر، تا ۳ متخصص)
+  const proStatus = resolveBusinessSubscriptionQuotaStatus({
+    business: {
+      id: 'biz-pro',
+      slug: 'pro-salon',
+      name: 'سالن حرفه‌ای',
+      subscriptionPlan: 'پکیج حرفه‌ای ⭐ (پرفروش)',
+    },
+    activePlanId: 'plan-professional',
+    appointments: Array.from({ length: 25 }, () => ({
+      businessId: 'biz-pro',
+      businessSlug: 'pro-salon',
+      businessName: 'سالن حرفه‌ای',
+      status: AppointmentStatus.Completed,
+    })),
+  });
+  assert.equal(proStatus.isFreeTrial, false);
+  assert.equal(proStatus.quotaLimit, 130);
+  assert.equal(proStatus.remainingBookingsCount, 105);
+  assert.equal(proStatus.canPublishStories, true);
+  assert.equal(proStatus.adDiscountPercent, 15);
+  assert.equal(proStatus.staffLimitCount, 3);
+  assert.equal(getPlanStaffLimitCount('پکیج حرفه‌ای'), 3);
+  assert.equal(getPlanStaffLimitCount('پکیج VIP'), 10);
+  assert.equal(getPlanStaffLimitCount('پکیج پایه'), 1);
+});
+
+test('computeAdPackagePriceAndTitle enforces 7-day and 14-day (2-week maximum) durations and applies 15% / 30% subscription discounts', () => {
+  // حتی اگر ۳۰ روز پاس داده شود، سقف مجاز همان ۱۴ روز (۲ هفته) است
+  const search14Base = computeAdPackagePriceAndTitle({
+    placementSlot: 'SEARCH_TOP',
+    durationDays: 30,
+    discountPercent: 0,
+  });
+  assert.equal(search14Base.normalizedDurationDays, 14);
+  assert.equal(search14Base.originalAmountToman, 990_000);
+  assert.equal(search14Base.amountToman, 990_000);
+
+  const search7ProDiscount = computeAdPackagePriceAndTitle({
+    placementSlot: 'SEARCH_TOP',
+    durationDays: 7,
+    discountPercent: 15,
+  });
+  assert.equal(search7ProDiscount.normalizedDurationDays, 7);
+  assert.equal(search7ProDiscount.originalAmountToman, 590_000);
+  assert.equal(search7ProDiscount.discountPercent, 15);
+  assert.equal(search7ProDiscount.amountToman, Math.round(590_000 * 0.85));
+
+  const banner14VipDiscount = computeAdPackagePriceAndTitle({
+    placementSlot: 'HOME_BANNER',
+    durationDays: 14,
+    discountPercent: 30,
+  });
+  assert.equal(banner14VipDiscount.normalizedDurationDays, 14);
+  assert.equal(banner14VipDiscount.originalAmountToman, 1_490_000);
+  assert.equal(banner14VipDiscount.discountPercent, 30);
+  assert.equal(banner14VipDiscount.amountToman, Math.round(1_490_000 * 0.7));
 });
 
 test('validateServiceAntiFraud blocks fake low prices, phone numbers, @ handles, and circumvention keywords', () => {
@@ -209,7 +303,7 @@ test('isAppointmentEligibleForSettlement blocks future appointments and allows c
   assert.equal(completedApt, true);
 });
 
-test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit even when depositPaidToman is undefined or 0 (e.g. Moeid Panahi DB row)', () => {
+test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit with 0% commission (100% credited to wallet)', () => {
   const dbAptWithoutDeposit = resolveAppointmentFinancialBreakdown({
     appointment: {
       priceToman: 650_000,
@@ -225,25 +319,15 @@ test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit eve
     },
   });
 
-  // ۳۰٪ از ۶۵۰,۰۰۰ تومان = ۱۹۵,۰۰۰ تومان بیعانه دریافتی آنلاین (هرگز ۰ یا رایگان نیست)
+  // ۳۰٪ از ۶۵۰,۰۰۰ تومان = ۱۹۵,۰۰۰ تومان بیعانه دریافتی آنلاین
   assert.equal(dbAptWithoutDeposit.baseDepositToman, 195_000);
   // الباقی حضوری در سالن = ۴۵۵,۰۰۰ تومان
   assert.equal(dbAptWithoutDeposit.remainingInSalonToman, 455_000);
-  // کمیسیون ۳٪ آقایان از ۶۵۰,۰۰۰ تومان = ۱۹,۵۰۰ تومان
-  assert.equal(dbAptWithoutDeposit.platformCommissionToman, 19_500);
-  // خالص واریزی به کیف پول سالن‌دار = ۱۹۵,۰۰۰ - ۱۹,۵۰۰ = ۱۷۵,۵۰۰ تومان
-  assert.equal(dbAptWithoutDeposit.salonNetDepositCreditedToman, 175_500);
+  // کمیسیون کسرشده از سالن = ۰ تومان (۰٪)
+  assert.equal(dbAptWithoutDeposit.platformCommissionToman, 0);
+  // ۱۰۰٪ بیعانه پایه به کیف پول سالن‌دار واریز می‌شود = ۱۹۵,۰۰۰ تومان
+  assert.equal(dbAptWithoutDeposit.salonNetDepositCreditedToman, 195_000);
 });
-
-import {
-  buildCustomerBookingTimeSlots,
-  formatCompactPriceToman,
-  formatCustomerWorkingHourMinimal,
-  formatPriceToman,
-  formatServicePriceShort,
-  formatWorkingHourDisplay,
-  resolveEffectiveWorkingHour,
-} from './formatters';
 
 test('formatCompactPriceToman and formatCustomerWorkingHourMinimal format thousands (<1M) and millions (>=1M) clearly', () => {
   assert.equal(formatCompactPriceToman(200_000), '۲۰۰ هزار تومان');
@@ -286,7 +370,6 @@ test('formatCompactPriceToman and formatCustomerWorkingHourMinimal format thousa
 });
 
 test('buildCustomerBookingTimeSlots generates both morning and afternoon shift slots when midday break is active', () => {
-  // حالت ۱: دو شیفته صریح (۰۹:۳۰ تا ۱۳:۳۰ و ۱۶:۰۰ تا ۲۱:۰۰)
   const twoShiftDay = {
     dayName: 'شنبه',
     isOpen: true,
@@ -325,13 +408,11 @@ test('buildCustomerBookingTimeSlots generates both morning and afternoon shift s
     schedule.afternoonSlots.some((s) => s.time === '۲۰:۳۰' && s.available),
     true
   );
-  // ساعت ۱۴:۳۰ در تایم استراحت بین روز نباید جزو نوبت‌ها باشد
   assert.equal(
     schedule.allSlots.some((s) => s.time === '۱۴:۳۰'),
     false
   );
 
-  // حالت ۲: بازیابی خودکار شیفت عصر وقتی در دیتابیس فقط closeTime = ۱۳:۳۰ بدون فیلد hasBreak برگشته باشد
   const dbTruncatedDay = {
     dayName: 'یکشنبه',
     isOpen: true,
@@ -348,75 +429,10 @@ test('buildCustomerBookingTimeSlots generates both morning and afternoon shift s
   );
 });
 
-test('calculateBookingFinancialBreakdown honors VIP Ambassador 0% commission waiver and custom 2% VIP rate', () => {
-  const zeroWaiver = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 1_000_000,
-    depositPercent: 30,
-    business: {
-      type: BusinessType.WomenSalon,
-      typeLabel: 'سالن زیبایی بانوان',
-      categorySlug: 'hair-color',
-      targetGender: 'FEMALE',
-      name: 'سالن VIP رویال',
-      isVipPartner: true,
-      vipCommissionPercent: 0,
-    },
-  });
-  assert.equal(zeroWaiver.baseDepositToman, 300_000);
-  assert.equal(zeroWaiver.platformCommissionPercent, 0);
-  assert.equal(zeroWaiver.platformCommissionToman, 0);
-  assert.equal(zeroWaiver.salonNetDepositCreditedToman, 300_000);
-
-  const customTwoPct = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 1_000_000,
-    depositPercent: 30,
-    business: {
-      type: BusinessType.WomenSalon,
-      typeLabel: 'سالن زیبایی بانوان',
-      categorySlug: 'hair-color',
-      targetGender: 'FEMALE',
-      name: 'سالن VIP رویال',
-      isVipPartner: true,
-      vipCommissionPercent: 2,
-    },
-  });
-  assert.equal(customTwoPct.platformCommissionPercent, 2);
-  assert.equal(customTwoPct.platformCommissionToman, 20_000);
-  assert.equal(customTwoPct.salonNetDepositCreditedToman, 280_000);
-});
-
-test('formatPriceToman never returns رایگان and 1M/10M service with 20% deposit & 3% commission yields 170K / 1.7M net payout', () => {
+test('formatPriceToman never returns رایگان and 400,000 Toman service with 30% deposit yields exact 120,000 deposit, 0 commission, 120,000 net payable, and 280,000 in-person', () => {
   assert.equal(formatPriceToman(0), '۰ تومان');
   assert.equal(formatPriceToman(-500), '۰ تومان');
 
-  const singleBooking = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 1_000_000,
-    depositPercent: 20,
-    business: {
-      type: BusinessType.MenBarbershop,
-      typeLabel: 'پیرایش آقایان',
-      categorySlug: 'mens-barbershop',
-      targetGender: 'MALE',
-      name: 'پیرایش تخصصی',
-    },
-  });
-  assert.equal(singleBooking.totalServicePriceToman, 1_000_000);
-  assert.equal(singleBooking.baseDepositToman, 200_000);
-  assert.equal(singleBooking.remainingInSalonToman, 800_000);
-  assert.equal(singleBooking.platformCommissionPercent, 3);
-  assert.equal(singleBooking.platformCommissionToman, 30_000);
-  assert.equal(singleBooking.salonNetDepositCreditedToman, 170_000);
-
-  // برای ۱۰ نوبت ۱ میلیونی (جمع کل خدمات ۱۰,۰۰۰,۰۰۰ تومان):
-  // بیعانه آنلاین ۲,۰۰۰,۰۰۰ تومان، حضوری در سالن ۸,۰۰۰,۰۰۰ تومان، کارمزد پلتفرم ۳۰۰,۰۰۰ تومان، خالص واریزی به سالن ۱,۷۰۰,۰۰۰ تومان
-  assert.equal(singleBooking.totalServicePriceToman * 10, 10_000_000);
-  assert.equal(singleBooking.remainingInSalonToman * 10, 8_000_000);
-  assert.equal(singleBooking.baseDepositToman * 10, 2_000_000);
-  assert.equal(singleBooking.platformCommissionToman * 10, 300_000);
-  assert.equal(singleBooking.salonNetDepositCreditedToman * 10, 1_700_000);
-});
-
-test('Amirhossein Jazini 400,000 Toman service with 30% deposit yields exact 120,000 deposit, 12,000 commission (3%), 108,000 net payable, and 280,000 in-person', () => {
   const jaziniBreakdown = resolveAppointmentFinancialBreakdown({
     appointment: {
       priceToman: 400_000,
@@ -436,8 +452,7 @@ test('Amirhossein Jazini 400,000 Toman service with 30% deposit yields exact 120
   assert.equal(jaziniBreakdown.depositPercent, 30);
   assert.equal(jaziniBreakdown.baseDepositToman, 120_000);
   assert.equal(jaziniBreakdown.remainingInSalonToman, 280_000);
-  assert.equal(jaziniBreakdown.platformCommissionPercent, 3);
-  assert.equal(jaziniBreakdown.platformCommissionToman, 12_000);
-  assert.equal(jaziniBreakdown.salonNetDepositCreditedToman, 108_000);
+  assert.equal(jaziniBreakdown.platformCommissionPercent, 0);
+  assert.equal(jaziniBreakdown.platformCommissionToman, 0);
+  assert.equal(jaziniBreakdown.salonNetDepositCreditedToman, 120_000);
 });
-
