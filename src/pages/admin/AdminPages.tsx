@@ -43,6 +43,7 @@ import {
   ApprovalStatus,
   BusinessItem,
   CategoryItem,
+  PlatformBusinessNoticeItem,
   SubscriptionPlanItem,
   SubscriptionStatus,
   SponsoredPlacementSlot,
@@ -54,10 +55,12 @@ import {
   toPersianDigits,
 } from '../../utils/formatters';
 import {
-  calculateBookingFinancialBreakdown,
+  FREE_TRIAL_BOOKING_QUOTA,
+  TIMETO_MONTHLY_PACKAGES,
   normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
   resolveBusinessCommissionMeta,
+  resolveBusinessSubscriptionQuotaStatus,
 } from '../../utils/financialEngine';
 import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
@@ -107,7 +110,7 @@ function doesAppointmentBelongToBusiness(
   return false;
 }
 
-/** محاسبه خلاصه پرونده مالی و کارکرد یک کسب‌وکار بر اساس نوبت‌های واقعی ثبت‌شده */
+/** محاسبه خلاصه پرونده مالی، سهمیه اشتراک و کارکرد یک کسب‌وکار بر اساس نوبت‌های واقعی ثبت‌شده (مدل اشتراکی با کارمزد ۰٪) */
 function computeBusinessDossierMetrics(
   business: BusinessItem,
   appointments: ReturnType<typeof usePrototypeData>['appointments'],
@@ -118,6 +121,10 @@ function computeBusinessDossierMetrics(
     doesAppointmentBelongToBusiness(a, business)
   );
   const commMeta = resolveBusinessCommissionMeta(business, paymentConfig);
+  const quotaStatus = resolveBusinessSubscriptionQuotaStatus({
+    business,
+    appointments,
+  });
 
   let totalServiceToman = 0;
   let totalDepositCollectedToman = 0;
@@ -141,16 +148,11 @@ function computeBusinessDossierMetrics(
 
     totalServiceToman += breakdown.totalServicePriceToman;
     totalDepositCollectedToman += breakdown.baseDepositToman;
-    totalCommissionToman += breakdown.platformCommissionToman;
-    totalNetToSalonToman += breakdown.salonNetDepositCreditedToman;
+    totalCommissionToman += 0;
+    totalNetToSalonToman += breakdown.baseDepositToman;
   }
 
   const depositPercent = normalizeDepositPercent(business.depositPercent);
-  const hasCustomDiscountRate = Boolean(
-    business.isVipPartner &&
-      typeof business.vipCommissionPercent === 'number' &&
-      Number.isFinite(business.vipCommissionPercent)
-  );
   const totalRemainingInSalonToman = Math.max(
     0,
     totalServiceToman - totalDepositCollectedToman
@@ -163,9 +165,9 @@ function computeBusinessDossierMetrics(
     completedCount: bizApts.filter((a) => a.status === 'COMPLETED').length,
     confirmedCount: bizApts.filter((a) => a.status === 'CONFIRMED').length,
     depositPercent,
-    commissionPercent: commMeta.commissionPercent,
+    commissionPercent: 0,
     commissionCategoryLabel: commMeta.categoryLabel,
-    hasCustomDiscountRate,
+    quotaStatus,
     totalServiceToman,
     totalRemainingInSalonToman,
     totalDepositCollectedToman,
@@ -176,7 +178,7 @@ function computeBusinessDossierMetrics(
   };
 }
 
-/** جدول جامع پرونده مالی و کارکرد هر کسب‌وکار + دکمه تسویه هفتگی و ارسال صورتحساب به سالن‌دار */
+/** جدول جامع پرونده مالی و کارکرد هر کسب‌وکار + وضعیت اشتراک/سهمیه نوبت + دکمه تسویه هفتگی شبا */
 const BusinessFinancialDossierTable: React.FC<{
   businesses: BusinessItem[];
   onInspectBusiness?: (biz: BusinessItem) => void;
@@ -190,6 +192,7 @@ const BusinessFinancialDossierTable: React.FC<{
     settleBusinessDossierByAdmin,
     refreshRealData,
     isLoadingInitialData,
+    showToast,
   } = usePrototypeData();
 
   const realBusinesses = businesses.filter(
@@ -238,7 +241,7 @@ const BusinessFinancialDossierTable: React.FC<{
           <div className="flex flex-wrap items-center gap-2">
             <Wallet className="w-5 h-5 text-[#0057FF]" />
             <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-              پرونده مالی و کارکرد هر کسب‌وکار (تعداد رزرو، جمع خدمات، بیعانه، کسر کارمزد و تسویه هفتگی)
+              پرونده مالی، سهمیه اشتراک و تسویه هفتگی شبا با کسب‌وکارها (مدل اشتراکی · کارمزد ۰٪)
             </h2>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -246,7 +249,7 @@ const BusinessFinancialDossierTable: React.FC<{
             </span>
           </div>
           <p className="text-xs text-[#475569] leading-relaxed">
-            در این جدول ریز کارکرد واقعی هر سالن طبق مفاد قرارداد و تنظیمات مدیریت به‌صورت زنده از پایگاه داده محاسبه می‌شود: کارمزد پلتفرم بر اساس <strong>کل قیمت خدمات ارائه‌شده</strong> محاسبه شده و از محل <strong>بیعانه دریافتی آنلاین</strong> کسر می‌گردد و الباقی بیعانه به شبای صاحب کسب‌وکار واریز می‌شود.
+            در مدل جدید اشتراکی تایم‌تو، هر کسب‌وکار ابتدا <strong>۱۰ نوبت رایگان هدیه شروع</strong> دارد و پس از آن یکی از <strong>۳ پکیج اشتراک ۱ ماهه</strong> را تهیه می‌کند. کارمزد پلتفرم از تمامی نوبت‌ها <strong>۰٪</strong> است و <strong>۱۰۰٪ بیعانه دریافتی آنلاین</strong> در سیکل هفتگی به شماره شبا یا کارت صاحب کسب‌وکار واریز می‌شود.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -264,18 +267,25 @@ const BusinessFinancialDossierTable: React.FC<{
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#061138] text-white text-xs font-extrabold hover:bg-[#0057FF] transition-colors"
           >
             <CreditCard className="w-4 h-4" />
-            <span>تنظیمات کارمزدها و تسویه دسته‌ای شبا</span>
+            <span>تسویه دسته‌ای شبا و خروجی پایا</span>
           </Link>
         </div>
       </div>
 
-      {/* راهنمای فرمول پویا محاسبه مالی بر اساس اطلاعات واقعی هر سالن */}
-      <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] text-xs text-[#1E3A8A] leading-relaxed">
-        <strong className="text-[#061138]">فرمول پویا و واقعی:</strong>{' '}
-        خالص قابل واریز به شبای هر کسب‌وکار به‌صورت خودکار برابر است با{' '}
-        <strong>«بیعانه واقعی دریافتی آنلاین»</strong> منهای{' '}
-        <strong>«کارمزد پلتفرم روی کل مبلغ خدمات»</strong> و منهای{' '}
-        <strong>«تسویه‌های پرداخت‌شده قبلی»</strong> (متناسب با درصد بیعانه و نرخ کارمزد اختصاصی همان سالن).
+      {/* راهنمای فرمول تسویه در مدل اشتراکی بدون کارمزد */}
+      <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 text-xs text-[#065F46] leading-relaxed flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <strong className="text-[#047857]">فرمول تسویه هفتگی (کارمزد ۰٪):</strong>{' '}
+          مبلغ قابل واریز به شبای هر کسب‌وکار برابر است با{' '}
+          <strong>«۱۰۰٪ بیعانه‌های دریافتی آنلاین»</strong> منهای{' '}
+          <strong>«تسویه‌های پرداخت‌شده قبلی»</strong>. درآمد پلتفرم از محل فروش اشتراک‌های ماهانه و جایگاه‌های تبلیغاتی ۷ و ۱۴ روزه است.
+        </div>
+        <Link
+          to="/admin/subscriptions"
+          className="font-extrabold text-[#0057FF] hover:underline shrink-0"
+        >
+          مدیریت پکیج‌های اشتراک ←
+        </Link>
       </div>
 
       <ResponsiveTable
@@ -285,7 +295,7 @@ const BusinessFinancialDossierTable: React.FC<{
         columns={[
           {
             key: 'biz',
-            header: 'کسب‌وکار، مالک و وضعیت تکمیل / قرارداد',
+            header: 'کسب‌وکار، مالک و وضعیت ویترین',
             render: ({ biz, isPublicReady }) => (
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -305,13 +315,13 @@ const BusinessFinancialDossierTable: React.FC<{
                   </span>
                 </p>
                 <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                  {biz.contractAccepted ? (
+                  {biz.bankShebaNumber || biz.bankCardNumber ? (
                     <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
-                      ✓ قرارداد تایید شده
+                      ✓ حساب بانکی ثبت‌شده
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-extrabold">
-                      ⏳ در انتظار تایید قرارداد
+                      ⏳ شبا/کارت ثبت نشده
                     </span>
                   )}
                   <span
@@ -321,15 +331,50 @@ const BusinessFinancialDossierTable: React.FC<{
                         : 'bg-rose-50 text-rose-700 border border-rose-200'
                     }`}
                   >
-                    {isPublicReady ? 'ویترین عمومی فعال' : 'مخفی تا تکمیل پروفایل'}
+                    {isPublicReady ? 'ویترین عمومی فعال' : 'در حال تکمیل پروفایل'}
                   </span>
                 </div>
               </div>
             ),
           },
           {
+            key: 'subscriptionQuota',
+            header: 'وضعیت اشتراک و سهمیه نوبت (کارمزد ۰٪)',
+            render: ({ dossier }) => {
+              const q = dossier.quotaStatus;
+              return (
+                <div className="space-y-1 text-xs tabular-nums">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                      q.isFreeTrial
+                        ? 'bg-amber-50 text-amber-900 border-amber-300'
+                        : 'bg-purple-50 text-purple-900 border-purple-200'
+                    }`}
+                  >
+                    {q.isFreeTrial
+                      ? `🎁 ۱۰ نوبت هدیه شروع`
+                      : `💎 ${q.planTitle}`}
+                  </span>
+                  <div className="font-extrabold text-[#061138]">
+                    مصرف‌شده: {toPersianDigits(q.usedBookingsCount)} از{' '}
+                    {toPersianDigits(q.quotaLimit)} نوبت
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold block ${
+                      q.isQuotaExhausted ? 'text-rose-600' : 'text-emerald-700'
+                    }`}
+                  >
+                    {q.isQuotaExhausted
+                      ? '⚠️ سهمیه تمام‌شده — نیازمند خرید/تمدید اشتراک'
+                      : `${toPersianDigits(q.remainingBookingsCount)} نوبت باقی‌مانده · کارمزد ۰٪`}
+                  </span>
+                </div>
+              );
+            },
+          },
+          {
             key: 'bookings',
-            header: 'تعداد رزرو، جمع کل خدمات و دریافتی حضوری',
+            header: 'جمع کل خدمات و دریافتی حضوری سالن',
             render: ({ dossier }) => (
               <div className="space-y-0.5 tabular-nums text-xs">
                 <span className="font-extrabold text-[#061138] block">
@@ -342,7 +387,7 @@ const BusinessFinancialDossierTable: React.FC<{
                   </strong>
                 </span>
                 <span className="text-[11px] text-[#64748B] block">
-                  دریافتی حضوری سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):{' '}
+                  دریافتی حضوری در سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):{' '}
                   <strong className="text-[#334155]">
                     {formatPriceToman(dossier.totalRemainingInSalonToman)}
                   </strong>
@@ -357,72 +402,56 @@ const BusinessFinancialDossierTable: React.FC<{
           },
           {
             key: 'deposit',
-            header: 'بیعانه الزامی و دریافتی آنلاین',
+            header: 'بیعانه دریافتی آنلاین (۱۰۰٪ سهم سالن)',
             render: ({ dossier }) => (
               <div className="space-y-1 tabular-nums text-xs">
                 <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
-                  بیعانه الزامی سالن: {toPersianDigits(dossier.depositPercent)}٪
+                  بیعانه تنظیمی سالن: {toPersianDigits(dossier.depositPercent)}٪
                 </span>
                 <span className="font-extrabold text-[#0057FF] block">
                   {formatPriceToman(dossier.totalDepositCollectedToman)}
                 </span>
-                <span className="text-[10px] text-[#64748B] block">
-                  {dossier.bookingsCount > 0
-                    ? `جمع ${toPersianDigits(dossier.depositPercent)}٪ بیعانه دریافتی آنلاین`
-                    : 'هنوز نوبتی ثبت نشده است'}
-                </span>
-              </div>
-            ),
-          },
-          {
-            key: 'commission',
-            header: 'کارمزد پلتفرم (از کل قیمت خدمات)',
-            render: ({ dossier }) => (
-              <div className="space-y-1 tabular-nums text-xs">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
-                  نرخ کارمزد: {toPersianDigits(dossier.commissionPercent)}٪ از کل خدمت
-                </span>
-                <span className="font-extrabold text-rose-600 block">
-                  {formatPriceToman(dossier.totalCommissionToman)}
-                </span>
-                <span className="text-[10px] text-[#64748B] block">
-                  {dossier.hasCustomDiscountRate
-                    ? 'نرخ تخفیف دستی مدیریت کل'
-                    : `طبق قرارداد (${dossier.commissionCategoryLabel})`}
+                <span className="text-[10px] text-emerald-700 font-bold block">
+                  کارمزد کسرشده از بیعانه: ۰ تومان (۰٪)
                 </span>
               </div>
             ),
           },
           {
             key: 'netPayable',
-            header: 'خالص قابل واریز به سالن (بیعانه منهای کارمزد)',
+            header: 'مبلغ قابل تسویه به شبا/کارت سالن',
             render: ({ biz, dossier, totalAlreadySettledToman }) => {
               const netPayable = Math.max(
                 0,
                 dossier.totalNetToSalonToman - totalAlreadySettledToman
               );
+              const accountStr = biz.bankShebaNumber || biz.bankCardNumber || '';
               return (
-                <div className="space-y-0.5 tabular-nums text-xs">
+                <div className="space-y-1 tabular-nums text-xs">
                   <span className="text-sm font-black text-emerald-700 block">
                     {formatPriceToman(netPayable)}
                   </span>
-                  <span className="text-[10px] text-[#475569] block">
-                    بیعانه آنلاین منهای {toPersianDigits(dossier.commissionPercent)}٪ کارمزد کل خدمت
-                  </span>
-                  {biz.bankShebaNumber ? (
-                    <span
-                      dir="ltr"
-                      className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
-                    >
-                      {biz.bankShebaNumber}
-                    </span>
-                  ) : biz.bankCardNumber ? (
-                    <span
-                      dir="ltr"
-                      className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
-                    >
-                      {biz.bankCardNumber}
-                    </span>
+                  {accountStr ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span
+                        dir="ltr"
+                        className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
+                      >
+                        {accountStr}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(accountStr);
+                          showToast(`شماره شبا/کارت «${biz.name}» کپی شد.`);
+                        }}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#061138] text-white text-[10px] font-bold hover:bg-[#0057FF] cursor-pointer"
+                        title="کپی شماره شبا یا کارت"
+                      >
+                        <Copy className="w-2.5 h-2.5" />
+                        <span>کپی</span>
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-[10px] text-amber-700 block">
                       شبا/کارت هنوز ثبت نشده
@@ -439,7 +468,7 @@ const BusinessFinancialDossierTable: React.FC<{
           },
           {
             key: 'actions',
-            header: 'تسویه هفتگی و ارسال صورتحساب به سالن‌دار',
+            header: 'ثبت تسویه هفتگی و ارسال صورتحساب',
             render: ({ biz }) => (
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
@@ -449,7 +478,7 @@ const BusinessFinancialDossierTable: React.FC<{
                   onClick={() => settleBusinessDossierByAdmin(biz.id)}
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>ثبت واریز هفتگی + ارسال صورتحساب</span>
+                  <span>ثبت واریز شبا + ارسال صورتحساب</span>
                 </Button>
                 {onInspectBusiness ? (
                   <Button
@@ -471,7 +500,7 @@ const BusinessFinancialDossierTable: React.FC<{
   );
 };
 
-/** مودال بررسی کامل پنل ایجادشده توسط صاحب کسب‌وکار (نمایش تمام جزئیات، خدمات، متخصصان، ساعات کاری، پرونده مالی و زمان ثبت درخواست) */
+/** مودال بررسی کامل پنل ایجادشده توسط صاحب کسب‌وکار (نمایش تمام جزئیات، خدمات، متخصصان، ساعات کاری، اشتراک و پرونده مالی) */
 const BusinessFullInspectModal: React.FC<{
   business: BusinessItem | null;
   onClose: () => void;
@@ -506,6 +535,7 @@ const BusinessFullInspectModal: React.FC<{
     0,
     dossier.totalNetToSalonToman - paidSettlementsTotal
   );
+  const q = dossier.quotaStatus;
 
   return (
     <Modal
@@ -522,12 +552,12 @@ const BusinessFullInspectModal: React.FC<{
       size="lg"
     >
       <div className="space-y-5 text-xs">
-        {/* پرونده مالی و کارکرد اختصاصی این کسب‌وکار */}
+        {/* پرونده مالی، اشتراک و کارکرد اختصاصی این کسب‌وکار */}
         <div className="p-4 rounded-2xl bg-gradient-to-br from-[#EFF6FF] to-[#F8FAFC] border-2 border-[#0057FF]/25 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-extrabold text-[#061138] text-sm flex items-center gap-1.5">
               <Wallet className="w-4 h-4 text-[#0057FF]" />
-              <span>پرونده مالی و کارکرد رزروهای «{business.name}»</span>
+              <span>پرونده مالی، اشتراک و تسویه شبا برای «{business.name}» (کارمزد ۰٪)</span>
             </h4>
             <Button
               type="button"
@@ -536,12 +566,21 @@ const BusinessFullInspectModal: React.FC<{
               onClick={() => settleBusinessDossierByAdmin(business.id)}
             >
               <Check className="w-3.5 h-3.5" />
-              <span>ثبت واریز هفتگی و ارسال صورتحساب به سالن‌دار</span>
+              <span>ثبت واریز هفتگی شبا و ارسال صورتحساب</span>
             </Button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 tabular-nums">
             <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
-              <span className="text-[11px] text-[#64748B] block">۱. تعداد و جمع کل خدمات:</span>
+              <span className="text-[11px] text-[#64748B] block">۱. اشتراک و سهمیه نوبت:</span>
+              <strong className="text-xs font-black text-[#061138] block truncate">
+                {q.isFreeTrial ? '۱۰ نوبت هدیه شروع' : q.planTitle}
+              </strong>
+              <span className="text-[10px] text-[#0057FF] font-bold block">
+                {toPersianDigits(q.usedBookingsCount)} از {toPersianDigits(q.quotaLimit)} نوبت ({toPersianDigits(q.remainingBookingsCount)} مانده)
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
+              <span className="text-[11px] text-[#64748B] block">۲. جمع کل خدمات:</span>
               <strong className="text-sm font-black text-[#061138] block">
                 {formatPriceToman(dossier.totalServiceToman)}
               </strong>
@@ -551,7 +590,7 @@ const BusinessFullInspectModal: React.FC<{
             </div>
             <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
               <span className="text-[11px] text-[#64748B] block">
-                ۲. دریافتی حضوری سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):
+                ۳. دریافتی حضوری سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):
               </span>
               <strong className="text-sm font-black text-[#334155] block">
                 {formatPriceToman(dossier.totalRemainingInSalonToman)}
@@ -562,45 +601,50 @@ const BusinessFullInspectModal: React.FC<{
             </div>
             <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
               <span className="text-[11px] text-[#64748B] block">
-                ۳. بیعانه آنلاین ({toPersianDigits(dossier.depositPercent)}٪):
+                ۴. بیعانه آنلاین ({toPersianDigits(dossier.depositPercent)}٪):
               </span>
               <strong className="text-sm font-black text-[#0057FF] block">
                 {formatPriceToman(dossier.totalDepositCollectedToman)}
               </strong>
-              <span className="text-[10px] text-[#64748B] block">
-                دریافتی در درگاه پلتفرم
-              </span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-white border border-[#CBD5E1]">
-              <span className="text-[11px] text-[#64748B] block">
-                ۴. کارمزد پلتفرم ({toPersianDigits(dossier.commissionPercent)}٪ کل خدمت):
-              </span>
-              <strong className="text-sm font-black text-rose-600 block">
-                {formatPriceToman(dossier.totalCommissionToman)}
-              </strong>
-              <span className="text-[10px] text-[#64748B] block">
-                کسرشده از محل بیعانه
+              <span className="text-[10px] text-emerald-700 font-bold block">
+                کارمزد ۰٪ (۱۰۰٪ سهم سالن)
               </span>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
               <span className="text-[11px] text-emerald-800 block">
-                ۵. خالص قابل واریز به سالن:
+                ۵. قابل تسویه به شبای سالن:
               </span>
               <strong className="text-sm font-black text-emerald-700 block">
                 {formatPriceToman(netPayableToman)}
               </strong>
               <span className="text-[10px] text-emerald-800 block">
-                بیعانه منهای کارمزد کل خدمت
+                ۱۰۰٪ بیعانه منهای تسویه قبلی
               </span>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#334155] pt-1 border-t border-[#CBD5E1]/70">
-            <span>
-              شماره شبا / کارت سالن:{' '}
-              <strong dir="ltr" className="font-mono text-[#0057FF]">
-                {business.bankShebaNumber || business.bankCardNumber || 'ثبت نشده'}
-              </strong>
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>
+                شماره شبا / کارت سالن:{' '}
+                <strong dir="ltr" className="font-mono text-[#0057FF]">
+                  {business.bankShebaNumber || business.bankCardNumber || 'ثبت نشده'}
+                </strong>
+              </span>
+              {(business.bankShebaNumber || business.bankCardNumber) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const acc = business.bankShebaNumber || business.bankCardNumber || '';
+                    navigator.clipboard?.writeText(acc);
+                    showToast('شماره شبا/کارت صاحب کسب‌وکار کپی شد.');
+                  }}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#061138] text-white text-[10px] font-bold hover:bg-[#0057FF] cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>کپی شبا/کارت</span>
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -608,12 +652,12 @@ const BusinessFullInspectModal: React.FC<{
                   const nextVip = !business.isVipPartner;
                   updateBusinessProfile(business.id, {
                     isVipPartner: nextVip,
-                    vipCommissionPercent: nextVip ? 0 : undefined,
+                    vipCommissionPercent: 0,
                   });
                   showToast(
                     nextVip
-                      ? `نشان «👑 سفیر برند VIP» و کارمزد ۰٪ برای «${business.name}» فعال شد.`
-                      : `نشان سفیر برند VIP از «${business.name}» برداشته شد و کارمزد به تعرفه عادی رسته بازگشت.`
+                      ? `نشان «👑 سفیر برند VIP» برای «${business.name}» فعال شد.`
+                      : `نشان سفیر برند VIP از «${business.name}» برداشته شد.`
                   );
                 }}
                 className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border cursor-pointer transition-colors ${
@@ -623,22 +667,14 @@ const BusinessFullInspectModal: React.FC<{
                 }`}
               >
                 {business.isVipPartner
-                  ? '✓ سفیر VIP فعال (لغو یا تغییر)'
-                  : '👑 فعال‌سازی فوری سفیر VIP (۰٪ کارمزد)'}
+                  ? '✓ نشان سفیر VIP فعال (لغو)'
+                  : '👑 اعطای نشان سفیر برند VIP'}
               </button>
-              <span>
-                وضعیت تعهدنامه و قرارداد:{' '}
-                <strong className={business.contractAccepted ? 'text-emerald-700' : 'text-amber-700'}>
-                  {business.contractAccepted
-                    ? `تایید شده (${business.contractAcceptedAtJalali || 'ثبت در سامانه'})`
-                    : 'هنوز تیک قرارداد زده نشده'}
-                </strong>
-              </span>
             </div>
           </div>
         </div>
 
-        {/* ۱. خلاصه اطلاعات مالک، تماس، موقعیت و پلن */}
+        {/* ۱. خلاصه اطلاعات مالک، تماس، موقعیت و اشتراک */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
           <div className="space-y-1.5">
             <p className="text-[#64748B] font-bold">نام سالن و تخصص اصلی:</p>
@@ -674,19 +710,14 @@ const BusinessFullInspectModal: React.FC<{
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[#64748B] font-bold">موقعیت مکانی و زمان ثبت:</p>
+            <p className="text-[#64748B] font-bold">موقعیت مکانی و وضعیت اشتراک:</p>
             <p className="font-extrabold text-[#061138]">
               {business.city} · محله {business.neighborhood}
             </p>
             <p className="text-[#334155] leading-relaxed">{business.address}</p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <span className="px-2.5 py-1 rounded-lg bg-[#E0ECFF] text-[#0057FF] font-extrabold">
-                مدل همکاری: کارمزد پلتفرم (
-                {toPersianDigits(
-                  resolveBusinessCommissionMeta(business, paymentConfig)
-                    .commissionPercent
-                )}
-                ٪)
+                مدل همکاری: اشتراکی (کارمزد ۰٪ · {q.isFreeTrial ? '۱۰ نوبت هدیه شروع' : q.planTitle})
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-[#FEF3C7] text-[#92400E] font-bold">
                 تاریخ عضویت: {business.createdAtJalali || 'ثبت‌شده در سامانه'}
@@ -1211,12 +1242,12 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۳: مجموع بیعانه‌های دریافتی، کارمزد پلتفرم و واریزی‌ها */}
+        {/* ستون ۳: مجموع بیعانه‌های سالن‌ها (کارمزد ۰٪) و درآمد اشتراک و تبلیغات */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              مجموع بیعانه‌ها و واریزی‌های تاییدشده ({toPersianDigits(activeSubscriptionsCount)}{' '}
-              سالن فعال)
+              گردش مالی تاییدشده، اشتراک‌ها و بیعانه سالن‌ها ({toPersianDigits(activeSubscriptionsCount)}{' '}
+              مرکز فعال)
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
               {approvedRevenueToman > 0
@@ -1225,10 +1256,10 @@ export const AdminDashboardPage: React.FC = () => {
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                سهم خالص سالن‌ها: {formatPriceToman(totalSalonNetShareToman)}
+                بیعانه سالن‌ها (کارمزد ۰٪): {formatPriceToman(totalSalonNetShareToman)}
               </span>
               <span className="text-[#6B6480] tabular-nums font-bold">
-                کارمزد پلتفرم: {formatPriceToman(totalPlatformCommissionToman)}
+                فروش اشتراک و تبلیغات: {formatPriceToman(approvedOrdersToman)}
               </span>
             </div>
           </div>
@@ -1615,17 +1646,18 @@ export const AdminDashboardPage: React.FC = () => {
   );
 };
 
-/** ۲. مدیریت کسب‌وکارها، زباله‌دان و ارسال پیام/اطلاعیه به سالن‌داران (/admin/businesses) */
+/** ۲. مدیریت کسب‌وکارها، زباله‌دان، پیام‌های ارسالی و اشتراک‌ها (/admin/businesses) */
 export const AdminBusinessesPage: React.FC = () => {
   const {
     businesses,
+    appointments,
     updateBusinessApproval,
     permanentlyDeleteBusiness,
     updateBusinessProfile,
     grantBusinessPlanOrAdByAdmin,
     platformBusinessNotices,
     sendPlatformBusinessNotice,
-    paymentConfig,
+    deletePlatformBusinessNotice,
     showToast,
   } = usePrototypeData();
   const [searchQuery, setSearchQuery] = useState('');
@@ -1639,32 +1671,44 @@ export const AdminBusinessesPage: React.FC = () => {
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
-  // مودال فعال‌سازی زمان‌دار (روزشمار تستی/هدیه) پلن اشتراک یا تبلیغات ویژه یا بسته سفیر برند VIP توسط مدیر کل
+  // کنترل کامل و جمع‌وجور روی کادر «آخرین پیام‌ها و اطلاعیه‌های ارسالی» + مودال مشاهده متن کامل پیام
+  const [noticesCollapsed, setNoticesCollapsed] = useState(false);
+  const [noticeTypeFilter, setNoticeTypeFilter] = useState<
+    'ALL' | 'BROADCAST' | 'DIRECT'
+  >('ALL');
+  const [viewingNotice, setViewingNotice] =
+    useState<PlatformBusinessNoticeItem | null>(null);
+
+  // مودال فعال‌سازی اشتراک ۱ ماهه (پایه / حرفه‌ای / VIP) یا جایگاه تبلیغاتی ۷ و ۱۴ روزه توسط مدیر کل
   const [grantModalBiz, setGrantModalBiz] = useState<BusinessItem | null>(null);
   const [grantTargetType, setGrantTargetType] = useState<
     'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR'
-  >('VIP_AMBASSADOR');
-  const [grantPlanName, setGrantPlanName] = useState<'حرفه‌ای' | 'VIP'>('VIP');
+  >('PLAN');
+  const [grantPlanId, setGrantPlanId] = useState<
+    'plan-independent' | 'plan-professional' | 'plan-vip-brand'
+  >('plan-professional');
   const [grantPlacement, setGrantPlacement] = useState<
     'SEARCH_TOP' | 'HOME_BANNER' | 'HERO_SPOTLIGHT'
-  >('HERO_SPOTLIGHT');
-  const [grantLabel, setGrantLabel] = useState('👑 سالن منتخب و سفیر برند تایم‌تو');
+  >('SEARCH_TOP');
+  const [grantLabel, setGrantLabel] = useState('پیشنهاد ویژه · رزرو آنلاین');
   const [grantDurationDays, setGrantDurationDays] = useState<number>(30);
-  const [grantExtraSms, setGrantExtraSms] = useState<number>(200);
+  const [grantExtraSms, setGrantExtraSms] = useState<number>(100);
   const [grantIsTrial, setGrantIsTrial] = useState<boolean>(true);
-  const [grantVipCommission, setGrantVipCommission] = useState<number>(3);
 
   const openGrantModal = (
     biz: BusinessItem,
-    defaultMode: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR' = 'VIP_AMBASSADOR'
+    defaultMode: 'PLAN' | 'SPONSORED_AD' | 'BOTH' | 'VIP_AMBASSADOR' = 'PLAN'
   ) => {
-    const standardComm = resolveBusinessCommissionMeta(biz).commissionPercent;
+    const quota = resolveBusinessSubscriptionQuotaStatus({
+      business: biz,
+      appointments,
+    });
     setGrantModalBiz(biz);
     setGrantTargetType(defaultMode);
-    setGrantPlanName(
-      defaultMode === 'VIP_AMBASSADOR' || biz.subscriptionPlan === 'VIP'
-        ? 'VIP'
-        : 'حرفه‌ای'
+    setGrantPlanId(
+      defaultMode === 'VIP_AMBASSADOR'
+        ? 'plan-vip-brand'
+        : quota.activePackage?.id || 'plan-professional'
     );
     setGrantPlacement(
       defaultMode === 'VIP_AMBASSADOR'
@@ -1676,12 +1720,13 @@ export const AdminBusinessesPage: React.FC = () => {
         ? '👑 سالن منتخب و سفیر برند تایم‌تو'
         : biz.sponsoredLabel || 'پیشنهاد ویژه · رزرو آنلاین'
     );
-    setGrantDurationDays(defaultMode === 'VIP_AMBASSADOR' ? 30 : 7);
-    setGrantExtraSms(defaultMode === 'VIP_AMBASSADOR' ? 200 : 30);
-    setGrantVipCommission(
-      biz.isVipPartner && typeof biz.vipCommissionPercent === 'number'
-        ? biz.vipCommissionPercent
-        : standardComm
+    setGrantDurationDays(defaultMode === 'SPONSORED_AD' ? 14 : 30);
+    setGrantExtraSms(
+      defaultMode === 'VIP_AMBASSADOR'
+        ? 300
+        : defaultMode === 'SPONSORED_AD'
+        ? 0
+        : 100
     );
     setGrantIsTrial(true);
   };
@@ -1693,17 +1738,18 @@ export const AdminBusinessesPage: React.FC = () => {
       businessId: grantModalBiz.id,
       grantType: grantTargetType,
       planId:
-        grantTargetType === 'VIP_AMBASSADOR' || grantPlanName === 'VIP'
-          ? 'plan-vip-brand'
-          : 'plan-professional',
+        grantTargetType === 'VIP_AMBASSADOR' ? 'plan-vip-brand' : grantPlanId,
       sponsoredPlacement: grantPlacement,
       sponsoredLabel: grantLabel,
-      durationDays: Math.max(1, Number(grantDurationDays) || 7),
+      durationDays: Math.max(1, Number(grantDurationDays) || 14),
       bonusSmsCount: Math.max(0, Number(grantExtraSms) || 0),
       isTrialGift: grantIsTrial,
-      isVipPartner: grantTargetType === 'VIP_AMBASSADOR' ? true : undefined,
-      vipCommissionPercent:
-        grantTargetType === 'VIP_AMBASSADOR' ? grantVipCommission : undefined,
+      isVipPartner:
+        grantTargetType === 'VIP_AMBASSADOR' ||
+        grantPlanId === 'plan-vip-brand'
+          ? true
+          : undefined,
+      vipCommissionPercent: 0,
     });
     setGrantModalBiz(null);
   };
@@ -1734,7 +1780,6 @@ export const AdminBusinessesPage: React.FC = () => {
       (b.ownerName && b.ownerName.includes(q)) ||
       (b.ownerPhone && b.ownerPhone.includes(q)) ||
       b.phoneDisplay.includes(q);
-    // وقتی روی «همه مراکز فعال» هستیم، رد صلاحیت‌شده‌ها (زباله‌دان) نمایش داده نشوند
     const matchStatus =
       statusFilter === 'ALL'
         ? b.approvalStatus !== 'REJECTED'
@@ -1749,15 +1794,20 @@ export const AdminBusinessesPage: React.FC = () => {
     (b) => b.id === permDeleteTargetId
   );
 
-  const openSendNoticeModal = (targetId: 'ALL' | string = 'ALL') => {
+  const openSendNoticeModal = (
+    targetId: 'ALL' | string = 'ALL',
+    prefillTitle?: string,
+    prefillMessage?: string
+  ) => {
     setNoticeTargetBizId(targetId);
     const foundBiz = sourceBusinesses.find((b) => b.id === targetId);
     setNoticeTitle(
-      targetId === 'ALL'
-        ? 'اطلاعیه مهم مدیریت پلتفرم تایم‌تو'
-        : `نکته مدیریتی ویژه «${foundBiz?.name || 'سالن شما'}»`
+      prefillTitle ??
+        (targetId === 'ALL'
+          ? 'اطلاعیه مهم مدیریت پلتفرم تایم‌تو'
+          : `نکته مدیریتی ویژه «${foundBiz?.name || 'سالن شما'}»`)
     );
-    setNoticeMessage('');
+    setNoticeMessage(prefillMessage ?? '');
     setNoticeModalOpen(true);
   };
 
@@ -1778,16 +1828,22 @@ export const AdminBusinessesPage: React.FC = () => {
     setNoticeMessage('');
   };
 
+  const filteredNotices = platformBusinessNotices.filter((n) => {
+    if (noticeTypeFilter === 'BROADCAST') return n.targetBusinessId === 'ALL';
+    if (noticeTypeFilter === 'DIRECT') return n.targetBusinessId !== 'ALL';
+    return true;
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="نظارت، جذب سالن‌های شاخص (VIP)، پرونده مالی و زباله‌دان · مراکز زیبایی واقعی"
-        title="بررسی، تایید، بسته سفیر برند (VIP) و پرونده کسب‌وکارها"
-        subtitle="در این بخش می‌توانید برای سالن‌های معتبر بسته «👑 سفیر برند تایم‌تو (معافیت کارمزد ۰٪ + جایگاه طلایی + ۲۰۰ پیامک هدیه)» فعال کنید، پرونده مالی هر سالن را تسویه نمایید یا به سالن‌داران پیام مستقیم بفرستید."
+        kicker="نظارت، سهمیه نوبت، اشتراک‌های ماهانه (کارمزد ۰٪)، پیام‌های ارسالی و زباله‌دان"
+        title="بررسی کسب‌وکارها، پیام‌های مدیریتی و فعال‌سازی اشتراک / تبلیغات"
+        subtitle="مشاهده وضعیت ۱۰ نوبت هدیه شروع یا پکیج اشتراک ۱ ماهه هر کسب‌وکار، مدیریت جمع‌وجور پیام‌ها و اطلاعیه‌های ارسالی با قابلیت مشاهده کامل متن، و فعال‌سازی اشتراک یا بنر ۷ و ۱۴ روزه."
         routePattern="/admin/businesses"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'کسب‌وکارها و زباله‌دان' },
+          { label: 'بررسی کسب‌وکارها و پیام‌ها' },
         ]}
         actions={
           <Button
@@ -1802,47 +1858,151 @@ export const AdminBusinessesPage: React.FC = () => {
         }
       />
 
-      {/* خلاصه آخرین پیام‌ها و اطلاعیه‌های ارسال‌شده به صاحبان کسب‌وکار */}
-      {platformBusinessNotices.length > 0 ? (
-        <Card className="bg-[#F8FAFC] border border-[#CBD5E1] space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-extrabold text-[#061138] flex items-center gap-1.5">
+      {/* نوار جمع‌وجور و قابل کنترل «آخرین پیام‌ها و اطلاعیه‌های ارسالی» با قابلیت کلیک برای باز شدن کامل پیام */}
+      <Card padding="sm" className="bg-[#F8FAFC] border border-[#CBD5E1] space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setNoticesCollapsed((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#061138] hover:text-[#0057FF] cursor-pointer"
+            >
               <Megaphone className="w-4 h-4 text-[#0057FF]" />
               <span>
-                آخرین پیام‌ها و اطلاعیه‌های ارسالی شما به پنل صاحبان کسب‌وکار (
-                {toPersianDigits(platformBusinessNotices.length)} مورد)
+                پیام‌ها و اطلاعیه‌های ارسالی به صاحبان کسب‌وکار (
+                {toPersianDigits(platformBusinessNotices.length)} پیام)
               </span>
-            </p>
+              {noticesCollapsed ? (
+                <ChevronDown className="w-3.5 h-3.5 text-[#64748B]" />
+              ) : (
+                <ChevronUp className="w-3.5 h-3.5 text-[#64748B]" />
+              )}
+            </button>
+
+            {!noticesCollapsed && platformBusinessNotices.length > 0 ? (
+              <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-[#E2E8F0]">
+                {[
+                  { id: 'ALL' as const, label: 'همه' },
+                  { id: 'BROADCAST' as const, label: 'سراسری' },
+                  { id: 'DIRECT' as const, label: 'اختصاصی سالن' },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setNoticeTypeFilter(f.id)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold cursor-pointer transition-colors ${
+                      noticeTypeFilter === f.id
+                        ? 'bg-[#0057FF] text-white'
+                        : 'text-[#64748B] hover:text-[#061138]'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setNoticesCollapsed((prev) => !prev)}
+              className="px-2.5 py-1 rounded-lg bg-white border border-[#CBD5E1] text-[11px] font-bold text-[#334155] hover:bg-[#F1F5F9] cursor-pointer"
+            >
+              {noticesCollapsed ? 'باز کردن لیست پیام‌ها' : 'جمع کردن کادر'}
+            </button>
             <button
               type="button"
               onClick={() => openSendNoticeModal('ALL')}
-              className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-[#0057FF] text-white text-[11px] font-extrabold hover:bg-[#0046CC] cursor-pointer"
             >
-              + ارسال پیام جدید
+              + پیام جدید
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {platformBusinessNotices.slice(0, 4).map((item) => (
-              <div
-                key={item.id}
-                className="p-3 rounded-2xl bg-white border border-[#E2E8F0] text-xs space-y-1"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-extrabold text-[#061138]">
-                    {item.title}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-bold">
-                    مخاطب: {item.targetBusinessName || 'همه کسب‌وکارها'}
-                  </span>
-                </div>
-                <p className="text-[#475569] leading-relaxed line-clamp-2">
-                  {item.message}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
+        </div>
+
+        {!noticesCollapsed ? (
+          filteredNotices.length === 0 ? (
+            <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0] text-[11px] text-[#64748B] text-center">
+              هنوز پیامی در این بخش ثبت نشده است.
+            </div>
+          ) : (
+            <div className="divide-y divide-[#E2E8F0] rounded-xl bg-white border border-[#E2E8F0] max-h-48 overflow-y-auto">
+              {filteredNotices.map((item) => {
+                const isRead =
+                  Array.isArray(item.readByBusinessIds) &&
+                  item.readByBusinessIds.length > 0;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setViewingNotice(item)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setViewingNotice(item);
+                      }
+                    }}
+                    className="px-3 py-2 hover:bg-[#EFF6FF]/60 transition-colors cursor-pointer flex items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0 ${
+                          item.targetBusinessId === 'ALL'
+                            ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                            : 'bg-[#E0ECFF] text-[#0057FF]'
+                        }`}
+                      >
+                        {item.targetBusinessName || 'همه کسب‌وکارها'}
+                      </span>
+                      <span className="font-extrabold text-[#061138] truncate">
+                        {item.title}:
+                      </span>
+                      <span className="text-[#475569] truncate">
+                        {item.message}
+                      </span>
+                    </div>
+
+                    <div
+                      className="flex items-center gap-1.5 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          isRead
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {isRead ? '✓ خوانده‌شده' : 'ارسال‌شده'}
+                      </span>
+                      <span className="text-[10px] text-[#64748B] hidden sm:inline">
+                        {item.createdAtJalali}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setViewingNotice(item)}
+                        className="px-2 py-0.5 rounded-lg bg-[#EFF6FF] text-[#0057FF] hover:bg-[#DBEAFE] text-[10px] font-extrabold cursor-pointer"
+                      >
+                        مشاهده کامل
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePlatformBusinessNotice(item.id)}
+                        title="حذف این پیام"
+                        className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : null}
+      </Card>
 
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E6E0F5]">
@@ -1971,12 +2131,12 @@ export const AdminBusinessesPage: React.FC = () => {
         columns={[
           {
             key: 'name',
-            header: 'عنوان کسب‌وکار، تاریخ عضویت، مدل همکاری و وضعیت قرارداد',
+            header: 'عنوان کسب‌وکار، اشتراک فعال، سهمیه نوبت و حساب بانکی',
             render: (b) => {
-              const commPct = resolveBusinessCommissionMeta(
-                b,
-                paymentConfig
-              ).commissionPercent;
+              const quota = resolveBusinessSubscriptionQuotaStatus({
+                business: b,
+                appointments,
+              });
               return (
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -1985,21 +2145,32 @@ export const AdminBusinessesPage: React.FC = () => {
                     </span>
                     {b.isVipPartner ? (
                       <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                        👑 سفیر برند VIP (کارمزد {toPersianDigits(b.vipCommissionPercent ?? 0)}٪)
+                        👑 سفیر برند VIP
                       </span>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-[#0057FF] font-bold">
-                      تاریخ عضویت: {b.createdAtJalali || 'ثبت‌شده در سامانه'} · کارمزد پلتفرم: {toPersianDigits(commPct)}٪
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                        quota.isFreeTrial
+                          ? 'bg-amber-50 text-amber-900 border-amber-300'
+                          : 'bg-purple-50 text-purple-900 border-purple-200'
+                      }`}
+                    >
+                      {quota.isFreeTrial
+                        ? `🎁 ۱۰ نوبت هدیه شروع (${toPersianDigits(quota.remainingBookingsCount)} مانده)`
+                        : `💎 ${quota.planTitle} (${toPersianDigits(quota.remainingBookingsCount)} نوبت مانده)`}
                     </span>
-                    {b.contractAccepted ? (
+                    <span className="text-[11px] text-emerald-700 font-bold">
+                      کارمزد ۰٪
+                    </span>
+                    {b.bankShebaNumber || b.bankCardNumber ? (
                       <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
-                        ✓ قرارداد تایید شده
+                        ✓ شبا/کارت ثبت‌شده
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
-                        ⚠️ قرارداد تایید نشده
+                        ⚠️ شبا/کارت ثبت نشده
                       </span>
                     )}
                     {b.isSponsored &&
@@ -2069,7 +2240,7 @@ export const AdminBusinessesPage: React.FC = () => {
           },
           {
             key: 'actions',
-            header: 'عملیات مدیر، بسته سفیر برند (VIP) و مدیریت',
+            header: 'عملیات مدیر، فعال‌سازی اشتراک / بنر و پیام',
             render: (b) => (
               <div className="flex flex-wrap items-center gap-1.5">
                 {b.approvalStatus !== 'REJECTED' ? (
@@ -2095,17 +2266,17 @@ export const AdminBusinessesPage: React.FC = () => {
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => openGrantModal(b, 'VIP_AMBASSADOR')}
+                      onClick={() => openGrantModal(b, 'PLAN')}
                     >
                       <Crown className="w-3.5 h-3.5" />
-                      <span>👑 اعطای بسته سفیر برند VIP</span>
+                      <span>💎 فعال‌سازی اشتراک ۱ ماهه</span>
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => openGrantModal(b, 'SPONSORED_AD')}
                     >
-                      <span>🎁 تبلیغ ویژه زمان‌دار</span>
+                      <span>🌟 بنر و صدرنشینی ۷/۱۴ روزه</span>
                     </Button>
                   </>
                 ) : null}
@@ -2185,27 +2356,121 @@ export const AdminBusinessesPage: React.FC = () => {
         ]}
       />
 
-      {/* مودال فعال‌سازی بسته سفیر برند VIP، پلن اشتراک و تبلیغات ویژه برای کسب‌وکار */}
+      {/* مودال مشاهده کامل متن پیام / اطلاعیه ارسال‌شده به کسب‌وکارها */}
+      <Modal
+        isOpen={Boolean(viewingNotice)}
+        onClose={() => setViewingNotice(null)}
+        title={viewingNotice?.title || 'جزئیات پیام و اطلاعیه مدیریتی'}
+        description={
+          viewingNotice
+            ? `مخاطب: ${
+                viewingNotice.targetBusinessName || 'همه کسب‌وکارها'
+              } · زمان ارسال: ${viewingNotice.createdAtJalali}`
+            : ''
+        }
+      >
+        {viewingNotice ? (
+          <div className="space-y-4 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[#64748B]">گیرنده پیام:</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] font-extrabold">
+                  {viewingNotice.targetBusinessName || 'همه صاحبان کسب‌وکار'}
+                </span>
+              </div>
+              <span
+                className={`px-2.5 py-0.5 rounded-full font-extrabold ${
+                  viewingNotice.readByBusinessIds?.length > 0
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}
+              >
+                {viewingNotice.readByBusinessIds?.length > 0
+                  ? `✓ مشاهده‌شده توسط ${toPersianDigits(
+                      viewingNotice.readByBusinessIds.length
+                    )} کسب‌وکار`
+                  : '⏳ ارسال‌شده به پنل سالن‌دار'}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border-2 border-[#0057FF]/20 space-y-2">
+              <p className="text-[11px] font-bold text-[#64748B]">
+                متن کامل پیام ارسال‌شده:
+              </p>
+              <p className="text-sm text-[#061138] leading-7 whitespace-pre-wrap font-medium">
+                {viewingNotice.message}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => {
+                  const idToDelete = viewingNotice.id;
+                  setViewingNotice(null);
+                  deletePlatformBusinessNotice(idToDelete);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-extrabold hover:bg-rose-100 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف این پیام</span>
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(viewingNotice.message);
+                    showToast('متن کامل پیام کپی شد.');
+                  }}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>کپی متن</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    const target = viewingNotice.targetBusinessId;
+                    const title = viewingNotice.title;
+                    const msg = viewingNotice.message;
+                    setViewingNotice(null);
+                    openSendNoticeModal(target, title, msg);
+                  }}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>ویرایش / ارسال مجدد</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* مودال فعال‌سازی یکی از ۳ پکیج اشتراک ۱ ماهه (کارمزد ۰٪) یا جایگاه تبلیغاتی ۷ و ۱۴ روزه */}
       <Modal
         isOpen={Boolean(grantModalBiz)}
         onClose={() => setGrantModalBiz(null)}
-        title={`فعال‌سازی بسته سفیر برند (VIP) یا تبلیغ زمان‌دار برای «${grantModalBiz?.name || ''}»`}
-        description="برای جذب سالن‌های شاخص و معتبر، می‌توانید بسته ویژه «👑 سفیر برند تایم‌تو» (شامل معافیت کارمزد ۰٪، نشان طلایی، جایگاه اول صفحه اصلی و ۲۰۰ پیامک هدیه) یا پلن/تبلیغ زمان‌دار فعال کنید."
+        title={`فعال‌سازی پکیج اشتراک ۱ ماهه یا جایگاه تبلیغاتی برای «${grantModalBiz?.name || ''}»`}
+        description="در مدل اشتراکی جدید تایم‌تو (کارمزد ۰٪)، می‌توانید یکی از ۳ پکیج اشتراک ماهانه یا جایگاه تبلیغاتی ۷ و ۱۴ روزه (صدر جست‌وجو / بنر صفحه اول) را برای این کسب‌وکار فعال کنید."
       >
         <form onSubmit={handleGrantSubmit} className="space-y-4 text-xs">
           <div className="space-y-1.5">
             <label className="font-extrabold text-[#061138] block">
-              ۱. چه بسته یا قابلیتی برای این کسب‌وکار فعال شود؟
+              ۱. چه اشتراک یا جایگاه تبلیغاتی برای این کسب‌وکار فعال شود؟
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
+                { id: 'PLAN' as const, label: '💎 پکیج اشتراک ۱ ماهه' },
+                { id: 'SPONSORED_AD' as const, label: '🌟 تبلیغ ۷ یا ۱۴ روزه' },
+                { id: 'BOTH' as const, label: 'اشتراک + تبلیغ ویژه' },
                 {
                   id: 'VIP_AMBASSADOR' as const,
-                  label: '👑 سفیر برند VIP (پیشنهادی)',
+                  label: '👑 سفیر برند VIP',
                 },
-                { id: 'PLAN' as const, label: 'فقط پلن اشتراک' },
-                { id: 'SPONSORED_AD' as const, label: 'فقط تبلیغ ویژه' },
-                { id: 'BOTH' as const, label: 'پلن + تبلیغ ویژه' },
               ].map((opt) => (
                 <button
                   key={opt.id}
@@ -2213,11 +2478,15 @@ export const AdminBusinessesPage: React.FC = () => {
                   onClick={() => {
                     setGrantTargetType(opt.id);
                     if (opt.id === 'VIP_AMBASSADOR') {
-                      setGrantPlanName('VIP');
+                      setGrantPlanId('plan-vip-brand');
                       setGrantPlacement('HERO_SPOTLIGHT');
                       setGrantLabel('👑 سالن منتخب و سفیر برند تایم‌تو');
                       setGrantDurationDays(30);
-                      setGrantExtraSms(200);
+                      setGrantExtraSms(300);
+                    } else if (opt.id === 'SPONSORED_AD') {
+                      setGrantDurationDays(14);
+                    } else {
+                      setGrantDurationDays(30);
                     }
                   }}
                   className={`py-2 px-2.5 rounded-xl font-extrabold border transition-all cursor-pointer ${
@@ -2234,75 +2503,45 @@ export const AdminBusinessesPage: React.FC = () => {
             </div>
           </div>
 
-          {grantTargetType === 'VIP_AMBASSADOR' ? (
-            <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300">
-              <div className="flex items-center gap-2 text-amber-950 font-black text-xs">
-                <Crown className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  مزایای رقابتی بسته «سفیر برند و سالن منتخب تایم‌تو» برای جذب سالن‌های شاخص:
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] text-amber-900 font-bold list-disc pr-4">
-                <li>معافیت کامل کارمزد پلتفرم (۰٪ کارمزد) یا کارمزد ویژه توافقی در کل دوره</li>
-                <li>نشان طلایی «👑 سالن منتخب و سفیر برند تایم‌تو» در بالای کارت و پروفایل سالن</li>
-                <li>قرارگیری مستقیم در ویترین طلایی بالای صفحه اول و صدر نتایج جست‌وجوی اصفهان</li>
-                <li>شارژ فوری ۲۰۰ پیامک هدیه اختصاصی + ارسال پیام تبریک رسمی به پنل سالن‌دار</li>
-              </ul>
-              <div className="space-y-1.5 pt-2 border-t border-amber-200">
-                <label className="font-extrabold text-[#061138] block">
-                  نرخ کارمزد اختصاصی این سالن شاخص (در محاسبات مالی و تسویه شبا):
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { rate: 0, label: '۰٪ (معافیت کامل کارمزد)' },
-                    { rate: 2, label: '۲٪ (کارمزد ویژه سفیر)' },
-                    { rate: 3, label: '۳٪ (کارمزد ترجیحی)' },
-                  ].map((item) => (
-                    <button
-                      key={item.rate}
-                      type="button"
-                      onClick={() => setGrantVipCommission(item.rate)}
-                      className={`py-2 px-2 rounded-xl font-extrabold border text-center cursor-pointer transition-all ${
-                        grantVipCommission === item.rate
-                          ? 'bg-[#061138] text-amber-300 border-[#061138]'
-                          : 'bg-white text-[#061138] border-amber-300'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {grantTargetType === 'PLAN' || grantTargetType === 'BOTH' ? (
-            <div className="space-y-2 p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
+          {grantTargetType === 'PLAN' ||
+          grantTargetType === 'BOTH' ||
+          grantTargetType === 'VIP_AMBASSADOR' ? (
+            <div className="space-y-2 p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1]">
               <label className="font-extrabold text-[#061138] block">
-                انتخاب سطح پلن اشتراک:
+                انتخاب پکیج اشتراک ۱ ماهه (تمامی پکیج‌ها با کارمزد ۰٪ روی نوبت‌ها):
               </label>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    id: 'حرفه‌ای' as const,
-                    label: 'پلن حرفه‌ای (۱۰ متخصص + قفل‌گشایی کامل مالی/مشتریان)',
-                  },
-                  {
-                    id: 'VIP' as const,
-                    label: 'پلن VIP و چندشعبه‌ای (پرسنل نامحدود + امکانات کامل)',
-                  },
-                ].map((pl) => (
+              <div className="grid grid-cols-1 gap-2">
+                {TIMETO_MONTHLY_PACKAGES.map((pkg) => (
                   <button
-                    key={pl.id}
+                    key={pkg.id}
                     type="button"
-                    onClick={() => setGrantPlanName(pl.id)}
-                    className={`p-2.5 rounded-xl text-right font-extrabold border transition-all cursor-pointer ${
-                      grantPlanName === pl.id
+                    onClick={() => {
+                      setGrantPlanId(pkg.id);
+                      setGrantExtraSms(pkg.freeMarketingSmsMonthly);
+                    }}
+                    className={`p-3 rounded-xl text-right border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                      grantPlanId === pkg.id
                         ? 'bg-[#061138] text-white border-[#061138]'
-                        : 'bg-white text-[#061138] border-[#CBD5E1]'
+                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
                     }`}
                   >
-                    {pl.label}
+                    <div className="space-y-0.5">
+                      <div className="font-extrabold text-xs">{pkg.shortTitle}</div>
+                      <div
+                        className={`text-[11px] ${
+                          grantPlanId === pkg.id ? 'text-slate-300' : 'text-[#64748B]'
+                        }`}
+                      >
+                        {pkg.monthlyBookingCapLabel} · {pkg.staffLimitLabel} · پکیج ترکیبی ✓
+                        {pkg.canPublishStories ? ' · استوری ✓' : ''}
+                        {pkg.adDiscountPercent > 0
+                          ? ` · ${toPersianDigits(pkg.adDiscountPercent)}٪ تخفیف بنر`
+                          : ''}
+                      </div>
+                    </div>
+                    <span className="font-black text-xs shrink-0 tabular-nums">
+                      {formatPriceToman(pkg.monthlyPriceToman)} / ماه
+                    </span>
                   </button>
                 ))}
               </div>
@@ -2313,7 +2552,7 @@ export const AdminBusinessesPage: React.FC = () => {
           grantTargetType === 'BOTH' ||
           grantTargetType === 'VIP_AMBASSADOR' ? (
             <div className="space-y-3 p-3 rounded-2xl bg-[#ECFDF5]/60 border border-[#A7F3D0]">
-              <FormField id="grant-ad-slot" label="جایگاه تبلیغاتی ویژه">
+              <FormField id="grant-ad-slot" label="جایگاه تبلیغاتی ویژه (۷ یا ۱۴ روزه)">
                 <Select
                   id="grant-ad-slot"
                   value={grantPlacement}
@@ -2327,16 +2566,16 @@ export const AdminBusinessesPage: React.FC = () => {
                   }
                   options={[
                     {
-                      value: 'HERO_SPOTLIGHT',
-                      label: '🏆 منتخب ماه مراجعان + ویترین طلایی بالای صفحه اصلی',
+                      value: 'SEARCH_TOP',
+                      label: '🔍 صدر نتایج جست‌وجوی شهر (/search) — ۷ یا ۱۴ روزه',
                     },
                     {
                       value: 'HOME_BANNER',
-                      label: '🌟 بنر ویژه صفحه اصلی (پایین صفحه اول) + صدر جست‌وجو',
+                      label: '🌟 بنر ویژه صفحه اصلی + صدر جست‌وجو — ۷ یا ۱۴ روزه',
                     },
                     {
-                      value: 'SEARCH_TOP',
-                      label: '🔍 صدر نتایج جست‌وجوی شهر (/search)',
+                      value: 'HERO_SPOTLIGHT',
+                      label: '🏆 منتخب ماه مراجعان + ویترین طلایی بالای صفحه اصلی',
                     },
                   ]}
                 />
@@ -2346,7 +2585,7 @@ export const AdminBusinessesPage: React.FC = () => {
                   id="grant-ad-label"
                   value={grantLabel}
                   onChange={(e) => setGrantLabel(e.target.value)}
-                  placeholder="مثلاً: 👑 سالن منتخب و سفیر برند تایم‌تو"
+                  placeholder="مثلاً: پیشنهاد ویژه · رزرو آنلاین"
                 />
               </FormField>
             </div>
@@ -2354,10 +2593,10 @@ export const AdminBusinessesPage: React.FC = () => {
 
           <div className="space-y-2">
             <label className="font-extrabold text-[#061138] block">
-              ۲. مدت اعتبار (روزشمار خودکار در پنل کسب‌وکار):
+              ۲. مدت اعتبار (پکیج اشتراک: ۳۰ روزه / جایگاه بنر و صدرنشینی: ۷ یا ۱۴ روزه):
             </label>
             <div className="flex flex-wrap items-center gap-2">
-              {[3, 7, 14, 30, 90].map((d) => (
+              {[7, 14, 30].map((d) => (
                 <button
                   key={d}
                   type="button"
@@ -2368,15 +2607,19 @@ export const AdminBusinessesPage: React.FC = () => {
                       : 'bg-white text-[#334155] border-[#CBD5E1]'
                   }`}
                 >
-                  {toPersianDigits(d)} روز
+                  {d === 7
+                    ? '۷ روز (یک هفته)'
+                    : d === 14
+                    ? '۱۴ روز (دو هفته — سقف بنر)'
+                    : '۳۰ روز (اشتراک ۱ ماهه)'}
                 </button>
               ))}
               <div className="flex items-center gap-1.5 mr-auto">
-                <span className="text-[#64748B] font-bold">تعداد روز دلخواه:</span>
+                <span className="text-[#64748B] font-bold">روز دلخواه:</span>
                 <input
                   type="number"
                   min={1}
-                  max={365}
+                  max={90}
                   dir="ltr"
                   value={grantDurationDays}
                   onChange={(e) =>
@@ -2413,7 +2656,7 @@ export const AdminBusinessesPage: React.FC = () => {
                   onChange={(e) => setGrantIsTrial(e.target.checked)}
                   className="w-4 h-4 accent-[#0057FF]"
                 />
-                <span>ثبت به‌عنوان «تست هدیه مدیریت» (با اعلان در پنل سالن)</span>
+                <span>ارسال اعلان فعال‌سازی به پیشخوان سالن‌دار</span>
               </label>
             </div>
           </div>
@@ -3468,7 +3711,7 @@ export const AdminCategoriesPage: React.FC = () => {
 };
 
 
-/** ۵. مدیریت اشتراک‌ها و جایگاه‌های تبلیغاتی (/admin/subscriptions) */
+/** ۵. مدیریت اشتراک‌های ماهانه، سهمیه نوبت‌ها و جایگاه‌های تبلیغاتی (/admin/subscriptions) */
 export const AdminSubscriptionsPage: React.FC = () => {
   const {
     plans,
@@ -3476,9 +3719,9 @@ export const AdminSubscriptionsPage: React.FC = () => {
     adPackages,
     updateAdPackage,
     businesses,
+    appointments,
     updateBusinessProfile,
     grantBusinessPlanOrAdByAdmin,
-    paymentConfig,
     paymentOrders,
     reviewPaymentOrder,
     showToast,
@@ -3510,7 +3753,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
   const [bizPlacementSlot, setBizPlacementSlot] =
     useState<SponsoredPlacementSlot>('SEARCH_TOP');
   const [bizSponsoredOrder, setBizSponsoredOrder] = useState('1');
-  const [bizSponsoredDays, setBizSponsoredDays] = useState('30');
+  const [bizSponsoredDays, setBizSponsoredDays] = useState('14');
   const [bizSponsoredLabel, setBizSponsoredLabel] = useState('');
   const [bizExtraSms, setBizExtraSms] = useState('0');
   const [bizPlanName, setBizPlanName] = useState('');
@@ -3575,7 +3818,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
     setBizSponsoredActive(Boolean(biz.isSponsored));
     setBizPlacementSlot(biz.sponsoredPlacement || 'SEARCH_TOP');
     setBizSponsoredOrder(String(biz.sponsoredOrder ?? 1));
-    setBizSponsoredDays(String(biz.sponsoredDaysRemaining ?? 30));
+    setBizSponsoredDays(String(biz.sponsoredDaysRemaining ?? 14));
     setBizSponsoredLabel(biz.sponsoredLabel || 'پیشنهاد ویژه رزرو آنلاین');
     setBizExtraSms(String(biz.extraSmsBalance ?? 0));
     setBizPlanName(biz.subscriptionPlan);
@@ -3609,14 +3852,12 @@ export const AdminSubscriptionsPage: React.FC = () => {
       subscriptionPlan: bizPlanName || managingBiz.subscriptionPlan,
       trialDaysRemaining: trialNum,
       planExpiresAtMs:
-        trialNum > 0 ? nowMs + trialNum * 24 * 60 * 60 * 1000 : undefined,
+        trialNum > 0 ? nowMs + trialNum * 24 * 60 * 60 * 1000 : nowMs + 30 * 24 * 60 * 60 * 1000,
       subscriptionStatus:
         trialNum > 0 ? SubscriptionStatus.Trial : SubscriptionStatus.Active,
     });
     showToast(
-      `تنظیمات جایگاه تبلیغاتی، دوره تست (${toPersianDigits(
-        trialNum
-      )} روز) و اشتراک «${managingBiz.name}» ذخیره شد.`
+      `تنظیمات جایگاه تبلیغاتی، اشتراک و پیامک «${managingBiz.name}» ذخیره شد.`
     );
     setManagingBiz(null);
   };
@@ -3636,35 +3877,152 @@ export const AdminSubscriptionsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="سفیر برند VIP، کارمزد اختصاصی و بسته‌های تبلیغاتی (Boost)"
-        title="مدیریت نشان «سفیر برند VIP»، کارمزد اختصاصی سالن‌ها و تبلیغات ویژه"
-        subtitle="اعطای مستقیم نشان 👑 سفیر برند VIP و تعیین نرخ کارمزد اختصاصی (۰٪ تا ۴٪) برای هر کسب‌وکار، به همراه تنظیم جایگاه بنرها و بسته‌های پیامک"
+        kicker="مدل درآمدی جدید تایم‌تو · کارمزد ۰٪ · ۱۰ نوبت هدیه شروع + ۳ پکیج اشتراک ۱ ماهه + جایگاه‌های تبلیغاتی ۷ و ۱۴ روزه"
+        title="مدیریت ۳ پکیج اشتراک ماهانه، سهمیه نوبت کسب‌وکارها و جایگاه‌های تبلیغاتی"
+        subtitle="در مدل جدید، کارمزد پلتفرم از تمامی نوبت‌ها ۰٪ است و ۱۰۰٪ بیعانه به حساب صاحب کسب‌وکار تسویه می‌شود. درآمد پلتفرم از فروش ۳ پکیج اشتراک ۱ ماهه (پس از ۱۰ نوبت هدیه شروع) و جایگاه‌های بنر/صدرنشینی (۷ و ۱۴ روزه) تامین می‌گردد."
         routePattern="/admin/subscriptions"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'سفیر برند VIP و تبلیغات' },
+          { label: 'اشتراک‌های ماهانه و تبلیغات' },
         ]}
       />
 
-      {/* بخش ۱ (جدید و اصلی): مدیریت مستقیم نشان سفیر برند VIP و نرخ کارمزد اختصاصی هر سالن */}
-      <Card className="border-2 border-amber-400/70 bg-gradient-to-br from-amber-50/70 via-white to-[#FFFBEB] space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 pb-3">
+      {/* بخش ۱: ۳ پکیج اشتراک ۱ ماهه تایم‌تو (با کارمزد ۰٪ و ۱۰ نوبت هدیه شروع) */}
+      <Card className="border-2 border-[#0057FF]/30 bg-gradient-to-br from-[#EFF6FF] via-white to-[#F8FAFC] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#BFDBFE] pb-3">
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Crown className="w-5 h-5 text-amber-600" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Crown className="w-5 h-5 text-[#0057FF]" />
               <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-                مدیریت مستقیم نشان «👑 سفیر برند VIP» و نرخ کارمزد اختصاصی سالن‌ها
+                ۱. پکیج‌های اشتراک ۱ ماهه تایم‌تو (پس از اتمام {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه شروع — کارمزد ۰٪)
               </h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
+                کارمزد رزرو آنلاین: ۰٪ در تمام پکیج‌ها
+              </span>
             </div>
             <p className="text-xs text-[#475569] leading-relaxed">
-              به هر سالن شاخصی که مایل هستید با ۱ کلیک نشان <strong>👑 سفیر برند VIP</strong> اعطا کنید یا نرخ کارمزد پلتفرم آن را به‌صورت اختصاصی (۰٪ معافیت کامل، ۲٪، ۳٪، ۴٪ یا نرخ عادی رسته) در دیتابیس ذخیره نمایید.
+              هر کسب‌وکار جدید در شروع کار <strong>{toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه (با شمارنده زنده و کارمزد ۰٪)</strong> دریافت می‌کند. پس از تکمیل ۱۰ نوبت، برای ادامه دریافت نوبت آنلاین یکی از ۳ پکیج ۱ ماهه زیر را انتخاب و خریداری می‌نماید.
             </p>
           </div>
           <Link to="/admin/payments">
             <Button variant="outline" size="sm">
-              <span>مشاهده تسویه شبا و نرخ پایه رسته‌ها ←</span>
+              <span>مشاهده تسویه شبا و تراکنش‌های اشتراک ←</span>
             </Button>
           </Link>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {TIMETO_MONTHLY_PACKAGES.map((pkg) => {
+            const matchedPlan = plans.find((p) => p.id === pkg.id);
+            const displayPrice = matchedPlan?.monthlyPriceToman || pkg.monthlyPriceToman;
+            return (
+              <div
+                key={pkg.id}
+                className={`p-4 rounded-2xl border-2 flex flex-col justify-between gap-3 transition-all ${
+                  pkg.isRecommended
+                    ? 'bg-[#061138] text-white border-amber-400 shadow-md'
+                    : 'bg-white text-[#061138] border-[#CBD5E1]'
+                }`}
+              >
+                <div className="space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black mb-1 ${
+                          pkg.isRecommended
+                            ? 'bg-amber-400 text-[#061138]'
+                            : 'bg-[#E0ECFF] text-[#0057FF]'
+                        }`}
+                      >
+                        {pkg.badge || pkg.shortTitle}
+                      </span>
+                      <h3 className="text-sm sm:text-base font-black">
+                        {matchedPlan?.name || pkg.name}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <p
+                    className={`text-[11px] leading-relaxed ${
+                      pkg.isRecommended ? 'text-slate-300' : 'text-[#475569]'
+                    }`}
+                  >
+                    {matchedPlan?.audience || pkg.audience}
+                  </p>
+
+                  <div
+                    className={`p-3 rounded-xl border ${
+                      pkg.isRecommended
+                        ? 'bg-white/10 border-white/15'
+                        : 'bg-[#F8FAFC] border-[#E2E8F0]'
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-lg font-black tabular-nums">
+                        {formatPriceToman(displayPrice)}
+                      </span>
+                      <span
+                        className={`text-[11px] font-bold ${
+                          pkg.isRecommended ? 'text-amber-300' : 'text-[#0057FF]'
+                        }`}
+                      >
+                        اشتراک ۱ ماهه (۳۰ روز)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 mt-2 pt-2 border-t border-current/10 text-[11px] font-bold">
+                      <span>📅 سقف نوبت: تا {toPersianDigits(pkg.monthlyBookingCap)} نوبت</span>
+                      <span>👥 ظرفیت: تا {toPersianDigits(pkg.staffLimitCount)} متخصص</span>
+                      <span>📸 استوری: {pkg.canPublishStories ? '✅ فعال' : '—'}</span>
+                      <span>🎯 تخفیف بنر: {pkg.adDiscountPercent > 0 ? `${toPersianDigits(pkg.adDiscountPercent)}٪ تخفیف` : 'تعرفه عادی'}</span>
+                    </div>
+                  </div>
+
+                  <ul className="space-y-1 text-[11px]">
+                    {(matchedPlan?.features || pkg.features).slice(0, 5).map((f) => (
+                      <li key={f} className="flex items-start gap-1.5">
+                        <Check
+                          className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                            pkg.isRecommended ? 'text-amber-400' : 'text-[#059669]'
+                          }`}
+                        />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {matchedPlan ? (
+                  <Button
+                    type="button"
+                    variant={pkg.isRecommended ? 'secondary' : 'outline'}
+                    size="sm"
+                    fullWidth
+                    onClick={() => openEditPlanModal(matchedPlan)}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>ویرایش قیمت و امکانات این پکیج</span>
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* بخش ۲: وضعیت اشتراک ماهانه و شمارنده نوبت کسب‌وکارهای فعال + تغییر یا تمدید سریع با ۱ کلیک */}
+      <Card className="border-2 border-amber-400/70 bg-gradient-to-br from-amber-50/70 via-white to-[#FFFBEB] space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 pb-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-amber-600" />
+              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+                ۲. وضعیت اشتراک ماهانه، شمارنده نوبت و فعال‌سازی سریع پکیج برای کسب‌وکارها
+              </h2>
+            </div>
+            <p className="text-xs text-[#475569] leading-relaxed">
+              در این بخش مشاهده می‌کنید هر کسب‌وکار در حال حاضر چند نوبت از سهمیه خود (۱۰ نوبت هدیه شروع یا پکیج ۱ ماهه) را مصرف کرده است و با ۱ کلیک می‌توانید پکیج اشتراک آن را ارتقا یا تمدید نمایید.
+            </p>
+          </div>
         </div>
 
         {realActiveBusinesses.length === 0 ? (
@@ -3674,129 +4032,117 @@ export const AdminSubscriptionsPage: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {realActiveBusinesses.map((biz) => {
-              const commMeta = resolveBusinessCommissionMeta(biz, paymentConfig);
-              const isVip = Boolean(biz.isVipPartner);
-              const currentRate = isVip
-                ? biz.vipCommissionPercent ?? 0
-                : commMeta.commissionPercent;
+              const quotaInfo = resolveBusinessSubscriptionQuotaStatus({
+                business: biz,
+                appointments,
+              });
               return (
                 <div
                   key={biz.id}
                   className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                    isVip
-                      ? 'bg-white border-amber-400 ring-2 ring-amber-200/60 shadow-xs'
-                      : 'bg-white border-[#CBD5E1]'
+                    quotaInfo.isQuotaExhausted
+                      ? 'bg-rose-50/60 border-rose-300'
+                      : quotaInfo.activePackage
+                        ? 'bg-white border-emerald-400 ring-2 ring-emerald-100 shadow-xs'
+                        : 'bg-white border-[#CBD5E1]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0">
+                    <div className="space-y-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <h3 className="text-sm font-extrabold text-[#061138] truncate">
                           {biz.name}
                         </h3>
-                        {isVip ? (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
-                            👑 سفیر برند VIP
-                          </span>
-                        ) : null}
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                            quotaInfo.isQuotaExhausted
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : quotaInfo.activePackage
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 border-amber-300'
+                          }`}
+                        >
+                          {quotaInfo.activePackage
+                            ? `💎 ${quotaInfo.activePackage.shortTitle}`
+                            : `🎁 ${toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت هدیه شروع`}
+                        </span>
                       </div>
                       <p className="text-[11px] text-[#475569]">
                         {biz.ownerName || 'صاحب کسب‌وکار'} · {biz.city} ({biz.neighborhood}) ·{' '}
                         <span className="font-bold text-[#0057FF]">
-                          بیعانه: {toPersianDigits(normalizeDepositPercent(biz.depositPercent))}٪
+                          بیعانه: {toPersianDigits(normalizeDepositPercent(biz.depositPercent))}٪ (کارمزد ۰٪)
                         </span>
                       </p>
                       <p className="text-[11px] font-extrabold text-[#061138]">
-                        کارمزد فعلی در تسویه:{' '}
-                        <span className={isVip ? 'text-amber-700' : 'text-[#0057FF]'}>
-                          {toPersianDigits(currentRate)}٪ از کل خدمت
-                        </span>{' '}
-                        ({commMeta.segmentTitle})
+                        وضعیت سهمیه نوبت:{' '}
+                        <span
+                          className={
+                            quotaInfo.isQuotaExhausted
+                              ? 'text-rose-700'
+                              : 'text-[#059669]'
+                          }
+                        >
+                          {toPersianDigits(quotaInfo.usedBookingsCount)} نوبت مصرف‌شده از{' '}
+                          {toPersianDigits(quotaInfo.quotaLimit)} نوبت (
+                          {toPersianDigits(quotaInfo.remainingBookingsCount)} نوبت باقی‌مانده)
+                        </span>
                       </p>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isVip) {
-                          updateBusinessProfile(biz.id, {
-                            isVipPartner: false,
-                            vipCommissionPercent: undefined,
-                            sponsoredLabel: undefined,
-                          });
-                          showToast(
-                            `نشان سفیر برند VIP از «${biz.name}» برداشته شد و به تعرفه عادی رسته بازگشت.`
-                          );
-                        } else {
-                          grantBusinessPlanOrAdByAdmin({
-                            businessId: biz.id,
-                            grantType: 'VIP_AMBASSADOR',
-                            planId: 'plan-vip-brand',
-                            sponsoredPlacement: 'HERO_SPOTLIGHT',
-                            sponsoredLabel: '👑 سالن منتخب و سفیر برند تایم‌تو',
-                            durationDays: 30,
-                            bonusSmsCount: 200,
-                            isTrialGift: true,
-                            isVipPartner: true,
-                            vipCommissionPercent: 0,
-                          });
-                        }
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold border shrink-0 cursor-pointer transition-colors ${
-                        isVip
-                          ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                          : 'bg-amber-500 text-[#061138] border-amber-600 hover:bg-amber-400'
-                      }`}
-                    >
-                      {isVip ? 'لغو نشان VIP' : '👑 اعطای بسته VIP + ۰٪'}
-                    </button>
                   </div>
 
                   <div className="pt-2.5 border-t border-[#E2E8F0] space-y-1.5">
                     <span className="text-[10px] font-bold text-[#64748B] block">
-                      تعیین سریع نرخ کارمزد اختصاصی این سالن:
+                      تغییر یا فعال‌سازی سریع اشتراک ۱ ماهه این کسب‌وکار (با کارمزد ۰٪):
                     </span>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {[
-                        { label: '۰٪ (رایگان VIP)', vip: true, rate: 0 },
-                        { label: '۲٪ ویژه', vip: true, rate: 2 },
-                        { label: '۳٪ ترجیحی', vip: true, rate: 3 },
-                        { label: '۴٪ توافقی', vip: true, rate: 4 },
-                        { label: 'نرخ عادی رسته', vip: false, rate: undefined },
-                      ].map((opt) => {
-                        const selected = opt.vip
-                          ? isVip && (biz.vipCommissionPercent ?? 0) === opt.rate
-                          : !isVip;
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateBusinessProfile(biz.id, {
+                            subscriptionPlan: '۱۰ نوبت رایگان هدیه شروع (کارمزد ۰٪)',
+                            subscriptionStatus: SubscriptionStatus.Trial,
+                          });
+                          showToast(
+                            `سهمیه «${biz.name}» روی ۱۰ نوبت رایگان هدیه شروع (کارمزد ۰٪) تنظیم شد.`
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer transition-colors ${
+                          !quotaInfo.activePackage
+                            ? 'bg-[#061138] text-amber-300 border-[#061138]'
+                            : 'bg-[#F8FAFC] text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
+                        }`}
+                      >
+                        🎁 ۱۰ نوبت هدیه شروع
+                      </button>
+
+                      {TIMETO_MONTHLY_PACKAGES.map((pkg) => {
+                        const isSelected = quotaInfo.activePackage?.id === pkg.id;
                         return (
                           <button
-                            key={opt.label}
+                            key={pkg.id}
                             type="button"
                             onClick={() => {
-                              updateBusinessProfile(biz.id, {
-                                isVipPartner: opt.vip,
-                                vipCommissionPercent: opt.rate,
-                                ...(opt.vip && !biz.sponsoredLabel
-                                  ? {
-                                      sponsoredLabel:
-                                        '👑 سالن منتخب و سفیر برند تایم‌تو',
-                                    }
-                                  : {}),
+                              grantBusinessPlanOrAdByAdmin({
+                                businessId: biz.id,
+                                grantType:
+                                  pkg.id === 'plan-vip-brand'
+                                    ? 'VIP_AMBASSADOR'
+                                    : 'PLAN',
+                                planId: pkg.id,
+                                durationDays: 30,
+                                bonusSmsCount: pkg.freeMarketingSmsMonthly,
+                                isTrialGift: false,
+                                isVipPartner: pkg.id === 'plan-vip-brand',
+                                vipCommissionPercent: 0,
                               });
-                              showToast(
-                                opt.vip
-                                  ? `کارمزد اختصاصی «${biz.name}» روی ${toPersianDigits(
-                                      opt.rate ?? 0
-                                    )}٪ با نشان سفیر برند VIP ذخیره شد.`
-                                  : `نرخ کارمزد «${biz.name}» به تعرفه عادی رسته بازگشت.`
-                              );
                             }}
                             className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold border cursor-pointer transition-colors ${
-                              selected
-                                ? 'bg-[#061138] text-amber-300 border-[#061138]'
+                              isSelected
+                                ? 'bg-[#059669] text-white border-[#059669]'
                                 : 'bg-[#F8FAFC] text-[#334155] border-[#CBD5E1] hover:border-[#0057FF]'
                             }`}
                           >
-                            {opt.label}
+                            {pkg.shortTitle} (تا {toPersianDigits(pkg.monthlyBookingCap)} نوبت)
                           </button>
                         );
                       })}
@@ -3809,43 +4155,6 @@ export const AdminSubscriptionsPage: React.FC = () => {
         )}
       </Card>
 
-      {/* راهنمای عملی مدیر کل: دقیقاً کجا چیکار کنم؟ */}
-      <Card className="bg-[#F3F6FC] border-2 border-[#0057FF]/25 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs sm:text-sm font-extrabold text-[#0057FF] flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 shrink-0" />
-            <span>راهنمای سریع مدیر کل: کجا چیکار کنم؟</span>
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#061138]">
-          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
-            <p className="font-extrabold text-[#0057FF]">
-              ۱. تغییر قیمت بسته‌های تبلیغاتی و پیامک
-            </p>
-            <p className="text-[#334155] leading-relaxed">
-              روی دکمه <strong>«ویرایش تعرفه بسته»</strong> در کارت‌های زیر بزنید تا قیمت ماهانه/هفتگی صدرنشینی، بنر صفحه اول یا بسته پیامک بلافاصله در کل سایت آپدیت شود.
-            </p>
-          </div>
-          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
-            <p className="font-extrabold text-[#059669]">
-              ۲. وقتی صاحب سالن بسته تبلیغاتی یا پیامک می‌خرد
-            </p>
-            <p className="text-[#334155] leading-relaxed">
-              سفارش او در بخش <strong>«درخواست‌های خرید سالن‌ها»</strong> نمایش داده می‌شود و پس از پرداخت آنلاین یا تایید شما، جایگاه یا شارژ پیامک او خودکار فعال می‌گردد.
-            </p>
-          </div>
-          <div className="p-3 rounded-xl bg-white border border-[#CBD5E1] space-y-1">
-            <p className="font-extrabold text-[#D97706]">
-              ۳. تنظیم دستی جایگاه، رتبه و شارژ پیامک
-            </p>
-            <p className="text-[#334155] leading-relaxed">
-              در جدول پایین صفحه روی دکمه{' '}
-              <strong>«تنظیم جایگاه و زمان تبلیغ»</strong> هر سالن بزنید تا محل نمایش (صفحه اول یا صدر جست‌وجو)، رتبه ۱ تا ۱۰ و تعداد روزهای باقی‌مانده را دقیق تنظیم کنید.
-            </p>
-          </div>
-        </div>
-      </Card>
-
       {/* صف سریع درخواست‌های خرید در انتظار تایید */}
       {pendingOrders.length > 0 ? (
         <Card className="border-2 border-[#F59E0B] bg-[#FFFBEB] space-y-3">
@@ -3853,12 +4162,12 @@ export const AdminSubscriptionsPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-[#D97706]" />
               <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                درخواست‌های خرید جدید سالن‌ها (در انتظار تایید شما:{' '}
+                درخواست‌های خرید اشتراک ماهانه و تبلیغات سالن‌ها (در انتظار تایید شما:{' '}
                 {toPersianDigits(pendingOrders.length)} مورد)
               </h2>
             </div>
             <span className="text-xs font-bold text-[#92400E]">
-              با تایید هر مورد، پلن یا جایگاه تبلیغاتی سالن به صورت خودکار فعال
+              با تایید هر مورد، پکیج اشتراک ۱ ماهه یا جایگاه تبلیغاتی سالن به صورت خودکار فعال
               می‌شود
             </span>
           </div>
@@ -3882,7 +4191,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
               },
               {
                 key: 'item',
-                header: 'بسته / جایگاه انتخابی',
+                header: 'پکیج اشتراک / جایگاه تبلیغاتی',
                 render: (o) => (
                   <div className="space-y-0.5">
                     <span className="font-bold text-[#0057FF] block">
@@ -3891,7 +4200,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                     {o.requestedPlacement ? (
                       <span className="text-[11px] text-[#334155] block">
                         محل: {placementLabels[o.requestedPlacement]} · مدت:{' '}
-                        {toPersianDigits(o.requestedDurationDays ?? 30)} روز
+                        {toPersianDigits(o.requestedDurationDays ?? 14)} روز
                       </span>
                     ) : null}
                   </div>
@@ -3951,19 +4260,19 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* بخش ۱: تعرفه بسته‌های تبلیغاتی و پیامک اضافه (قابل ویرایش توسط مدیر کل — با کنتراست بالا و خوانایی کامل) */}
+      {/* بخش ۳: تعرفه بسته‌های تبلیغاتی (۷ و ۱۴ روزه — حداکثر ۲ هفته) و پیامک اضافه */}
       <Card variant="dark" className="space-y-4 border-2 border-[#0057FF]/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <span className="text-xs font-extrabold text-[#00E5FF]">
-              ۱. بسته‌های تبلیغات ویژه و بسته پیامک اضافه (قابل ویرایش توسط شما)
+              ۳. جایگاه‌های تبلیغاتی ۷ و ۱۴ روزه (حداکثر ۲ هفته) و بسته پیامک اضافه
             </span>
             <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
-              تعرفه‌های ارتقای جایگاه سالن‌ها و بسته پیامک تبلیغاتی
+              تعرفه‌های صدرنشینی جست‌وجو، بنر ویژه صفحه اصلی (۱ و ۲ هفته‌ای) و بسته پیامک
             </h2>
           </div>
           <StatusBadge
-            label="متصل به درگاه بله‌پی و کارت‌به‌کارت"
+            label="حداکثر مدت رزرو بنر و صدرنشینی: ۱۴ روز (۲ هفته)"
             tone="success"
           />
         </div>
@@ -3986,18 +4295,23 @@ export const AdminSubscriptionsPage: React.FC = () => {
                   {pkg.description}
                 </p>
                 <p className="font-extrabold text-[#061138] pt-1.5 border-t border-[#E2E8F0] tabular-nums text-sm">
-                  {formatPriceToman(pkg.priceToman)}
                   {pkg.slot !== 'SMS_ADDON' ? (
-                    <span className="text-[11px] font-bold text-[#64748B]">
-                      {' '}
-                      / ماهانه ({formatPriceToman(pkg.weeklyPriceToman ?? 190000)}{' '}
-                      هفتگی)
-                    </span>
+                    <>
+                      <span>
+                        ۷ روزه: {formatPriceToman(pkg.weeklyPriceToman ?? 290000)}
+                      </span>
+                      <span className="text-[11px] font-bold text-[#0057FF] block mt-0.5">
+                        ۱۴ روزه (سقف ۲ هفته): {formatPriceToman(pkg.priceToman)}
+                      </span>
+                    </>
                   ) : (
-                    <span className="text-[11px] font-extrabold text-[#059669]">
-                      {' '}
-                      / بسته {toPersianDigits(pkg.smsCount ?? 200)} پیامک
-                    </span>
+                    <>
+                      {formatPriceToman(pkg.priceToman)}
+                      <span className="text-[11px] font-extrabold text-[#059669]">
+                        {' '}
+                        / بسته {toPersianDigits(pkg.smsCount ?? 200)} پیامک
+                      </span>
+                    </>
                   )}
                 </p>
               </div>
@@ -4009,23 +4323,23 @@ export const AdminSubscriptionsPage: React.FC = () => {
                 onClick={() => openEditAdPkgModal(pkg)}
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>ویرایش تعرفه و توضیحات بسته</span>
+                <span>ویرایش تعرفه ۷ و ۱۴ روزه</span>
               </Button>
             </div>
           ))}
         </div>
       </Card>
 
-      {/* بخش ۳: جدول کنترل کامل جایگاه، رتبه و مدت زمان تبلیغ هر کسب‌وکار واقعی */}
+      {/* بخش ۴: جدول کنترل کامل جایگاه، رتبه و مدت زمان تبلیغ هر کسب‌وکار واقعی */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold text-[#061138]">
-              ۳. مدیریت جایگاه تبلیغاتی، رتبه نمایش، پلن و شارژ پیامک کسب‌وکارهای واقعی
+              ۴. مدیریت جایگاه تبلیغاتی (۷ و ۱۴ روزه)، رتبه نمایش، پکیج اشتراک و شارژ پیامک کسب‌وکارها
             </h2>
             <p className="text-xs text-[#64748B]">
               تعیین کنید کدام سالن در صدر جست‌وجو یا بنر صفحه اول باشد، در چه
-              رتبه‌ای قرار بگیرد، چند روز اعتبار تبلیغاتی یا پیامک اضافه داشته باشد
+              رتبه‌ای قرار بگیرد، چند روز اعتبار تبلیغاتی (۷ یا ۱۴ روز) یا پیامک اضافه داشته باشد
             </p>
           </div>
           {businesses.filter((b) => !b.isSampleShowcase).length > 0 ? (
@@ -4039,7 +4353,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
               }}
             >
               <Megaphone className="w-4 h-4" />
-              <span>انتخاب کسب‌وکار و تنظیم جایگاه / پلن / پیامک</span>
+              <span>انتخاب کسب‌وکار و تنظیم جایگاه / اشتراک / پیامک</span>
             </Button>
           ) : null}
         </div>
@@ -4047,7 +4361,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
         <ResponsiveTable
           keyExtractor={(b) => b.id}
           data={businesses.filter((b) => !b.isSampleShowcase)}
-          emptyMessage="هنوز کسب‌وکار واقعی ثبت‌نام‌شده‌ای وجود ندارد. به‌محض ثبت سالن جدید، می‌توانید پلن، پیامک و جایگاه تبلیغاتی آن را در این بخش تنظیم کنید."
+          emptyMessage="هنوز کسب‌وکار واقعی ثبت‌نام‌شده‌ای وجود ندارد. به‌محض ثبت سالن جدید، می‌توانید پکیج اشتراک، پیامک و جایگاه تبلیغاتی آن را در این بخش تنظیم کنید."
           columns={[
             {
               key: 'name',
@@ -4070,19 +4384,31 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'plan',
-              header: 'وضعیت پنل و شارژ پیامک',
-              render: (b) => (
-                <div className="space-y-1">
-                  <span className="font-bold text-[#059669] block">
-                    پنل رایگان همیشگی (کمیسیونی)
-                  </span>
-                  <span className="text-[11px] text-[#64748B] tabular-nums block">
-                    شارژ پیامک تبلیغاتی:{' '}
-                    {toPersianDigits(b.extraSmsBalance ?? 0)} عدد (ارسالی:{' '}
-                    {toPersianDigits(b.smsSentCount ?? 0)})
-                  </span>
-                </div>
-              ),
+              header: 'پکیج اشتراک، سهمیه نوبت و شارژ پیامک',
+              render: (b) => {
+                const q = resolveBusinessSubscriptionQuotaStatus({
+                  business: b,
+                  appointments,
+                });
+                return (
+                  <div className="space-y-1">
+                    <span className="font-bold text-[#059669] block">
+                      {q.activePackage
+                        ? `💎 ${q.activePackage.name} (کارمزد ۰٪)`
+                        : `🎁 ${toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه شروع (کارمزد ۰٪)`}
+                    </span>
+                    <span className="text-[11px] font-bold text-[#0057FF] tabular-nums block">
+                      نوبت مصرف‌شده: {toPersianDigits(q.usedBookingsCount)} از{' '}
+                      {toPersianDigits(q.quotaLimit)} نوبت ({toPersianDigits(q.remainingBookingsCount)} باقی‌مانده)
+                    </span>
+                    <span className="text-[11px] text-[#64748B] tabular-nums block">
+                      شارژ پیامک تبلیغاتی:{' '}
+                      {toPersianDigits(b.extraSmsBalance ?? 0)} عدد (ارسالی:{' '}
+                      {toPersianDigits(b.smsSentCount ?? 0)})
+                    </span>
+                  </div>
+                );
+              },
             },
             {
               key: 'placement',
@@ -4127,7 +4453,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                       {toPersianDigits(b.sponsoredOrder ?? 1)} (چرخش وزنی فعال)
                     </span>
                     <span className="text-[11px] font-bold text-[#059669] block">
-                      {toPersianDigits(b.sponsoredDaysRemaining ?? 30)} روز
+                      {toPersianDigits(b.sponsoredDaysRemaining ?? 14)} روز
                       باقی‌مانده
                     </span>
                     <span className="text-[10px] font-bold text-[#64748B] block">
@@ -4141,7 +4467,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             },
             {
               key: 'actions',
-              header: 'انتخاب سریع «منتخب ماه» / «بنر ویژه» و مدیریت زمان',
+              header: 'انتخاب سریع «منتخب ماه» / «بنر ویژه ۱۴ روزه» و مدیریت زمان',
               render: (b) => {
                 const isSpotlight =
                   b.isSponsored && b.sponsoredPlacement === 'HERO_SPOTLIGHT';
@@ -4153,7 +4479,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         const nowMs = Date.now();
-                        const days = b.sponsoredDaysRemaining || 30;
+                        const days = b.sponsoredDaysRemaining || 14;
                         updateBusinessProfile(b.id, {
                           isSponsored: true,
                           featured: true,
@@ -4166,7 +4492,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                             b.sponsoredLabel || '🏆 منتخب ماه مراجعان تایم‌تو',
                         });
                         showToast(
-                          `«${b.name}» به عنوان 🏆 منتخب ماه مراجعان و ویترین طلایی صفحه اصلی تنظیم شد ✓`
+                          `«${b.name}» به عنوان 🏆 منتخب ماه مراجعان و ویترین طلایی صفحه اصلی (${toPersianDigits(days)} روز) تنظیم شد ✓`
                         );
                       }}
                       className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
@@ -4184,7 +4510,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         const nowMs = Date.now();
-                        const days = b.sponsoredDaysRemaining || 30;
+                        const days = b.sponsoredDaysRemaining || 14;
                         updateBusinessProfile(b.id, {
                           isSponsored: true,
                           featured: true,
@@ -4197,7 +4523,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                             b.sponsoredLabel || '🌟 پیشنهاد ویژه صفحه اصلی',
                         });
                         showToast(
-                          `«${b.name}» در 🌟 بنر ویژه صفحه اصلی قرار گرفت ✓`
+                          `«${b.name}» به مدت ${toPersianDigits(days)} روز در 🌟 بنر ویژه صفحه اصلی قرار گرفت ✓`
                         );
                       }}
                       className={`px-2.5 py-1.5 rounded-xl text-[11px] font-extrabold border transition-all cursor-pointer ${
@@ -4208,7 +4534,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
                     >
                       {isHomeBanner
                         ? '🌟 بنر ویژه صفحه اصلی فعال است'
-                        : '🌟 نمایش در بنر ویژه صفحه اصلی'}
+                        : '🌟 نمایش ۱۴ روزه در بنر صفحه اصلی'}
                     </button>
 
                     <Button
@@ -4249,12 +4575,12 @@ export const AdminSubscriptionsPage: React.FC = () => {
       <Modal
         isOpen={Boolean(editingPlan)}
         onClose={() => setEditingPlan(null)}
-        title={`ویرایش پلن اشتراک: ${editingPlan?.name ?? ''}`}
-        description="می‌توانید قیمت ماهانه، سقف متخصصان، سهمیه پیامک و ویژگی‌های این پلن را تغییر دهید"
+        title={`ویرایش پکیج اشتراک ۱ ماهه: ${editingPlan?.name ?? ''}`}
+        description="می‌توانید قیمت ماهانه، سقف متخصصان، سهمیه پیامک هدیه و ویژگی‌های این پکیج (با کارمزد ۰٪) را تغییر دهید"
       >
         <form onSubmit={handleSavePlan} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField id="edit-plan-name" label="عنوان پلن" required>
+            <FormField id="edit-plan-name" label="عنوان پکیج اشتراک" required>
               <Input
                 id="edit-plan-name"
                 value={planNameInput}
@@ -4263,7 +4589,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             </FormField>
             <FormField
               id="edit-plan-price"
-              label="قیمت ماهانه (تومان — ۰ برای رایگان)"
+              label="قیمت اشتراک ۱ ماهه (تومان)"
               required
             >
               <Input
@@ -4287,7 +4613,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             </FormField>
             <FormField
               id="edit-plan-sms"
-              label="سهمیه پیامک ماهانه (عدد)"
+              label="سهمیه پیامک ماهانه هدیه (عدد)"
               required
             >
               <Input
@@ -4300,7 +4626,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             </FormField>
           </div>
 
-          <FormField id="edit-plan-aud" label="توضیح مخاطب هدف پلن">
+          <FormField id="edit-plan-aud" label="توضیح مخاطب هدف پکیج">
             <Input
               id="edit-plan-aud"
               value={planAudienceInput}
@@ -4310,7 +4636,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
 
           <FormField
             id="edit-plan-features"
-            label="امکانات پلن (هر ویژگی در یک خط مجزا)"
+            label="امکانات پکیج (هر ویژگی در یک خط مجزا)"
           >
             <textarea
               id="edit-plan-features"
@@ -4331,7 +4657,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             </Button>
             <Button type="submit" variant="primary">
               <Check className="w-4 h-4" />
-              <span>ذخیره تغییرات پلن</span>
+              <span>ذخیره تغییرات پکیج</span>
             </Button>
           </div>
         </form>
@@ -4342,7 +4668,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
         isOpen={Boolean(editingAdPkg)}
         onClose={() => setEditingAdPkg(null)}
         title={`ویرایش بسته تبلیغاتی: ${editingAdPkg?.title ?? ''}`}
-        description="تغییر قیمت ماهانه، قیمت هفتگی و شرح جایگاه تبلیغاتی"
+        description="تغییر تعرفه ۱۴ روزه (حداکثر ۲ هفته)، تعرفه ۷ روزه و شرح جایگاه تبلیغاتی"
       >
         <form onSubmit={handleSaveAdPkg} className="space-y-4">
           <FormField id="edit-ad-title" label="عنوان بسته تبلیغاتی" required>
@@ -4359,7 +4685,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
               label={
                 editingAdPkg?.slot === 'SMS_ADDON'
                   ? 'قیمت بسته پیامک (تومان)'
-                  : 'تعرفه ۳۰ روزه / ماهانه (تومان)'
+                  : 'تعرفه ۱۴ روزه / ۲ هفته‌ای (تومان)'
               }
               required
             >
@@ -4375,7 +4701,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             {editingAdPkg?.slot !== 'SMS_ADDON' ? (
               <FormField
                 id="edit-ad-weekly"
-                label="تعرفه ۷ روزه / هفتگی (تومان)"
+                label="تعرفه ۷ روزه / ۱ هفته‌ای (تومان)"
                 required
               >
                 <Input
@@ -4435,18 +4761,17 @@ export const AdminSubscriptionsPage: React.FC = () => {
         </form>
       </Modal>
 
-      {/* مودال ۳: مدیریت نحوه قرارگیری، رتبه و مدت زمان تبلیغ هر کسب‌وکار (با قابلیت انتخاب مستقیم کسب‌وکار از لیست) */}
+      {/* مودال ۳: مدیریت نحوه قرارگیری، رتبه و مدت زمان تبلیغ هر کسب‌وکار */}
       <Modal
         isOpen={Boolean(managingBiz)}
         onClose={() => setManagingBiz(null)}
-        title={`مدیریت تبلیغات، پلن و پیامک: ${managingBiz?.name ?? ''}`}
-        description="کسب‌وکار مورد نظر را انتخاب کنید و محل نمایش بنر/کارت، رتبه اولویت، تعداد روزها و شارژ پیامک را تنظیم نمایید"
+        title={`مدیریت تبلیغات، پکیج اشتراک و پیامک: ${managingBiz?.name ?? ''}`}
+        description="کسب‌وکار مورد نظر را انتخاب کنید و محل نمایش بنر/کارت، رتبه اولویت، مدت تبلیغ (۷ یا ۱۴ روز) و شارژ پیامک را تنظیم نمایید"
       >
         <form onSubmit={handleSaveBizPlacement} className="space-y-4">
-          {/* انتخابگر مستقیم کسب‌وکار در بالای مودال */}
           <FormField
             id="modal-select-business"
-            label="انتخاب کسب‌وکار جهت تنظیم تبلیغ، پلن یا شارژ پیامک"
+            label="انتخاب کسب‌وکار جهت تنظیم تبلیغ، پکیج اشتراک یا شارژ پیامک"
             required
           >
             <Select
@@ -4540,33 +4865,43 @@ export const AdminSubscriptionsPage: React.FC = () => {
 
             <FormField
               id="biz-days"
-              label="۳. مدت زمان باقی‌مانده تبلیغ (روز)"
+              label="۳. مدت زمان باقی‌مانده تبلیغ (حداکثر ۱۴ روز)"
               required
             >
               <Input
                 id="biz-days"
                 dir="ltr"
                 type="number"
+                max={14}
                 value={bizSponsoredDays}
                 onChange={(e) => setBizSponsoredDays(e.target.value)}
               />
             </FormField>
 
-            <FormField id="biz-plan-select" label="۴. پلن اشتراک فعال سالن">
+            <FormField id="biz-plan-select" label="۴. پکیج اشتراک فعال سالن (کارمزد ۰٪)">
               <Select
                 id="biz-plan-select"
                 value={bizPlanName}
                 onChange={(e) => setBizPlanName(e.target.value)}
-                options={plans.map((p) => ({ value: p.name, label: p.name }))}
+                options={[
+                  {
+                    value: '۱۰ نوبت رایگان هدیه شروع (کارمزد ۰٪)',
+                    label: '🎁 ۱۰ نوبت رایگان هدیه شروع (کارمزد ۰٪)',
+                  },
+                  ...TIMETO_MONTHLY_PACKAGES.map((p) => ({
+                    value: p.name,
+                    label: `${p.name} (تا ${toPersianDigits(p.monthlyBookingCap)} نوبت — ${formatPriceToman(p.monthlyPriceToman)})`,
+                  })),
+                ]}
               />
             </FormField>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] font-bold text-[#64748B]">
-              تنظیم سریع مدت زمان:
+              تنظیم سریع مدت زمان بنر / صدرنشینی (حداکثر ۲ هفته):
             </span>
-            {[7, 14, 30, 60, 90].map((d) => (
+            {[3, 7, 10, 14].map((d) => (
               <button
                 key={d}
                 type="button"
@@ -4594,7 +4929,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
             <div className="space-y-2">
               <FormField
                 id="biz-extra-sms"
-                label="موجودی پیامک اضافه (مازاد بر پلن)"
+                label="موجودی پیامک اضافه (مازاد بر پکیج)"
               >
                 <Input
                   id="biz-extra-sms"
@@ -4626,51 +4961,6 @@ export const AdminSubscriptionsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* اعطای دوره تست رایگان با تایید مستقیم مدیر کل + شمارنده روز */}
-          <div className="p-3.5 rounded-2xl bg-[#FFFBEB] border border-[#F59E0B]/40 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-extrabold text-[#92400E]">
-                  ۵. اعطای دوره تست رایگان (صرفاً با تایید مدیر کل)
-                </p>
-                <p className="text-[11px] text-[#B45309]">
-                  اگر صاحب سالن درخواست تست داده است، تعداد روز تست را مشخص کنید تا در پنل او روزشمار باقی‌مانده نمایش داده شود (۰ = بدون دوره تست)
-                </p>
-              </div>
-              <input
-                type="number"
-                dir="ltr"
-                min={0}
-                max={60}
-                value={bizTrialDays}
-                onChange={(e) => setBizTrialDays(e.target.value)}
-                className="w-20 rounded-xl border border-[#F59E0B] bg-white px-2.5 py-1.5 text-xs font-extrabold text-center text-[#92400E] tabular-nums"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { d: 0, label: '۰ روز (غیرفعال)' },
-                { d: 3, label: '۳ روز تست' },
-                { d: 5, label: '۵ روز تست' },
-                { d: 7, label: '۷ روز تست' },
-                { d: 14, label: '۱۴ روز تست' },
-              ].map((item) => (
-                <button
-                  key={item.d}
-                  type="button"
-                  onClick={() => setBizTrialDays(String(item.d))}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
-                    Number(bizTrialDays) === item.d
-                      ? 'bg-[#D97706] text-white'
-                      : 'bg-white text-[#92400E] border border-[#F59E0B]/40 hover:bg-[#FEF3C7]'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
             <Button
               type="button"
@@ -4690,7 +4980,7 @@ export const AdminSubscriptionsPage: React.FC = () => {
   );
 };
 
-/** ۶. تراکنش‌های حق اشتراک، مدیریت درگاه آنلاین زیبال و تسویه شبا (/admin/payments) */
+/** ۶. تسویه شبا، تراکنش‌های اشتراک و مدیریت درگاه آنلاین زیبال (/admin/payments) */
 export const AdminPaymentsPage: React.FC = () => {
   const {
     paymentConfig,
@@ -4704,19 +4994,11 @@ export const AdminPaymentsPage: React.FC = () => {
     markSettlementPaid,
     runNightlyBatchSettlement,
     sendAppointmentReminders,
+    showToast,
   } = usePrototypeData();
 
   const [zibalMerchantId, setZibalMerchantId] = useState(
     paymentConfig.zibalMerchantId || paymentConfig.zarinpalMerchantId || ''
-  );
-  const [maleCommissionPercent, setMaleCommissionPercent] = useState(
-    String(paymentConfig.maleCommissionPercent ?? 3)
-  );
-  const [laserCommissionPercent, setLaserCommissionPercent] = useState(
-    String(paymentConfig.laserCommissionPercent ?? 4)
-  );
-  const [femaleCommissionPercent, setFemaleCommissionPercent] = useState(
-    String(paymentConfig.femaleCommissionPercent ?? 5)
   );
   const [settlementCycle, setSettlementCycle] = useState<'WEEKLY' | 'BIWEEKLY'>(
     paymentConfig.settlementCycle ?? 'WEEKLY'
@@ -4739,20 +5021,46 @@ export const AdminPaymentsPage: React.FC = () => {
 
   const handleSaveGateway = (e: React.FormEvent) => {
     e.preventDefault();
-    const safeMale = Math.max(1, Math.min(30, Number(maleCommissionPercent) || 3));
-    const safeLaser = Math.max(1, Math.min(30, Number(laserCommissionPercent) || 4));
-    const safeFemale = Math.max(1, Math.min(30, Number(femaleCommissionPercent) || 5));
     updatePaymentConfig({
       activeMethod: 'ZIBAL',
       zibalMerchantId: zibalMerchantId.trim(),
       zarinpalMerchantId: zibalMerchantId.trim(),
       shebaNumber: shebaNumber.trim(),
-      maleCommissionPercent: safeMale,
-      laserCommissionPercent: safeLaser,
-      femaleCommissionPercent: safeFemale,
+      maleCommissionPercent: 0,
+      laserCommissionPercent: 0,
+      femaleCommissionPercent: 0,
       settlementCycle,
-      platformCommissionPercent: safeFemale,
+      platformCommissionPercent: 0,
     });
+  };
+
+  const handleExportPayaCsv = () => {
+    const pendingList = settlementRequests.filter((s) => s.status === 'PENDING');
+    if (pendingList.length === 0) {
+      showToast('در حال حاضر درخواست تسویه شبای در انتظار واریزی وجود ندارد.');
+      return;
+    }
+    const header = 'BusinessName,OwnerName,ShebaNumber,AmountToman,AmountRial,RequestId\n';
+    const rows = pendingList
+      .map(
+        (s) =>
+          `"${s.businessName.replace(/"/g, '""')}","${(s.ownerName || '').replace(/"/g, '""')}","${s.shebaNumber}",${s.netPayoutToman},${s.netPayoutToman * 10},"${s.id}"`
+      )
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + header + rows], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `timeto-paya-settlements-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast(
+      `فایل اکسل/CSV واریز گروهی پایا برای ${toPersianDigits(pendingList.length)} کسب‌وکار دانلود شد ✓`
+    );
   };
 
   const salonsWithWalletBalance = businesses.filter((b) => {
@@ -4772,15 +5080,59 @@ export const AdminPaymentsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal)، تعرفه کمیسیون‌ها و سیکل تسویه هفتگی شبا"
-        title="مدیریت درگاه آنلاین زیبال، درصد کارمزد رسته‌ها و تسویه هفتگی شبا"
-        subtitle="درگاه رسمی شاپرک (زیبال)، تنظیم کارمزد ۳٪ آقایان / ۴٪ لیزر / ۵٪ بانوان (از کل مبلغ خدمت) + ۲٪ کارمزد درگاه و مالیات مشتری و تسویه هفتگی پایا"
+        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal)، تسویه ۱۰۰٪ بیعانه سالن‌ها (کارمزد ۰٪) و تراکنش‌های اشتراک"
+        title="مدیریت درگاه آنلاین زیبال، تسویه هفتگی شبا (پایا) و سفارش‌های اشتراک ماهانه"
+        subtitle="در مدل جدید، کارمزد پلتفرم از نوبت‌ها ۰٪ است؛ ۱۰۰٪ بیعانه دریافتی مشتریان در کیف پول سالن جمع شده و در سیکل هفتگی به شبا/کارت صاحب کسب‌وکار واریز می‌شود."
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
-          { label: 'درگاه زیبال و تسویه شبا' },
+          { label: 'تسویه شبا، تراکنش‌ها و درگاه زیبال' },
         ]}
       />
+
+      {/* راهنمای عملی تسویه شبا: وقتی دکمه تسویه را می‌زنیم، پول چگونه برای صاحب کسب‌وکار شبا می‌شود؟ */}
+      <Card className="border-2 border-emerald-400/70 bg-gradient-to-br from-emerald-50/80 via-white to-[#ECFDF5]/50 space-y-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Check className="w-5 h-5 text-emerald-700" />
+            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+              فرآیند واقعی انتقال پول به شبا (پایا): وقتی دکمه «تسویه» را می‌زنیم چه اتفاقی می‌افتد؟
+            </h2>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
+            واریز ۱۰۰٪ بیعانه به حساب سالن (کارمزد نوبت: ۰٪)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
+            <p className="font-extrabold text-[#061138]">
+              ۱. جمع شدن خودکار بیعانه‌ها در حساب درگاه زیبال شما
+            </p>
+            <p className="text-[#475569] leading-relaxed">
+              وقتی مشتری نوبت رزرو می‌کند، مبلغ بیعانه از طریق درگاه زیبال مستقیماً وارد کیف پول زیبال شما (متصل به شبای خودتان) می‌شود و در پنل تایم‌تو، معادل ۱۰۰٪ آن در «موجودی قابل تسویه سالن» ثبت می‌گردد.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
+            <p className="font-extrabold text-[#0057FF]">
+              ۲. انتقال بانکی پایا (تکی یا فایل اکسل دسته‌ای CSV)
+            </p>
+            <p className="text-[#475569] leading-relaxed">
+              در روز تسویه (مثلاً شنبه‌ها)، در جدول زیر یا با ۱ کلیک <strong>«کپی شبا/کارت»</strong> را می‌زنید و از اینترنت‌بانک/همراه‌بانک خودتان پایا می‌زنید، یا دکمه <strong>«دانلود فایل CSV واریز گروهی پایا»</strong> را می‌زنید و فایل را در اینترنت‌بانک یا پنل تسویه زیبال آپلود می‌کنید.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
+            <p className="font-extrabold text-[#059669]">
+              ۳. ثبت کد پیگیری پایا و صدور خودکار رسید در پنل سالن‌دار
+            </p>
+            <p className="text-[#475569] leading-relaxed">
+              پس از انجام واریز بانکی، دکمه <strong>«ثبت واریز شبا + ارسال صورتحساب»</strong> را می‌زنید و کد پیگیری پایا را وارد می‌کنید. موجودی کیف پول سالن صفر شده و رسید رسمی تسویه شبا در پیشخوان صاحب کسب‌وکار نمایش داده می‌شود.
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {/* کارت ۱: تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) */}
       <Card className="space-y-4 border-2 border-[#0057FF]/25">
@@ -4794,12 +5146,12 @@ export const AdminPaymentsPage: React.FC = () => {
                 تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) — شاپرک بانک مرکزی
               </h2>
               <p className="text-xs text-[#64748B]">
-                کد مرچنت دریافتی از پنل زیبال (یا متغیر محیطی ZIBAL_MERCHANT_ID در لیارا) و نرخ کمیسیون هر رسته را تنظیم کنید
+                کد مرچنت دریافتی از پنل زیبال (برای دریافت آنلاین هزینه اشتراک‌های ماهانه، جایگاه‌های تبلیغاتی و بیعانه نوبت‌ها)
               </p>
             </div>
           </div>
           <StatusBadge
-            label="درگاه زیبال (Zibal) فعال"
+            label="درگاه زیبال فعال · کارمزد نوبت ۰٪"
             tone="success"
           />
         </div>
@@ -4861,7 +5213,7 @@ export const AdminPaymentsPage: React.FC = () => {
 
             <FormField
               id="pay-sheba"
-              label="شماره شبای حساب متصل به درگاه زیبال (شما)"
+              label="شماره شبای حساب متصل به درگاه زیبال (حساب مادر پلتفرم)"
             >
               <Input
                 id="pay-sheba"
@@ -4896,64 +5248,14 @@ export const AdminPaymentsPage: React.FC = () => {
             </FormField>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#E2E8F0]">
-            <FormField
-              id="pay-male-commission"
-              label="کارمزد آرایشگاه آقایان (٪ از کل خدمت)"
-            >
-              <Input
-                id="pay-male-commission"
-                type="number"
-                min={1}
-                max={30}
-                dir="ltr"
-                value={maleCommissionPercent}
-                onChange={(e) => setMaleCommissionPercent(e.target.value)}
-                placeholder="3"
-              />
-            </FormField>
-
-            <FormField
-              id="pay-laser-commission"
-              label="کارمزد مراکز لیزر (٪ از کل خدمت)"
-            >
-              <Input
-                id="pay-laser-commission"
-                type="number"
-                min={1}
-                max={30}
-                dir="ltr"
-                value={laserCommissionPercent}
-                onChange={(e) => setLaserCommissionPercent(e.target.value)}
-                placeholder="4"
-              />
-            </FormField>
-
-            <FormField
-              id="pay-female-commission"
-              label="کارمزد سالن‌های بانوان (٪ از کل خدمت)"
-            >
-              <Input
-                id="pay-female-commission"
-                type="number"
-                min={1}
-                max={30}
-                dir="ltr"
-                value={femaleCommissionPercent}
-                onChange={(e) => setFemaleCommissionPercent(e.target.value)}
-                placeholder="5"
-              />
-            </FormField>
-          </div>
-
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E2E8F0]">
-            <span className="text-xs text-[#475569]">
-              علاوه بر کمیسیون بالا (حداقل ۱۰,۰۰۰ تومان)، ۲٪ کارمزد خدمات رزرو آنلاین، درگاه زیبال و مالیات (حداقل ۳,۲۰۰ تومان) روی فاکتور آنلاین مشتری محاسبه می‌شود.
+            <span className="text-xs font-bold text-[#059669]">
+              ✓ مدل درآمدی اشتراکی فعال است: کارمزد پلتفرم از تمامی نوبت‌ها ۰٪ بوده و ۱۰۰٪ بیعانه دریافتی متعلق به کسب‌وکار است.
             </span>
 
             <Button type="submit" variant="primary" size="sm">
               <Check className="w-4 h-4" />
-              <span>ذخیره کد مرچنت زیبال و نرخ‌های کارمزد</span>
+              <span>ذخیره تنظیمات درگاه زیبال و سیکل تسویه</span>
             </Button>
           </div>
         </form>
@@ -4967,26 +5269,36 @@ export const AdminPaymentsPage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A7F3D0] pb-3">
           <div>
             <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — سیکل هفتگی پایا (شنبه‌ها)
+              لیست درخواست‌های تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — سیکل هفتگی پایا
             </h2>
             <p className="text-xs text-[#475569] mt-0.5">
-              خالص بیعانه‌های نوبت‌های انجام‌شده در کیف پول هر سالن آزاد می‌شود. با کلیک روی دکمه زیر، کل موجودی آزادشده سالن‌هایی که شبا و قرارداد همکاری ثبت کرده‌اند در لیست واریز پایا قرار می‌گیرد.
+              ۱۰۰٪ بیعانه‌های نوبت‌های انجام‌شده در کیف پول هر سالن آزاد می‌شود. می‌توانید با ۱ کلیک درخواست تسویه دسته‌ای ایجاد کنید، فایل اکسل/CSV پایا بگیرید و پس از واریز بانکی، تایید نهایی را بزنید.
             </p>
           </div>
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => runNightlyBatchSettlement()}
-          >
-            <Check className="w-4 h-4" />
-            <span>اجرای تسویه دسته‌ای هفتگی شبا ({toPersianDigits(salonsWithWalletBalance.length)} سالن دارای موجودی)</span>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleExportPayaCsv}
+            >
+              <span>📥 دانلود فایل CSV واریز گروهی پایا</span>
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => runNightlyBatchSettlement()}
+            >
+              <Check className="w-4 h-4" />
+              <span>ایجاد لیست تسویه دسته‌ای هفتگی ({toPersianDigits(salonsWithWalletBalance.length)} سالن دارای موجودی)</span>
+            </Button>
+          </div>
         </div>
 
         {settlementRequests.length === 0 ? (
           <div className="rounded-2xl border border-[#CBD5E1] bg-white p-4 text-xs text-[#64748B] text-center">
-            هنوز درخواست تسویه شبا ثبت نشده است. سالن‌داران می‌توانند از پنل خود درخواست تسویه بدهند یا شما دکمه «اجرای تسویه دسته‌ای هفتگی شبا» را بزنید.
+            هنوز درخواست تسویه شبا ثبت نشده است. سالن‌داران می‌توانند از پنل خود درخواست تسویه بدهند یا شما دکمه «ایجاد لیست تسویه دسته‌ای هفتگی» را بزنید.
           </div>
         ) : (
           <ResponsiveTable
@@ -5011,27 +5323,37 @@ export const AdminPaymentsPage: React.FC = () => {
                 key: 'sheba',
                 header: 'شماره شبا (IR) جهت واریز پایا',
                 render: (s) => (
-                  <span
-                    dir="ltr"
-                    className="font-mono text-xs font-bold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-lg inline-block"
-                  >
-                    {s.shebaNumber}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      dir="ltr"
+                      className="font-mono text-xs font-bold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-lg inline-block"
+                    >
+                      {s.shebaNumber}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(s.shebaNumber);
+                        showToast(`شماره شبای «${s.businessName}» کپی شد ✓`);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white border border-[#CBD5E1] text-[10px] font-extrabold text-[#061138] hover:border-[#0057FF] cursor-pointer"
+                    >
+                      کپی شبا
+                    </button>
+                  </div>
                 ),
               },
               {
                 key: 'amount',
-                header: 'مبلغ قابل واریز',
+                header: 'مبلغ قابل واریز (۱۰۰٪ بیعانه — کارمزد ۰٪)',
                 render: (s) => (
                   <div className="tabular-nums">
                     <span className="font-extrabold text-[#059669] block">
                       {formatPriceToman(s.netPayoutToman)}
                     </span>
-                    {s.commissionToman > 0 && (
-                      <span className="text-[10px] text-[#64748B]">
-                        کسر کارمزد پلتفرم: {formatPriceToman(s.commissionToman)}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-[#059669] font-bold">
+                      کارمزد پلتفرم: ۰ تومان (مدل اشتراکی)
+                    </span>
                   </div>
                 ),
               },

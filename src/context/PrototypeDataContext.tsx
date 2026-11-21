@@ -199,6 +199,7 @@ interface PrototypeDataContextValue {
     message: string;
   }) => PlatformBusinessNoticeItem;
   markPlatformBusinessNoticeRead: (noticeId: string, businessId?: string) => void;
+  deletePlatformBusinessNotice: (noticeId: string) => void;
   services: ServiceItem[];
   addService: (item: Omit<ServiceItem, 'id'>) => void;
   updateService: (id: string, patch: Partial<ServiceItem>) => void;
@@ -4053,6 +4054,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const deletePlatformBusinessNotice = (noticeId: string) => {
+    setPlatformBusinessNotices((prev) => {
+      const next = prev.filter((n) => n.id !== noticeId);
+      try {
+        window.localStorage.setItem(
+          'timeto_platform_business_notices_v1',
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore
+      }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ platformBusinessNotices: next })
+          .catch(() => {});
+      }
+      return next;
+    });
+    showToast('پیام و اطلاعیه انتخاب‌شده از فهرست حذف شد.');
+  };
+
   const persistLocalServices = (list: ServiceItem[]) => {
     try {
       window.localStorage.setItem(
@@ -7710,6 +7732,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           platformBusinessNotices,
           sendPlatformBusinessNotice,
           markPlatformBusinessNoticeRead,
+          deletePlatformBusinessNotice,
           services,
           addService,
           updateService,

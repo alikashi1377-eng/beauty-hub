@@ -20,7 +20,7 @@ import { toPersianDigits } from '../../utils/formatters';
 
 export type AdminNavCategory =
   | 'مدیریت سالن‌ها و کاربران'
-  | 'سفیر برند VIP، تبلیغات و مالی'
+  | 'اشتراک‌ها، تبلیغات و مالی'
   | 'پشتیبانی و تنظیمات';
 
 export interface AdminNavItem {
@@ -41,7 +41,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   },
   {
     to: '/admin/businesses',
-    label: 'بررسی کسب‌وکارها و زباله‌دان',
+    label: 'بررسی کسب‌وکارها و پیام‌ها',
     category: 'مدیریت سالن‌ها و کاربران',
     icon: <Building2 className="w-4 h-4" />,
   },
@@ -59,20 +59,20 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   },
   {
     to: '/admin/subscriptions',
-    label: 'سفیر برند VIP و تبلیغات',
-    category: 'سفیر برند VIP، تبلیغات و مالی',
+    label: 'اشتراک‌های ماهانه و تبلیغات',
+    category: 'اشتراک‌ها، تبلیغات و مالی',
     icon: <Crown className="w-4 h-4" />,
   },
   {
     to: '/admin/payments',
-    label: 'تراکنش‌ها، کارمزد و تسویه شبا',
-    category: 'سفیر برند VIP، تبلیغات و مالی',
+    label: 'تسویه شبا، تراکنش‌ها و درگاه',
+    category: 'اشتراک‌ها، تبلیغات و مالی',
     icon: <Receipt className="w-4 h-4" />,
   },
   {
     to: '/admin/reports',
     label: 'گزارش‌های تحلیلی',
-    category: 'سفیر برند VIP، تبلیغات و مالی',
+    category: 'اشتراک‌ها، تبلیغات و مالی',
     icon: <PieChart className="w-4 h-4" />,
   },
   {
@@ -91,7 +91,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 
 const ADMIN_NAV_CATEGORIES: AdminNavCategory[] = [
   'مدیریت سالن‌ها و کاربران',
-  'سفیر برند VIP، تبلیغات و مالی',
+  'اشتراک‌ها، تبلیغات و مالی',
   'پشتیبانی و تنظیمات',
 ];
 
