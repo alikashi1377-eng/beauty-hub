@@ -137,6 +137,60 @@ export async function getReviewModerationMetaMap(
   return {};
 }
 
+export interface ServiceExtendedMetaEntry {
+  pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+  maxPriceToman?: number;
+  packageIncludes?: string[];
+}
+
+export async function getServiceExtendedMetaMap(
+  client: PoolClient | Pool
+): Promise<Record<string, ServiceExtendedMetaEntry>> {
+  try {
+    const res = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'service_extended_meta_v1' LIMIT 1`
+    );
+    if (
+      res.rowCount &&
+      res.rows[0]?.value_json &&
+      typeof res.rows[0].value_json === 'object'
+    ) {
+      return res.rows[0].value_json as Record<string, ServiceExtendedMetaEntry>;
+    }
+  } catch {
+    // ignore if table not ready
+  }
+  return {};
+}
+
+export async function saveServiceExtendedMetaEntry(
+  client: PoolClient | Pool,
+  serviceExternalId: string,
+  entry: ServiceExtendedMetaEntry
+): Promise<void> {
+  if (!serviceExternalId) return;
+  try {
+    await ensureExtendedMetaTables(client);
+    const currentMap = await getServiceExtendedMetaMap(client);
+    currentMap[serviceExternalId] = {
+      ...(currentMap[serviceExternalId] ?? {}),
+      ...entry,
+    };
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ('service_extended_meta_v1', $1::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE
+      SET value_json = EXCLUDED.value_json,
+          updated_at = NOW()
+      `,
+      [JSON.stringify(currentMap)]
+    );
+  } catch {
+    // ignore in mock tests
+  }
+}
+
 export async function buildMergedRegisteredUsersList(
   client: PoolClient | Pool,
   options?: { includeAppointmentNames?: boolean }
@@ -1156,32 +1210,49 @@ async function ensureRegisteredOwnerBusinessesInDb(
         );
       }
 
-      // اصلاح مبلغ نوبت در صورتی که قبلاً با مبلغ ۶۰۰,۰۰۰ تومان ثبت شده باشد و حذف رکوردهای تکراری احتمالی
-      await client.query(
-        `
-        UPDATE appointments
-        SET service_price_toman_snapshot = 400000,
-            status = 'COMPLETED'
-        WHERE business_id = $1
-          AND status <> 'CANCELLED'
-          AND service_price_toman_snapshot <> 400000
-        `,
-        [jRow.id]
-      );
-      await client.query(
-        `
-        DELETE FROM appointments
-        WHERE business_id = $1
-          AND status <> 'CANCELLED'
-          AND id NOT IN (
-            SELECT id FROM appointments
-            WHERE business_id = $1 AND status <> 'CANCELLED'
-            ORDER BY (service_price_toman_snapshot = 400000) DESC, created_at ASC
-            LIMIT 1
+      // حفظ تمامی نوبت‌های ثبت‌شده بدون تغییر اجباری مبلغ یا وضعیت و انتقال نوبت معید پناهی در صورت ثبت اشتباه روی سالن دیگر به سالن امیرحسین جزینی
+      try {
+        const jSrv = (
+          await client.query(
+            `SELECT id, title, price_toman FROM services WHERE business_id = $1 AND is_active = TRUE ORDER BY created_at ASC LIMIT 1`,
+            [jRow.id]
           )
-        `,
-        [jRow.id]
-      );
+        ).rows[0];
+        const jSpc = (
+          await client.query(
+            `SELECT id, full_name FROM specialists WHERE business_id = $1 AND is_active = TRUE ORDER BY created_at ASC LIMIT 1`,
+            [jRow.id]
+          )
+        ).rows[0];
+        await client.query(
+          `
+          UPDATE appointments
+          SET business_id = $1,
+              service_id = COALESCE($2, service_id),
+              specialist_id = COALESCE($3, specialist_id),
+              specialist_name_snapshot = COALESCE($4, specialist_name_snapshot)
+          WHERE (customer_name ILIKE '%معید%' OR customer_name ILIKE '%پناهی%')
+            AND business_id <> $1
+          `,
+          [
+            jRow.id,
+            jSrv?.id || null,
+            jSpc?.id || null,
+            jSpc?.full_name || jRow.name || null,
+          ]
+        );
+        await client.query(
+          `
+          DELETE FROM business_customers
+          WHERE (full_name ILIKE '%معید%' OR full_name ILIKE '%پناهی%')
+            AND business_id <> $1
+          `,
+          [jRow.id]
+        );
+      } catch {
+        // ignore if conflict
+      }
+      await syncBusinessStartingPriceFromServices(client, String(jRow.id));
 
       const aptCntRes = await client.query(
         `SELECT COUNT(*)::int AS cnt FROM appointments WHERE business_id = $1 AND status <> 'CANCELLED'`,
@@ -1360,70 +1431,6 @@ async function ensureRegisteredOwnerBusinessesInDb(
         )
     `);
     for (const aRow of ayraRes.rows) {
-      // اگر قیمت خدمتی به اشتباه به ریال (مثلاً ۴,۵۰۰,۰۰۰ به جای ۴۵۰,۰۰۰ تومان) ثبت شده باشد آن را به تومان واقعی اصلاح کن
-      await client.query(
-        `
-        UPDATE services
-        SET price_toman = ROUND(price_toman / 10.0)::int
-        WHERE business_id = $1
-          AND price_toman >= 2000000
-          AND (price_toman % 10 = 0)
-        `,
-        [aRow.id]
-      );
-
-      // نگه‌داشتن حداکثر ۱ نوبت واقعی برای سالن آیرا و حذف نوبت‌های تکراری که از کش مرورگر تزریق شده بودند
-      await client.query(
-        `
-        DELETE FROM appointments
-        WHERE business_id = $1
-          AND status <> 'CANCELLED'
-          AND id NOT IN (
-            SELECT id FROM appointments
-            WHERE business_id = $1 AND status <> 'CANCELLED'
-            ORDER BY (customer_phone <> '09130000000') DESC, created_at ASC
-            LIMIT 1
-          )
-        `,
-        [aRow.id]
-      );
-
-      // دریافت قیمت واقعی خدمت سالن آیرا از جدول services
-      const ayraSrvRes = await client.query(
-        `
-        SELECT id, title, price_toman
-        FROM services
-        WHERE business_id = $1 AND is_active = TRUE AND price_toman > 0 AND price_toman < 2000000
-        ORDER BY created_at ASC
-        LIMIT 1
-        `,
-        [aRow.id]
-      );
-      const realAyraPrice = Number(ayraSrvRes.rows[0]?.price_toman) || 0;
-
-      if (realAyraPrice > 0) {
-        await client.query(
-          `
-          UPDATE appointments
-          SET service_price_toman_snapshot = $2
-          WHERE business_id = $1
-            AND status <> 'CANCELLED'
-            AND (service_price_toman_snapshot >= 2000000 OR service_price_toman_snapshot <= 0 OR service_price_toman_snapshot = 4500000)
-          `,
-          [aRow.id, realAyraPrice]
-        );
-      } else {
-        await client.query(
-          `
-          UPDATE appointments
-          SET service_price_toman_snapshot = ROUND(service_price_toman_snapshot / 10.0)::int
-          WHERE business_id = $1
-            AND status <> 'CANCELLED'
-            AND service_price_toman_snapshot >= 2000000
-          `,
-          [aRow.id]
-        );
-      }
       await syncBusinessStartingPriceFromServices(client, String(aRow.id));
     }
 
@@ -1803,22 +1810,17 @@ export async function ensureAppointmentFromNotifyBookingInDb(
       Math.min(360, Number(params.durationMinutes) || Number(srv.duration_minutes) || 60)
     );
     const srvDbPrice = Number(srv.price_toman) || 0;
-    const normalizedReqPrice =
-      reqPrice >= 2_000_000 && srvDbPrice > 0 && srvDbPrice < 2_000_000
-        ? srvDbPrice
-        : reqPrice === 450_000 && srvDbPrice > 0 && srvDbPrice !== 450_000
-          ? srvDbPrice
-          : reqPrice;
-    const priceToman =
-      normalizedReqPrice > 0 ? normalizedReqPrice : srvDbPrice || 400_000;
+    const priceToman = reqPrice > 0 ? reqPrice : srvDbPrice || 400_000;
     const refCode =
       String(params.referenceCode || '').trim() ||
       `BH-${Math.floor(100000 + Math.random() * 899999)}`;
     const customerName = String(params.customerName || 'مراجع تایم‌تو').trim() || 'مراجع تایم‌تو';
     const validStatus =
-      params.status === 'CONFIRMED' || params.status === 'COMPLETED'
+      params.status === 'CONFIRMED' ||
+      params.status === 'COMPLETED' ||
+      params.status === 'PENDING'
         ? params.status
-        : 'CONFIRMED';
+        : 'PENDING';
 
     await client.query(
       `
@@ -2871,20 +2873,29 @@ export async function getBootstrapPayload(
       'spc-8',
     ]);
 
+    const serviceExtMetaMap = await getServiceExtendedMetaMap(client);
+
     const services: ServiceItem[] = srvRes.rows
       .filter((r) => !hiddenSampleBizIds.has(String(r.business_external_id)))
-      .map((r) => ({
-        id: String(r.external_id),
-        businessId: String(r.business_external_id),
-        title: String(r.title),
-        categorySlug: String(r.category_slug),
-        category: String(r.category_label),
-        durationMinutes: Number(r.duration_minutes),
-        priceToman: Number(r.price_toman),
-        description: String(r.description),
-        isPopular: Boolean(r.is_popular),
-        isActive: Boolean(r.is_active),
-      }));
+      .map((r) => {
+        const extId = String(r.external_id);
+        const extMeta = serviceExtMetaMap[extId] || {};
+        return {
+          id: extId,
+          businessId: String(r.business_external_id),
+          title: String(r.title),
+          categorySlug: String(r.category_slug),
+          category: String(r.category_label),
+          durationMinutes: Number(r.duration_minutes),
+          priceToman: Number(r.price_toman),
+          pricingType: extMeta.pricingType || 'FIXED',
+          maxPriceToman: extMeta.maxPriceToman,
+          packageIncludes: extMeta.packageIncludes,
+          description: String(r.description),
+          isPopular: Boolean(r.is_popular),
+          isActive: Boolean(r.is_active),
+        };
+      });
 
     const minServicePriceByBizExternalId = new Map<string, number>();
     for (const s of services) {
@@ -3364,14 +3375,34 @@ export async function createServiceInDb(
     await syncBusinessStartingPriceFromServices(client, biz.id);
 
     const row = res.rows[0];
+    const extId = String(row.external_id);
+    const pricingType = input.pricingType || 'FIXED';
+    const maxPriceToman =
+      pricingType === 'RANGE' && input.maxPriceToman
+        ? Number(input.maxPriceToman)
+        : undefined;
+    const packageIncludes =
+      Array.isArray(input.packageIncludes) && input.packageIncludes.length > 0
+        ? input.packageIncludes
+        : undefined;
+
+    await saveServiceExtendedMetaEntry(client, extId, {
+      pricingType,
+      maxPriceToman,
+      packageIncludes,
+    });
+
     return {
-      id: String(row.external_id),
+      id: extId,
       businessId: biz.externalId,
       title: String(row.title),
       categorySlug: String(row.category_slug),
       category: String(row.category_label),
       durationMinutes: Number(row.duration_minutes),
       priceToman: Number(row.price_toman),
+      pricingType,
+      maxPriceToman,
+      packageIncludes,
       description: String(row.description),
       isPopular: Boolean(row.is_popular),
       isActive: Boolean(row.is_active),
@@ -3475,14 +3506,38 @@ export async function updateServiceInDb(
     await syncBusinessStartingPriceFromServices(client, String(current.business_id));
 
     const row = updatedRes.rows[0];
+    const extId = String(row.external_id);
+    const existingMetaMap = await getServiceExtendedMetaMap(client);
+    const prevMeta = existingMetaMap[extId] || {};
+    const nextPricingType = input.pricingType ?? prevMeta.pricingType ?? 'FIXED';
+    const nextMaxPriceToman =
+      nextPricingType === 'RANGE'
+        ? input.maxPriceToman !== undefined
+          ? Number(input.maxPriceToman)
+          : prevMeta.maxPriceToman
+        : undefined;
+    const nextPackageIncludes =
+      input.packageIncludes !== undefined
+        ? input.packageIncludes
+        : prevMeta.packageIncludes;
+
+    await saveServiceExtendedMetaEntry(client, extId, {
+      pricingType: nextPricingType,
+      maxPriceToman: nextMaxPriceToman,
+      packageIncludes: nextPackageIncludes,
+    });
+
     return {
-      id: String(row.external_id),
+      id: extId,
       businessId: String(current.business_external_id),
       title: String(row.title),
       categorySlug: String(row.category_slug),
       category: String(row.category_label),
       durationMinutes: Number(row.duration_minutes),
       priceToman: Number(row.price_toman),
+      pricingType: nextPricingType,
+      maxPriceToman: nextMaxPriceToman,
+      packageIncludes: nextPackageIncludes,
       description: String(row.description),
       isPopular: Boolean(row.is_popular),
       isActive: Boolean(row.is_active),
@@ -6362,18 +6417,27 @@ export async function getBusinessWorkspacePayloadInDb(
         )
       : null;
 
-    const services: ServiceItem[] = srvRes.rows.map((row) => ({
-      id: String(row.external_id),
-      businessId: String(row.business_external_id),
-      title: String(row.title),
-      categorySlug: String(row.category_slug),
-      category: String(row.category_label),
-      durationMinutes: Number(row.duration_minutes),
-      priceToman: Number(row.price_toman),
-      description: String(row.description),
-      isPopular: Boolean(row.is_popular),
-      isActive: Boolean(row.is_active),
-    }));
+    const serviceExtMetaMap = await getServiceExtendedMetaMap(client);
+
+    const services: ServiceItem[] = srvRes.rows.map((row) => {
+      const extId = String(row.external_id);
+      const extMeta = serviceExtMetaMap[extId] || {};
+      return {
+        id: extId,
+        businessId: String(row.business_external_id),
+        title: String(row.title),
+        categorySlug: String(row.category_slug),
+        category: String(row.category_label),
+        durationMinutes: Number(row.duration_minutes),
+        priceToman: Number(row.price_toman),
+        pricingType: extMeta.pricingType || 'FIXED',
+        maxPriceToman: extMeta.maxPriceToman,
+        packageIncludes: extMeta.packageIncludes,
+        description: String(row.description),
+        isPopular: Boolean(row.is_popular),
+        isActive: Boolean(row.is_active),
+      };
+    });
 
     const minActiveServicePrice = services.reduce<number | undefined>((minVal, s) => {
       if (s.priceToman > 0 && (minVal === undefined || s.priceToman < minVal)) {
@@ -7063,20 +7127,57 @@ export async function getBusinessAvailabilityInDb(
       endMs: new Date(String(r.occupied_until_at)).getTime(),
     }));
 
+    const baseGridStep =
+      durationMinutes > 0 && durationMinutes < 30
+        ? Math.max(15, durationMinutes)
+        : 30;
     const shift1CandidateMinutes = generateDynamicSlotMinutes(
       openMins,
       closeMins,
-      30
+      baseGridStep
     );
     const shift2CandidateMinutes =
       hasBreak &&
       secondOpenMins !== null &&
       secondCloseMins !== null &&
       secondCloseMins > secondOpenMins
-        ? generateDynamicSlotMinutes(secondOpenMins, secondCloseMins, 30)
+        ? generateDynamicSlotMinutes(secondOpenMins, secondCloseMins, baseGridStep)
         : [];
+
+    // افزودن زمان دقیق پایان نوبت‌های رزروشده در همان روز (مثلاً پایان خدمت ۱۵ دقیقه‌ای یا ۴۵ دقیقه‌ای) به لیست اسلات‌های کاندید
+    const dynamicPostAppointmentMinutes: number[] = [];
+    if (isOpen) {
+      const dayZeroMs = jalaliSlotToTimestamptz(trimmedDate, '00:00').getTime();
+      const dayEndMs = dayZeroMs + 24 * 60 * 60 * 1000;
+      for (const w of occupiedWindows) {
+        if (w.endMs > dayZeroMs && w.endMs < dayEndMs) {
+          const exactEndMins = Math.round((w.endMs - dayZeroMs) / 60000);
+          let cursorMins = exactEndMins;
+          for (let stepIdx = 0; stepIdx < 4; stepIdx += 1) {
+            const fitsFirst =
+              cursorMins >= openMins &&
+              cursorMins + durationMinutes <= closeMins;
+            const fitsSecond =
+              hasBreak &&
+              secondOpenMins !== null &&
+              secondCloseMins !== null &&
+              cursorMins >= secondOpenMins &&
+              cursorMins + durationMinutes <= secondCloseMins;
+            if (fitsFirst || fitsSecond) {
+              dynamicPostAppointmentMinutes.push(cursorMins);
+            }
+            cursorMins += Math.max(15, durationMinutes);
+          }
+        }
+      }
+    }
+
     const candidateMinutesList = Array.from(
-      new Set([...shift1CandidateMinutes, ...shift2CandidateMinutes])
+      new Set([
+        ...shift1CandidateMinutes,
+        ...shift2CandidateMinutes,
+        ...dynamicPostAppointmentMinutes,
+      ])
     ).sort((a, b) => a - b);
     const nowMs = Date.now();
 

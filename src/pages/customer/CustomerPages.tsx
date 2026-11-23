@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Link,
   useNavigate,
@@ -43,6 +43,7 @@ import {
   formatCustomerWorkingHourMinimal,
   formatDurationMinutes,
   formatPriceToman,
+  formatServicePriceDisplay,
   formatServicePriceShort,
   getUpcomingJalaliDays,
   isValidIranMobile,
@@ -79,12 +80,78 @@ import {
 import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 import { PWAProfileInstallRow } from '../../components/ui/PWAInstallPrompt';
 
+/** تشخیص دقیق تعلق نوبت به مشتری فعلی (بر اساس شناسه نوبت ثبت‌شده در مرورگر، شماره موبایل یا نام) */
+const isAppointmentOwnedByCustomer = (
+  a: AppointmentItem,
+  authUser: { fullName?: string; phone?: string } | null | undefined,
+  bookingDraft?: { customerName?: string; customerPhone?: string } | null
+): boolean => {
+  // ۱. بررسی لیست شناسه‌های نوبت ثبت‌شده توسط همین مرورگر/مشتری
+  try {
+    const rawBooked = window.localStorage.getItem('timeto_my_booked_apt_ids_v1');
+    if (rawBooked) {
+      const ids = JSON.parse(rawBooked) as string[];
+      if (
+        Array.isArray(ids) &&
+        (ids.includes(a.id) ||
+          (a.referenceCode && ids.includes(a.referenceCode)))
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  if (a.id.startsWith('apt-live-')) return true;
+
+  // ۲. تطبیق بر اساس شماره موبایل (کامل یا ماسک‌شده مثل 0913***1042)
+  const userPhones = [authUser?.phone, bookingDraft?.customerPhone]
+    .map((p) => normalizeIranMobileInput(String(p || '')))
+    .filter((p) => p.length === 11);
+
+  const aptFullPhone = normalizeIranMobileInput(
+    String(a.customerPhone || a.customerPhoneMasked || '')
+  );
+  const aptRawMasked = toEnglishDigitsClient(
+    String(a.customerPhoneMasked || a.customerPhone || '')
+  ).trim();
+
+  for (const up of userPhones) {
+    if (aptFullPhone.length === 11 && aptFullPhone === up) {
+      return true;
+    }
+    if (
+      aptRawMasked.includes('*') &&
+      aptRawMasked.length >= 8 &&
+      up.startsWith(aptRawMasked.slice(0, 4)) &&
+      up.endsWith(aptRawMasked.slice(-3))
+    ) {
+      return true;
+    }
+  }
+
+  // ۳. تطبیق بر اساس نام و نام خانوادگی (در صورتی که نام پیش‌فرض «کاربر تایم تو» نباشد)
+  const aptName = (a.customerName || '').trim();
+  if (aptName) {
+    const candidateNames = [authUser?.fullName, bookingDraft?.customerName]
+      .map((n) => (n || '').trim())
+      .filter((n) => n.length >= 2 && n !== 'کاربر تایم تو');
+    if (candidateNames.some((n) => n === aptName)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 /** نوار مرحله‌به‌مرحله مینیمال، آیکون‌محور و قابل کلیک برای مسیر رزرو نوبت */
 const BookingFlowStepIndicator: React.FC<{
   currentStep: 1 | 2 | 3 | 4;
   onSelectStep?: (step: 1 | 2 | 3 | 4) => void;
-}> = ({ currentStep, onSelectStep }) => {
-  const steps: Array<{
+  hideSpecialistStep?: boolean;
+}> = ({ currentStep, onSelectStep, hideSpecialistStep = false }) => {
+  const allSteps: Array<{
     num: 1 | 2 | 3 | 4;
     label: string;
     shortLabel: string;
@@ -95,11 +162,14 @@ const BookingFlowStepIndicator: React.FC<{
     { num: 3, label: 'زمان مراجعه', shortLabel: 'زمان', icon: CalendarCheck },
     { num: 4, label: 'تایید نهایی', shortLabel: 'تایید', icon: Check },
   ];
+  const steps = hideSpecialistStep
+    ? allSteps.filter((s) => s.num !== 2)
+    : allSteps;
 
   return (
     <nav
       aria-label="مراحل رزرو نوبت"
-      className="mb-5 sticky top-16 z-20 rounded-2xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] px-2.5 sm:px-4 py-2 shadow-[0_8px_24px_-12px_rgba(6,17,56,0.12)]"
+      className="mb-3 sm:mb-5 relative lg:sticky lg:top-16 z-20 rounded-2xl bg-white/95 backdrop-blur-md border border-[#CBD5E1] px-2.5 sm:px-4 py-2 shadow-[0_8px_24px_-12px_rgba(6,17,56,0.12)]"
     >
       <div className="flex items-center justify-between gap-1 sm:gap-2">
         {steps.map((s, idx) => {
@@ -235,6 +305,7 @@ export const BookingStepPage: React.FC = () => {
     businesses,
     services,
     specialists,
+    appointments,
     bookingDraft,
     updateBookingDraft,
   } = usePrototypeData();
@@ -263,6 +334,37 @@ export const BookingStepPage: React.FC = () => {
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
   const [activeStepIndicator, setActiveStepIndicator] = useState<1 | 2 | 3>(1);
   const [expandedServiceIds, setExpandedServiceIds] = useState<string[]>([]);
+  const [isMobileTopHeaderCollapsed, setIsMobileTopHeaderCollapsed] =
+    useState<boolean>(false);
+  const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
+  const lastWindowScrollYRef = useRef<number>(0);
+  const touchStartYRef = useRef<number | null>(null);
+  const collapseLockUntilRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (activeStepIndicator !== 1) {
+      setIsMobileTopHeaderCollapsed(false);
+      return;
+    }
+    const handleWindowScroll = () => {
+      if (window.innerWidth >= 1024) return;
+      const now = Date.now();
+      const currentY = window.scrollY || 0;
+      const prevY = lastWindowScrollYRef.current;
+      lastWindowScrollYRef.current = currentY;
+      if (now < collapseLockUntilRef.current) return;
+
+      if (currentY > 18 && currentY > prevY + 4 && !isSearchFocused) {
+        collapseLockUntilRef.current = now + 350;
+        setIsMobileTopHeaderCollapsed(true);
+      } else if (currentY <= 4 && prevY > 4) {
+        collapseLockUntilRef.current = now + 250;
+        setIsMobileTopHeaderCollapsed(false);
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleWindowScroll);
+  }, [activeStepIndicator, isSearchFocused]);
 
   const handleToggleServiceDetails = (
     e: React.MouseEvent,
@@ -419,6 +521,13 @@ export const BookingStepPage: React.FC = () => {
       handleProceedToConfirm();
       return;
     }
+    if (step === 2 && bizSpecialists.length <= 1) {
+      if (bizSpecialists[0]?.id) {
+        updateBookingDraft({ specialistId: bizSpecialists[0].id });
+      }
+      setActiveStepIndicator(3);
+      return;
+    }
     setActiveStepIndicator(step);
   };
 
@@ -492,18 +601,135 @@ export const BookingStepPage: React.FC = () => {
     (w) => w.dayName === selectedDayObj?.dayName
   );
 
+  const totalSelectedDurationMinutes = Math.max(
+    15,
+    selectedServicesSummary.totalDurationMinutes ||
+      primarySelectedService?.durationMinutes ||
+      30
+  );
+
+  const normSelectedDate = toEnglishDigitsClient(
+    String(bookingDraft.dateJalali || '')
+  ).trim();
+  const bookedAppointmentsForDay = appointments
+    .filter((a) => {
+      if (a.status === AppointmentStatus.Cancelled) return false;
+      const sameBiz =
+        a.businessId === business.id ||
+        a.businessSlug === business.slug ||
+        a.businessName === business.name;
+      if (!sameBiz) return false;
+      const normAptDate = toEnglishDigitsClient(
+        String(a.dateJalali || '')
+      ).trim();
+      if (normAptDate !== normSelectedDate) return false;
+      if (selectedSpecialist && bizSpecialists.length > 1) {
+        const matchesId =
+          Boolean(a.specialistId) && a.specialistId === selectedSpecialist.id;
+        const matchesName =
+          Boolean(a.specialistName) &&
+          a.specialistName.trim() === selectedSpecialist.fullName.trim();
+        if ((a.specialistId || a.specialistName) && !matchesId && !matchesName) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .map((a) => {
+      const matchedSrv = bizServices.find(
+        (s) => s.id === a.serviceId || s.title === a.serviceTitle
+      );
+      return {
+        timeSlot: a.timeSlot,
+        durationMinutes:
+          a.durationMinutes && a.durationMinutes > 0
+            ? a.durationMinutes
+            : matchedSrv?.durationMinutes || 30,
+        status: a.status,
+      };
+    });
+
   const slotSchedule = buildCustomerBookingTimeSlots({
     dayWorkingHour,
     serverSlots:
       dataMode === 'real' && realSlots && realSlots.length > 0
         ? realSlots
         : null,
-    durationMinutes: primarySelectedService?.durationMinutes || 30,
+    durationMinutes: totalSelectedDurationMinutes,
+    bookedAppointments: bookedAppointmentsForDay,
   });
   const timeSlotOptions = slotSchedule.allSlots;
   const effectiveDayWorkingHour = slotSchedule.effectiveWorkingHour;
 
-  // اگر ساعت پیش‌فرض انتخاب‌شده در زمان استراحت بین روز یا خارج از ساعت کاری افتاده باشد، اولین ساعت آزاد را انتخاب کن
+  // محاسبه ظرفیت آزاد ۱۴ روز آینده برای نمایش نشانگر سبز/تکمیل روی کارت هر روز و دکمه «پرش به اولین نوبت خالی»
+  const upcomingDaysAvailability = upcomingDays.map((dayItem, idx) => {
+    const wh = business.workingHours.find((w) => w.dayName === dayItem.dayName);
+    const normDayDate = toEnglishDigitsClient(String(dayItem.date || '')).trim();
+    const dayBooked = appointments
+      .filter((a) => {
+        if (a.status === AppointmentStatus.Cancelled) return false;
+        const sameBiz =
+          a.businessId === business.id ||
+          a.businessSlug === business.slug ||
+          a.businessName === business.name;
+        if (!sameBiz) return false;
+        const normAptDate = toEnglishDigitsClient(
+          String(a.dateJalali || '')
+        ).trim();
+        if (normAptDate !== normDayDate) return false;
+        if (selectedSpecialist && bizSpecialists.length > 1) {
+          const matchesId =
+            Boolean(a.specialistId) && a.specialistId === selectedSpecialist.id;
+          const matchesName =
+            Boolean(a.specialistName) &&
+            a.specialistName.trim() === selectedSpecialist.fullName.trim();
+          if ((a.specialistId || a.specialistName) && !matchesId && !matchesName) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map((a) => {
+        const matchedSrv = bizServices.find(
+          (s) => s.id === a.serviceId || s.title === a.serviceTitle
+        );
+        return {
+          timeSlot: a.timeSlot,
+          durationMinutes:
+            a.durationMinutes && a.durationMinutes > 0
+              ? a.durationMinutes
+              : matchedSrv?.durationMinutes || 30,
+          status: a.status,
+        };
+      });
+
+    const sched = buildCustomerBookingTimeSlots({
+      dayWorkingHour: wh,
+      serverSlots: null,
+      durationMinutes: totalSelectedDurationMinutes,
+      bookedAppointments: dayBooked,
+    });
+    const availSlots = (sched.allSlots ?? []).filter((s) => s.available);
+    return {
+      date: dayItem.date,
+      dayLabel:
+        idx === 0
+          ? 'امروز'
+          : idx === 1
+            ? 'فردا'
+            : `${dayItem.dayName} ${dayItem.dayNumberPersian} ${dayItem.monthNamePersian}`,
+      freeCount: availSlots.length,
+      firstFreeTime: availSlots[0]?.time || null,
+      isOpen: Boolean(wh?.isOpen),
+    };
+  });
+
+  const firstAvailableDaySlot =
+    upcomingDaysAvailability.find(
+      (d) => d.freeCount > 0 && Boolean(d.firstFreeTime)
+    ) || null;
+
+  // اگر ساعت پیش‌فرض انتخاب‌شده اشغال شده، در زمان استراحت بین روز یا خارج از ساعت کاری افتاده باشد، اولین ساعت آزاد را انتخاب کن
   useEffect(() => {
     if (isLoadingSlots || timeSlotOptions.length === 0) return;
     const currentSelected = timeSlotOptions.find(
@@ -519,6 +745,9 @@ export const BookingStepPage: React.FC = () => {
     isLoadingSlots,
     bookingDraft.dateJalali,
     bookingDraft.timeSlot,
+    selectedSpecialist?.id,
+    totalSelectedDurationMinutes,
+    bookedAppointmentsForDay.length,
     effectiveDayWorkingHour?.openTime,
     effectiveDayWorkingHour?.closeTime,
     effectiveDayWorkingHour?.hasBreak,
@@ -532,14 +761,20 @@ export const BookingStepPage: React.FC = () => {
       : getBeautyPhotoUrl(business.name, business.typeLabel);
 
   return (
-    <div className="max-w-4xl mx-auto pb-20 lg:pb-8">
-      {/* هدر فشرده اطلاعات سالن */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="max-w-4xl mx-auto pb-8">
+      {/* هدر فشرده اطلاعات سالن (در موبایل هنگام اسکرول لیست خدمات مخفی می‌شود تا ۹۰٪ صفحه فقط خدمات باشد) */}
+      <div
+        className={`mb-2.5 sm:mb-3 flex flex-wrap items-center justify-between gap-3 ${
+          activeStepIndicator === 1 && isMobileTopHeaderCollapsed
+            ? 'max-lg:hidden'
+            : ''
+        }`}
+      >
         <div className="flex items-center gap-3">
           <img
             src={salonAvatar}
             alt={business.name}
-            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl object-cover border border-[#CBD5E1] shadow-2xs shrink-0"
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl object-cover border border-[#CBD5E1] shadow-2xs shrink-0"
           />
           <div>
             <div className="flex items-center gap-1.5 text-[11px] text-[#475569]">
@@ -576,103 +811,185 @@ export const BookingStepPage: React.FC = () => {
         </div>
       ) : null}
 
-      {/* نوار مرحله‌به‌مرحله بدون اسکرول عمودی */}
-      <BookingFlowStepIndicator
-        currentStep={activeStepIndicator}
-        onSelectStep={handleNavigateStep}
-      />
+      {/* نوار مرحله‌به‌مرحله (در موبایل غیرچسبان و هنگام اسکرول خدمات مخفی می‌شود) */}
+      <div
+        className={
+          activeStepIndicator === 1 && isMobileTopHeaderCollapsed
+            ? 'max-lg:hidden'
+            : ''
+        }
+      >
+        <BookingFlowStepIndicator
+          currentStep={activeStepIndicator}
+          onSelectStep={handleNavigateStep}
+          hideSpecialistStep={bizSpecialists.length <= 1}
+        />
+      </div>
 
-      {/* گام ۱: انتخاب خدمت (بدون اسکرول خوردن کل صفحه — مجهز به فیلتر دسته و جست‌وجوی سریع برای سالن‌ها و مراکز لیزر با ۲۰+ خدمت) */}
+      {/* گام ۱: انتخاب خدمت (در موبایل هنگام اسکرول به پایین، عنوان و سرچ و تب‌های بالا مخفی می‌شوند تا ۹۰٪ صفحه فقط کارت‌های خدمات باشد) */}
       {activeStepIndicator === 1 ? (
-        <Card id="booking-step-1" className="rounded-3xl space-y-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
-            <div className="flex items-center gap-2.5">
-              <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
-                ۱
+        <Card id="booking-step-1" className="rounded-3xl space-y-3">
+          {/* نوار بسیار باریک بازگردانی سرچ و دسته‌ها در موبایل وقتی کاربر به پایین اسکرول کرده است */}
+          {isMobileTopHeaderCollapsed ? (
+            <div className="lg:hidden flex items-center justify-between gap-2 pb-1.5 border-b border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => {
+                  collapseLockUntilRef.current = Date.now() + 400;
+                  setIsMobileTopHeaderCollapsed(false);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-extrabold text-[#0057FF] cursor-pointer"
+              >
+                <span>🔍 جست‌وجو و فیلتر دسته‌ها</span>
+                <span className="text-[#475569]">
+                  ({toPersianDigits(visibleServices.length)} خدمت) ▾
+                </span>
+              </button>
+              <span className="px-2 py-0.5 rounded-full bg-[#E0E7FF] text-[#0057FF] text-[11px] font-extrabold tabular-nums">
+                {toPersianDigits(selectedServiceIds.length)} انتخاب‌شده
               </span>
-              <div>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                  انتخاب خدمت یا پکیج مورد نظر
-                </h2>
-                <p className="text-[11px] text-[#475569]">
-                  یک یا چند مورد را انتخاب کنید و دکمه «مرحله بعد» را بزنید
-                </p>
-              </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
-              {toPersianDigits(selectedServiceIds.length)} مورد انتخاب‌شده
-            </span>
-          </div>
+          ) : null}
 
-          {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای انتخاب آسان‌تر مشتری */}
-          {bizServices.length > 1 ? (
-            <div className="space-y-2">
-              {bizServices.length > 3 ? (
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={serviceSearchQuery}
-                    onChange={(e) => setServiceSearchQuery(e.target.value)}
-                    placeholder="جست‌وجوی سریع نام خدمت (مثلاً اصلاح، فیشیال، فول‌بادی...)"
-                    className="w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] py-2 pr-3.5 pl-8 text-xs font-bold text-[#061138] placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none"
-                  />
-                  {serviceSearchQuery ? (
-                    <button
-                      type="button"
-                      onClick={() => setServiceSearchQuery('')}
-                      className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[#64748B] hover:text-[#061138] cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  ) : null}
+          <div
+            className={`space-y-3 ${
+              isMobileTopHeaderCollapsed ? 'max-lg:hidden' : ''
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
+                  ۱
+                </span>
+                <div>
+                  <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                    انتخاب خدمت یا پکیج مورد نظر
+                  </h2>
+                  <p className="text-[11px] text-[#475569] hidden sm:block">
+                    یک یا چند مورد را انتخاب کنید و دکمه «مرحله بعد» را بزنید
+                  </p>
                 </div>
-              ) : null}
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
+                {toPersianDigits(selectedServiceIds.length)} مورد انتخاب‌شده
+              </span>
+            </div>
 
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                <button
-                  type="button"
-                  onClick={() => setServiceCatFilter('ALL')}
-                  className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
-                    serviceCatFilter === 'ALL'
-                      ? 'bg-[#0057FF] text-white'
-                      : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
-                  }`}
-                >
-                  همه ({toPersianDigits(bizServices.length)})
-                </button>
-                {popularServices.length > 0 && bizServices.length > 2 ? (
-                  <button
-                    type="button"
-                    onClick={() => setServiceCatFilter('POPULAR')}
-                    className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
-                      serviceCatFilter === 'POPULAR'
-                        ? 'bg-[#F59E0B] text-white'
-                        : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]'
-                    }`}
-                  >
-                    ★ پرطرفدارها ({toPersianDigits(popularServices.length)})
-                  </button>
+            {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای انتخاب آسان‌تر مشتری */}
+            {bizServices.length > 1 ? (
+              <div className="space-y-2">
+                {bizServices.length > 3 ? (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={serviceSearchQuery}
+                      onFocus={() => setIsSearchFocused(true)}
+                      onBlur={() => setIsSearchFocused(false)}
+                      onChange={(e) => setServiceSearchQuery(e.target.value)}
+                      placeholder="جست‌وجوی سریع نام خدمت (مثلاً اصلاح، فیشیال، فول‌بادی...)"
+                      className="w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] py-2 pr-3.5 pl-8 text-xs font-bold text-[#061138] placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                    />
+                    {serviceSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setServiceSearchQuery('')}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[#64748B] hover:text-[#061138] cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
-                {serviceCategories.map((cat) => (
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => setServiceCatFilter(cat)}
+                    onClick={() => setServiceCatFilter('ALL')}
                     className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
-                      serviceCatFilter === cat
+                      serviceCatFilter === 'ALL'
                         ? 'bg-[#0057FF] text-white'
                         : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
                     }`}
                   >
-                    {cat}
+                    همه ({toPersianDigits(bizServices.length)})
                   </button>
-                ))}
+                  {popularServices.length > 0 && bizServices.length > 2 ? (
+                    <button
+                      type="button"
+                      onClick={() => setServiceCatFilter('POPULAR')}
+                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                        serviceCatFilter === 'POPULAR'
+                          ? 'bg-[#F59E0B] text-white'
+                          : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]'
+                      }`}
+                    >
+                      ★ پرطرفدارها ({toPersianDigits(popularServices.length)})
+                    </button>
+                  ) : null}
+                  {serviceCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setServiceCatFilter(cat)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                        serviceCatFilter === cat
+                          ? 'bg-[#0057FF] text-white'
+                          : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
-          {/* کادر جمع‌وجور ۲ ستونه با اسکرول داخلی محدود، قیمت‌های کوتاه‌شده و کشوی بازشوی توضیحات کامل هر خدمت */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+          {/* فهرست خدمات: در موبایل بدون اسکرول داخلی محدود تا ۹۰٪ صفحه فقط خدمات جلوی چشم کاربر باشد */}
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 lg:max-h-[460px] lg:overflow-y-auto lg:pr-1"
+            onWheel={(e) => {
+              if (window.innerWidth >= 1024 || isSearchFocused) return;
+              if (e.deltaY > 8 && !isMobileTopHeaderCollapsed) {
+                collapseLockUntilRef.current = Date.now() + 350;
+                setIsMobileTopHeaderCollapsed(true);
+              } else if (
+                e.deltaY < -12 &&
+                (window.scrollY || 0) <= 8 &&
+                isMobileTopHeaderCollapsed
+              ) {
+                collapseLockUntilRef.current = Date.now() + 250;
+                setIsMobileTopHeaderCollapsed(false);
+              }
+            }}
+            onTouchStart={(e) => {
+              if (window.innerWidth >= 1024) return;
+              touchStartYRef.current = e.touches[0]?.clientY ?? null;
+            }}
+            onTouchMove={(e) => {
+              if (
+                window.innerWidth >= 1024 ||
+                isSearchFocused ||
+                touchStartYRef.current === null
+              ) {
+                return;
+              }
+              const currentTouchY =
+                e.touches[0]?.clientY ?? touchStartYRef.current;
+              const deltaY = touchStartYRef.current - currentTouchY;
+              if (deltaY > 18 && !isMobileTopHeaderCollapsed) {
+                collapseLockUntilRef.current = Date.now() + 350;
+                setIsMobileTopHeaderCollapsed(true);
+              } else if (
+                deltaY < -24 &&
+                (window.scrollY || 0) <= 8 &&
+                isMobileTopHeaderCollapsed
+              ) {
+                collapseLockUntilRef.current = Date.now() + 250;
+                setIsMobileTopHeaderCollapsed(false);
+              }
+            }}
+          >
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
               const stages = (srv.packageIncludes ?? []).filter(Boolean);
@@ -695,85 +1012,78 @@ export const BookingStepPage: React.FC = () => {
                       handleToggleService(srv.id);
                     }
                   }}
-                  className={`p-3 rounded-2xl border cursor-pointer transition-all select-none ${
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all select-none flex flex-col justify-between ${
                     isSelected
-                      ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-2xs'
+                      ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-xs'
                       : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span
-                        className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected
-                            ? 'bg-[#0057FF] border-[#0057FF] text-white'
-                            : 'bg-white border-[#94A3B8] text-transparent'
-                        }`}
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-1.5">
-                          <p
-                            className={`text-xs sm:text-sm font-extrabold text-[#061138] leading-snug ${
-                              isDetailsExpanded ? '' : 'truncate'
-                            }`}
-                          >
-                            {srv.title}
-                          </p>
-                          {isPop ? (
-                            <span className="px-1.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[9px] font-extrabold shrink-0">
-                              ★
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
-                          <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] text-[#334155] font-bold">
-                            {srv.category}
-                          </span>
-                          <span className="inline-flex items-center gap-0.5">
-                            <Clock className="w-3 h-3 text-[#0057FF]" />
-                            {formatDurationMinutes(srv.durationMinutes)}
-                          </span>
+                  {/* ردیف بالا: چک‌باکس، عنوان ۲ خطی خوانا، خلاصه کوتاه، دسته‌بندی، زمان و دکمه توضیحات */}
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+                        isSelected
+                          ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                          : 'bg-white border-[#94A3B8] text-transparent'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </span>
 
-                          {/* دکمه مینیمال باز کردن توضیحات و محتویات خدمت / پکیج */}
-                          <button
-                            type="button"
-                            aria-expanded={isDetailsExpanded}
-                            onClick={(e) => handleToggleServiceDetails(e, srv.id)}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
-                              isDetailsExpanded
-                                ? 'bg-[#0057FF] text-white'
-                                : hasRichDetails
-                                  ? 'bg-[#E0E7FF] text-[#0057FF] hover:bg-[#C7D2FE]'
-                                  : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1] hover:bg-[#E2E8F0]'
-                            }`}
-                          >
-                            <Info className="w-3 h-3 shrink-0" />
-                            <span>
-                              {isDetailsExpanded
-                                ? 'بستن ▴'
-                                : stages.length > 0
-                                  ? `شامل ${toPersianDigits(stages.length)} مورد ▾`
-                                  : 'توضیحات ▾'}
-                            </span>
-                          </button>
-                        </div>
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <p
+                          className={`text-xs sm:text-sm font-extrabold text-[#061138] leading-snug ${
+                            isDetailsExpanded ? '' : 'line-clamp-2'
+                          }`}
+                        >
+                          {srv.title}
+                        </p>
+                        {isPop ? (
+                          <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
+                            ★ پرطرفدار
+                          </span>
+                        ) : null}
                       </div>
-                    </div>
-                    <div className="text-left shrink-0">
-                      <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums block">
-                        {formatServicePriceShort(srv)}
-                      </span>
-                      {srv.pricingType === 'RANGE' ? (
-                        <span className="text-[9px] font-bold text-amber-700">
-                          بازه متغیر
-                        </span>
-                      ) : srv.pricingType === 'STARTING_FROM' ? (
-                        <span className="text-[9px] font-bold text-sky-700">
-                          پایه + مشاوره
-                        </span>
+
+                      {!isDetailsExpanded && (cleanDesc || stages.length > 0) ? (
+                        <p className="text-[11px] text-[#475569] line-clamp-1 leading-relaxed">
+                          {cleanDesc || `شامل: ${stages.join('، ')}`}
+                        </p>
                       ) : null}
+
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
+                        <span className="px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#334155] font-bold">
+                          {srv.category}
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] font-bold">
+                          <Clock className="w-3 h-3 text-[#0057FF]" />
+                          {formatDurationMinutes(srv.durationMinutes)}
+                        </span>
+
+                        {/* دکمه کلیک‌تریگر توضیحات و محتویات خدمت / پکیج */}
+                        <button
+                          type="button"
+                          aria-expanded={isDetailsExpanded}
+                          onClick={(e) => handleToggleServiceDetails(e, srv.id)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
+                            isDetailsExpanded
+                              ? 'bg-[#0057FF] text-white'
+                              : hasRichDetails
+                                ? 'bg-[#E0E7FF] text-[#0057FF] hover:bg-[#C7D2FE]'
+                                : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1] hover:bg-[#E2E8F0]'
+                          }`}
+                        >
+                          <Info className="w-3 h-3 shrink-0" />
+                          <span>
+                            {isDetailsExpanded
+                              ? 'بستن جزئیات ▴'
+                              : stages.length > 0
+                                ? `شامل ${toPersianDigits(stages.length)} مورد ▾`
+                                : 'توضیحات ▾'}
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -781,7 +1091,7 @@ export const BookingStepPage: React.FC = () => {
                   {isDetailsExpanded ? (
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="mt-2.5 pt-2.5 border-t border-[#CBD5E1]/80 rounded-xl bg-white/90 p-2.5 space-y-1.5 text-xs cursor-default"
+                      className="mt-2.5 rounded-xl bg-white border border-[#CBD5E1] p-2.5 space-y-1.5 text-xs cursor-default"
                     >
                       <p className="font-extrabold text-[#061138] leading-relaxed">
                         {srv.title}
@@ -818,16 +1128,52 @@ export const BookingStepPage: React.FC = () => {
                       ) : null}
                     </div>
                   ) : null}
+
+                  {/* ردیف پایین اختصاصی: نمایش کامل قیمت (قطعی / بازه‌ای از...تا... / پایه شروع از...) در راست و دکمه انتخاب در چپ */}
+                  <div className="mt-3 pt-2.5 border-t border-[#CBD5E1]/70 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1 mb-0.5">
+                        {srv.pricingType === 'RANGE' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] text-[10px] font-extrabold">
+                            تعرفه بازه‌ای (متغیر)
+                          </span>
+                        ) : srv.pricingType === 'STARTING_FROM' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F0F9FF] border border-[#BAE6FD] text-[#0369A1] text-[10px] font-extrabold">
+                            قیمت پایه (شروع از)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-[#64748B]">
+                            تعرفه قطعی:
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums block leading-snug">
+                        {formatServicePriceDisplay(srv)}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 ${
+                        isSelected
+                          ? 'bg-[#0057FF] text-white shadow-2xs'
+                          : 'bg-[#F1F5F9] text-[#061138] hover:bg-[#E0E7FF] hover:text-[#0057FF]'
+                      }`}
+                    >
+                      {isSelected ? 'انتخاب شد ✓' : '+ انتخاب خدمت'}
+                    </span>
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {/* نوار پایین گام ۱: جمع انتخاب‌شده‌ها و رفتن هوشمند به مرحله بعد (در صورت تک‌متخصص بودن، پرش مستقیم به انتخاب زمان) */}
-          <div className="pt-3 border-t border-[#CBD5E1] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="text-xs flex items-center justify-between sm:justify-start gap-1">
-              <span className="text-[#64748B] font-semibold">مجموع انتخاب شما: </span>
-              <strong className="font-black text-[#061138] tabular-nums">
+          {/* نوار پایین گام ۱: در موبایل چسبیده به پایین صفحه (جایگزین منوی نواری موبایل) و در دسکتاپ در انتهای کارت */}
+          <div className="max-lg:fixed max-lg:bottom-0 max-lg:inset-x-0 max-lg:z-40 max-lg:bg-white/98 max-lg:backdrop-blur-md max-lg:px-3.5 max-lg:py-2.5 max-lg:border-t max-lg:border-[#CBD5E1] max-lg:shadow-[0_-12px_30px_-6px_rgba(6,17,56,0.18)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] flex items-center justify-between gap-2.5">
+            <div className="text-xs flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1 min-w-0">
+              <span className="text-[11px] text-[#64748B] font-semibold">
+                مجموع انتخاب شما:
+              </span>
+              <strong className="font-black text-[#061138] tabular-nums truncate">
                 {toPersianDigits(selectedServiceIds.length)} خدمت ·{' '}
                 <span className="text-[#0057FF]">
                   {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
@@ -837,14 +1183,14 @@ export const BookingStepPage: React.FC = () => {
             <Button
               variant="primary"
               size="sm"
-              className="w-full sm:w-auto justify-center"
+              className="shrink-0 justify-center px-4 py-2.5"
               onClick={() =>
                 setActiveStepIndicator(bizSpecialists.length <= 1 ? 3 : 2)
               }
             >
               <span>
                 {bizSpecialists.length <= 1
-                  ? 'مرحله بعد: انتخاب زمان مراجعه'
+                  ? 'مرحله بعد: زمان مراجعه'
                   : 'مرحله بعد: انتخاب متخصص'}
               </span>
               <ArrowLeft className="w-4 h-4 shrink-0" />
@@ -957,13 +1303,13 @@ export const BookingStepPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* گام ۳: انتخاب روز و ساعت مراجعه (فشرده و بدون نیاز به اسکرول طولانی) */}
+      {/* گام ۳: انتخاب روز و ساعت مراجعه (مجهز به پرش خودکار تک‌متخصص، نشانگر ظرفیت هر روز و پرش به اولین نوبت خالی) */}
       {activeStepIndicator === 3 ? (
         <Card id="booking-step-3" className="rounded-3xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
             <div className="flex items-center gap-2.5">
               <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
-                ۳
+                {bizSpecialists.length <= 1 ? '۲' : '۳'}
               </span>
               <div>
                 <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
@@ -981,7 +1327,75 @@ export const BookingStepPage: React.FC = () => {
             </span>
           </div>
 
-          {/* نوار افقی روزهای ۲ هفته آینده بدون اشغال ارتفاع صفحه */}
+          {/* نوار نمایش متخصص انتخاب‌شده (در سالن‌های تک‌متخصصه مرحله ۲ خودکار رد شده و متخصص در اینجا نمایش داده می‌شود) */}
+          <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <UserCheck className="w-4 h-4 text-[#0057FF] shrink-0" />
+              <div className="min-w-0">
+                <span className="text-[#475569]">متخصص سرویس‌دهنده: </span>
+                <strong className="font-extrabold text-[#061138]">
+                  {selectedSpecialist?.fullName ||
+                    business.ownerName ||
+                    business.name}
+                </strong>
+                {selectedSpecialist?.roleTitle ? (
+                  <span className="text-[11px] text-[#64748B] mr-1.5">
+                    ({selectedSpecialist.roleTitle})
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            {bizSpecialists.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => setActiveStepIndicator(2)}
+                className="px-2.5 py-1 rounded-xl bg-white border border-[#CBD5E1] hover:border-[#0057FF] text-[#0057FF] text-[11px] font-extrabold cursor-pointer transition-colors"
+              >
+                تغییر متخصص
+              </button>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-lg bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold">
+                تک‌متخصص مجموعه · انتخاب خودکار ✓
+              </span>
+            )}
+          </div>
+
+          {/* نوار هوشمند پرش ۱-کلیکی به اولین نوبت خالی */}
+          {firstAvailableDaySlot && firstAvailableDaySlot.firstFreeTime ? (
+            <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#10B981] shrink-0" />
+                <span className="text-[#1E3A8A] font-bold">
+                  اولین نوبت خالی قابل رزرو:{' '}
+                  <strong className="font-black text-[#0057FF] tabular-nums">
+                    {firstAvailableDaySlot.dayLabel} ساعت{' '}
+                    {firstAvailableDaySlot.firstFreeTime}
+                  </strong>
+                </span>
+              </div>
+              {bookingDraft.dateJalali === firstAvailableDaySlot.date &&
+              bookingDraft.timeSlot === firstAvailableDaySlot.firstFreeTime ? (
+                <span className="px-2.5 py-1 rounded-xl bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[11px] font-extrabold">
+                  ✓ اولین نوبت خالی انتخاب شده است
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateBookingDraft({
+                      dateJalali: firstAvailableDaySlot.date,
+                      timeSlot: firstAvailableDaySlot.firstFreeTime || bookingDraft.timeSlot,
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-[11px] font-extrabold cursor-pointer transition-colors shadow-2xs"
+                >
+                  ⚡ پرش به اولین نوبت خالی
+                </button>
+              )}
+            </div>
+          ) : null}
+
+          {/* نوار افقی روزهای ۲ هفته آینده با نشانگر زنده تعداد وقت‌های آزاد روی هر روز */}
           <div className="space-y-1.5">
             <span className="text-xs font-extrabold text-[#061138] block">
               ۱. انتخاب روز ({selectedDayObj?.monthNamePersian} {selectedDayObj?.yearPersian}):
@@ -990,6 +1404,8 @@ export const BookingStepPage: React.FC = () => {
               {upcomingDays.map((dayItem, idx) => {
                 const isSelected = bookingDraft.dateJalali === dayItem.date;
                 const isFriday = dayItem.dayName === 'جمعه';
+                const dayAvail = upcomingDaysAvailability[idx];
+                const freeCount = dayAvail?.freeCount ?? 0;
                 return (
                   <button
                     key={dayItem.date}
@@ -997,10 +1413,12 @@ export const BookingStepPage: React.FC = () => {
                     onClick={() =>
                       updateBookingDraft({ dateJalali: dayItem.date })
                     }
-                    className={`w-16 sm:w-20 shrink-0 py-2 px-1.5 rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer tabular-nums ${
+                    className={`w-20 sm:w-22 shrink-0 py-2 px-1.5 rounded-2xl border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer tabular-nums ${
                       isSelected
                         ? 'bg-[#0057FF] text-white border-[#0057FF] shadow-sm'
-                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                        : freeCount > 0
+                          ? 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
+                          : 'bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]'
                     }`}
                   >
                     <span
@@ -1027,6 +1445,30 @@ export const BookingStepPage: React.FC = () => {
                       }`}
                     >
                       {dayItem.monthNamePersian}
+                    </span>
+                    <span
+                      className={`mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold ${
+                        isSelected
+                          ? 'bg-white/20 text-white'
+                          : freeCount > 0
+                            ? 'bg-[#ECFDF5] text-[#059669]'
+                            : 'bg-[#F1F5F9] text-[#94A3B8]'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          freeCount > 0
+                            ? isSelected
+                              ? 'bg-[#00E5FF]'
+                              : 'bg-[#10B981]'
+                            : 'bg-[#94A3B8]'
+                        }`}
+                      />
+                      <span>
+                        {freeCount > 0
+                          ? `${toPersianDigits(freeCount)} آزاد`
+                          : 'تکمیل'}
+                      </span>
                     </span>
                   </button>
                 );
@@ -1593,6 +2035,29 @@ export const BookingConfirmPage: React.FC = () => {
       return;
     }
 
+    // در محیط پیش‌نمایش AI Studio (dataMode === 'mock') پرداخت درگاه بدون نیاز به خروج از iframe شبیه‌سازی و ثبت می‌شود
+    if (dataMode === 'mock') {
+      setIsSubmitting(true);
+      setFormError('');
+      try {
+        await submitBooking({
+          depositPaidToman: depositAmountToman,
+          paymentMethod: 'GATEWAY',
+          paymentTrackingCode: `ZBL-${Math.floor(100000 + Math.random() * 900000)}`,
+        });
+        navigate('/booking/result');
+      } catch (err) {
+        setFormError(
+          err instanceof Error
+            ? err.message
+            : 'خطا در ثبت نوبت. لطفاً ساعت یا متخصص دیگری را انتخاب کنید.'
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     // اتصال مستقیم به درگاه پرداخت اینترنتی زیبال (gateway.zibal.ir)
     setIsSubmitting(true);
     setFormError('');
@@ -1708,12 +2173,25 @@ export const BookingConfirmPage: React.FC = () => {
     setIsRequestingTopUpZibal(true);
     setQuickTopUpSuccess('');
     setFormError('');
+    const custPhone =
+      bookingDraft.customerPhone.trim() || authUser?.phone || '';
+    const custName =
+      bookingDraft.customerName.trim() || authUser?.fullName || '';
+
+    if (dataMode === 'mock') {
+      const refCode = `ZBL-TOPUP-${Math.floor(100000 + Math.random() * 900000)}`;
+      topUpCustomerWallet(quickTopUpAmount, refCode, custPhone, custName);
+      setPaymentMethod('WALLET');
+      setQuickTopUpSuccess(
+        `کیف پول شما به مبلغ ${formatPriceToman(quickTopUpAmount)} با موفقیت شارژ شد (کد رهگیری: ${refCode}).`
+      );
+      setIsQuickTopUpOpen(false);
+      setIsRequestingTopUpZibal(false);
+      return;
+    }
+
     try {
       const orderId = `ZBL-WL-${Date.now()}`;
-      const custPhone =
-        bookingDraft.customerPhone.trim() || authUser?.phone || '';
-      const custName =
-        bookingDraft.customerName.trim() || authUser?.fullName || '';
       try {
         window.localStorage.setItem(
           'timeto_pending_zibal_wallet_v1',
@@ -2427,6 +2905,7 @@ export const CustomerOverviewPage: React.FC = () => {
     appointments,
     businesses,
     specialists,
+    bookingDraft,
     favoriteBusinessIds,
     favoriteSpecialistIds,
     toggleFavoriteBusiness,
@@ -2565,6 +3044,21 @@ export const CustomerOverviewPage: React.FC = () => {
   const handleRequestZibalWalletTopUp = async () => {
     setIsConnectingZibalTopUp(true);
     setWalletError('');
+    if (dataMode === 'mock') {
+      const refCode = `ZBL-TOPUP-${Math.floor(100000 + Math.random() * 900000)}`;
+      topUpCustomerWallet(
+        topUpAmount,
+        refCode,
+        authUser?.phone || '',
+        authUser?.fullName || ''
+      );
+      setWalletNotice(
+        `کیف پول شما به مبلغ ${formatPriceToman(topUpAmount)} با موفقیت شارژ شد (کد رهگیری: ${refCode}).`
+      );
+      setIsTopUpModalOpen(false);
+      setIsConnectingZibalTopUp(false);
+      return;
+    }
     try {
       const orderId = `ZBL-WL-${Date.now()}`;
       try {
@@ -2642,13 +3136,9 @@ export const CustomerOverviewPage: React.FC = () => {
     }
   };
 
-  const myAppointments = appointments.filter((a) => {
-    if (!authUser) return a.id.startsWith('apt-live-');
-    return (
-      a.customerName === authUser.fullName ||
-      a.id.startsWith('apt-live-')
-    );
-  });
+  const myAppointments = appointments.filter((a) =>
+    isAppointmentOwnedByCustomer(a, authUser, bookingDraft)
+  );
 
   const upcomingCount = myAppointments.filter(
     (a) =>
@@ -3177,6 +3667,7 @@ export const CustomerAppointmentsPage: React.FC = () => {
     authUser,
     appointments,
     businesses,
+    bookingDraft,
     updateAppointmentStatus,
     customerWalletBalanceToman,
   } = usePrototypeData();
@@ -3188,13 +3679,9 @@ export const CustomerAppointmentsPage: React.FC = () => {
   const [simulateLateCancel, setSimulateLateCancel] = useState(false);
   const [cancelRefundNotice, setCancelRefundNotice] = useState('');
 
-  const myAppointments = appointments.filter((a) => {
-    if (!authUser) return a.id.startsWith('apt-live-');
-    return (
-      a.customerName === authUser.fullName ||
-      a.id.startsWith('apt-live-')
-    );
-  });
+  const myAppointments = appointments.filter((a) =>
+    isAppointmentOwnedByCustomer(a, authUser, bookingDraft)
+  );
 
   const upcomingList = myAppointments.filter(
     (a) =>

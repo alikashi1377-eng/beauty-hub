@@ -170,6 +170,7 @@ export interface BusinessItem {
   lateCancellationPenaltyPercent?: number;
   walletBalanceToman?: number;
   autoNightlySettlement?: boolean;
+  autoConfirmAppointments?: boolean;
   ownerName?: string;
   ownerPhone?: string;
   createdAtJalali?: string;
@@ -339,6 +340,7 @@ export interface AppointmentItem {
   businessSlug: string;
   businessName: string;
   customerName: string;
+  customerPhone?: string;
   customerPhoneMasked: string;
   serviceId: string;
   serviceTitle: string;

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildBusinessShortLink,
+  buildCustomerBookingTimeSlots,
   computeAdPackagePriceAndTitle,
   formatNumericInputWithCommas,
   getSuggestedServiceTitlesForCategory,
@@ -58,19 +59,47 @@ describe('formatters & business/customer helpers', () => {
       placementSlot: 'SEARCH_TOP',
       durationDays: 7,
     });
-    const search30 = computeAdPackagePriceAndTitle({
+    const search14 = computeAdPackagePriceAndTitle({
       placementSlot: 'SEARCH_TOP',
-      durationDays: 30,
+      durationDays: 14,
     });
-    const hero30 = computeAdPackagePriceAndTitle({
+    const hero14 = computeAdPackagePriceAndTitle({
       placementSlot: 'HERO_SPOTLIGHT',
-      durationDays: 30,
+      durationDays: 14,
     });
 
-    assert.equal(search7.amountToman, 190000);
-    assert.equal(search30.amountToman, 490000);
-    assert.equal(hero30.amountToman, 1290000);
-    assert.ok(hero30.title.includes('VIP'));
+    assert.equal(search7.amountToman, 590000);
+    assert.equal(search14.amountToman, 990000);
+    assert.equal(hero14.amountToman, 1990000);
+    assert.ok(hero14.title.includes('VIP'));
+  });
+
+  it('calculates exact duration-based free slots after 15-minute and 45-minute booked appointments', () => {
+    const schedule = buildCustomerBookingTimeSlots({
+      dayWorkingHour: {
+        dayName: 'شنبه',
+        isOpen: true,
+        openTime: '۱۰:۰۰',
+        closeTime: '۱۲:۰۰',
+      },
+      durationMinutes: 15,
+      bookedAppointments: [
+        { timeSlot: '۱۰:۰۰', durationMinutes: 15, status: 'PENDING' },
+        { timeSlot: '۱۱:۰۰', durationMinutes: 45, status: 'CONFIRMED' },
+      ],
+    });
+
+    const slot1000 = schedule.allSlots.find((s) => s.time === '۱۰:۰۰');
+    const slot1015 = schedule.allSlots.find((s) => s.time === '۱۰:۱۵');
+    const slot1100 = schedule.allSlots.find((s) => s.time === '۱۱:۰۰');
+    const slot1130 = schedule.allSlots.find((s) => s.time === '۱۱:۳۰');
+    const slot1145 = schedule.allSlots.find((s) => s.time === '۱۱:۴۵');
+
+    assert.equal(slot1000?.available, false);
+    assert.equal(slot1015?.available, true);
+    assert.equal(slot1100?.available, false);
+    assert.equal(slot1130?.available, false);
+    assert.equal(slot1145?.available, true);
   });
 
   it('resolves adjacent tab on horizontal swipe while ignoring vertical scroll', () => {

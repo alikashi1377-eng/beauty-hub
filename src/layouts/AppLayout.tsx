@@ -62,10 +62,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   // فراخوانی هوک مدیریت اسکرول برای بازگشت فوری به بالای صفحه در تمام مسیرها
   useScrollToTop();
 
+  const [previewBarCollapsed, setPreviewBarCollapsed] = useState(false);
+
   const {
+    dataMode,
     authUser,
     isLoadingInitialData,
     currentBusiness,
+    selectPreviewBusiness,
     services,
     specialists,
     gallery,
@@ -97,10 +101,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const isBusinessPanel = pathname === '/app' || pathname.startsWith('/app/');
   const isAdminPanel = pathname === '/admin' || pathname.startsWith('/admin/');
   const isAuthorizedPlatformAdmin =
-    !isLoadingInitialData &&
-    Boolean(
-      authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
-    );
+    dataMode === 'mock' ||
+    (!isLoadingInitialData &&
+      Boolean(
+        authUser?.isPlatformAdmin && authUser?.roles.includes('PLATFORM_ADMIN')
+      ));
   const isCustomerAccountArea =
     pathname === '/me' || pathname.startsWith('/me/');
 
@@ -224,6 +229,108 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-[#F3F6FC] text-[#061138]">
+      {/* نوار پیش‌نمایش سریع بخش‌های مختلف سامانه ویژه محیط AI Studio (فقط در حالت پیش‌نمایش بدون دیتابیس خارجی نمایش داده می‌شود) */}
+      {dataMode === 'mock' ? (
+        <div className="bg-[#061138] text-white border-b border-[#0057FF]/50 px-3 sm:px-5 py-2 text-xs z-40">
+          <div className="max-w-[1360px] mx-auto flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-[#00E5FF] text-[#061138] text-[10px] font-black">
+                  پیش‌نمایش زنده AI Studio
+                </span>
+                <span className="text-[11px] font-bold text-slate-200">
+                  جابه‌جایی ۱-کلیکی بین بخش‌های مختلف سامانه:
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-300 hidden sm:inline">
+                  سالن فعال در پنل کسب‌وکار:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectPreviewBusiness('biz-real-ayra');
+                    if (!pathname.startsWith('/app')) navigate('/app');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                    currentBusiness?.id === 'biz-real-ayra'
+                      ? 'bg-[#8B5CF6] text-white'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  }`}
+                >
+                  پنل مرکز لیزر آیرا
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    selectPreviewBusiness('biz-real-jazini');
+                    if (!pathname.startsWith('/app')) navigate('/app');
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors ${
+                    currentBusiness?.id === 'biz-real-jazini'
+                      ? 'bg-[#0057FF] text-white'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  }`}
+                >
+                  پنل امیرحسین جزینی
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewBarCollapsed((prev) => !prev)}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-bold text-slate-200 cursor-pointer"
+                >
+                  {previewBarCollapsed ? 'نمایش دکمه‌ها ▾' : 'جمع کردن ▴'}
+                </button>
+              </div>
+            </div>
+
+            {!previewBarCollapsed ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+                {[
+                  { to: '/', label: '🏠 ویترین اصلی' },
+                  {
+                    to: '/salon/ayra-laser-isfahan',
+                    label: '✨ پروفایل و خدمات آیرا',
+                  },
+                  {
+                    to: '/salon/amirhossein-jazini-barber',
+                    label: '💈 پروفایل امیرحسین جزینی',
+                  },
+                  {
+                    to: '/booking/ayra-laser-isfahan',
+                    label: '📅 رزرو نوبت (انتخاب خدمات)',
+                  },
+                  { to: '/app', label: '📊 پیشخوان کسب‌وکار' },
+                  {
+                    to: '/app/services',
+                    label: '✂️ مدیریت خدمات (بازه‌ای/پایه)',
+                  },
+                  { to: '/app/calendar', label: '🕒 تقویم هوشمند نوبت‌ها' },
+                  { to: '/app/appointments', label: '📋 لیست رزروهای سالن' },
+                  { to: '/me/appointments', label: '👤 نوبت‌های من (مشتری)' },
+                  { to: '/admin', label: '🛡️ پنل مدیریت کلان' },
+                ].map((item) => {
+                  const isActive = pathname === item.to;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold whitespace-nowrap transition-colors ${
+                        isActive
+                          ? 'bg-[#00E5FF] text-[#061138] shadow-2xs'
+                          : 'bg-white/10 text-white hover:bg-white/20'
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {databaseError ? (
         <div
           role="alert"
@@ -433,7 +540,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <PublicFooter />
             </div>
           ) : (
-            <div className="pb-24 lg:pb-6" aria-hidden="true" />
+            <div
+              className={
+                pathname.startsWith('/booking')
+                  ? 'pb-4 lg:pb-6'
+                  : 'pb-24 lg:pb-6'
+              }
+              aria-hidden="true"
+            />
           )}
           <PublicMobileBottomNav />
         </>

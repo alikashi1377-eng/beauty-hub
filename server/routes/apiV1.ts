@@ -41,6 +41,7 @@ import {
   replyToReviewInDb,
   reportReviewInDb,
   requestOtpInDb,
+  saveServiceExtendedMetaEntry,
   saveSharedPlatformStateInDb,
   softDeleteServiceInDb,
   syncRegisteredAccountsInDb,
@@ -949,6 +950,210 @@ export function createApiV1Router(
     }
   );
 
+  router.post(
+    '/services/sync-item',
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock' || !pool) {
+        res.status(200).json({ ok: true, mode: 'mock' });
+        return;
+      }
+
+      try {
+        const action = String(req.body?.action || 'update');
+        const srvId = String(req.body?.id || '').trim();
+        const bizId = String(req.body?.businessId || '').trim();
+
+        if (action === 'delete' && srvId) {
+          await pool.query(
+            `UPDATE services SET is_active = FALSE WHERE id::text = $1 OR legacy_demo_id = $1`,
+            [srvId]
+          );
+          res.status(200).json({ ok: true, mode: 'real' });
+          return;
+        }
+
+        if (srvId) {
+          const existingRes = await pool.query(
+            `SELECT id, COALESCE(legacy_demo_id, id::text) AS ext_id, business_id, title, description, duration_minutes, price_toman, category_slug, category_label, is_popular, is_active FROM services WHERE id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+            [srvId]
+          );
+          if (existingRes.rowCount && existingRes.rows[0]) {
+            const cur = existingRes.rows[0];
+            const nextTitle =
+              req.body?.title !== undefined
+                ? String(req.body.title).trim() || String(cur.title)
+                : String(cur.title);
+            const nextDesc =
+              req.body?.description !== undefined
+                ? String(req.body.description).trim()
+                : String(cur.description || '');
+            const nextDur =
+              req.body?.durationMinutes !== undefined
+                ? Math.max(5, Math.min(600, Number(req.body.durationMinutes) || 45))
+                : Number(cur.duration_minutes) || 45;
+            const nextPrice =
+              req.body?.priceToman !== undefined
+                ? Math.max(0, Math.min(100000000000, Number(req.body.priceToman) || 0))
+                : Number(cur.price_toman) || 0;
+            const nextCatSlug =
+              req.body?.categorySlug !== undefined
+                ? String(req.body.categorySlug)
+                : String(cur.category_slug);
+            const nextCatLabel =
+              req.body?.category !== undefined
+                ? String(req.body.category)
+                : String(cur.category_label);
+            const nextPopular =
+              req.body?.isPopular !== undefined
+                ? Boolean(req.body.isPopular)
+                : Boolean(cur.is_popular);
+            const nextActive =
+              req.body?.isActive !== undefined
+                ? Boolean(req.body.isActive)
+                : Boolean(cur.is_active);
+
+            await pool.query(
+              `
+              UPDATE services
+              SET title = $2,
+                  description = $3,
+                  duration_minutes = $4,
+                  price_toman = $5,
+                  category_slug = $6,
+                  category_label = $7,
+                  is_popular = $8,
+                  is_active = $9
+              WHERE id = $1
+              `,
+              [
+                cur.id,
+                nextTitle,
+                nextDesc,
+                nextDur,
+                nextPrice,
+                nextCatSlug,
+                nextCatLabel,
+                nextPopular,
+                nextActive,
+              ]
+            );
+
+            const extId = String(cur.ext_id);
+            const metaPatch: {
+              pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
+              maxPriceToman?: number;
+              packageIncludes?: string[];
+            } = {};
+            if (req.body?.pricingType !== undefined) {
+              metaPatch.pricingType = req.body.pricingType;
+            }
+            if (req.body?.maxPriceToman !== undefined) {
+              metaPatch.maxPriceToman = Number(req.body.maxPriceToman) || undefined;
+            }
+            if (req.body?.packageIncludes !== undefined) {
+              metaPatch.packageIncludes = Array.isArray(req.body.packageIncludes)
+                ? req.body.packageIncludes
+                : undefined;
+            }
+            if (Object.keys(metaPatch).length > 0) {
+              await saveServiceExtendedMetaEntry(pool, extId, metaPatch);
+            }
+
+            await pool.query(
+              `
+              UPDATE businesses
+              SET starting_price_toman = COALESCE((
+                SELECT MIN(price_toman)
+                FROM services
+                WHERE business_id = $1 AND is_active = TRUE AND price_toman > 0
+              ), starting_price_toman)
+              WHERE id = $1
+              `,
+              [cur.business_id]
+            );
+
+            res.status(200).json({ ok: true, mode: 'real', id: extId });
+            return;
+          }
+        }
+
+        if (bizId && req.body?.title) {
+          const bizRes = await pool.query(
+            `SELECT id FROM businesses WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1 LIMIT 1`,
+            [bizId]
+          );
+          if (bizRes.rowCount && bizRes.rows[0]) {
+            const bUuid = bizRes.rows[0].id;
+            const catRes = await pool.query(
+              `SELECT id, slug, title FROM categories WHERE slug = $1 OR title = $2 ORDER BY sort_order ASC LIMIT 1`,
+              [String(req.body?.categorySlug || 'hair-color'), String(req.body?.category || '')]
+            );
+            const fallbackCatRes =
+              catRes.rowCount && catRes.rows[0]
+                ? catRes
+                : await pool.query(`SELECT id, slug, title FROM categories ORDER BY sort_order ASC LIMIT 1`);
+            if (fallbackCatRes.rowCount && fallbackCatRes.rows[0]) {
+              const cat = fallbackCatRes.rows[0];
+              const insRes = await pool.query(
+                `
+                INSERT INTO services (
+                  business_id, category_id, category_slug, category_label,
+                  title, description, duration_minutes, price_toman, is_popular, is_active
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
+                RETURNING COALESCE(legacy_demo_id, id::text) AS ext_id
+                `,
+                [
+                  bUuid,
+                  cat.id,
+                  String(req.body?.categorySlug || cat.slug),
+                  String(req.body?.category || cat.title),
+                  String(req.body.title).trim(),
+                  String(req.body?.description || '').trim(),
+                  Math.max(5, Math.min(600, Number(req.body?.durationMinutes) || 45)),
+                  Math.max(0, Math.min(100000000000, Number(req.body?.priceToman) || 0)),
+                  Boolean(req.body?.isPopular),
+                ]
+              );
+              const createdExtId = String(insRes.rows[0]?.ext_id || '');
+              if (createdExtId) {
+                await saveServiceExtendedMetaEntry(pool, createdExtId, {
+                  pricingType: req.body?.pricingType || 'FIXED',
+                  maxPriceToman:
+                    req.body?.pricingType === 'RANGE' && req.body?.maxPriceToman
+                      ? Number(req.body.maxPriceToman)
+                      : undefined,
+                  packageIncludes: Array.isArray(req.body?.packageIncludes)
+                    ? req.body.packageIncludes
+                    : undefined,
+                });
+              }
+              await pool.query(
+                `
+                UPDATE businesses
+                SET starting_price_toman = COALESCE((
+                  SELECT MIN(price_toman)
+                  FROM services
+                  WHERE business_id = $1 AND is_active = TRUE AND price_toman > 0
+                ), starting_price_toman)
+                WHERE id = $1
+                `,
+                [bUuid]
+              );
+              res.status(200).json({ ok: true, mode: 'real', id: createdExtId });
+              return;
+            }
+          }
+        }
+
+        res.status(200).json({ ok: true });
+      } catch {
+        res.status(200).json({ ok: false });
+      }
+    }
+  );
+
   /**
    * ۹. مدیریت متخصصان و پرسنل (/app/staff) با بررسی مالکیت کسب‌وکار
    */
@@ -1371,6 +1576,35 @@ export function createApiV1Router(
     '/appointments/notify-status',
     async (req: Request, res: Response) => {
       try {
+        const aptId = String(req.body?.appointmentId || '').trim();
+        const nextStatus = String(req.body?.status || '').trim();
+        if (
+          aptId &&
+          (nextStatus === 'PENDING' ||
+            nextStatus === 'CONFIRMED' ||
+            nextStatus === 'COMPLETED' ||
+            nextStatus === 'CANCELLED')
+        ) {
+          try {
+            const config = customEnv ?? loadServerEnv();
+            const dbPool =
+              customPool ??
+              (config.dataMode === 'real' ? getOrCreatePool(config) : null);
+            if (dbPool) {
+              await dbPool.query(
+                `
+                UPDATE appointments
+                SET status = $2
+                WHERE id::text = $1 OR legacy_demo_id = $1 OR reference_code = $1
+                `,
+                [aptId, nextStatus]
+              );
+            }
+          } catch {
+            // ignore db status sync error
+          }
+        }
+
         const result = await dispatchCustomerAppointmentStatusSms({
           appointmentId: req.body?.appointmentId,
           status: req.body?.status,
@@ -2773,6 +3007,7 @@ export function createApiV1Router(
             specialistId: String(r.specialist_external_id),
             specialistName: String(r.specialist_name_snapshot),
             customerName: String(r.customer_name),
+            customerPhone: String(r.customer_phone || ''),
             customerPhoneMasked: String(r.customer_phone_masked || r.customer_phone || ''),
             dateJalali: String(r.date_jalali),
             timeSlot: String(r.time_slot_label),

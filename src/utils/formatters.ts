@@ -141,8 +141,9 @@ export function formatServicePriceDisplay(
   service: Pick<ServiceItem, 'priceToman' | 'pricingType' | 'maxPriceToman'>
 ): string {
   const base = Number(service.priceToman) || 0;
-  const max = Number(service.maxPriceToman) || 0;
-  if (service.pricingType === 'RANGE' && max > base) {
+  const rawMax = Number(service.maxPriceToman) || 0;
+  if (service.pricingType === 'RANGE') {
+    const max = rawMax > base ? rawMax : Math.round(base * 1.4);
     const b = formatCompactRangeBound(base);
     const m = formatCompactRangeBound(max);
     if (b.unit && b.unit === m.unit) {
@@ -153,7 +154,7 @@ export function formatServicePriceDisplay(
     return `از ${bFull} تا ${mFull} تومان`;
   }
   if (service.pricingType === 'STARTING_FROM') {
-    return `از ${formatCompactPriceToman(base)}`;
+    return `شروع از ${formatCompactPriceToman(base)}`;
   }
   return formatCompactPriceToman(base);
 }
@@ -162,19 +163,20 @@ export function formatServicePriceShort(
   service: Pick<ServiceItem, 'priceToman' | 'pricingType' | 'maxPriceToman'>
 ): string {
   const base = Number(service.priceToman) || 0;
-  const max = Number(service.maxPriceToman) || 0;
-  if (service.pricingType === 'RANGE' && max > base) {
+  const rawMax = Number(service.maxPriceToman) || 0;
+  if (service.pricingType === 'RANGE') {
+    const max = rawMax > base ? rawMax : Math.round(base * 1.4);
     const b = formatCompactRangeBound(base);
     const m = formatCompactRangeBound(max);
     if (b.unit && b.unit === m.unit) {
-      return `${b.valueText} تا ${m.valueText} ${m.unit} تومان`;
+      return `از ${b.valueText} تا ${m.valueText} ${m.unit} تومان`;
     }
     const bFull = b.unit ? `${b.valueText} ${b.unit}` : b.valueText;
     const mFull = m.unit ? `${m.valueText} ${m.unit}` : m.valueText;
-    return `${bFull} تا ${mFull} تومان`;
+    return `از ${bFull} تا ${mFull} تومان`;
   }
   if (service.pricingType === 'STARTING_FROM') {
-    return `از ${formatCompactPriceToman(base)}`;
+    return `شروع از ${formatCompactPriceToman(base)}`;
   }
   return formatCompactPriceToman(base);
 }
@@ -298,6 +300,11 @@ export function buildCustomerBookingTimeSlots(params: {
   dayWorkingHour?: WorkingHourItem;
   serverSlots?: TimeSlotAvailabilityItem[] | null;
   durationMinutes?: number;
+  bookedAppointments?: Array<{
+    timeSlot: string;
+    durationMinutes?: number;
+    status?: string;
+  }>;
 }): {
   allSlots: TimeSlotAvailabilityItem[];
   morningSlots: TimeSlotAvailabilityItem[];
@@ -307,11 +314,16 @@ export function buildCustomerBookingTimeSlots(params: {
   const effective = resolveEffectiveWorkingHour(params.dayWorkingHour);
   const duration = Math.max(15, Number(params.durationMinutes) || 30);
   const serverByTime = new Map<string, TimeSlotAvailabilityItem>();
+  const serverCandidateMinutes: number[] = [];
 
   for (const s of params.serverSlots ?? []) {
     const key = toPersianDigits(String(s.time || '').trim());
     if (key) {
       serverByTime.set(key, { ...s, time: key });
+      const parsedMin = parseTimeToMinutes(key);
+      if (parsedMin >= 0) {
+        serverCandidateMinutes.push(parsedMin);
+      }
     }
   }
 
@@ -324,6 +336,16 @@ export function buildCustomerBookingTimeSlots(params: {
     };
   }
 
+  const occupiedIntervals: Array<{ start: number; end: number }> = [];
+  for (const apt of params.bookedAppointments ?? []) {
+    if (!apt || apt.status === 'CANCELLED') continue;
+    const st = parseTimeToMinutes(apt.timeSlot);
+    if (st >= 0) {
+      const aptDur = Math.max(15, Number(apt.durationMinutes) || 45);
+      occupiedIntervals.push({ start: st, end: st + aptDur });
+    }
+  }
+
   const s1Start = effective ? parseTimeToMinutes(effective.openTime) : 9 * 60 + 30;
   const s1End = effective ? parseTimeToMinutes(effective.closeTime) : 19 * 60 + 30;
   const validS1Start = s1Start >= 0 ? s1Start : 9 * 60 + 30;
@@ -334,8 +356,7 @@ export function buildCustomerBookingTimeSlots(params: {
     shiftEndMins: number
   ): TimeSlotAvailabilityItem => {
     const label = formatMinutesToPersianTime(mins);
-    const fitsDuration =
-      mins + duration <= shiftEndMins || mins + 30 <= shiftEndMins;
+    const fitsDuration = mins + duration <= shiftEndMins;
     const srvMatch = serverByTime.get(label);
 
     if (!fitsDuration) {
@@ -343,6 +364,17 @@ export function buildCustomerBookingTimeSlots(params: {
         time: label,
         available: false,
         reason: 'خارج از ساعت کاری',
+      };
+    }
+
+    const overlapsLocalBooked = occupiedIntervals.some(
+      (iv) => mins < iv.end && mins + duration > iv.start
+    );
+    if (overlapsLocalBooked) {
+      return {
+        time: label,
+        available: false,
+        reason: 'رزروشده',
       };
     }
 
@@ -366,22 +398,45 @@ export function buildCustomerBookingTimeSlots(params: {
     };
   };
 
+  const baseStep = duration > 0 && duration < 30 ? Math.max(15, duration) : 30;
+  const collectShiftMinutes = (shiftStart: number, shiftEnd: number): number[] => {
+    const set = new Set<number>();
+    for (let m = shiftStart; m < shiftEnd; m += baseStep) {
+      set.add(m);
+    }
+    for (const sm of serverCandidateMinutes) {
+      if (sm >= shiftStart && sm < shiftEnd) {
+        set.add(sm);
+      }
+    }
+    for (const iv of occupiedIntervals) {
+      let cursor = iv.end;
+      for (let step = 0; step < 4; step += 1) {
+        if (cursor >= shiftStart && cursor + duration <= shiftEnd) {
+          set.add(cursor);
+        }
+        cursor += Math.max(15, duration);
+      }
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  };
+
   const morningSlots: TimeSlotAvailabilityItem[] = [];
   const afternoonSlots: TimeSlotAvailabilityItem[] = [];
 
   if (effective?.hasBreak && effective.secondOpenTime && effective.secondCloseTime) {
-    for (let m = validS1Start; m < validS1End; m += 30) {
+    for (const m of collectShiftMinutes(validS1Start, validS1End)) {
       morningSlots.push(makeSlotItem(m, validS1End));
     }
     const s2Start = parseTimeToMinutes(effective.secondOpenTime);
     const s2End = parseTimeToMinutes(effective.secondCloseTime);
     if (s2Start >= validS1End && s2End > s2Start) {
-      for (let m = s2Start; m < s2End; m += 30) {
+      for (const m of collectShiftMinutes(s2Start, s2End)) {
         afternoonSlots.push(makeSlotItem(m, s2End));
       }
     }
   } else {
-    for (let m = validS1Start; m < validS1End; m += 30) {
+    for (const m of collectShiftMinutes(validS1Start, validS1End)) {
       const item = makeSlotItem(m, validS1End);
       if (m < 14 * 60) {
         morningSlots.push(item);

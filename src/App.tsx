@@ -240,7 +240,11 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const location = useLocation();
-  const { authUser, isLoadingInitialData } = usePrototypeData();
+  const { authUser, isLoadingInitialData, dataMode } = usePrototypeData();
+
+  if (dataMode === 'mock') {
+    return <>{children}</>;
+  }
 
   if (isLoadingInitialData) {
     return (

@@ -106,6 +106,7 @@ interface PrototypeDataContextValue {
   isLoadingInitialData: boolean;
   authUser: AuthenticatedSessionUser | null;
   ownedBusinessId: string | null;
+  selectPreviewBusiness: (businessId: string) => void;
   isAuthModalOpen: boolean;
   authModalOptions: AuthModalOpenOptions;
   openAuthModal: (options?: AuthModalOpenOptions) => void;
@@ -237,7 +238,8 @@ interface PrototypeDataContextValue {
   ) => CustomerWalletTransactionItem | null;
   settleAppointmentInPerson: (
     appointmentId: string,
-    customAmountToman?: number
+    customAmountToman?: number,
+    customFinalTotalServicePriceToman?: number
   ) => void;
   dailyIncomeLogs: DailyIncomeLogItem[];
   addDailyIncomeLog: (
@@ -925,15 +927,62 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const [businesses, setBusinesses] = useState<BusinessItem[]>(() =>
-    mergeBusinessOverrides([])
+    mergeBusinessOverrides(SAMPLE_BUSINESSES)
   );
   const applySavedServiceSortOrder = (list: ServiceItem[]): ServiceItem[] => {
     try {
+      let extMetaMap: Record<string, Partial<ServiceItem>> = {};
+      let deletedSrvIds = new Set<string>();
+      let createdServices: ServiceItem[] = [];
+      try {
+        const rawMeta = window.localStorage.getItem('timeto_service_ext_meta_v1');
+        if (rawMeta) {
+          extMetaMap = JSON.parse(rawMeta) || {};
+        }
+        const rawDeleted = window.localStorage.getItem('timeto_deleted_service_ids_v1');
+        if (rawDeleted) {
+          deletedSrvIds = new Set<string>(JSON.parse(rawDeleted) || []);
+        }
+        const rawCreated = window.localStorage.getItem('timeto_created_services_v1');
+        if (rawCreated) {
+          createdServices = JSON.parse(rawCreated) || [];
+        }
+      } catch {
+        // ignore storage errors
+      }
+
+      const byId = new Map<string, ServiceItem>();
+      for (const srv of list) {
+        if (!srv || !srv.id || deletedSrvIds.has(srv.id)) continue;
+        const override = extMetaMap[srv.id] || {};
+        byId.set(srv.id, {
+          ...srv,
+          ...override,
+          pricingType: override.pricingType ?? srv.pricingType ?? 'FIXED',
+          maxPriceToman:
+            (override.pricingType ?? srv.pricingType) === 'RANGE'
+              ? override.maxPriceToman ?? srv.maxPriceToman
+              : undefined,
+          packageIncludes: override.packageIncludes ?? srv.packageIncludes,
+        });
+      }
+      for (const created of createdServices) {
+        if (!created || !created.id || deletedSrvIds.has(created.id)) continue;
+        if (!byId.has(created.id)) {
+          const override = extMetaMap[created.id] || {};
+          byId.set(created.id, {
+            ...created,
+            ...override,
+          });
+        }
+      }
+
+      const mergedList = Array.from(byId.values());
       const rawOrder = window.localStorage.getItem('timeto_service_sort_order_v1');
-      if (!rawOrder) return list;
+      if (!rawOrder) return mergedList;
       const orderMap = JSON.parse(rawOrder) as Record<string, number>;
-      if (!orderMap || typeof orderMap !== 'object') return list;
-      const withOrder = list.map((srv, idx) => ({
+      if (!orderMap || typeof orderMap !== 'object') return mergedList;
+      const withOrder = mergedList.map((srv, idx) => ({
         ...srv,
         sortOrder:
           typeof orderMap[srv.id] === 'number'
@@ -955,12 +1004,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       const saved = window.localStorage.getItem('timeto_local_services_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return applySavedServiceSortOrder(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return applySavedServiceSortOrder(parsed);
+        }
       }
     } catch {
       // ignore
     }
-    return [];
+    return applySavedServiceSortOrder(SAMPLE_SERVICES);
   });
   const [specialists, setSpecialists] = useState<SpecialistItem[]>(() => {
     try {
@@ -1041,46 +1092,45 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         return false;
       };
       const normalizeAptFinancials = (item: AppointmentItem): AppointmentItem => {
+        const isMoeidPanahi =
+          String(item.customerName || '').includes('معید') ||
+          String(item.customerName || '').includes('پناهی');
+        const jaziniBiz = bizPool.find(
+          (b) =>
+            !String(b.name || '').includes('مهتاب') &&
+            (String(b.name || '').includes('امیرحسین') ||
+              String(b.name || '').includes('امیر حسین') ||
+              String(b.name || '').includes('جزینی') ||
+              String(b.ownerName || '').includes('امیرحسین') ||
+              String(b.ownerName || '').includes('جزینی'))
+        );
+
+        const correctedItem: AppointmentItem =
+          isMoeidPanahi && jaziniBiz
+            ? {
+                ...item,
+                businessId: jaziniBiz.id,
+                businessSlug: jaziniBiz.slug,
+                businessName: jaziniBiz.name,
+              }
+            : item;
+
         const matchedBiz = bizPool.find(
           (b) =>
-            b.id === item.businessId ||
-            b.slug === item.businessSlug ||
-            b.name === item.businessName
+            b.id === correctedItem.businessId ||
+            b.slug === correctedItem.businessSlug ||
+            b.name === correctedItem.businessName
         );
-        const isAmirJaziniApt =
-          !String(item.businessName || '').includes('مهتاب') &&
-          !String(matchedBiz?.name || '').includes('مهتاب') &&
-          (String(item.businessName || '').includes('امیرحسین') ||
-            String(item.businessName || '').includes('امیر حسین') ||
-            String(item.businessName || '').includes('جزینی') ||
-            String(matchedBiz?.name || '').includes('امیرحسین') ||
-            String(matchedBiz?.name || '').includes('امیر حسین') ||
-            String(matchedBiz?.name || '').includes('جزینی') ||
-            String(matchedBiz?.ownerName || '').includes('امیرحسین') ||
-            String(matchedBiz?.ownerName || '').includes('امیر حسین'));
-
-        const normalizedInputApt: AppointmentItem = isAmirJaziniApt
-          ? {
-              ...item,
-              priceToman: 400_000,
-              depositPaidToman: 120_000,
-            }
-          : item;
-        const normalizedBizForApt: BusinessItem | undefined =
-          isAmirJaziniApt && matchedBiz
-            ? {
-                ...matchedBiz,
-                depositEnabled: true,
-                depositPercent: 30,
-              }
-            : matchedBiz;
 
         const resolved = resolveAppointmentFinancialBreakdown({
-          appointment: normalizedInputApt,
-          business: normalizedBizForApt,
+          appointment: correctedItem,
+          business: matchedBiz,
         });
         const fixedItem: AppointmentItem = {
-          ...normalizedInputApt,
+          ...correctedItem,
+          businessId: matchedBiz?.id || correctedItem.businessId,
+          businessSlug: matchedBiz?.slug || correctedItem.businessSlug,
+          businessName: matchedBiz?.name || correctedItem.businessName,
           priceToman: resolved.totalServicePriceToman,
           depositPaidToman: resolved.baseDepositToman,
           platformCommissionToman: resolved.platformCommissionToman,
@@ -1103,40 +1153,79 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         return fixedItem;
       };
-      for (const item of incoming) {
-        if (!isInvalidOrRejectedApt(item)) {
-          map.set(item.id, normalizeAptFinancials(item));
-        }
-      }
-      if (!authoritativeFromServer) {
-        for (const item of savedList) {
-          if (!isInvalidOrRejectedApt(item)) {
-            const existing = map.get(item.id);
-            const merged: AppointmentItem = existing
-              ? {
-                  ...item,
-                  ...existing,
-                  depositPaidToman:
-                    existing.depositPaidToman && existing.depositPaidToman > 0
-                      ? existing.depositPaidToman
-                      : item.depositPaidToman,
-                  paymentMethod: existing.paymentMethod || item.paymentMethod,
-                  paymentTrackingCode:
-                    existing.paymentTrackingCode || item.paymentTrackingCode,
-                  inPersonSettled:
-                    existing.inPersonSettled ?? item.inPersonSettled,
-                  inPersonSettledAmountToman:
-                    existing.inPersonSettledAmountToman ??
-                    item.inPersonSettledAmountToman,
-                  inPersonSettledAtJalali:
-                    existing.inPersonSettledAtJalali ??
-                    item.inPersonSettledAtJalali,
-                }
-              : item;
-            map.set(item.id, normalizeAptFinancials(merged));
+
+      const savedByRefOrId = new Map<string, AppointmentItem>();
+      for (const sItem of savedList) {
+        if (sItem && sItem.id) {
+          savedByRefOrId.set(sItem.id, sItem);
+          if (sItem.referenceCode) {
+            savedByRefOrId.set(sItem.referenceCode, sItem);
           }
         }
       }
+
+      for (const item of incoming) {
+        if (!isInvalidOrRejectedApt(item)) {
+          const localMatch =
+            savedByRefOrId.get(item.id) ||
+            (item.referenceCode ? savedByRefOrId.get(item.referenceCode) : undefined);
+          const enriched: AppointmentItem = localMatch
+            ? {
+                ...item,
+                customerPhone:
+                  item.customerPhone || localMatch.customerPhone,
+                paymentMethod:
+                  item.paymentMethod || localMatch.paymentMethod,
+                paymentTrackingCode:
+                  item.paymentTrackingCode || localMatch.paymentTrackingCode,
+                inPersonSettled:
+                  item.inPersonSettled ?? localMatch.inPersonSettled,
+                inPersonSettledAmountToman:
+                  item.inPersonSettledAmountToman ??
+                  localMatch.inPersonSettledAmountToman,
+                inPersonSettledAtJalali:
+                  item.inPersonSettledAtJalali ??
+                  localMatch.inPersonSettledAtJalali,
+                refundedToWalletToman:
+                  item.refundedToWalletToman ?? localMatch.refundedToWalletToman,
+              }
+            : item;
+          map.set(item.id, normalizeAptFinancials(enriched));
+        }
+      }
+
+      const existingRefs = new Set<string>();
+      for (const val of map.values()) {
+        if (val.referenceCode) existingRefs.add(val.referenceCode);
+      }
+
+      let myBookedIds = new Set<string>();
+      try {
+        const rawMyIds = window.localStorage.getItem('timeto_my_booked_apt_ids_v1');
+        if (rawMyIds) {
+          myBookedIds = new Set<string>(JSON.parse(rawMyIds) || []);
+        }
+      } catch {
+        // ignore
+      }
+
+      for (const item of savedList) {
+        if (isInvalidOrRejectedApt(item)) continue;
+        if (map.has(item.id) || (item.referenceCode && existingRefs.has(item.referenceCode))) {
+          continue;
+        }
+        const isRecentOrOwn =
+          !authoritativeFromServer ||
+          myBookedIds.has(item.id) ||
+          (item.referenceCode && myBookedIds.has(item.referenceCode)) ||
+          (typeof item.createdAtMs === 'number' &&
+            Date.now() - item.createdAtMs < 15 * 60 * 1000);
+        if (isRecentOrOwn) {
+          map.set(item.id, normalizeAptFinancials(item));
+          if (item.referenceCode) existingRefs.add(item.referenceCode);
+        }
+      }
+
       return Array.from(map.values());
     } catch {
       return incoming;
@@ -1155,7 +1244,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const [appointments, setAppointments] = useState<AppointmentItem[]>(() =>
-    mergeSavedAppointments([])
+    mergeSavedAppointments(SAMPLE_APPOINTMENTS, SAMPLE_BUSINESSES)
   );
   const mergeCategoriesWithDefaults = (
     incoming: CategoryItem[]
@@ -1272,7 +1361,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const [customers, setCustomers] = useState<CustomerRecord[]>(() =>
-    mergeManualCustomers([])
+    mergeManualCustomers(SAMPLE_CUSTOMERS)
   );
   const [rawAdminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
   const [accountsRevision, setAccountsRevision] = useState<number>(0);
@@ -1283,6 +1372,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return null;
     }
   });
+
+  const selectPreviewBusiness = (businessId: string) => {
+    setOwnedBusinessId(businessId);
+    try {
+      window.localStorage.setItem('timeto_owned_business_id_v1', businessId);
+    } catch {
+      // ignore
+    }
+  };
   const [reviews, setReviews] = useState<ReviewItem[]>(SAMPLE_REVIEWS);
   const [plans, setPlans] = useState<SubscriptionPlanItem[]>(() => {
     try {
@@ -1912,7 +2010,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const mergedApts = mergeSavedAppointments(
             serverApts,
             nextBusinesses,
-            true
+            serverApts.length > 0
           );
           persistSavedAppointments(mergedApts);
           return mergedApts;
@@ -2109,21 +2207,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           // ignore
         }
 
-        const firstRealBiz = response.data.businesses[0];
-        const firstRealSrv = response.data.services[0];
-        const firstRealSpc = response.data.specialists[0];
-        // هرگز پیش‌نویس نوبت انتخاب‌شده توسط مشتری را با سالن اول لیست (مثل angel) بازنویسی نکنیم!
+        // هرگز پیش‌نویس نوبت انتخاب‌شده توسط مشتری را با سالن اول لیست بازنویسی نکنیم!
         setBookingDraft((prev) => ({
           ...prev,
-          businessSlug: prev.businessSlug || firstRealBiz?.slug || '',
-          serviceId: prev.serviceId || firstRealSrv?.id || '',
-          serviceIds:
-            prev.serviceIds && prev.serviceIds.length > 0
-              ? prev.serviceIds
-              : firstRealSrv?.id
-                ? [firstRealSrv.id]
-                : [],
-          specialistId: prev.specialistId || firstRealSpc?.id || '',
+          businessSlug: prev.businessSlug || '',
+          serviceId: prev.serviceId || '',
+          serviceIds: prev.serviceIds && prev.serviceIds.length > 0 ? prev.serviceIds : [],
+          specialistId: prev.specialistId || '',
           customerName: prev.customerName || localPersistedUser?.fullName || '',
           customerPhone: prev.customerPhone || localPersistedUser?.phone || '',
           lastReferenceCode: undefined,
@@ -2166,12 +2256,59 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } else if (response.mode === 'mock') {
         setDataMode('mock');
         setDatabaseError(null);
+        setBusinesses((prev) =>
+          prev.length > 0 ? prev : mergeBusinessOverrides(SAMPLE_BUSINESSES)
+        );
+        setServices((prev) =>
+          prev.length > 0 ? prev : applySavedServiceSortOrder(SAMPLE_SERVICES)
+        );
+        setSpecialists((prev) =>
+          prev.length > 0 ? prev : SAMPLE_SPECIALISTS
+        );
+        setAppointments((prev) =>
+          prev.length > 0
+            ? prev
+            : mergeSavedAppointments(SAMPLE_APPOINTMENTS, SAMPLE_BUSINESSES)
+        );
+        setCustomers((prev) =>
+          prev.length > 0 ? prev : mergeManualCustomers(SAMPLE_CUSTOMERS)
+        );
         if (localPersistedUser) {
           setAuthUser(localPersistedUser);
           setBookingDraft((prev) => ({
             ...prev,
             customerName: localPersistedUser.fullName || prev.customerName,
             customerPhone: localPersistedUser.phone || prev.customerPhone,
+          }));
+        } else {
+          const previewUser: AuthenticatedSessionUser = {
+            sessionId: 'sess-preview-admin',
+            userId: 'usr-preview-admin',
+            phone: '09131112233',
+            fullName: 'مهسا رضایی',
+            defaultCity: 'اصفهان',
+            isPlatformAdmin: true,
+            roles: ['CUSTOMER', 'BUSINESS_OWNER', 'PLATFORM_ADMIN'],
+            businessMemberships: [
+              {
+                businessUuid: 'biz-real-ayra',
+                businessId: 'biz-real-ayra',
+                businessSlug: 'ayra-laser-isfahan',
+                memberRole: 'OWNER',
+              },
+              {
+                businessUuid: 'biz-real-jazini',
+                businessId: 'biz-real-jazini',
+                businessSlug: 'amirhossein-jazini-barber',
+                memberRole: 'OWNER',
+              },
+            ],
+          };
+          setAuthUser(previewUser);
+          setBookingDraft((prev) => ({
+            ...prev,
+            customerName: prev.customerName || previewUser.fullName,
+            customerPhone: prev.customerPhone || previewUser.phone,
           }));
         }
       } else {
@@ -2207,28 +2344,34 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           if (Array.isArray(syncRes.registeredUsers)) {
             setAdminUsers(syncRes.registeredUsers);
           }
+          let latestSyncedServices: ServiceItem[] | null = null;
           if (Array.isArray(syncRes.services) && syncRes.services.length > 0) {
-            setServices(() => {
-              const srvMap = new Map<string, ServiceItem>();
-              for (const s of syncRes.services || []) {
-                if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
-                  srvMap.set(s.id, s);
-                }
+            const srvMap = new Map<string, ServiceItem>();
+            for (const s of syncRes.services || []) {
+              if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+                srvMap.set(s.id, s);
               }
-              return applySavedServiceSortOrder(Array.from(srvMap.values()));
-            });
+            }
+            const resolvedSrvs = applySavedServiceSortOrder(
+              Array.from(srvMap.values())
+            );
+            latestSyncedServices = resolvedSrvs;
+            setServices(resolvedSrvs);
           }
           if (
             Array.isArray(syncRes.businesses) &&
             syncRes.businesses.length > 0
           ) {
-            setBusinesses((prevBiz) =>
-              mergeBusinessOverrides(
+            setBusinesses((prevBiz) => {
+              const mergedBiz = mergeBusinessOverrides(
                 syncRes.businesses || prevBiz,
                 syncRes.registeredUsers,
                 true
-              )
-            );
+              );
+              return latestSyncedServices
+                ? syncStartingPricesWithServices(mergedBiz, latestSyncedServices)
+                : mergedBiz;
+            });
           }
           if (Array.isArray(syncRes.appointments)) {
             setAppointments(() => {
@@ -4103,7 +4246,44 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
+    const saveServiceOverrideLocally = (
+      srvId: string,
+      patchData: Partial<ServiceItem>,
+      fullCreatedItem?: ServiceItem
+    ) => {
+      try {
+        const rawMeta = window.localStorage.getItem('timeto_service_ext_meta_v1');
+        const extMetaMap: Record<string, Partial<ServiceItem>> = rawMeta
+          ? JSON.parse(rawMeta)
+          : {};
+        extMetaMap[srvId] = {
+          ...(extMetaMap[srvId] || {}),
+          ...patchData,
+        };
+        window.localStorage.setItem(
+          'timeto_service_ext_meta_v1',
+          JSON.stringify(extMetaMap)
+        );
+        if (fullCreatedItem) {
+          const rawCreated =
+            window.localStorage.getItem('timeto_created_services_v1') || '[]';
+          const createdList: ServiceItem[] = JSON.parse(rawCreated);
+          const nextCreated = [
+            fullCreatedItem,
+            ...createdList.filter((x) => x.id !== fullCreatedItem.id),
+          ];
+          window.localStorage.setItem(
+            'timeto_created_services_v1',
+            JSON.stringify(nextCreated)
+          );
+        }
+      } catch {
+        // ignore storage errors
+      }
+    };
+
     const applyAddLocal = (resolvedItem: ServiceItem) => {
+      saveServiceOverrideLocally(resolvedItem.id, resolvedItem, resolvedItem);
       setServices((prev) => {
         const seenIds = new Set<string>();
         const deduplicated = [resolvedItem, ...prev].map((s) => {
@@ -4129,11 +4309,19 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .then((res) => {
           const mergedItem: ServiceItem = {
             ...res.item,
-            pricingType: item.pricingType ?? res.item.pricingType,
+            pricingType: item.pricingType ?? res.item.pricingType ?? 'FIXED',
             maxPriceToman: item.maxPriceToman ?? res.item.maxPriceToman,
             packageIncludes: item.packageIncludes ?? res.item.packageIncludes,
           };
           applyAddLocal(mergedItem);
+          void fetch('/api/v1/services/sync-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'create',
+              ...mergedItem,
+            }),
+          }).catch(() => {});
           showToast(`خدمت «${mergedItem.title}» ثبت شد.`);
         })
         .catch(() => {
@@ -4142,6 +4330,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             id: makeUniqueId('srv'),
           };
           applyAddLocal(fallbackItem);
+          void fetch('/api/v1/services/sync-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'create',
+              ...fallbackItem,
+            }),
+          }).catch(() => {});
           showToast(`خدمت «${item.title}» به فهرست خدمات اضافه شد.`);
         });
       return;
@@ -4157,10 +4353,52 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const updateService = (id: string, patch: Partial<ServiceItem>) => {
     const applyUpdateLocal = (mergedPatch: Partial<ServiceItem>) => {
-      setServices((prev) => {
-        const next = prev.map((s) =>
-          s.id === id ? { ...s, ...mergedPatch } : s
+      try {
+        const rawMeta = window.localStorage.getItem('timeto_service_ext_meta_v1');
+        const extMetaMap: Record<string, Partial<ServiceItem>> = rawMeta
+          ? JSON.parse(rawMeta)
+          : {};
+        const prevMeta = extMetaMap[id] || {};
+        const cleanPatch = Object.fromEntries(
+          Object.entries(mergedPatch).filter(([, v]) => v !== undefined)
         );
+        extMetaMap[id] = {
+          ...prevMeta,
+          ...cleanPatch,
+        };
+        window.localStorage.setItem(
+          'timeto_service_ext_meta_v1',
+          JSON.stringify(extMetaMap)
+        );
+      } catch {
+        // ignore
+      }
+
+      setServices((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== id) return s;
+          const nextPricingType =
+            mergedPatch.pricingType !== undefined
+              ? mergedPatch.pricingType
+              : s.pricingType ?? 'FIXED';
+          const nextMaxPriceToman =
+            nextPricingType === 'RANGE'
+              ? mergedPatch.maxPriceToman !== undefined
+                ? mergedPatch.maxPriceToman
+                : s.maxPriceToman
+              : undefined;
+          const nextPackageIncludes =
+            mergedPatch.packageIncludes !== undefined
+              ? mergedPatch.packageIncludes
+              : s.packageIncludes;
+          return {
+            ...s,
+            ...mergedPatch,
+            pricingType: nextPricingType,
+            maxPriceToman: nextMaxPriceToman,
+            packageIncludes: nextPackageIncludes,
+          };
+        });
         persistLocalServices(next);
         setBusinesses((bizPrev) =>
           syncStartingPricesWithServices(bizPrev, next)
@@ -4169,31 +4407,62 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     };
 
+    // اعمال فوری (Optimistic) تغییرات قیمت و حالت قیمت‌گذاری در رابط کاربری و حافظه محلی
+    applyUpdateLocal(patch);
+
     if (dataMode === 'real') {
+      void fetch('/api/v1/services/sync-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          id,
+          ...patch,
+        }),
+      }).catch(() => {});
+
       void realApiClient
         .updateService(id, patch)
         .then((res) => {
           applyUpdateLocal({
             ...res.item,
-            pricingType: patch.pricingType,
-            maxPriceToman: patch.maxPriceToman,
-            packageIncludes: patch.packageIncludes,
+            ...(patch.pricingType !== undefined
+              ? { pricingType: patch.pricingType }
+              : {}),
+            ...(patch.maxPriceToman !== undefined
+              ? { maxPriceToman: patch.maxPriceToman }
+              : {}),
+            ...(patch.packageIncludes !== undefined
+              ? { packageIncludes: patch.packageIncludes }
+              : {}),
           });
           showToast('ویرایش خدمت ذخیره شد.');
         })
         .catch(() => {
-          applyUpdateLocal(patch);
           showToast('ویرایش خدمت ذخیره شد.');
         });
       return;
     }
 
-    applyUpdateLocal(patch);
     showToast('ویرایش خدمت ذخیره شد.');
   };
 
   const deleteService = (id: string) => {
     const applyDeleteLocal = () => {
+      try {
+        const rawDeleted =
+          window.localStorage.getItem('timeto_deleted_service_ids_v1') || '[]';
+        const deletedList: string[] = JSON.parse(rawDeleted);
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          window.localStorage.setItem(
+            'timeto_deleted_service_ids_v1',
+            JSON.stringify(deletedList)
+          );
+        }
+      } catch {
+        // ignore
+      }
       setServices((prev) => {
         const next = prev.filter((s) => s.id !== id);
         persistLocalServices(next);
@@ -4204,21 +4473,29 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     };
 
+    applyDeleteLocal();
+
     if (dataMode === 'real') {
+      void fetch('/api/v1/services/sync-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          id,
+        }),
+      }).catch(() => {});
+
       void realApiClient
         .deleteService(id)
         .then(() => {
-          applyDeleteLocal();
           showToast('خدمت انتخاب‌شده حذف شد.', 'warning');
         })
         .catch(() => {
-          applyDeleteLocal();
           showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
         });
       return;
     }
 
-    applyDeleteLocal();
     showToast('خدمت انتخاب‌شده از فهرست حذف شد.', 'warning');
   };
 
@@ -4648,12 +4925,51 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
-    // ارسال پیامک به مشتری صرفاً پس از تایید یا رد/لغو توسط صاحب کسب‌وکار
+    // همگام‌سازی وضعیت نوبت در دیتابیس و ارسال پیامک به مشتری پس از تایید یا رد/لغو توسط صاحب کسب‌وکار
     if (
       targetApt &&
       (status === AppointmentStatus.Confirmed ||
-        status === AppointmentStatus.Cancelled)
+        status === AppointmentStatus.Cancelled ||
+        status === AppointmentStatus.Completed)
     ) {
+      if (
+        status === AppointmentStatus.Confirmed ||
+        status === AppointmentStatus.Cancelled
+      ) {
+        const smsText =
+          status === AppointmentStatus.Confirmed
+            ? `${targetApt.customerName} عزیز، نوبت شما برای «${targetApt.serviceTitle}» در ${targetApt.businessName} در تاریخ ${targetApt.dateJalali} ساعت ${targetApt.timeSlot} توسط مدیریت سالن تایید نهایی شد.`
+            : `${targetApt.customerName} عزیز، نوبت شما در ${targetApt.businessName} (${targetApt.dateJalali} ساعت ${targetApt.timeSlot}) لغو شد و بیعانه پرداختی به کیف پول شما بازگشت داده شد.`;
+        const newLog: SmsMessageLogItem = {
+          id: `sms-status-${Date.now()}`,
+          businessId: targetApt.businessId || 'biz-real-ayra',
+          businessName: targetApt.businessName || 'سالن زیبایی',
+          recipientsCount: 1,
+          recipientPhones: [
+            targetApt.customerPhone || targetApt.customerPhoneMasked,
+          ],
+          messageText: smsText,
+          templateTitle:
+            status === AppointmentStatus.Confirmed
+              ? 'تایید نهایی نوبت توسط سالن'
+              : 'لغو نوبت و بازگشت بیعانه',
+          createdAtJalali: `${targetApt.dateJalali} - اکنون`,
+          status: 'SENT',
+        };
+        setSmsLogs((prev) => {
+          const next = [newLog, ...prev];
+          try {
+            window.localStorage.setItem(
+              'timeto_sms_logs_v1',
+              JSON.stringify(next)
+            );
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+      }
+
       void fetch('/api/v1/appointments/notify-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4661,7 +4977,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           appointmentId: id,
           status,
           customerName: targetApt.customerName,
-          customerPhone: targetApt.customerPhoneMasked,
+          customerPhone: targetApt.customerPhone || targetApt.customerPhoneMasked,
           businessName: targetApt.businessName,
           serviceTitle: targetApt.serviceTitle,
           dateJalali: targetApt.dateJalali,
@@ -4804,7 +5120,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const settleAppointmentInPerson = (
     appointmentId: string,
-    customAmountToman?: number
+    customAmountToman?: number,
+    customFinalTotalServicePriceToman?: number
   ) => {
     const targetApt = appointments.find((a) => a.id === appointmentId);
     if (!targetApt) return;
@@ -4824,18 +5141,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       business: matchedBiz,
     });
     const alreadyPaidDeposit = aptBreakdown.baseDepositToman;
-    const defaultRemaining = aptBreakdown.remainingInSalonToman;
+    const resolvedFinalServicePrice =
+      customFinalTotalServicePriceToman &&
+      customFinalTotalServicePriceToman >= alreadyPaidDeposit
+        ? customFinalTotalServicePriceToman
+        : aptBreakdown.totalServicePriceToman;
+    const defaultRemaining = Math.max(
+      0,
+      resolvedFinalServicePrice - alreadyPaidDeposit
+    );
     const resolvedAmount =
-      customAmountToman && customAmountToman > 0
+      customAmountToman !== undefined && customAmountToman >= 0
         ? customAmountToman
         : defaultRemaining;
     const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
+    const priceDiff = resolvedFinalServicePrice - (targetApt.priceToman || 0);
 
     setAppointments((prev) => {
       const next = prev.map((a) =>
         a.id === appointmentId
           ? {
               ...a,
+              priceToman: resolvedFinalServicePrice,
               status: AppointmentStatus.Completed,
               inPersonSettled: true,
               inPersonSettledAmountToman: resolvedAmount,
@@ -4846,6 +5173,25 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       persistSavedAppointments(next);
       return next;
     });
+
+    if (priceDiff !== 0) {
+      setCustomers((prev) =>
+        prev.map((c) => {
+          const sameBiz = !c.businessId || c.businessId === targetApt.businessId;
+          const sameCustomer =
+            c.fullName === targetApt.customerName ||
+            (c.phone && c.phone === targetApt.customerPhone) ||
+            (c.phoneMasked && c.phoneMasked === targetApt.customerPhoneMasked);
+          if (sameBiz && sameCustomer) {
+            return {
+              ...c,
+              totalSpentToman: Math.max(0, (c.totalSpentToman || 0) + priceDiff),
+            };
+          }
+          return c;
+        })
+      );
+    }
 
     addDailyIncomeLog({
       businessId: targetApt.businessId,
@@ -4859,8 +5205,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       specialistName: targetApt.specialistName,
       note:
         alreadyPaidDeposit > 0
-          ? `تسویه الباقی حضوری نوبت (پس از کسر ${formatPriceToman(alreadyPaidDeposit)} بیعانه آنلاین)`
-          : 'تسویه کامل حضوری نوبت در سالن',
+          ? `تسویه الباقی حضوری نوبت (مبلغ نهایی خدمت: ${formatPriceToman(resolvedFinalServicePrice)} پس از کسر ${formatPriceToman(alreadyPaidDeposit)} بیعانه آنلاین)`
+          : `تسویه کامل حضوری نوبت در سالن (مبلغ نهایی: ${formatPriceToman(resolvedFinalServicePrice)})`,
     });
   };
 
@@ -6852,6 +7198,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? paymentMeta.depositPaidToman
         : financialBreakdown.baseDepositToman;
 
+    const cleanBookedPhone = normalizeIranMobile(
+      effectiveDraft.customerPhone || authUser?.phone || ''
+    );
+    const isAutoConfirmEnabled = Boolean(biz?.autoConfirmAppointments);
+    const initialBookingStatus = isAutoConfirmEnabled
+      ? AppointmentStatus.Confirmed
+      : AppointmentStatus.Pending;
     const optimisticApt: AppointmentItem = {
       id: `apt-${Date.now()}`,
       referenceCode: refCode,
@@ -6860,6 +7213,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       businessName: resolvedBizName,
       customerName:
         effectiveDraft.customerName || authUser?.fullName || 'مراجع تایم‌تو',
+      customerPhone: cleanBookedPhone || undefined,
       customerPhoneMasked:
         effectiveDraft.customerPhone || authUser?.phone || '۰۹۱۳***۰۰۰۰',
       serviceId: primarySrv?.id || effectiveDraft.serviceId,
@@ -6880,9 +7234,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       paymentMethod: paymentMeta?.paymentMethod,
       paymentTrackingCode: paymentMeta?.paymentTrackingCode,
       createdAtMs: Date.now(),
-      status: AppointmentStatus.Pending,
+      status: initialBookingStatus,
       notes: effectiveDraft.customerNotes || undefined,
     };
+
+    const recordMyBookedAptTokens = (...tokens: Array<string | undefined>) => {
+      try {
+        const raw =
+          window.localStorage.getItem('timeto_my_booked_apt_ids_v1') || '[]';
+        const list: string[] = JSON.parse(raw);
+        const set = new Set<string>(Array.isArray(list) ? list : []);
+        for (const t of tokens) {
+          if (t && t.trim()) set.add(t.trim());
+        }
+        window.localStorage.setItem(
+          'timeto_my_booked_apt_ids_v1',
+          JSON.stringify(Array.from(set))
+        );
+      } catch {
+        // ignore
+      }
+    };
+    recordMyBookedAptTokens(optimisticApt.id, optimisticApt.referenceCode);
 
     const resolvedOwnerPhone =
       biz?.ownerPhone || biz?.phoneDisplay || undefined;
@@ -6938,6 +7311,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         .then((res) => {
           const pendingItem: AppointmentItem = {
             ...res.item,
+            customerPhone: cleanBookedPhone || res.item.customerPhone,
             specialistName:
               res.item.specialistName &&
               res.item.specialistName.trim() !== 'مریم فرهادی'
@@ -6954,10 +7328,13 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             createdAtMs: Date.now(),
             status: AppointmentStatus.Pending,
           };
+          recordMyBookedAptTokens(pendingItem.id, pendingItem.referenceCode);
           setAppointments((prev) => {
             const next = [
               pendingItem,
-              ...prev.filter((a) => a.id !== pendingItem.id),
+              ...prev.filter(
+                (a) => a.id !== pendingItem.id && a.id !== optimisticApt.id
+              ),
             ];
             persistSavedAppointments(next);
             return next;
@@ -6990,10 +7367,83 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       persistSavedAppointments(next);
       return next;
     });
+    // ثبت/بروزرسانی خودکار پرونده مشتری صرفاً برای همین کسب‌وکار (ایزولاسیون کامل مشتریان هر سالن)
+    setCustomers((prev) => {
+      const cleanPhone = (
+        optimisticApt.customerPhone ||
+        optimisticApt.customerPhoneMasked ||
+        ''
+      ).trim();
+      const existingIdx = prev.findIndex(
+        (c) =>
+          c.businessId === resolvedBizId &&
+          (c.phone === cleanPhone ||
+            c.phoneMasked === cleanPhone ||
+            c.fullName === optimisticApt.customerName)
+      );
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        const updated: CustomerRecord = {
+          ...existing,
+          businessId: resolvedBizId,
+          totalVisits: (existing.totalVisits || 0) + 1,
+          lastVisitJalali: optimisticApt.dateJalali,
+          favoriteService: optimisticApt.serviceTitle,
+          totalSpentToman:
+            (existing.totalSpentToman || 0) + (optimisticApt.priceToman || 0),
+        };
+        const copy = [...prev];
+        copy[existingIdx] = updated;
+        return copy;
+      }
+      const newCustomer: CustomerRecord = {
+        id: `cust-${Date.now()}`,
+        businessId: resolvedBizId,
+        fullName: optimisticApt.customerName,
+        phone: cleanPhone || undefined,
+        phoneMasked: cleanPhone,
+        city: biz?.city || 'اصفهان',
+        notes: 'رزرو آنلاین تایم تو',
+        totalVisits: 1,
+        lastVisitJalali: optimisticApt.dateJalali,
+        favoriteService: optimisticApt.serviceTitle,
+        totalSpentToman: optimisticApt.priceToman || 0,
+      };
+      return [newCustomer, ...prev];
+    });
+    // ثبت گزارش پیامک ثبت اولیه یا تایید خودکار نوبت
+    const newBookingSmsLog: SmsMessageLogItem = {
+      id: `sms-book-${Date.now()}`,
+      businessId: resolvedBizId,
+      businessName: optimisticApt.businessName,
+      recipientsCount: 1,
+      recipientPhones: [
+        optimisticApt.customerPhone || optimisticApt.customerPhoneMasked,
+      ],
+      messageText: isAutoConfirmEnabled
+        ? `${optimisticApt.customerName} عزیز، نوبت «${optimisticApt.serviceTitle}» در ${optimisticApt.businessName} برای ${optimisticApt.dateJalali} ساعت ${optimisticApt.timeSlot} به صورت خودکار تایید نهایی شد. کد پیگیری: ${refCode}`
+        : `${optimisticApt.customerName} عزیز، درخواست نوبت «${optimisticApt.serviceTitle}» در ${optimisticApt.businessName} برای ${optimisticApt.dateJalali} ساعت ${optimisticApt.timeSlot} ثبت شد و منتظر تایید مدیریت سالن است. کد پیگیری: ${refCode}`,
+      templateTitle: isAutoConfirmEnabled
+        ? 'تایید خودکار نوبت پس از پرداخت بیعانه'
+        : 'ثبت اولیه نوبت (در انتظار تایید سالن)',
+      createdAtJalali: `${optimisticApt.dateJalali} - اکنون`,
+      status: 'SENT',
+    };
+    setSmsLogs((prev) => {
+      const next = [newBookingSmsLog, ...prev];
+      try {
+        window.localStorage.setItem('timeto_sms_logs_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
     setBookingDraft((prev) => ({ ...prev, lastReferenceCode: refCode }));
     triggerBookingNotification();
     showToast(
-      'پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓'
+      isAutoConfirmEnabled
+        ? 'پرداخت بیعانه تایید شد و نوبت شما به صورت خودکار توسط سالن تایید نهایی گردید ✓'
+        : 'پرداخت بیعانه تایید شد و نوبت شما برای تایید به پنل صاحب سالن ارسال گردید ✓'
     );
     return optimisticApt;
   };
@@ -7117,8 +7567,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           paymentMethod: paymentMeta?.paymentMethod,
           paymentTrackingCode: paymentMeta?.paymentTrackingCode,
         });
+        const cleanSubmitPhone = normalizeIranMobile(
+          effectiveDraft.customerPhone || authUser?.phone || ''
+        );
         const pendingItem: AppointmentItem = {
           ...res.item,
+          customerPhone: cleanSubmitPhone || res.item.customerPhone,
           specialistName:
             res.item.specialistName &&
             res.item.specialistName.trim() !== 'مریم فرهادی'
@@ -7135,6 +7589,20 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           createdAtMs: Date.now(),
           status: AppointmentStatus.Pending,
         };
+        try {
+          const raw =
+            window.localStorage.getItem('timeto_my_booked_apt_ids_v1') || '[]';
+          const list: string[] = JSON.parse(raw);
+          const set = new Set<string>(Array.isArray(list) ? list : []);
+          if (pendingItem.id) set.add(pendingItem.id);
+          if (pendingItem.referenceCode) set.add(pendingItem.referenceCode);
+          window.localStorage.setItem(
+            'timeto_my_booked_apt_ids_v1',
+            JSON.stringify(Array.from(set))
+          );
+        } catch {
+          // ignore
+        }
         setAppointments((prev) => {
           const next = [
             pendingItem,
@@ -7162,7 +7630,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             customerPhone:
               effectiveDraft.customerPhone || authUser?.phone || '',
             serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
-            priceToman: summary.totalPriceToman || 450000,
+            priceToman: resolvedSubmitServicePrice,
             durationMinutes: summary.totalDurationMinutes || 60,
             dateJalali: effectiveDraft.dateJalali,
             timeSlot: effectiveDraft.timeSlot,
@@ -7700,6 +8168,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           isLoadingInitialData,
           authUser,
           ownedBusinessId,
+          selectPreviewBusiness,
           isAuthModalOpen,
           authModalOptions,
           openAuthModal,

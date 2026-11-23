@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   AppointmentItem,
+  AppointmentStatus,
   BusinessItem,
   BusinessType,
   ServiceItem,
@@ -845,7 +846,7 @@ export const PopularServicePastelCard: React.FC<{
   );
 };
 
-/** ۶. کارت خدمت جمع‌وجور و سریع (ServiceCard) — مجهز به کشوی بازشوی مینیمال برای مشاهده نام کامل، توضیحات و محتویات پکیج */
+/** ۶. کارت خدمت بهبودیافته برای موبایل و دسکتاپ (ServiceCard) — با چیدمان دوطبقه، نمایش کامل تعرفه بازه‌ای/پایه و کشوی توضیحات */
 export const ServiceCard: React.FC<{
   service: ServiceItem;
   actionLabel?: string;
@@ -856,7 +857,7 @@ export const ServiceCard: React.FC<{
   onToggleSelect?: (service: ServiceItem) => void;
 }> = ({
   service,
-  actionLabel = 'رزرو',
+  actionLabel = 'رزرو نوبت',
   onSelect,
   bookingHref,
   isPopularBadge = false,
@@ -880,140 +881,94 @@ export const ServiceCard: React.FC<{
           onToggleSelect(service);
         }
       }}
-      className={`p-3 rounded-2xl border transition-all ${
+      className={`p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between ${
         onToggleSelect ? 'cursor-pointer select-none' : ''
       } ${
         isSelected
-          ? 'border-[#8B5CF6] bg-[#F5F3FF] ring-2 ring-[#8B5CF6]/15 shadow-2xs'
+          ? 'border-[#8B5CF6] bg-[#F5F3FF] ring-2 ring-[#8B5CF6]/15 shadow-xs'
           : 'border-[#E6E0F5] bg-white hover:border-[#C4B5FD] hover:bg-[#FAF8FF]'
       }`}
     >
-      <div className="flex items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {onToggleSelect ? (
-            <span
-              className={`w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
-                isSelected
-                  ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white'
-                  : 'bg-white border-[#C4B5FD] text-transparent'
+      {/* بخش بالایی: عنوان کامل خدمت، دسته‌بندی، مدت‌زمان، خلاصه یک‌خطی و دکمه توضیحات */}
+      <div className="flex items-start gap-2.5">
+        {onToggleSelect ? (
+          <span
+            className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
+              isSelected
+                ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white'
+                : 'bg-white border-[#C4B5FD] text-transparent'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+          </span>
+        ) : null}
+
+        <div className="space-y-1.5 min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-1.5">
+            <h3
+              className={`text-sm sm:text-[15px] font-extrabold text-[#1E1B2E] leading-snug ${
+                isDetailsOpen ? '' : 'line-clamp-2'
               }`}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </span>
-          ) : null}
-
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <h3
-                className={`text-xs sm:text-sm font-extrabold text-[#1E1B2E] ${
-                  isDetailsOpen ? ' leading-snug' : 'truncate'
-                }`}
-              >
-                {service.title}
-              </h3>
-              {showPopular ? (
-                <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
-                  ★ پرطرفدار
-                </span>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6480]">
-              <span className="px-1.5 py-0.5 rounded-md bg-[#F3EEFF] font-bold text-[#7C3AED]">
-                {service.category}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="inline-flex items-center gap-1 tabular-nums font-semibold">
-                <Clock className="w-3 h-3 text-[#8B5CF6]" />
-                {formatDurationMinutes(service.durationMinutes)}
-              </span>
-
-              {/* دکمه مینیمال مشاهده توضیحات کامل و موارد شامل خدمت / پکیج */}
-              <button
-                type="button"
-                aria-expanded={isDetailsOpen}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsDetailsOpen((prev) => !prev);
-                }}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
-                  isDetailsOpen
-                    ? 'bg-[#8B5CF6] text-white'
-                    : hasRichDetails
-                      ? 'bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE]'
-                      : 'bg-[#F8FAFC] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
-                }`}
-              >
-                <Info className="w-3 h-3 shrink-0" />
-                <span>
-                  {isDetailsOpen
-                    ? 'بستن توضیحات ▴'
-                    : packageItems.length > 0
-                      ? `شامل ${toPersianDigits(packageItems.length)} مورد ▾`
-                      : 'توضیحات ▾'}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          <div className="text-left">
-            <span className="text-xs sm:text-sm font-black text-[#1E1B2E] tabular-nums block">
-              {formatServicePriceShort(service)}
-            </span>
-            {service.pricingType === 'RANGE' ? (
-              <span className="text-[9px] font-bold text-amber-700 block">
-                بازه متغیر
-              </span>
-            ) : service.pricingType === 'STARTING_FROM' ? (
-              <span className="text-[9px] font-bold text-sky-700 block">
-                تعرفه پایه
+              {service.title}
+            </h3>
+            {showPopular ? (
+              <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
+                ★ پرطرفدار
               </span>
             ) : null}
           </div>
 
-          {bookingHref ? (
-            <Link
-              to={bookingHref}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!authUser) {
-                  e.preventDefault();
-                  openAuthModal({
-                    initialScreen: 'LOGIN',
-                    defaultRole: 'CUSTOMER',
-                    redirectTo: bookingHref,
-                    promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
-                  });
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
-            >
-              <span>{actionLabel}</span>
-              <ArrowLeft className="w-3.5 h-3.5" />
-            </Link>
-          ) : onSelect ? (
+          {/* خلاصه کوتاه توضیحات یا اقلام در حالت بسته برای خوانایی بهتر موبایل */}
+          {!isDetailsOpen && (cleanDescription || packageItems.length > 0) ? (
+            <p className="text-[11px] text-[#6B6480] line-clamp-1 leading-relaxed">
+              {cleanDescription || `شامل: ${packageItems.join('، ')}`}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6480] pt-0.5">
+            <span className="px-2 py-0.5 rounded-md bg-[#F3EEFF] font-bold text-[#7C3AED]">
+              {service.category}
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E6E0F5] tabular-nums font-bold text-[#4B445E]">
+              <Clock className="w-3 h-3 text-[#8B5CF6]" />
+              {formatDurationMinutes(service.durationMinutes)}
+            </span>
+
+            {/* دکمه کلیک‌تریگر توضیحات کامل و موارد شامل خدمت / پکیج */}
             <button
               type="button"
+              aria-expanded={isDetailsOpen}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelect(service);
+                setIsDetailsOpen((prev) => !prev);
               }}
-              className="px-3.5 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors cursor-pointer shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
+                isDetailsOpen
+                  ? 'bg-[#8B5CF6] text-white'
+                  : hasRichDetails
+                    ? 'bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE]'
+                    : 'bg-[#F8FAFC] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
+              }`}
             >
-              <span>{actionLabel}</span>
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <Info className="w-3 h-3 shrink-0" />
+              <span>
+                {isDetailsOpen
+                  ? 'بستن جزئیات ▴'
+                  : packageItems.length > 0
+                    ? `شامل ${toPersianDigits(packageItems.length)} مورد ▾`
+                    : 'توضیحات خدمت ▾'}
+              </span>
             </button>
-          ) : null}
+          </div>
         </div>
       </div>
 
-      {/* کشوی بازشوی توضیحات کامل خدمت، نام کامل و اقلام شامل پکیج */}
+      {/* کشوی بازشوی توضیحات کامل خدمت و اقلام شامل پکیج */}
       {isDetailsOpen ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="mt-2.5 pt-2.5 border-t border-[#E6E0F5] rounded-xl bg-[#FAF8FF] p-2.5 space-y-2 text-xs cursor-default"
+          className="mt-2.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] p-3 space-y-2 text-xs cursor-default"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-extrabold text-[#1E1B2E] leading-relaxed">
@@ -1054,6 +1009,74 @@ export const ServiceCard: React.FC<{
           ) : null}
         </div>
       ) : null}
+
+      {/* نوار پایینی اختصاصی: نمایش شفاف تعرفه (ثابت / بازه‌ای / پایه از...) در سمت راست و دکمه رزرو خوش‌دست در سمت چپ */}
+      <div className="mt-3 pt-2.5 border-t border-[#E6E0F5] flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+            {service.pricingType === 'RANGE' ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] text-[10px] font-extrabold">
+                تعرفه بازه‌ای (متغیر)
+              </span>
+            ) : service.pricingType === 'STARTING_FROM' ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F0F9FF] border border-[#BAE6FD] text-[#0369A1] text-[10px] font-extrabold">
+                قیمت پایه (شروع از)
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-[#6B6480]">
+                تعرفه خدمت:
+              </span>
+            )}
+          </div>
+          <span className="text-xs sm:text-sm font-black text-[#1E1B2E] tabular-nums block leading-snug">
+            {formatServicePriceDisplay(service)}
+          </span>
+        </div>
+
+        {bookingHref ? (
+          <Link
+            to={bookingHref}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!authUser) {
+                e.preventDefault();
+                openAuthModal({
+                  initialScreen: 'LOGIN',
+                  defaultRole: 'CUSTOMER',
+                  redirectTo: bookingHref,
+                  promptReason: `برای رزرو خدمت «${service.title}»، وارد شوید یا ثبت‌نام کنید`,
+                });
+              }
+            }}
+            className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+          >
+            <span>{actionLabel}</span>
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </Link>
+        ) : onSelect ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(service);
+            }}
+            className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+          >
+            <span>{actionLabel}</span>
+            <ArrowLeft className="w-3.5 h-3.5" />
+          </button>
+        ) : onToggleSelect ? (
+          <span
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 ${
+              isSelected
+                ? 'bg-[#8B5CF6] text-white'
+                : 'bg-[#F3EEFF] text-[#6D28D9] hover:bg-[#EDE9FE]'
+            }`}
+          >
+            {isSelected ? 'انتخاب شد ✓' : '+ انتخاب خدمت'}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 };
@@ -1078,65 +1101,104 @@ export const AppointmentCard: React.FC<{
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
     .replace(/[^\d+]/g, '');
 
+  const totalPrice = Number(appointment.priceToman) || 0;
+  const depositPaid = Number(appointment.depositPaidToman) || 0;
+  const remainingInSalon = Math.max(0, totalPrice - depositPaid);
+
   return (
-    <Card className="rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[#E6E0F5] hover:border-[#A78BFA] transition-colors">
-      <div className="flex items-start gap-3.5">
-        <div className="w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#8B5CF6] flex flex-col items-center justify-center shrink-0 border border-[#DDD6FE]">
-          <Calendar className="w-5 h-5 text-[#8B5CF6]" />
-        </div>
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[#6B6480]">
-            <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
-            <span className="tabular-nums font-bold text-[#1E1B2E]">
-              {appointment.dateJalali} · ساعت {appointment.timeSlot}
-            </span>
+    <Card className="rounded-3xl p-4 sm:p-5 flex flex-col gap-3.5 border border-[#E6E0F5] hover:border-[#A78BFA] transition-colors">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-[#EDE9FE] text-[#8B5CF6] flex flex-col items-center justify-center shrink-0 border border-[#DDD6FE]">
+            <Calendar className="w-5 h-5 text-[#8B5CF6]" />
           </div>
-          <h3 className="text-sm sm:text-base font-extrabold text-[#1E1B2E]">
-            {appointment.serviceTitle} — {appointment.businessName}
-          </h3>
-          <p className="text-xs font-normal text-[#6B6480]">
-            متخصص: {appointment.specialistName} · مراجع:{' '}
-            {appointment.customerName}
-          </p>
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-[#6B6480]">
+              <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
+              <span className="tabular-nums font-bold text-[#1E1B2E]">
+                {toPersianDigits(appointment.dateJalali)} · ساعت {toPersianDigits(appointment.timeSlot)}
+              </span>
+              {appointment.referenceCode ? (
+                <span className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-mono text-[#475569]">
+                  کد پیگیری: {appointment.referenceCode}
+                </span>
+              ) : null}
+            </div>
+            <h3 className="text-sm sm:text-base font-extrabold text-[#1E1B2E]">
+              {appointment.serviceTitle} — {appointment.businessName}
+            </h3>
+            <p className="text-xs font-normal text-[#6B6480]">
+              متخصص: {appointment.specialistName} · مراجع:{' '}
+              <strong className="font-bold text-[#1E1B2E]">{appointment.customerName}</strong>
+            </p>
+            {appointment.status === AppointmentStatus.Pending ? (
+              <p className="text-[11px] font-bold text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] px-2.5 py-1 rounded-xl inline-block">
+                نوبت شما ثبت شده و منتظر تایید نهایی صاحب سالن است
+              </p>
+            ) : appointment.status === AppointmentStatus.Confirmed ? (
+              <p className="text-[11px] font-bold text-[#065F46] bg-[#ECFDF5] border border-[#A7F3D0] px-2.5 py-1 rounded-xl inline-block">
+                این نوبت توسط مدیریت سالن تایید نهایی شده است
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#F3EEFF]">
+          <div className="flex items-center gap-2 flex-wrap">
+            {rawSalonPhone && appointment.status !== 'CANCELLED' ? (
+              <a
+                href={`tel:${cleanSalonPhone}`}
+                className="px-3 py-1.5 rounded-full bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] border border-[#BFDBFE] text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
+                title="تماس اختیاری با سالن جهت هماهنگی"
+              >
+                <span>تماس با سالن:</span>
+                <span dir="ltr" className="font-mono">
+                  {rawSalonPhone}
+                </span>
+              </a>
+            ) : null}
+            {onViewDetails ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onViewDetails(appointment)}
+              >
+                جزئیات نوبت
+              </Button>
+            ) : null}
+            {onCancelDemo && appointment.status !== 'CANCELLED' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onCancelDemo(appointment)}
+                className="text-[#EF4444] hover:bg-[#FEF2F2]"
+              >
+                لغو نوبت
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#F3EEFF]">
-        <span className="text-sm font-extrabold text-[#7C3AED] tabular-nums ml-2">
-          {formatPriceToman(appointment.priceToman)}
-        </span>
-        <div className="flex items-center gap-2 flex-wrap">
-          {rawSalonPhone && appointment.status !== 'CANCELLED' ? (
-            <a
-              href={`tel:${cleanSalonPhone}`}
-              className="px-3 py-1.5 rounded-full bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] border border-[#BFDBFE] text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
-              title="تماس اختیاری با سالن جهت هماهنگی"
-            >
-              <span>تماس با سالن:</span>
-              <span dir="ltr" className="font-mono">
-                {rawSalonPhone}
-              </span>
-            </a>
-          ) : null}
-          {onViewDetails ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewDetails(appointment)}
-            >
-              جزئیات نوبت
-            </Button>
-          ) : null}
-          {onCancelDemo && appointment.status !== 'CANCELLED' ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onCancelDemo(appointment)}
-              className="text-[#EF4444] hover:bg-[#FEF2F2]"
-            >
-              لغو نوبت
-            </Button>
-          ) : null}
+      {/* تفکیک شفاف مالی نوبت: مبلغ کل خدمت، بیعانه آنلاین پرداخت‌شده و مانده قابل پرداخت حضوری در سالن */}
+      <div className="pt-2.5 border-t border-[#F3EEFF] grid grid-cols-3 gap-2 text-[11px] tabular-nums">
+        <div className="px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5">
+          <span className="text-[#64748B]">کل مبلغ خدمت:</span>
+          <strong className="font-extrabold text-[#061138]">
+            {formatPriceToman(totalPrice)}
+          </strong>
+        </div>
+        <div className="px-2.5 py-1.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5">
+          <span className="text-[#065F46]">بیعانه پرداختی:</span>
+          <strong className="font-extrabold text-[#059669]">
+            {formatPriceToman(depositPaid)}
+          </strong>
+        </div>
+        <div className="px-2.5 py-1.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5">
+          <span className="text-[#1E40AF]">مانده حضوری سالن:</span>
+          <strong className="font-extrabold text-[#0057FF]">
+            {formatPriceToman(remainingInSalon)}
+          </strong>
         </div>
       </div>
     </Card>

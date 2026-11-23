@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -33,6 +33,7 @@ import {
 import {
   AppointmentItem,
   AppointmentStatus,
+  BusinessItem,
   CustomerRecord,
   ServiceItem,
   SpecialistItem,
@@ -48,6 +49,7 @@ import {
 } from '../../mocks/sampleData';
 import {
   formatDurationMinutes,
+  formatMinutesToPersianTime,
   formatNumericInputWithCommas,
   formatPriceToman,
   formatServicePriceDisplay,
@@ -60,6 +62,7 @@ import {
   isValidIranMobile,
   normalizeIranMobileInput,
   parseNumericInput,
+  parseTimeToMinutes,
   STANDARD_WORKING_TIME_OPTIONS,
   toEnglishDigitsClient,
   toPersianDigits,
@@ -77,6 +80,7 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { VisualMediaIllustration } from '../../components/ui/VisualMediaIllustration';
 import { EmptyState } from '../../components/ui/StateViews';
+import { ClickPopover } from '../../components/ui/ClickPopover';
 import {
   Avatar,
   ConfirmationDialog,
@@ -177,6 +181,210 @@ const PlanUpgradeLockBanner: React.FC<{
   </div>
 );
 
+/** محاسبه زمان سپری‌شده از ثبت نوبت منتظر تایید (SLA تایید ۳۰ دقیقه‌ای سالن‌دار) */
+const getPendingAppointmentSlaMeta = (createdAtMs?: number) => {
+  const baseMs =
+    createdAtMs && createdAtMs > 0 ? createdAtMs : Date.now() - 15 * 60 * 1000;
+  const elapsedMinutes = Math.max(1, Math.round((Date.now() - baseMs) / 60000));
+  const isOverdue = elapsedMinutes >= 30;
+  const remainingSla = Math.max(0, 30 - elapsedMinutes);
+  return {
+    elapsedMinutes,
+    isOverdue,
+    label: isOverdue
+      ? `⏳ ${toPersianDigits(elapsedMinutes)} دقیقه در انتظار تایید (فوری بررسی شود)`
+      : `⏱ ثبت‌شده ${toPersianDigits(elapsedMinutes)} دقیقه پیش (مهلت پیشنهادی تایید: ${toPersianDigits(remainingSla)} دقیقه)`,
+  };
+};
+
+/** مودال ثبت دریافتی حضوری با قابلیت تعیین «مبلغ نهایی توافق‌شده در سالن» (ویژه خدمات بازه‌ای و قیمت پایه) */
+const InPersonSettlementModal: React.FC<{
+  appointment: AppointmentItem | null;
+  business?: BusinessItem;
+  matchedService?: ServiceItem;
+  onClose: () => void;
+  onConfirmSettle: (
+    appointmentId: string,
+    remainingInPersonToman: number,
+    finalTotalServicePriceToman: number
+  ) => void;
+}> = ({
+  appointment,
+  business,
+  matchedService,
+  onClose,
+  onConfirmSettle,
+}) => {
+  const fin = React.useMemo(
+    () =>
+      appointment
+        ? resolveAppointmentFinancialBreakdown({
+            appointment,
+            business,
+          })
+        : null,
+    [appointment, business]
+  );
+
+  const [finalPriceInput, setFinalPriceInput] = useState<string>('');
+
+  React.useEffect(() => {
+    if (appointment && fin) {
+      setFinalPriceInput(
+        formatNumericInputWithCommas(String(fin.totalServicePriceToman))
+      );
+    }
+  }, [appointment?.id, fin?.totalServicePriceToman]);
+
+  if (!appointment || !fin) return null;
+
+  const depositPaid = fin.baseDepositToman;
+  const parsedFinalTotal = Math.max(
+    depositPaid,
+    parseNumericInput(finalPriceInput) || fin.totalServicePriceToman
+  );
+  const calculatedRemainingInPerson = Math.max(
+    0,
+    parsedFinalTotal - depositPaid
+  );
+  const isVariablePricing =
+    matchedService?.pricingType === 'RANGE' ||
+    matchedService?.pricingType === 'STARTING_FROM';
+
+  return (
+    <Modal
+      isOpen={Boolean(appointment)}
+      onClose={onClose}
+      title="ثبت دریافتی حضوری و تعیین مبلغ نهایی خدمت"
+      description={`${appointment.customerName} · ${appointment.serviceTitle}`}
+      footer={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose}>
+            انصراف
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              onConfirmSettle(
+                appointment.id,
+                calculatedRemainingInPerson,
+                parsedFinalTotal
+              );
+              onClose();
+            }}
+          >
+            <Check className="w-4 h-4" />
+            <span>
+              ثبت قطعی دریافتی حضوری ({formatPriceToman(calculatedRemainingInPerson)})
+            </span>
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 text-xs">
+        {isVariablePricing ? (
+          <div className="p-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] space-y-1">
+            <p className="font-extrabold">
+              💡 این خدمت دارای تعرفه{' '}
+              {matchedService?.pricingType === 'RANGE'
+                ? 'بازه‌ای (متغیر)'
+                : 'پایه (شروع از...)'}{' '}
+              است ({formatServicePriceDisplay(matchedService!)})
+            </p>
+            <p className="text-[11px] leading-relaxed">
+              مبلغ نهایی توافق‌شده با مشتری پس از انجام خدمت در سالن را وارد کنید؛ سیستم به صورت خودکار بیعانه پرداخت‌شده آنلاین را از آن کسر کرده و مابقی دقیق را در دخل روزانه ثبت می‌کند.
+            </p>
+          </div>
+        ) : (
+          <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] text-[#334155]">
+            اگر در مراجعه حضوری خدمت یا مواد جانبی به نوبت اضافه شده است، می‌توانید مبلغ نهایی کل خدمت را ویرایش کنید تا مابقی دقیق محاسبه گردد.
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label
+            htmlFor="final-agreed-service-price"
+            className="block font-extrabold text-[#061138]"
+          >
+            ۱. مبلغ نهایی کل خدمت انجام‌شده در سالن (تومان):
+          </label>
+          <input
+            id="final-agreed-service-price"
+            type="text"
+            inputMode="numeric"
+            dir="ltr"
+            value={finalPriceInput}
+            onChange={(e) =>
+              setFinalPriceInput(formatNumericInputWithCommas(e.target.value))
+            }
+            className="w-full rounded-2xl border border-[#CBD5E1] bg-white px-3.5 py-2.5 text-sm font-black text-[#061138] text-left tabular-nums focus:border-[#0057FF] focus:outline-none"
+          />
+
+          {matchedService?.maxPriceToman &&
+          matchedService.maxPriceToman > matchedService.priceToman ? (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[11px] text-[#64748B]">انتخاب سریع از بازه:</span>
+              {[
+                {
+                  lbl: `کف (${formatPriceToman(matchedService.priceToman)})`,
+                  val: matchedService.priceToman,
+                },
+                {
+                  lbl: `میانگین (${formatPriceToman(Math.round((matchedService.priceToman + matchedService.maxPriceToman) / 2))})`,
+                  val: Math.round(
+                    (matchedService.priceToman + matchedService.maxPriceToman) / 2
+                  ),
+                },
+                {
+                  lbl: `سقف (${formatPriceToman(matchedService.maxPriceToman)})`,
+                  val: matchedService.maxPriceToman,
+                },
+              ].map((preset) => (
+                <button
+                  key={preset.lbl}
+                  type="button"
+                  onClick={() =>
+                    setFinalPriceInput(
+                      formatNumericInputWithCommas(String(preset.val))
+                    )
+                  }
+                  className="px-2.5 py-1 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] border border-[#BFDBFE] text-[11px] font-extrabold cursor-pointer tabular-nums"
+                >
+                  {preset.lbl}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-2 tabular-nums">
+          <div className="flex items-center justify-between text-[#475569]">
+            <span>مبلغ نهایی کل خدمت:</span>
+            <strong className="font-extrabold text-[#061138]">
+              {formatPriceToman(parsedFinalTotal)}
+            </strong>
+          </div>
+          <div className="flex items-center justify-between text-[#059669]">
+            <span>کسر بیعانه پرداختی آنلاین (واریزشده به کیف پول شما):</span>
+            <strong className="font-extrabold">
+              - {formatPriceToman(depositPaid)}
+            </strong>
+          </div>
+          <div className="pt-2 border-t border-[#CBD5E1] flex items-center justify-between text-sm">
+            <span className="font-extrabold text-[#061138]">
+              مبلغ قابل دریافت حضوری از مشتری:
+            </span>
+            <strong className="font-black text-[#0057FF]">
+              {formatPriceToman(calculatedRemainingInPerson)}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
 /** ۱. پیشخوان عملیاتی کسب‌وکار (/app) — چیدمان خلوت، اولویت‌بندی‌شده و مجهز به استوری‌های راهنما */
 export const BusinessDashboardPage: React.FC = () => {
   const {
@@ -189,10 +397,13 @@ export const BusinessDashboardPage: React.FC = () => {
     customers,
     plans,
     dailyIncomeLogs,
+    updateBusinessProfile,
     updateAppointmentStatus,
     settleAppointmentInPerson,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
+  const [settlingApt, setSettlingApt] = useState<AppointmentItem | null>(null);
 
   const bizServicesList = currentBiz
     ? services.filter((s) => s.businessId === currentBiz.id)
@@ -303,6 +514,23 @@ export const BusinessDashboardPage: React.FC = () => {
                 ★ {toPersianDigits(quotaStatus.adDiscountPercent)}٪ تخفیف خرید بنر و صدر جست‌وجو
               </span>
             ) : null}
+            <ClickPopover
+              label="راهنمای سهمیه و تسویه ۰٪"
+              title="قوانین ۱۰ نوبت هدیه، اشتراک ماهانه و تسویه شبا"
+              tone="blue"
+            >
+              <ul className="space-y-1.5 list-disc pr-4">
+                <li>
+                  <strong>۱۰ نوبت هدیه شروع:</strong> در ابتدای فعالیت، ۱۰ نوبت اول بدون نیاز به خرید اشتراک کاملاً رایگان است.
+                </li>
+                <li>
+                  <strong>کارمزد ۰٪ پلتفرم:</strong> تایم‌تو هیچ درصدی از بیعانه یا مبلغ خدمات شما کسر نمی‌کند.
+                </li>
+                <li>
+                  <strong>تسویه خودکار شبا:</strong> ۱۰۰٪ بیعانه‌های پرداختی مشتریان به شماره شبای ثبت‌شده شما تسویه می‌شود و مابقی هزینه را مشتری حضوری در سالن پرداخت می‌کند.
+                </li>
+              </ul>
+            </ClickPopover>
           </div>
           <p className="text-xs sm:text-sm font-black text-[#061138] tabular-nums">
             {quotaStatus.isQuotaExhausted
@@ -495,12 +723,25 @@ export const BusinessDashboardPage: React.FC = () => {
                 <span className="px-2.5 py-0.5 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-black">
                   🏆 باشگاه مشتریان و امتیاز وفاداری
                 </span>
-                <span className="text-[11px] font-bold text-[#64748B]">
-                  هر نوبت در پنل مشتری = ۱۵۰ امتیاز وفاداری خودکار
-                </span>
+                <ClickPopover
+                  label="فرمول امتیاز و سطح‌بندی"
+                  title="نحوه محاسبه امتیاز وفاداری و سطح‌بندی مشتریان"
+                  tone="violet"
+                >
+                  <div className="space-y-1.5">
+                    <p>
+                      به‌ازای هر نوبت ثبت‌شده در سالن شما، <strong>۱۵۰ امتیاز وفاداری</strong> به‌صورت خودکار در پنل مشتری ثبت می‌شود:
+                    </p>
+                    <ul className="list-disc pr-4 space-y-1">
+                      <li><strong>🥉 سطح برنزی:</strong> ۱ تا ۲ نوبت مراجعه</li>
+                      <li><strong>🥈 سطح نقره‌ای:</strong> ۳ تا ۴ نوبت مراجعه</li>
+                      <li><strong>🥇 سطح طلایی (VIP):</strong> ۵ نوبت مراجعه و بیشتر</li>
+                    </ul>
+                  </div>
+                </ClickPopover>
               </div>
               <p className="text-xs sm:text-sm font-extrabold text-[#061138]">
-                سطح‌بندی خودکار مشتریان سالن: 🥉 برنزی ({toPersianDigits(bronzeCount)}) · 🥈 نقره‌ای ({toPersianDigits(silverCount)}) · 🥇 طلایی VIP ({toPersianDigits(goldCount)})
+                سطح‌بندی مشتریان سالن: 🥉 برنزی ({toPersianDigits(bronzeCount)}) · 🥈 نقره‌ای ({toPersianDigits(silverCount)}) · 🥇 طلایی VIP ({toPersianDigits(goldCount)})
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -521,7 +762,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
       {/* ۴. اولویت اول سالن‌دار: نوبت‌های در انتظار تایید + برنامه نوبت‌های امروز */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* ستون راست (۷ ستون): صف تایید فوری نوبت‌های جدید */}
+        {/* ستون راست (۷ ستون): صف تایید فوری نوبت‌های جدید + سوییچ تایید خودکار و تایمر SLA */}
         <Card className="lg:col-span-7 rounded-3xl space-y-4 border border-[#CBD5E1]">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3.5">
             <div className="flex items-center gap-2.5">
@@ -529,20 +770,60 @@ export const BusinessDashboardPage: React.FC = () => {
                 <AlertCircle className="w-4 h-4" />
               </span>
               <div>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                  اولویت ۱: نوبت‌های در انتظار تایید شما
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                    اولویت ۱: نوبت‌های در انتظار تایید شما
+                  </h2>
+                  <ClickPopover
+                    label="راهنمای تایید نوبت و مهلت SLA"
+                    title="تایید دستی یا خودکار نوبت‌های آنلاین"
+                    tone="amber"
+                  >
+                    <div className="space-y-1.5">
+                      <p>
+                        در حالت پیش‌فرض، هر نوبتی که مشتری رزرو می‌کند ابتدا در وضعیت <strong>«در انتظار تایید سالن»</strong> قرار می‌گیرد تا شما حداکثر ظرف ۳۰ دقیقه آن را تایید کنید و پیامک نهایی برای مشتری ارسال شود.
+                      </p>
+                      <p>
+                        اگر تقویم و ساعات کاری شما همیشه دقیق است، می‌توانید کلید <strong>«تایید خودکار نوبت‌ها»</strong> را روشن کنید تا به محض پرداخت بیعانه، نوبت بدون معطلی تایید شود.
+                      </p>
+                    </div>
+                  </ClickPopover>
+                </div>
                 <p className="text-xs text-[#64748B]">
-                  درخواست‌های رزرو جدید را مستقیم تایید یا تعیین تکلیف کنید
+                  درخواست‌های رزرو جدید را مستقیم تایید کنید یا تایید خودکار را فعال نمایید
                 </p>
               </div>
             </div>
-            <Link
-              to="/app/appointments"
-              className="text-xs font-extrabold text-[#0057FF] hover:underline"
-            >
-              لیست کامل رزروها ←
-            </Link>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {currentBiz ? (
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-extrabold text-[#061138] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(currentBiz.autoConfirmAppointments)}
+                    onChange={(e) => {
+                      const nextVal = e.target.checked;
+                      updateBusinessProfile(currentBiz.id, {
+                        autoConfirmAppointments: nextVal,
+                      });
+                      showToast(
+                        nextVal
+                          ? 'تایید خودکار نوبت‌های آنلاین پس از پرداخت بیعانه فعال شد ✓'
+                          : 'تایید خودکار غیرفعال شد؛ نوبت‌های جدید ابتدا منتظر تایید دستی شما خواهند ماند.'
+                      );
+                    }}
+                    className="accent-[#0057FF] w-4 h-4 cursor-pointer"
+                  />
+                  <span>تایید خودکار نوبت‌ها</span>
+                </label>
+              ) : null}
+              <Link
+                to="/app/appointments"
+                className="text-xs font-extrabold text-[#0057FF] hover:underline"
+              >
+                لیست کامل رزروها ←
+              </Link>
+            </div>
           </div>
 
           {pendingAppointments.length === 0 ? (
@@ -556,7 +837,9 @@ export const BusinessDashboardPage: React.FC = () => {
                     همه نوبت‌های ورودی بررسی شده‌اند
                   </p>
                   <p className="text-xs text-[#64748B]">
-                    در حال حاضر نوبت منتظر تاییدی وجود ندارد.
+                    {currentBiz?.autoConfirmAppointments
+                      ? 'تایید خودکار فعال است و نوبت‌های جدید بلافاصله پس از پرداخت بیعانه تایید می‌شوند.'
+                      : 'در حال حاضر نوبت منتظر تاییدی وجود ندارد.'}
                   </p>
                 </div>
               </div>
@@ -568,67 +851,79 @@ export const BusinessDashboardPage: React.FC = () => {
             </div>
           ) : (
             <div className="divide-y divide-[#E2E8F0]">
-              {pendingAppointments.slice(0, 5).map((apt) => (
-                <div
-                  key={apt.id}
-                  className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Avatar name={apt.customerName} size="sm" />
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-extrabold text-[#061138]">
-                          {apt.customerName}
-                        </span>
-                        <span
-                          dir="ltr"
-                          className="font-mono text-[11px] font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded-md"
-                        >
-                          {apt.customerPhoneMasked}
-                        </span>
+              {pendingAppointments.slice(0, 5).map((apt) => {
+                const sla = getPendingAppointmentSlaMeta(apt.createdAtMs);
+                return (
+                  <div
+                    key={apt.id}
+                    className="py-3.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar name={apt.customerName} size="sm" />
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-extrabold text-[#061138]">
+                            {apt.customerName}
+                          </span>
+                          <span
+                            dir="ltr"
+                            className="font-mono text-[11px] font-bold text-[#0057FF] bg-[#E0ECFF] px-2 py-0.5 rounded-md"
+                          >
+                            {apt.customerPhoneMasked}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tabular-nums ${
+                              sla.isOverdue
+                                ? 'bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA]'
+                                : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]'
+                            }`}
+                          >
+                            {sla.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[#475569] truncate">
+                          <strong className="text-[#061138]">
+                            {apt.serviceTitle}
+                          </strong>{' '}
+                          · متخصص: {apt.specialistName} ·{' '}
+                          <span className="tabular-nums font-bold text-[#0057FF]">
+                            {apt.dateJalali} ساعت {apt.timeSlot}
+                          </span>
+                        </p>
                       </div>
-                      <p className="text-xs text-[#475569] truncate">
-                        <strong className="text-[#061138]">
-                          {apt.serviceTitle}
-                        </strong>{' '}
-                        · متخصص: {apt.specialistName} ·{' '}
-                        <span className="tabular-nums font-bold text-[#0057FF]">
-                          {apt.dateJalali} ساعت {apt.timeSlot}
-                        </span>
-                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Confirmed
+                          )
+                        }
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>تایید نوبت</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            apt.id,
+                            AppointmentStatus.Cancelled
+                          )
+                        }
+                      >
+                        <X className="w-3.5 h-3.5 text-[#EF4444]" />
+                        <span>لغو</span>
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() =>
-                        updateAppointmentStatus(
-                          apt.id,
-                          AppointmentStatus.Confirmed
-                        )
-                      }
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>تایید نوبت</span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        updateAppointmentStatus(
-                          apt.id,
-                          AppointmentStatus.Cancelled
-                        )
-                      }
-                    >
-                      <X className="w-3.5 h-3.5 text-[#EF4444]" />
-                      <span>لغو</span>
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
@@ -699,7 +994,7 @@ export const BusinessDashboardPage: React.FC = () => {
                     ) : apt.status !== AppointmentStatus.Cancelled ? (
                       <button
                         type="button"
-                        onClick={() => settleAppointmentInPerson(apt.id)}
+                        onClick={() => setSettlingApt(apt)}
                         className="px-2.5 py-1 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-[10px] font-extrabold transition-colors cursor-pointer"
                       >
                         + ثبت دریافتی حضوری ✓
@@ -718,6 +1013,20 @@ export const BusinessDashboardPage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      <InPersonSettlementModal
+        appointment={settlingApt}
+        business={currentBiz}
+        matchedService={bizServicesList.find(
+          (s) =>
+            s.id === settlingApt?.serviceId ||
+            s.title === settlingApt?.serviceTitle
+        )}
+        onClose={() => setSettlingApt(null)}
+        onConfirmSettle={(aptId, remToman, finalPriceToman) =>
+          settleAppointmentInPerson(aptId, remToman, finalPriceToman)
+        }
+      />
 
       {/* نمودار روند درآمد و سهم خدمات در داشبورد (همیشه قابل مشاهده حتی با مقدار صفر) */}
       {(() => {
@@ -932,21 +1241,34 @@ export const BusinessCalendarPage: React.FC = () => {
     currentBusiness,
     businesses,
     appointments,
+    services,
     specialists,
+    updateBusinessProfile,
     updateAppointmentStatus,
+    settleAppointmentInPerson,
+    showToast,
   } = usePrototypeData();
   const currentBiz = currentBusiness ?? businesses[0];
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
+  const [settlingApt, setSettlingApt] = useState<AppointmentItem | null>(null);
+  const bizServicesList = currentBiz
+    ? services.filter((s) => s.businessId === currentBiz.id)
+    : [];
+
+  const normalizeDateKey = (raw?: string) =>
+    toPersianDigits(String(raw || '').trim());
+  const normalizeTimeKey = (raw?: string) =>
+    toPersianDigits(String(raw || '').trim());
 
   const bizAppointments = currentBiz
     ? appointments.filter(
         (a) =>
           a.businessId === currentBiz.id ||
           a.businessSlug === currentBiz.slug ||
-          a.businessName === currentBiz.name
+          (currentBiz.name && a.businessName === currentBiz.name)
       )
     : [];
   const bizSpecialistsRaw = currentBiz
@@ -960,7 +1282,7 @@ export const BusinessCalendarPage: React.FC = () => {
             id: 'owner-default-col',
             businessId: currentBiz?.id || 'biz-owner-zero',
             slug: 'owner-col',
-            fullName: currentBiz?.ownerName || 'مدیر سالن',
+            fullName: currentBiz?.ownerName || currentBiz?.name || 'مدیر سالن',
             roleTitle: 'پذیرش اصلی سالن',
             experienceYears: 1,
             rating: 5.0,
@@ -972,42 +1294,214 @@ export const BusinessCalendarPage: React.FC = () => {
           },
         ];
 
-  const upcomingDays = getUpcomingJalaliDays(7);
-  const calendarDays = upcomingDays.map((d) => ({
-    label: d.fullLabel,
-    date: d.dateJalali,
-  }));
+  const upcomingDays = getUpcomingJalaliDays(14);
+  const calendarDays = useMemo(() => {
+    const base = upcomingDays.map((d) => ({
+      label: d.fullLabel,
+      date: normalizeDateKey(d.dateJalali),
+      dayName: d.dayName,
+    }));
+    const existingDates = new Set(base.map((d) => d.date));
+    for (const apt of bizAppointments) {
+      const aptDate = normalizeDateKey(apt.dateJalali);
+      if (aptDate && !existingDates.has(aptDate)) {
+        existingDates.add(aptDate);
+        base.push({
+          label: `نوبت ثبت‌شده (${aptDate})`,
+          date: aptDate,
+          dayName: 'شنبه',
+        });
+      }
+    }
+    return base;
+  }, [upcomingDays, bizAppointments]);
 
   const currentDay = calendarDays[selectedDayIndex] ?? calendarDays[0];
-  const timeSlots = [
-    '۰۹:۳۰',
-    '۱۰:۰۰',
-    '۱۱:۰۰',
-    '۱۲:۳۰',
-    '۱۳:۳۰',
-    '۱۵:۰۰',
-    '۱۶:۳۰',
-    '۱۷:۰۰',
-  ];
+
+  const dayAppointments = useMemo(
+    () =>
+      bizAppointments.filter(
+        (a) => normalizeDateKey(a.dateJalali) === normalizeDateKey(currentDay?.date)
+      ),
+    [bizAppointments, currentDay]
+  );
+
+  const dayWorkingHour = useMemo(() => {
+    if (!currentBiz?.workingHours || !currentDay) return undefined;
+    return currentBiz.workingHours.find(
+      (w) => w.dayName.trim() === (currentDay.dayName || '').trim()
+    );
+  }, [currentBiz, currentDay]);
+
+  const timeSlots = useMemo(() => {
+    const slotSet = new Set<string>();
+    const openTime = dayWorkingHour?.openTime || '۰۹:۳۰';
+    const closeTime = dayWorkingHour?.closeTime || '۲۰:۳۰';
+    const openMin = parseTimeToMinutes(openTime);
+    const closeMin = parseTimeToMinutes(closeTime);
+    const startMin = openMin >= 0 ? openMin : 9 * 60 + 30;
+    const endMin = closeMin > startMin ? closeMin : 20 * 60 + 30;
+
+    if (!dayWorkingHour || dayWorkingHour.isOpen) {
+      for (const std of STANDARD_WORKING_TIME_OPTIONS) {
+        const m = parseTimeToMinutes(std);
+        if (m >= startMin && m < endMin) {
+          slotSet.add(normalizeTimeKey(std));
+        }
+      }
+      if (
+        dayWorkingHour?.hasBreak &&
+        dayWorkingHour.secondOpenTime &&
+        dayWorkingHour.secondCloseTime
+      ) {
+        const s2Start = parseTimeToMinutes(dayWorkingHour.secondOpenTime);
+        const s2End = parseTimeToMinutes(dayWorkingHour.secondCloseTime);
+        for (const std of STANDARD_WORKING_TIME_OPTIONS) {
+          const m = parseTimeToMinutes(std);
+          if (m >= s2Start && m < s2End) {
+            slotSet.add(normalizeTimeKey(std));
+          }
+        }
+      }
+    }
+
+    // تضمین نمایش تمام ساعت‌هایی که در آن روز نوبت واقعی ثبت شده است (حتی ساعت‌های ۱۵ یا ۴۵ دقیقه‌ای یا خارج از گام استاندارد)
+    for (const apt of dayAppointments) {
+      const t = normalizeTimeKey(apt.timeSlot);
+      if (t) slotSet.add(t);
+    }
+
+    return Array.from(slotSet).sort(
+      (a, b) => parseTimeToMinutes(a) - parseTimeToMinutes(b)
+    );
+  }, [dayWorkingHour, dayAppointments]);
+
   const visibleStaff =
     staffFilter === 'ALL'
       ? calendarStaffList
       : calendarStaffList.filter((s) => s.id === staffFilter);
+
+  const isAppointmentForStaffColumn = (
+    apt: AppointmentItem,
+    sp: SpecialistItem,
+    colIndex: number
+  ): boolean => {
+    if (visibleStaff.length === 1 || calendarStaffList.length === 1) return true;
+    const directMatch =
+      apt.specialistId === sp.id ||
+      (apt.specialistName &&
+        sp.fullName &&
+        apt.specialistName.trim() === sp.fullName.trim());
+    if (directMatch) return true;
+    const matchesAnyStaff = calendarStaffList.some(
+      (staff) =>
+        apt.specialistId === staff.id ||
+        (apt.specialistName &&
+          staff.fullName &&
+          apt.specialistName.trim() === staff.fullName.trim())
+    );
+    return !matchesAnyStaff && colIndex === 0;
+  };
 
   return (
     <div>
       <PageHeader
         kicker="فعالیت روزانه · تقویم سالن"
         title="تقویم زمان‌بندی نوبت‌ها"
-        subtitle="مشاهده برنامه روزانه متخصصان، بازه‌های آزاد و تغییر سریع وضعیت هر نوبت"
+        subtitle="همگام با ساعات کاری سالن، مدت زمان دقیق خدمات و نوبت‌های ثبت‌شده مشتریان"
         routePattern="/app/calendar"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
           { label: 'تقویم نوبت‌ها' },
         ]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {currentBiz ? (
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white border border-[#CBD5E1] text-[11px] font-extrabold text-[#061138] cursor-pointer select-none shadow-2xs">
+                <input
+                  type="checkbox"
+                  checked={Boolean(currentBiz.autoConfirmAppointments)}
+                  onChange={(e) => {
+                    const nextVal = e.target.checked;
+                    updateBusinessProfile(currentBiz.id, {
+                      autoConfirmAppointments: nextVal,
+                    });
+                    showToast(
+                      nextVal
+                        ? 'تایید خودکار نوبت‌ها فعال شد ✓'
+                        : 'تایید خودکار نوبت‌ها غیرفعال شد.'
+                    );
+                  }}
+                  className="accent-[#0057FF] w-4 h-4 cursor-pointer"
+                />
+                <span>تایید خودکار نوبت‌ها</span>
+              </label>
+            ) : null}
+            <ClickPopover
+              label="راهنمای محاسبه هوشمند تایم خالی"
+              title="نحوه محاسبه بازه‌های ۱۵، ۳۰ و ۴۵ دقیقه‌ای در تقویم"
+              tone="blue"
+              align="end"
+            >
+              <div className="space-y-1.5">
+                <p>
+                  تقویم سالن به‌صورت دقیق بر اساس <strong>مدت‌زمان واقعی هر خدمت</strong> کار می‌کند:
+                </p>
+                <ul className="list-disc pr-4 space-y-1">
+                  <li>اگر خدمتی <strong>۱۵ دقیقه</strong> (مثل سشوار یا اصلاح ابرو) طول بکشد، فقط همان ۱۵ دقیقه اشغال می‌شود و از دقیقه ۱۵ به بعد برای مشتری بعدی آزاد است.</li>
+                  <li>اگر خدمتی <strong>۴۵ دقیقه</strong> طول بکشد (مثلاً ۱۰:۰۰ تا ۱۰:۴۵)، نوبت خالی بعدی دقیقاً از ساعت <strong>۱۰:۴۵</strong> به مشتری نمایش داده می‌شود.</li>
+                </ul>
+              </div>
+            </ClickPopover>
+          </div>
+        }
       />
 
       <Card className="space-y-5">
+        {/* نوار انتخاب سریع روزهایی که دارای نوبت فعال هستند */}
+        {bizAppointments.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
+            <span className="text-xs font-extrabold text-[#6B6480]">
+              روزهای دارای نوبت در تقویم شما:
+            </span>
+            {calendarDays
+              .map((d, idx) => ({
+                ...d,
+                idx,
+                count: bizAppointments.filter(
+                  (a) => normalizeDateKey(a.dateJalali) === d.date
+                ).length,
+              }))
+              .filter((d) => d.count > 0)
+              .map((d) => (
+                <button
+                  key={d.date}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDayIndex(d.idx);
+                    setViewMode('day');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                    selectedDayIndex === d.idx && viewMode === 'day'
+                      ? 'bg-[#8B5CF6] text-white shadow-2xs'
+                      : 'bg-[#FAF8FF] text-[#1E1B2E] border border-[#D4C9EE] hover:border-[#8B5CF6]'
+                  }`}
+                >
+                  <span>{d.date}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] tabular-nums ${
+                      selectedDayIndex === d.idx && viewMode === 'day'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#EDE9FE] text-[#6D28D9]'
+                    }`}
+                  >
+                    {toPersianDigits(d.count)} نوبت
+                  </span>
+                </button>
+              ))}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E6E0F5]">
           <div className="flex items-center gap-2">
             <Button
@@ -1021,10 +1515,13 @@ export const BusinessCalendarPage: React.FC = () => {
             </Button>
             <div className="text-center px-3.5 py-1.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5]">
               <span className="text-sm font-extrabold text-[#1E1B2E] tabular-nums">
-                {currentDay.label}
+                {currentDay?.label}
               </span>
               <span className="text-xs text-[#6B6480] mr-2 tabular-nums">
-                ({currentDay.date})
+                ({currentDay?.date})
+              </span>
+              <span className="mr-2 px-2 py-0.5 rounded-md bg-[#EDE9FE] text-[#6D28D9] text-[11px] font-extrabold tabular-nums">
+                {toPersianDigits(dayAppointments.length)} نوبت
               </span>
             </div>
             <Button
@@ -1085,190 +1582,328 @@ export const BusinessCalendarPage: React.FC = () => {
         </div>
 
         {viewMode === 'day' ? (
-          <div className="overflow-x-auto rounded-2xl border border-[#E6E0F5]">
-            <table className="w-full text-xs border-collapse min-w-[640px]">
-              <thead>
-                <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF]">
-                  <th className="py-3.5 px-3 text-right w-24 font-extrabold text-[#6B6480]">
-                    ساعت
-                  </th>
-                  {visibleStaff.map((sp) => (
-                    <th
-                      key={sp.id}
-                      className="py-3.5 px-4 text-right font-extrabold text-[#1E1B2E] border-r border-[#E6E0F5]"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={sp.fullName} size="sm" tone="violet" />
-                        <div>
-                          <p className="text-xs font-extrabold">{sp.fullName}</p>
-                          <p className="text-[11px] font-medium text-[#6B6480]">
-                            {sp.roleTitle}
-                          </p>
-                        </div>
-                      </div>
+          timeSlots.length === 0 ? (
+            <EmptyState
+              title="این روز در تقویم کاری سالن تعطیل است"
+              description="برای این روز ساعت کاری فعالی تنظیم نشده و نوبتی نیز ثبت نگردیده است."
+            />
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[#E6E0F5]">
+              <table className="w-full text-xs border-collapse min-w-[640px]">
+                <thead>
+                  <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF]">
+                    <th className="py-3.5 px-3 text-right w-24 font-extrabold text-[#6B6480]">
+                      ساعت
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E6E0F5]">
-                {timeSlots.map((slot) => (
-                  <tr key={slot} className="hover:bg-[#FAF8FF]/50">
-                    <td className="py-4 px-3 font-extrabold text-[#6B6480] tabular-nums bg-[#FAF8FF]/40">
-                      {slot}
-                    </td>
-                    {visibleStaff.map((sp) => {
-                      const matched = bizAppointments.find(
-                        (a) =>
-                          a.timeSlot === slot &&
-                          (a.specialistId === sp.id ||
-                            a.specialistName === sp.fullName ||
-                            calendarStaffList.length === 1)
-                      );
-                      const statusMeta = matched
-                        ? getAppointmentStatusMeta(matched.status)
-                        : null;
-                      return (
-                        <td
-                          key={sp.id}
-                          className="p-2.5 border-r border-[#E6E0F5] align-top"
-                        >
-                          {matched && statusMeta ? (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedApt(matched)}
-                              className="w-full text-right p-3 rounded-xl bg-[#EDE9FE]/80 hover:bg-[#EDE9FE] border border-[#D4C9EE] space-y-1.5 cursor-pointer transition-all"
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="font-extrabold text-[#1E1B2E]">
-                                  {matched.customerName}
-                                </span>
-                                <StatusBadge
-                                  label={statusMeta.label}
-                                  tone={statusMeta.tone}
-                                />
-                              </div>
-                              <p className="text-[11px] font-medium text-[#6B6480]">
-                                {matched.serviceTitle}
-                              </p>
-                              <p className="text-[10px] text-[#8B5CF6]">
-                                تلفن مراجع:{' '}
-                                <span dir="ltr" className="font-mono font-bold">
-                                  {matched.customerPhoneMasked}
-                                </span>
-                              </p>
-                            </button>
-                          ) : (
-                            <div className="p-3 rounded-xl border border-dashed border-[#E6E0F5] text-[#6B6480] text-[11px] flex items-center justify-between">
-                              <span>بازه آزاد</span>
-                              <span className="text-[10px]">قابل رزرو</span>
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
+                    {visibleStaff.map((sp) => (
+                      <th
+                        key={sp.id}
+                        className="py-3.5 px-4 text-right font-extrabold text-[#1E1B2E] border-r border-[#E6E0F5]"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={sp.fullName} size="sm" tone="violet" />
+                          <div>
+                            <p className="text-xs font-extrabold">{sp.fullName}</p>
+                            <p className="text-[11px] font-medium text-[#6B6480]">
+                              {sp.roleTitle}
+                            </p>
+                          </div>
+                        </div>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-[#E6E0F5]">
+                  {timeSlots.map((slot) => {
+                    const slotMins = parseTimeToMinutes(slot);
+                    return (
+                      <tr key={slot} className="hover:bg-[#FAF8FF]/50">
+                        <td className="py-4 px-3 font-extrabold text-[#6B6480] tabular-nums bg-[#FAF8FF]/40">
+                          {slot}
+                        </td>
+                        {visibleStaff.map((sp, colIdx) => {
+                          const matchedApts = dayAppointments.filter(
+                            (a) =>
+                              normalizeTimeKey(a.timeSlot) === normalizeTimeKey(slot) &&
+                              isAppointmentForStaffColumn(a, sp, colIdx)
+                          );
+                          const occupyingApt =
+                            matchedApts.length === 0 && slotMins >= 0
+                              ? dayAppointments.find((a) => {
+                                  if (
+                                    a.status === AppointmentStatus.Cancelled ||
+                                    !isAppointmentForStaffColumn(a, sp, colIdx)
+                                  ) {
+                                    return false;
+                                  }
+                                  const st = parseTimeToMinutes(a.timeSlot);
+                                  const dur = Math.max(
+                                    15,
+                                    Number(a.durationMinutes) || 45
+                                  );
+                                  return st >= 0 && slotMins > st && slotMins < st + dur;
+                                })
+                              : undefined;
+
+                          return (
+                            <td
+                              key={sp.id}
+                              className="p-2.5 border-r border-[#E6E0F5] align-top"
+                            >
+                              {matchedApts.length > 0 ? (
+                                <div className="space-y-2">
+                                  {matchedApts.map((matched) => {
+                                    const statusMeta = getAppointmentStatusMeta(
+                                      matched.status
+                                    );
+                                    const endMins =
+                                      parseTimeToMinutes(matched.timeSlot) +
+                                      Math.max(
+                                        15,
+                                        Number(matched.durationMinutes) || 45
+                                      );
+                                    return (
+                                      <button
+                                        key={matched.id}
+                                        type="button"
+                                        onClick={() => setSelectedApt(matched)}
+                                        className="w-full text-right p-2.5 sm:p-3 rounded-xl bg-[#EDE9FE]/90 hover:bg-[#EDE9FE] border border-[#C4B5FD] space-y-1 cursor-pointer transition-all"
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-extrabold text-[#1E1B2E] truncate">
+                                            {matched.customerName}
+                                          </span>
+                                          <StatusBadge
+                                            label={statusMeta.label}
+                                            tone={statusMeta.tone}
+                                          />
+                                        </div>
+                                        <p className="text-[11px] font-bold text-[#4C1D95] truncate">
+                                          {matched.serviceTitle}
+                                        </p>
+                                        <div className="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-[#DDD6FE] text-[#6D28D9]">
+                                          <span className="tabular-nums font-bold">
+                                            {matched.timeSlot} تا{' '}
+                                            {formatMinutesToPersianTime(endMins)} (
+                                            {formatDurationMinutes(
+                                              matched.durationMinutes || 45
+                                            )}
+                                            )
+                                          </span>
+                                          <span className="font-extrabold text-[#0057FF]">
+                                            جزئیات و تسویه ▾
+                                          </span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : occupyingApt ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedApt(occupyingApt)}
+                                  className="w-full text-right p-3 rounded-xl bg-[#FEF3C7]/70 border border-[#FDE68A] text-[#92400E] text-[11px] flex items-center justify-between cursor-pointer"
+                                >
+                                  <span className="font-bold">
+                                    در حال انجام نوبت «{occupyingApt.customerName}» ({occupyingApt.serviceTitle})
+                                  </span>
+                                  <span className="text-[10px] font-extrabold">
+                                    اشغال تا{' '}
+                                    {formatMinutesToPersianTime(
+                                      parseTimeToMinutes(occupyingApt.timeSlot) +
+                                        Math.max(
+                                          15,
+                                          Number(occupyingApt.durationMinutes) || 45
+                                        )
+                                    )}
+                                  </span>
+                                </button>
+                              ) : (
+                                <div className="p-3 rounded-xl border border-dashed border-[#E6E0F5] text-[#6B6480] text-[11px] flex items-center justify-between">
+                                  <span>بازه آزاد</span>
+                                  <span className="text-[10px]">قابل رزرو</span>
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {calendarDays.slice(0, 6).map((d) => (
-              <div
-                key={d.date}
-                className="p-4 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] space-y-3"
-              >
-                <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
-                  <p className="text-xs font-extrabold text-[#1E1B2E]">
-                    {d.label}
-                  </p>
-                  <span className="text-[11px] text-[#6B6480] tabular-nums">
-                    {d.date}
-                  </span>
-                </div>
-                {appointments.slice(0, 3).map((apt) => (
-                  <button
-                    key={`${d.date}-${apt.id}`}
-                    type="button"
-                    onClick={() => setSelectedApt(apt)}
-                    className="w-full text-right p-3 rounded-xl bg-white hover:border-[#8B5CF6] border border-[#E6E0F5] text-xs space-y-1 cursor-pointer transition-all"
-                  >
-                    <p className="font-extrabold text-[#1E1B2E] tabular-nums">
-                      ساعت {apt.timeSlot} — {apt.customerName}
+            {calendarDays.slice(0, 7).map((d, dIdx) => {
+              const dayApts = bizAppointments
+                .filter((a) => normalizeDateKey(a.dateJalali) === d.date)
+                .sort(
+                  (a, b) =>
+                    parseTimeToMinutes(a.timeSlot) - parseTimeToMinutes(b.timeSlot)
+                );
+              return (
+                <div
+                  key={d.date}
+                  className="p-4 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] space-y-3"
+                >
+                  <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDayIndex(dIdx);
+                        setViewMode('day');
+                      }}
+                      className="text-xs font-extrabold text-[#1E1B2E] hover:text-[#8B5CF6] cursor-pointer"
+                    >
+                      {d.label}
+                    </button>
+                    <span className="text-[11px] text-[#6B6480] tabular-nums">
+                      {d.date} ({toPersianDigits(dayApts.length)} نوبت)
+                    </span>
+                  </div>
+                  {dayApts.length === 0 ? (
+                    <p className="text-[11px] text-[#6B6480] py-3 text-center">
+                      نوبتی برای این روز ثبت نشده است
                     </p>
-                    <p className="text-[#6B6480]">{apt.serviceTitle}</p>
-                  </button>
-                ))}
-              </div>
-            ))}
+                  ) : (
+                    dayApts.map((apt) => {
+                      const stMeta = getAppointmentStatusMeta(apt.status);
+                      return (
+                        <button
+                          key={`${d.date}-${apt.id}`}
+                          type="button"
+                          onClick={() => setSelectedApt(apt)}
+                          className="w-full text-right p-3 rounded-xl bg-white hover:border-[#8B5CF6] border border-[#E6E0F5] text-xs space-y-1 cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-extrabold text-[#1E1B2E] tabular-nums">
+                              ساعت {apt.timeSlot} — {apt.customerName}
+                            </p>
+                            <StatusBadge
+                              label={stMeta.label}
+                              tone={stMeta.tone}
+                            />
+                          </div>
+                          <p className="text-[#6B6480]">
+                            {apt.serviceTitle} ({formatPriceToman(apt.priceToman)})
+                          </p>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
 
-      {/* مودال جزئیات نوبت در تقویم */}
+      {/* کشوی جزئیات کامل نوبت در تقویم (Bottom Sheet / Modal) */}
       <Modal
         isOpen={Boolean(selectedApt)}
         onClose={() => setSelectedApt(null)}
-        title="جزئیات و تغییر وضعیت نوبت"
+        title="جزئیات، تسویه حضوری و تغییر وضعیت نوبت"
         description={selectedApt?.referenceCode}
         footer={
           selectedApt ? (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  updateAppointmentStatus(
-                    selectedApt.id,
-                    AppointmentStatus.Confirmed
-                  );
-                  setSelectedApt(null);
-                }}
-              >
-                تایید نوبت
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  updateAppointmentStatus(
-                    selectedApt.id,
-                    AppointmentStatus.Completed
-                  );
-                  setSelectedApt(null);
-                }}
-              >
-                ثبت انجام‌شده
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => {
-                  updateAppointmentStatus(
-                    selectedApt.id,
-                    AppointmentStatus.Cancelled
-                  );
-                  setSelectedApt(null);
-                }}
-              >
-                لغو نوبت
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+              <div className="flex flex-wrap gap-2">
+                {selectedApt.status === AppointmentStatus.Pending ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      updateAppointmentStatus(
+                        selectedApt.id,
+                        AppointmentStatus.Confirmed
+                      );
+                      setSelectedApt(null);
+                    }}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>تایید نوبت و ارسال پیامک</span>
+                  </Button>
+                ) : null}
+                {!selectedApt.inPersonSettled &&
+                selectedApt.status !== AppointmentStatus.Cancelled ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      const target = selectedApt;
+                      setSelectedApt(null);
+                      setSettlingApt(target);
+                    }}
+                  >
+                    <span>+ ثبت دریافتی حضوری (تعیین مبلغ نهایی)</span>
+                  </Button>
+                ) : null}
+                {selectedApt.status !== AppointmentStatus.Completed &&
+                selectedApt.status !== AppointmentStatus.Cancelled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      updateAppointmentStatus(
+                        selectedApt.id,
+                        AppointmentStatus.Completed
+                      );
+                      setSelectedApt(null);
+                    }}
+                  >
+                    ثبت انجام‌شده
+                  </Button>
+                ) : null}
+              </div>
+              {selectedApt.status !== AppointmentStatus.Cancelled ? (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    updateAppointmentStatus(
+                      selectedApt.id,
+                      AppointmentStatus.Cancelled,
+                      'BUSINESS_OWNER'
+                    );
+                    setSelectedApt(null);
+                  }}
+                >
+                  لغو نوبت
+                </Button>
+              ) : null}
             </div>
           ) : null
         }
       >
         {selectedApt ? (
-          <div className="space-y-2.5 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
-              <span className="text-[#6B6480]">مشتری:</span>
-              <span className="font-extrabold text-[#1E1B2E]">
-                {selectedApt.customerName} ({selectedApt.customerPhoneMasked})
-              </span>
+          <div className="space-y-3 text-xs">
+            {selectedApt.status === AppointmentStatus.Pending ? (
+              <div className="p-2.5 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] font-extrabold text-[11px]">
+                {getPendingAppointmentSlaMeta(selectedApt.createdAtMs).label}
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between py-1.5 border-b border-[#E6E0F5]">
+              <span className="text-[#6B6480]">مشتری و تماس مستقیم:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-[#1E1B2E]">
+                  {selectedApt.customerName}
+                </span>
+                <a
+                  href={`tel:${toEnglishDigitsClient(selectedApt.customerPhone || selectedApt.customerPhoneMasked)}`}
+                  dir="ltr"
+                  className="px-2.5 py-0.5 rounded-lg bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] font-mono font-bold hover:bg-[#DBEAFE]"
+                >
+                  📞 {selectedApt.customerPhone || selectedApt.customerPhoneMasked}
+                </a>
+              </div>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
-              <span className="text-[#6B6480]">خدمت:</span>
+              <span className="text-[#6B6480]">خدمت و مدت زمان:</span>
               <span className="font-bold text-[#1E1B2E]">
-                {selectedApt.serviceTitle}
+                {selectedApt.serviceTitle} (
+                {formatDurationMinutes(selectedApt.durationMinutes || 45)})
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
@@ -1283,35 +1918,109 @@ export const BusinessCalendarPage: React.FC = () => {
                 {selectedApt.dateJalali} ساعت {selectedApt.timeSlot}
               </span>
             </div>
-            <div className="flex justify-between py-1">
-              <span className="text-[#6B6480]">مبلغ خدمت:</span>
-              <span className="font-extrabold text-[#8B5CF6] tabular-nums">
-                {formatPriceToman(selectedApt.priceToman)}
-              </span>
-            </div>
+            {(() => {
+              const fin = resolveAppointmentFinancialBreakdown({
+                appointment: selectedApt,
+                business: currentBiz,
+              });
+              return (
+                <>
+                  <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+                    <span className="text-[#6B6480]">مبلغ کل خدمت:</span>
+                    <span className="font-extrabold text-[#1E1B2E] tabular-nums">
+                      {formatPriceToman(fin.totalServicePriceToman)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-[#E6E0F5]">
+                    <span className="text-[#6B6480]">
+                      بیعانه پرداختی آنلاین (۱۰۰٪ در کیف پول سالن):
+                    </span>
+                    <span className="font-extrabold text-[#10B981] tabular-nums">
+                      {formatPriceToman(fin.baseDepositToman)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-[#6B6480]">مانده دریافتی حضوری در سالن:</span>
+                    <span className="font-extrabold text-[#8B5CF6] tabular-nums">
+                      {selectedApt.inPersonSettled
+                        ? `تسویه حضوری شد (${formatPriceToman(selectedApt.inPersonSettledAmountToman || fin.remainingInSalonToman)}) ✓`
+                        : formatPriceToman(fin.remainingInSalonToman)}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         ) : null}
       </Modal>
+
+      <InPersonSettlementModal
+        appointment={settlingApt}
+        business={currentBiz}
+        matchedService={bizServicesList.find(
+          (s) =>
+            s.id === settlingApt?.serviceId ||
+            s.title === settlingApt?.serviceTitle
+        )}
+        onClose={() => setSettlingApt(null)}
+        onConfirmSettle={(aptId, remToman, finalPriceToman) =>
+          settleAppointmentInPerson(aptId, remToman, finalPriceToman)
+        }
+      />
     </div>
   );
 };
 
 /** ۳. مدیریت نوبت‌ها (/app/appointments) */
 export const BusinessAppointmentsPage: React.FC = () => {
-  const { appointments, specialists, updateAppointmentStatus } =
-    usePrototypeData();
+  const {
+    currentBusiness,
+    businesses,
+    appointments,
+    services,
+    specialists,
+    updateAppointmentStatus,
+    settleAppointmentInPerson,
+  } = usePrototypeData();
+  const currentBiz = currentBusiness ?? businesses[0];
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'ALL'>(
     'ALL'
   );
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
   const [dateFilter, setDateFilter] = useState<string>('ALL');
   const [detailApt, setDetailApt] = useState<AppointmentItem | null>(null);
+  const [settlingApt, setSettlingApt] = useState<AppointmentItem | null>(null);
+  const bizServicesList = currentBiz
+    ? services.filter((s) => s.businessId === currentBiz.id)
+    : [];
 
-  const uniqueDates = Array.from(
-    new Set(appointments.map((a) => a.dateJalali).filter(Boolean))
+  // ایزوله‌سازی کامل چندمستاجری (Multi-Tenant): فقط نوبت‌ها و متخصصان متعلق به همین کسب‌وکار نمایش داده شوند
+  const bizAppointments = useMemo(
+    () =>
+      currentBiz
+        ? appointments.filter(
+            (a) =>
+              a.businessId === currentBiz.id ||
+              a.businessSlug === currentBiz.slug ||
+              (currentBiz.name && a.businessName === currentBiz.name)
+          )
+        : [],
+    [appointments, currentBiz]
   );
 
-  const filtered = appointments.filter((a) => {
+  const bizSpecialists = useMemo(
+    () =>
+      currentBiz
+        ? specialists.filter((sp) => sp.businessId === currentBiz.id)
+        : [],
+    [specialists, currentBiz]
+  );
+
+  const uniqueDates = Array.from(
+    new Set(bizAppointments.map((a) => a.dateJalali).filter(Boolean))
+  );
+
+  const filtered = bizAppointments.filter((a) => {
     const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
     const matchStaff =
       staffFilter === 'ALL' || a.specialistName === staffFilter;
@@ -1324,7 +2033,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
       <PageHeader
         kicker="فعالیت روزانه · فهرست نوبت‌ها"
         title="مدیریت نوبت‌ها"
-        subtitle="جست‌وجو و فیلتر نوبت‌ها بر اساس وضعیت، متخصص و تاریخ مراجعه همراه با امکان تغییر وضعیت"
+        subtitle="بررسی، تایید یا لغو نوبت‌های ثبت‌شده مشتریان اختصاصی کسب‌وکار شما به همراه جزئیات مالی دقیق"
         routePattern="/app/appointments"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
@@ -1336,32 +2045,32 @@ export const BusinessAppointmentsPage: React.FC = () => {
         {/* نوار وضعیت سریع */}
         <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
           {[
-            { id: 'ALL', label: 'همه نوبت‌ها', count: appointments.length },
+            { id: 'ALL', label: 'همه نوبت‌ها', count: bizAppointments.length },
             {
               id: AppointmentStatus.Pending,
-              label: 'در انتظار تایید',
-              count: appointments.filter(
+              label: 'در انتظار تایید سالن',
+              count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Pending
               ).length,
             },
             {
               id: AppointmentStatus.Confirmed,
               label: 'تاییدشده',
-              count: appointments.filter(
+              count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Confirmed
               ).length,
             },
             {
               id: AppointmentStatus.Completed,
               label: 'انجام‌شده',
-              count: appointments.filter(
+              count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Completed
               ).length,
             },
             {
               id: AppointmentStatus.Cancelled,
               label: 'لغوشده',
-              count: appointments.filter(
+              count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Cancelled
               ).length,
             },
@@ -1403,8 +2112,8 @@ export const BusinessAppointmentsPage: React.FC = () => {
               }
               options={[
                 { value: 'ALL', label: 'همه وضعیت‌ها' },
-                { value: AppointmentStatus.Confirmed, label: 'تاییدشده' },
                 { value: AppointmentStatus.Pending, label: 'در انتظار تایید' },
+                { value: AppointmentStatus.Confirmed, label: 'تاییدشده' },
                 { value: AppointmentStatus.Completed, label: 'انجام‌شده' },
                 { value: AppointmentStatus.Cancelled, label: 'لغوشده' },
               ]}
@@ -1417,8 +2126,8 @@ export const BusinessAppointmentsPage: React.FC = () => {
               value={staffFilter}
               onChange={(e) => setStaffFilter(e.target.value)}
               options={[
-                { value: 'ALL', label: 'همه متخصصان' },
-                ...specialists.map((sp) => ({
+                { value: 'ALL', label: 'همه متخصصان این مرکز' },
+                ...bizSpecialists.map((sp) => ({
                   value: sp.fullName,
                   label: sp.fullName,
                 })),
@@ -1442,7 +2151,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
 
       {filtered.length === 0 ? (
         <EmptyState
-          title="نوبتی با این فیلترها یافت نشد"
+          title="نوبتی با این فیلترها در کسب‌وکار شما یافت نشد"
           onAction={() => {
             setStatusFilter('ALL');
             setStaffFilter('ALL');
@@ -1462,7 +2171,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
                   dir="ltr"
                   className="font-mono text-xs font-bold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-0.5 rounded-md border border-[#BFDBFE]"
                 >
-                  {r.customerPhoneMasked}
+                  {r.customerPhone || r.customerPhoneMasked}
                 </span>
               ),
             },
@@ -1475,7 +2184,8 @@ export const BusinessAppointmentsPage: React.FC = () => {
                     {r.customerName}
                   </p>
                   <p className="text-xs text-[#6B6480] tabular-nums">
-                    {r.dateJalali} · ساعت {r.timeSlot}
+                    {r.dateJalali} · ساعت {r.timeSlot} (
+                    {formatDurationMinutes(r.durationMinutes || 45)})
                   </p>
                 </div>
               ),
@@ -1492,13 +2202,27 @@ export const BusinessAppointmentsPage: React.FC = () => {
             },
             {
               key: 'price',
-              header: 'مبلغ',
+              header: 'مبلغ کل / بیعانه / مانده حضوری',
               align: 'left',
-              render: (r) => (
-                <span className="tabular-nums font-extrabold text-[#8B5CF6]">
-                  {formatPriceToman(r.priceToman)}
-                </span>
-              ),
+              render: (r) => {
+                const fin = resolveAppointmentFinancialBreakdown({
+                  appointment: r,
+                  business: currentBiz,
+                });
+                return (
+                  <div className="space-y-0.5 text-left">
+                    <span className="tabular-nums font-extrabold text-[#1E1B2E] block">
+                      کل: {formatPriceToman(fin.totalServicePriceToman)}
+                    </span>
+                    <span className="tabular-nums text-[11px] font-bold text-[#10B981] block">
+                      بیعانه: {formatPriceToman(fin.baseDepositToman)}
+                    </span>
+                    <span className="tabular-nums text-[11px] font-bold text-[#8B5CF6] block">
+                      مانده حضوری: {formatPriceToman(fin.remainingInSalonToman)}
+                    </span>
+                  </div>
+                );
+              },
             },
             {
               key: 'status',
@@ -1512,7 +2236,46 @@ export const BusinessAppointmentsPage: React.FC = () => {
               key: 'action',
               header: 'عملیات',
               render: (r) => (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {r.status === AppointmentStatus.Pending ? (
+                    <>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            r.id,
+                            AppointmentStatus.Confirmed
+                          )
+                        }
+                      >
+                        <span>تایید نوبت</span>
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() =>
+                          updateAppointmentStatus(
+                            r.id,
+                            AppointmentStatus.Cancelled,
+                            'BUSINESS_OWNER'
+                          )
+                        }
+                      >
+                        <span>رد نوبت</span>
+                      </Button>
+                    </>
+                  ) : null}
+                  {!r.inPersonSettled &&
+                  r.status !== AppointmentStatus.Cancelled ? (
+                    <button
+                      type="button"
+                      onClick={() => setSettlingApt(r)}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-extrabold transition-colors cursor-pointer"
+                    >
+                      + ثبت دریافتی حضوری
+                    </button>
+                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1531,23 +2294,87 @@ export const BusinessAppointmentsPage: React.FC = () => {
       <Modal
         isOpen={Boolean(detailApt)}
         onClose={() => setDetailApt(null)}
-        title="مدیریت وضعیت نوبت"
+        title="مدیریت و جزئیات کامل نوبت"
         description={detailApt?.referenceCode}
       >
         {detailApt ? (
           <div className="space-y-4">
-            <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1.5 text-xs">
-              <p className="font-extrabold text-[#1E1B2E]">
-                {detailApt.customerName} — {detailApt.serviceTitle}
-              </p>
-              <p className="text-[#6B6480]">
-                متخصص: {detailApt.specialistName} · زمان: {detailApt.dateJalali}{' '}
-                ساعت {detailApt.timeSlot}
-              </p>
-              {detailApt.notes ? (
-                <p className="text-[#6B6480]">یادداشت: {detailApt.notes}</p>
-              ) : null}
-            </div>
+            {detailApt.status === AppointmentStatus.Pending ? (
+              <div className="p-2.5 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] font-extrabold text-[11px]">
+                {getPendingAppointmentSlaMeta(detailApt.createdAtMs).label}
+              </div>
+            ) : null}
+            {(() => {
+              const fin = resolveAppointmentFinancialBreakdown({
+                appointment: detailApt,
+                business: currentBiz,
+              });
+              return (
+                <div className="p-4 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6480]">مشتری و شماره تماس:</span>
+                    <span className="font-extrabold text-[#1E1B2E]">
+                      {detailApt.customerName} (
+                      {detailApt.customerPhone || detailApt.customerPhoneMasked})
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6480]">خدمت و متخصص:</span>
+                    <span className="font-bold text-[#1E1B2E]">
+                      {detailApt.serviceTitle} · {detailApt.specialistName}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6480]">تاریخ و ساعت مراجعه:</span>
+                    <span className="font-extrabold text-[#1E1B2E] tabular-nums">
+                      {detailApt.dateJalali} ساعت {detailApt.timeSlot} (
+                      {formatDurationMinutes(detailApt.durationMinutes || 45)})
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-[#E6E0F5]">
+                    <span className="text-[#6B6480]">مبلغ کل خدمت:</span>
+                    <span className="font-extrabold text-[#1E1B2E] tabular-nums">
+                      {formatPriceToman(fin.totalServicePriceToman)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6480]">بیعانه پرداختی آنلاین:</span>
+                    <span className="font-extrabold text-[#10B981] tabular-nums">
+                      {formatPriceToman(fin.baseDepositToman)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#6B6480]">مانده دریافتی حضوری در سالن:</span>
+                    <span className="font-extrabold text-[#8B5CF6] tabular-nums">
+                      {detailApt.inPersonSettled
+                        ? `تسویه حضوری شد (${formatPriceToman(detailApt.inPersonSettledAmountToman || fin.remainingInSalonToman)}) ✓`
+                        : formatPriceToman(fin.remainingInSalonToman)}
+                    </span>
+                  </div>
+                  {detailApt.notes ? (
+                    <p className="text-[#6B6480] pt-1 border-t border-[#E6E0F5]">
+                      یادداشت مشتری: {detailApt.notes}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
+
+            {!detailApt.inPersonSettled &&
+            detailApt.status !== AppointmentStatus.Cancelled ? (
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full justify-center"
+                onClick={() => {
+                  const target = detailApt;
+                  setDetailApt(null);
+                  setSettlingApt(target);
+                }}
+              >
+                <span>+ ثبت دریافتی حضوری و تعیین مبلغ نهایی خدمت</span>
+              </Button>
+            ) : null}
 
             <div className="space-y-2">
               <p className="text-xs font-extrabold text-[#1E1B2E]">
@@ -1555,10 +2382,10 @@ export const BusinessAppointmentsPage: React.FC = () => {
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { st: AppointmentStatus.Confirmed, label: 'تاییدشده' },
+                  { st: AppointmentStatus.Confirmed, label: 'تایید نهایی نوبت' },
                   { st: AppointmentStatus.Pending, label: 'در انتظار تایید' },
                   { st: AppointmentStatus.Completed, label: 'انجام‌شده' },
-                  { st: AppointmentStatus.Cancelled, label: 'لغوشده' },
+                  { st: AppointmentStatus.Cancelled, label: 'لغو و عودت بیعانه' },
                 ].map((opt) => (
                   <Button
                     key={opt.st}
@@ -1567,7 +2394,13 @@ export const BusinessAppointmentsPage: React.FC = () => {
                     }
                     size="sm"
                     onClick={() => {
-                      updateAppointmentStatus(detailApt.id, opt.st);
+                      updateAppointmentStatus(
+                        detailApt.id,
+                        opt.st,
+                        opt.st === AppointmentStatus.Cancelled
+                          ? 'BUSINESS_OWNER'
+                          : undefined
+                      );
                       setDetailApt({ ...detailApt, status: opt.st });
                     }}
                   >
@@ -1579,6 +2412,20 @@ export const BusinessAppointmentsPage: React.FC = () => {
           </div>
         ) : null}
       </Modal>
+
+      <InPersonSettlementModal
+        appointment={settlingApt}
+        business={currentBiz}
+        matchedService={bizServicesList.find(
+          (s) =>
+            s.id === settlingApt?.serviceId ||
+            s.title === settlingApt?.serviceTitle
+        )}
+        onClose={() => setSettlingApt(null)}
+        onConfirmSettle={(aptId, remToman, finalPriceToman) =>
+          settleAppointmentInPerson(aptId, remToman, finalPriceToman)
+        }
+      />
     </div>
   );
 };
@@ -2884,18 +3731,39 @@ export const BusinessServicesPage: React.FC = () => {
             ))}
           </div>
 
-          {/* راهنمای جابه‌جایی لمسی (با انگشت) و ماوس برای تغییر ترتیب خدمات */}
+          {/* نوار خلوت و جمع‌وجور راهنما با Popover کلیکی برای قیمت‌گذاری (ثابت / بازه‌ای / پایه) و تغییر ترتیب خدمات */}
           <div className="px-3.5 py-2.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
-            <div className="inline-flex items-center gap-2 font-bold">
-              <span className="w-7 h-7 rounded-xl bg-[#E0ECFF] text-[#0057FF] inline-flex items-center justify-center shrink-0">
-                <GripVertical className="w-4 h-4" />
-              </span>
-              <span>
-                برای تغییر جایگاه هر خدمت در منوی رزرو، دستگیره سمت راست کارت را با انگشت نگه دارید و به بالا یا پایین بکشید (یا از دکمه‌های ↑ ↓ استفاده کنید).
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <ClickPopover
+                label="راهنمای قیمت‌گذاری (ثابت / بازه‌ای / پایه)"
+                title="تفاوت ۳ مدل قیمت‌گذاری خدمات در پروفایل و رزرو"
+                tone="violet"
+              >
+                <ul className="space-y-1.5 list-disc pr-4">
+                  <li>
+                    <strong>قیمت ثابت (قطعی):</strong> مبلغ دقیق خدمت مشخص است (مثلاً ۶۵۰,۰۰۰ تومان).
+                  </li>
+                  <li>
+                    <strong>قیمت بازه‌ای (از ... تا ...):</strong> مناسب خدماتی که بسته به حجم مو یا مواد متغیرند (مثلاً از ۱,۲۰۰,۰۰۰ تا ۲,۴۰۰,۰۰۰ تومان). بیعانه بر اساس کف قیمت محاسبه می‌شود.
+                  </li>
+                  <li>
+                    <strong>قیمت پایه (شروع از ...):</strong> مبلغ پایه نمایش داده می‌شود (مثلاً شروع از ۹۵۰,۰۰۰ تومان) و مابقی پس از مشاوره حضوری در سالن تعیین می‌گردد.
+                  </li>
+                </ul>
+              </ClickPopover>
+
+              <ClickPopover
+                label="راهنمای جابه‌جایی ترتیب خدمات"
+                title="نحوه تغییر چیدمان خدمات در منوی رزرو مشتری"
+                tone="blue"
+              >
+                <p>
+                  برای تغییر جایگاه هر خدمت در منوی رزرو، دستگیره سمت راست کارت را با انگشت یا ماوس نگه دارید و به بالا یا پایین بکشید، یا از دکمه‌های <strong>↑ ↓</strong> روی هر کارت استفاده کنید. ترتیب جدید بلافاصله در پروفایل عمومی ذخیره می‌شود.
+                </p>
+              </ClickPopover>
             </div>
             <span className="text-[11px] font-extrabold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-xl border border-[#BFDBFE]">
-              {toPersianDigits(visibleServices.length)} خدمت قابل جابه‌جایی
+              {toPersianDigits(visibleServices.length)} خدمت فعال
             </span>
           </div>
 
@@ -3078,7 +3946,44 @@ export const BusinessServicesPage: React.FC = () => {
                         {formatDurationMinutes(s.durationMinutes)}
                       </span>
 
-                      <div className="space-y-1 text-left">
+                      <div className="space-y-1.5 text-left">
+                        <div className="flex items-center justify-end gap-1">
+                          {(
+                            [
+                              { id: 'FIXED', label: 'ثابت' },
+                              { id: 'RANGE', label: 'بازه‌ای' },
+                              { id: 'STARTING_FROM', label: 'پایه از...' },
+                            ] as const
+                          ).map((modeOpt) => {
+                            const activeMode =
+                              (s.pricingType || 'FIXED') === modeOpt.id;
+                            return (
+                              <button
+                                key={modeOpt.id}
+                                type="button"
+                                onClick={() =>
+                                  updateService(s.id, {
+                                    pricingType: modeOpt.id,
+                                    maxPriceToman:
+                                      modeOpt.id === 'RANGE'
+                                        ? s.maxPriceToman &&
+                                          s.maxPriceToman > s.priceToman
+                                          ? s.maxPriceToman
+                                          : Math.round(s.priceToman * 1.5)
+                                        : undefined,
+                                  })
+                                }
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold cursor-pointer transition-all ${
+                                  activeMode
+                                    ? 'bg-[#8B5CF6] text-white'
+                                    : 'bg-[#F8FAFC] text-[#64748B] border border-[#E2E8F0] hover:border-[#8B5CF6]'
+                                }`}
+                              >
+                                {modeOpt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <span className="text-xs font-extrabold text-[#8B5CF6] block tabular-nums">
                           {formatServicePriceShort(s)}
                         </span>
@@ -4007,11 +4912,31 @@ export const BusinessCustomersPage: React.FC = () => {
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerRecord | null>(null);
 
-  // تجمیع خودکار مشتریان ثبت‌شده دستی + مشتریانی که آنلاین نوبت گرفته‌اند تا هیچ شماره‌ای از قلم نیفتد
+  // تجمیع خودکار مشتریان ثبت‌شده دستی همین کسب‌وکار + مشتریانی که آنلاین از همین سالن نوبت گرفته‌اند (تفکیک ۱۰۰٪ پرونده مشتریان هر سالن)
   const mergedBusinessCustomers = React.useMemo(() => {
     const byKey = new Map<string, CustomerRecord>();
 
-    for (const c of customers) {
+    const isJaziniBiz =
+      currentBiz?.id === 'biz-real-jazini' ||
+      currentBiz?.slug === 'amirhossein-jazini-barber' ||
+      (currentBiz?.name || '').includes('جزینی');
+
+    const ownBusinessCustomers = currentBiz
+      ? customers.filter((c) => {
+          if (
+            !isJaziniBiz &&
+            (c.fullName.includes('معید پناهی') || c.businessId === 'biz-real-jazini')
+          ) {
+            return false;
+          }
+          if (c.businessId) {
+            return c.businessId === currentBiz.id;
+          }
+          return true;
+        })
+      : customers;
+
+    for (const c of ownBusinessCustomers) {
       const cleanPhone = normalizeIranMobileInput(c.phone || c.phoneMasked || '');
       const key = cleanPhone || c.id;
       byKey.set(key, {
@@ -6339,10 +7264,30 @@ export const BusinessMarketingPage: React.FC = () => {
     null
   );
 
+  const bizCustomers = React.useMemo(() => {
+    if (!currentBiz) return customers;
+    const isJaziniBiz =
+      currentBiz.id === 'biz-real-jazini' ||
+      currentBiz.slug === 'amirhossein-jazini-barber' ||
+      (currentBiz.name || '').includes('جزینی');
+    return customers.filter((c) => {
+      if (
+        !isJaziniBiz &&
+        (c.fullName.includes('معید پناهی') || c.businessId === 'biz-real-jazini')
+      ) {
+        return false;
+      }
+      return !c.businessId || c.businessId === currentBiz.id;
+    });
+  }, [customers, currentBiz]);
+
   // استیت پنل ارسال پیامک مستقیم به مشتریان سالن
   const [selectedCustomerIds, setSelectedCustomerIds] = useState<string[]>(() =>
-    customers.slice(0, 2).map((c) => c.id)
+    bizCustomers.slice(0, 2).map((c) => c.id)
   );
+  React.useEffect(() => {
+    setSelectedCustomerIds(bizCustomers.slice(0, 2).map((c) => c.id));
+  }, [currentBiz?.id]);
   const [customPhoneInput, setCustomPhoneInput] = useState('');
   const [customRecipients, setCustomRecipients] = useState<
     Array<{ name: string; phone: string }>
@@ -6396,10 +7341,10 @@ export const BusinessMarketingPage: React.FC = () => {
   };
 
   const handleSelectAllCustomers = () => {
-    if (selectedCustomerIds.length === customers.length) {
+    if (selectedCustomerIds.length === bizCustomers.length) {
       setSelectedCustomerIds([]);
     } else {
-      setSelectedCustomerIds(customers.map((c) => c.id));
+      setSelectedCustomerIds(bizCustomers.map((c) => c.id));
     }
   };
 
@@ -6420,7 +7365,7 @@ export const BusinessMarketingPage: React.FC = () => {
 
   const handleSendCustomerSmsBatch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const chosenCustomers = customers
+    const chosenCustomers = bizCustomers
       .filter((c) => selectedCustomerIds.includes(c.id))
       .map((c) => ({
         name: c.fullName,
@@ -6705,14 +7650,14 @@ export const BusinessMarketingPage: React.FC = () => {
                 onClick={handleSelectAllCustomers}
                 className="text-[11px] font-extrabold text-[#0057FF] hover:underline cursor-pointer"
               >
-                {selectedCustomerIds.length === customers.length
+                {selectedCustomerIds.length === bizCustomers.length
                   ? 'لغو انتخاب همه'
                   : 'انتخاب همه مشتریان'}
               </button>
             </div>
 
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-              {customers.map((c) => {
+              {bizCustomers.map((c) => {
                 const checked = selectedCustomerIds.includes(c.id);
                 return (
                   <label
