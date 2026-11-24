@@ -364,21 +364,18 @@ export const BusinessCategorySubTabs: React.FC = () => {
   return (
     <div
       aria-label={`زیرمجموعه‌های بخش ${activeGroup.label}`}
-      className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-4 sm:px-6 py-2.5 relative md:sticky md:top-[61px] z-10 lg:hidden"
+      className="bg-white/95 backdrop-blur-md border-b border-[#CBD5E1] px-3 sm:px-6 py-1.5 sm:py-2 relative md:sticky md:top-[61px] z-10 lg:hidden"
     >
-      <div className="max-w-[1140px] mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
-        <span className="text-[11px] font-black text-[#64748B] shrink-0 pl-2 border-l border-[#E2E8F0]">
-          بخش {activeGroup.label}:
-        </span>
+      <div className="max-w-[1140px] mx-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar">
         {activeGroup.subTabs.map((sub) => (
           <NavLink
             key={sub.to}
             to={sub.to}
             end={sub.end}
             className={({ isActive }) =>
-              `inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-extrabold whitespace-nowrap transition-all shrink-0 ${
+              `inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-extrabold whitespace-nowrap transition-all shrink-0 ${
                 isActive
-                  ? 'bg-[#0057FF] text-white shadow-[0_6px_16px_-4px_rgba(0,87,255,0.45)]'
+                  ? 'bg-[#0057FF] text-white shadow-[0_4px_12px_-3px_rgba(0,87,255,0.45)]'
                   : 'bg-[#F3F6FC] text-[#334155] border border-[#CBD5E1] hover:bg-[#E0ECFF] hover:text-[#0057FF]'
               }`
             }

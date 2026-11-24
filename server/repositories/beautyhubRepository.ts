@@ -1502,6 +1502,7 @@ const SHARED_PLATFORM_STATE_KEYS = {
   settlementRequests: 'platform_settlement_requests_v1',
   paymentConfig: 'platform_commission_config_v1',
   platformBusinessNotices: 'platform_business_notices_v1',
+  paymentOrders: 'platform_payment_orders_v1',
 } as const;
 
 export async function getSharedPlatformState(
@@ -1510,6 +1511,7 @@ export async function getSharedPlatformState(
   settlementRequests?: Array<Record<string, unknown>>;
   paymentConfig?: Record<string, unknown>;
   platformBusinessNotices?: Array<Record<string, unknown>>;
+  paymentOrders?: Array<Record<string, unknown>>;
 }> {
   try {
     const res = await client.query(
@@ -1524,6 +1526,7 @@ export async function getSharedPlatformState(
       settlementRequests?: Array<Record<string, unknown>>;
       paymentConfig?: Record<string, unknown>;
       platformBusinessNotices?: Array<Record<string, unknown>>;
+      paymentOrders?: Array<Record<string, unknown>>;
     } = {};
     for (const row of res.rows) {
       if (
@@ -1543,6 +1546,11 @@ export async function getSharedPlatformState(
         Array.isArray(row.value_json)
       ) {
         out.platformBusinessNotices = row.value_json as Array<Record<string, unknown>>;
+      } else if (
+        row.key === SHARED_PLATFORM_STATE_KEYS.paymentOrders &&
+        Array.isArray(row.value_json)
+      ) {
+        out.paymentOrders = row.value_json as Array<Record<string, unknown>>;
       }
     }
     return out;
@@ -1557,6 +1565,7 @@ export async function saveSharedPlatformStateInDb(
     settlementRequests?: Array<Record<string, unknown>>;
     paymentConfig?: Record<string, unknown>;
     platformBusinessNotices?: Array<Record<string, unknown>>;
+    paymentOrders?: Array<Record<string, unknown>>;
   }
 ): Promise<void> {
   const client = await pool.connect();
@@ -1598,6 +1607,19 @@ export async function saveSharedPlatformStateInDb(
         [
           SHARED_PLATFORM_STATE_KEYS.platformBusinessNotices,
           JSON.stringify(patch.platformBusinessNotices),
+        ]
+      );
+    }
+    if (Array.isArray(patch.paymentOrders)) {
+      await client.query(
+        `
+        INSERT INTO platform_kv_store (key, value_json, updated_at)
+        VALUES ($1, $2::jsonb, NOW())
+        ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+        `,
+        [
+          SHARED_PLATFORM_STATE_KEYS.paymentOrders,
+          JSON.stringify(patch.paymentOrders),
         ]
       );
     }
@@ -6847,14 +6869,17 @@ export async function getAdminOverviewPayloadInDb(
 
     const bizByIdMap = new Map(businesses.map((b) => [b.id, b]));
     const appointments: AppointmentItem[] = aptRes.rows.map((r) => {
-      const rowPrice = Number(r.service_price_toman_snapshot) || 0;
-      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      const rowPrice = Math.max(0, Number(r.service_price_toman_snapshot) || 0);
       const matchedBiz = bizByIdMap.get(String(r.business_external_id));
       const parsedDep = Math.round(Number(matchedBiz?.depositPercent));
       const depPct =
         Number.isFinite(parsedDep) && parsedDep >= 1 && parsedDep <= 100
           ? Math.min(100, Math.max(20, parsedDep))
           : 30;
+      const exactDeposit =
+        matchedBiz?.depositEnabled === false || rowPrice <= 0
+          ? 0
+          : Math.max(0, Math.round((rowPrice * depPct) / 100));
       return {
         id: String(r.external_id),
         referenceCode: String(r.reference_code),
@@ -6871,10 +6896,7 @@ export async function getAdminOverviewPayloadInDb(
         timeSlot: String(r.time_slot_label),
         durationMinutes: Number(r.duration_minutes_snapshot),
         priceToman: rowPrice,
-        depositPaidToman: Math.max(
-          20_000,
-          Math.round((effectivePrice * depPct) / 100)
-        ),
+        depositPaidToman: exactDeposit,
         status: r.status as AppointmentStatus,
         notes: r.notes ? String(r.notes) : undefined,
       };

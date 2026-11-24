@@ -16,7 +16,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/formatters.test.ts server/health.test.ts server/db/migrate.test.ts"
+    "test": "tsx --test src/utils/formatters.test.ts src/utils/financialEngine.test.ts server/health.test.ts server/db/migrate.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -57,15 +57,16 @@ import {
 import {
   FREE_TRIAL_BOOKING_QUOTA,
   TIMETO_MONTHLY_PACKAGES,
+  computeBusinessFinancialDossier,
+  computePlatformAdminSummary,
   normalizeDepositPercent,
-  resolveAppointmentFinancialBreakdown,
-  resolveBusinessCommissionMeta,
   resolveBusinessSubscriptionQuotaStatus,
 } from '../../utils/financialEngine';
 import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { ClickPopover } from '../../components/ui/ClickPopover';
 import { FormField } from '../../components/ui/FormField';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
@@ -90,94 +91,6 @@ const CATEGORY_ICON_COMPONENTS: Record<string, React.ComponentType<{ className?:
   HeartHandshake,
 };
 
-/** بررسی تطابق دقیق نوبت با یک کسب‌وکار (شناسه، اسلاگ، نام سالن یا نام صاحب سالن) */
-function doesAppointmentBelongToBusiness(
-  apt: ReturnType<typeof usePrototypeData>['appointments'][number],
-  business: BusinessItem
-): boolean {
-  if (!apt || apt.status === 'CANCELLED') return false;
-  if (apt.businessId === business.id || apt.businessId === business.slug) {
-    return true;
-  }
-  if (apt.businessSlug && (apt.businessSlug === business.slug || apt.businessSlug === business.id)) {
-    return true;
-  }
-  const aptBizName = (apt.businessName || '').trim();
-  const bizName = (business.name || '').trim();
-  if (aptBizName && bizName && aptBizName === bizName) {
-    return true;
-  }
-  return false;
-}
-
-/** محاسبه خلاصه پرونده مالی، سهمیه اشتراک و کارکرد یک کسب‌وکار بر اساس نوبت‌های واقعی ثبت‌شده (مدل اشتراکی با کارمزد ۰٪) */
-function computeBusinessDossierMetrics(
-  business: BusinessItem,
-  appointments: ReturnType<typeof usePrototypeData>['appointments'],
-  services: ReturnType<typeof usePrototypeData>['services'],
-  paymentConfig: ReturnType<typeof usePrototypeData>['paymentConfig']
-) {
-  const bizApts = appointments.filter((a) =>
-    doesAppointmentBelongToBusiness(a, business)
-  );
-  const commMeta = resolveBusinessCommissionMeta(business, paymentConfig);
-  const quotaStatus = resolveBusinessSubscriptionQuotaStatus({
-    business,
-    appointments,
-  });
-
-  let totalServiceToman = 0;
-  let totalDepositCollectedToman = 0;
-  let totalCommissionToman = 0;
-  let totalNetToSalonToman = 0;
-
-  for (const apt of bizApts) {
-    const srv = services.find((s) => s.id === apt.serviceId);
-    const servicePrice = Math.max(
-      0,
-      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
-    );
-    const breakdown = resolveAppointmentFinancialBreakdown({
-      appointment: {
-        ...apt,
-        priceToman: servicePrice,
-      },
-      business,
-      commissionConfig: paymentConfig,
-    });
-
-    totalServiceToman += breakdown.totalServicePriceToman;
-    totalDepositCollectedToman += breakdown.baseDepositToman;
-    totalCommissionToman += 0;
-    totalNetToSalonToman += breakdown.baseDepositToman;
-  }
-
-  const depositPercent = normalizeDepositPercent(business.depositPercent);
-  const totalRemainingInSalonToman = Math.max(
-    0,
-    totalServiceToman - totalDepositCollectedToman
-  );
-  const currentPayableToman = totalNetToSalonToman;
-  const latestAppointment = bizApts[0] || null;
-
-  return {
-    bookingsCount: bizApts.length,
-    completedCount: bizApts.filter((a) => a.status === 'COMPLETED').length,
-    confirmedCount: bizApts.filter((a) => a.status === 'CONFIRMED').length,
-    depositPercent,
-    commissionPercent: 0,
-    commissionCategoryLabel: commMeta.categoryLabel,
-    quotaStatus,
-    totalServiceToman,
-    totalRemainingInSalonToman,
-    totalDepositCollectedToman,
-    totalCommissionToman,
-    totalNetToSalonToman,
-    currentPayableToman,
-    latestAppointment,
-  };
-}
-
 /** جدول جامع پرونده مالی و کارکرد هر کسب‌وکار + وضعیت اشتراک/سهمیه نوبت + دکمه تسویه هفتگی شبا */
 const BusinessFinancialDossierTable: React.FC<{
   businesses: BusinessItem[];
@@ -188,35 +101,31 @@ const BusinessFinancialDossierTable: React.FC<{
     services,
     specialists,
     paymentConfig,
+    paymentOrders,
     settlementRequests,
     settleBusinessDossierByAdmin,
-    refreshRealData,
+    syncAdminLiveNow,
+    lastSyncedAtIso,
     isLoadingInitialData,
     showToast,
   } = usePrototypeData();
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
 
-  const realBusinesses = businesses.filter(
-    (b) =>
-      !b.isSampleShowcase &&
-      b.approvalStatus !== 'REJECTED' &&
-      !String(b.name || '').includes('مهتاب') &&
-      !String(b.ownerName || '').includes('مهتاب')
-  );
+  const platformSummary = computePlatformAdminSummary({
+    businesses,
+    appointments,
+    services,
+    settlementRequests,
+    paymentOrders,
+    commissionConfig: paymentConfig,
+  });
 
-  const rows = realBusinesses.map((biz) => {
-    const dossier = computeBusinessDossierMetrics(
-      biz,
-      appointments,
-      services,
-      paymentConfig
-    );
-    const paidSettlements = settlementRequests.filter(
-      (s) => s.businessId === biz.id && s.status === 'PAID'
-    );
-    const totalAlreadySettledToman = paidSettlements.reduce(
-      (sum, s) => sum + (Number(s.netPayoutToman) || 0),
-      0
-    );
+  const rows = platformSummary.businessDossiers.map((dossier) => {
+    const biz = dossier.business;
+    const quotaStatus = resolveBusinessSubscriptionQuotaStatus({
+      business: biz,
+      appointments: dossier.bookings,
+    });
     const bizServices = services.filter((s) => s.businessId === biz.id);
     const bizSpecialists = specialists.filter((sp) => sp.businessId === biz.id);
     const isPublicReady = isBusinessReadyForPublicDisplay({
@@ -228,64 +137,78 @@ const BusinessFinancialDossierTable: React.FC<{
     return {
       biz,
       dossier,
-      totalAlreadySettledToman,
-      paidSettlementsCount: paidSettlements.length,
+      quotaStatus,
+      latestAppointment: dossier.bookings[0] || null,
       isPublicReady,
     };
   });
 
+  const lastSyncTimeLabel = lastSyncedAtIso
+    ? new Date(lastSyncedAtIso).toLocaleTimeString('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : null;
+
+  const handleInstantSync = async () => {
+    setIsManualSyncing(true);
+    try {
+      await syncAdminLiveNow();
+      showToast('تمامی آمار رزروها، بیعانه‌ها و تسویه‌ها به‌صورت آنی همگام‌سازی شد ✓');
+    } finally {
+      setIsManualSyncing(false);
+    }
+  };
+
   return (
     <Card className="rounded-3xl p-5 sm:p-6 space-y-4 border-2 border-[#0057FF]/25 bg-gradient-to-br from-[#F8FAFC] via-white to-[#EFF6FF]/40 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3.5">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Wallet className="w-5 h-5 text-[#0057FF]" />
-            <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-              پرونده مالی، سهمیه اشتراک و تسویه هفتگی شبا با کسب‌وکارها (مدل اشتراکی · کارمزد ۰٪)
-            </h2>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              سینک زنده با دیتابیس مرکزی
-            </span>
-          </div>
-          <p className="text-xs text-[#475569] leading-relaxed">
-            در مدل جدید اشتراکی تایم‌تو، هر کسب‌وکار ابتدا <strong>۱۰ نوبت رایگان هدیه شروع</strong> دارد و پس از آن یکی از <strong>۳ پکیج اشتراک ۱ ماهه</strong> را تهیه می‌کند. کارمزد پلتفرم از تمامی نوبت‌ها <strong>۰٪</strong> است و <strong>۱۰۰٪ بیعانه دریافتی آنلاین</strong> در سیکل هفتگی به شماره شبا یا کارت صاحب کسب‌وکار واریز می‌شود.
-          </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Wallet className="w-5 h-5 text-[#0057FF]" />
+          <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+            پرونده مالی و تسویه شبا با کسب‌وکارها
+          </h2>
+          <ClickPopover
+            iconOnly
+            tone="blue"
+            align="right"
+            wide
+            title="منطق محاسبه و فرمول تسویه (مدل اشتراکی · کارمزد ۰٪)"
+          >
+            <p>
+              در مدل اشتراکی تایم‌تو، هر کسب‌وکار ابتدا <strong>۱۰ نوبت رایگان هدیه</strong> دارد و سپس اشتراک ۱ ماهه تهیه می‌کند.
+            </p>
+            <p>
+              کارمزد پلتفرم از تمامی نوبت‌ها <strong>۰٪</strong> است و <strong>۱۰۰٪ بیعانه آنلاین دریافتی</strong> منهای تسویه‌های پرداخت‌شده قبلی به شبا/کارت سالن واریز می‌شود.
+            </p>
+            <p className="text-[11px] text-[#0057FF] font-bold pt-1">
+              مجموع ارقام ردیف‌های این جدول دقیقاً با کارت‌های بالای داشبورد و گزارش کلان یکسان است.
+            </p>
+          </ClickPopover>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-extrabold tabular-nums">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>{lastSyncTimeLabel ? `همگام (${lastSyncTimeLabel})` : 'سینک زنده دیتابیس'}</span>
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void refreshRealData()}
-            disabled={isLoadingInitialData}
+            onClick={() => void handleInstantSync()}
+            disabled={isManualSyncing || isLoadingInitialData}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white text-[#0057FF] border border-[#0057FF]/30 text-xs font-extrabold hover:bg-[#EFF6FF] transition-colors disabled:opacity-60 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingInitialData ? 'animate-spin' : ''}`} />
-            <span>{isLoadingInitialData ? 'در حال بروزرسانی...' : 'بروزرسانی آنی اطلاعات'}</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${isManualSyncing || isLoadingInitialData ? 'animate-spin' : ''}`} />
+            <span>{isManualSyncing ? 'در حال همگام‌سازی...' : 'بروزرسانی آنی'}</span>
           </button>
           <Link
             to="/admin/payments"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#061138] text-white text-xs font-extrabold hover:bg-[#0057FF] transition-colors"
           >
             <CreditCard className="w-4 h-4" />
-            <span>تسویه دسته‌ای شبا و خروجی پایا</span>
+            <span>تسویه دسته‌ای پایا</span>
           </Link>
         </div>
-      </div>
-
-      {/* راهنمای فرمول تسویه در مدل اشتراکی بدون کارمزد */}
-      <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 text-xs text-[#065F46] leading-relaxed flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <strong className="text-[#047857]">فرمول تسویه هفتگی (کارمزد ۰٪):</strong>{' '}
-          مبلغ قابل واریز به شبای هر کسب‌وکار برابر است با{' '}
-          <strong>«۱۰۰٪ بیعانه‌های دریافتی آنلاین»</strong> منهای{' '}
-          <strong>«تسویه‌های پرداخت‌شده قبلی»</strong>. درآمد پلتفرم از محل فروش اشتراک‌های ماهانه و جایگاه‌های تبلیغاتی ۷ و ۱۴ روزه است.
-        </div>
-        <Link
-          to="/admin/subscriptions"
-          className="font-extrabold text-[#0057FF] hover:underline shrink-0"
-        >
-          مدیریت پکیج‌های اشتراک ←
-        </Link>
       </div>
 
       <ResponsiveTable
@@ -339,105 +262,101 @@ const BusinessFinancialDossierTable: React.FC<{
           },
           {
             key: 'subscriptionQuota',
-            header: 'وضعیت اشتراک و سهمیه نوبت (کارمزد ۰٪)',
-            render: ({ dossier }) => {
-              const q = dossier.quotaStatus;
-              return (
-                <div className="space-y-1 text-xs tabular-nums">
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
-                      q.isFreeTrial
-                        ? 'bg-amber-50 text-amber-900 border-amber-300'
-                        : 'bg-purple-50 text-purple-900 border-purple-200'
-                    }`}
-                  >
-                    {q.isFreeTrial
-                      ? `🎁 ۱۰ نوبت هدیه شروع`
-                      : `💎 ${q.planTitle}`}
-                  </span>
-                  <div className="font-extrabold text-[#061138]">
-                    مصرف‌شده: {toPersianDigits(q.usedBookingsCount)} از{' '}
-                    {toPersianDigits(q.quotaLimit)} نوبت
-                  </div>
-                  <span
-                    className={`text-[10px] font-bold block ${
-                      q.isQuotaExhausted ? 'text-rose-600' : 'text-emerald-700'
-                    }`}
-                  >
-                    {q.isQuotaExhausted
-                      ? '⚠️ سهمیه تمام‌شده — نیازمند خرید/تمدید اشتراک'
-                      : `${toPersianDigits(q.remainingBookingsCount)} نوبت باقی‌مانده · کارمزد ۰٪`}
-                  </span>
+            header: 'اشتراک و سهمیه نوبت',
+            render: ({ quotaStatus: q }) => (
+              <div className="space-y-1 text-xs tabular-nums">
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${
+                    q.isFreeTrial
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : 'bg-purple-50 text-purple-900 border-purple-200'
+                  }`}
+                >
+                  {q.isFreeTrial
+                    ? `🎁 ۱۰ نوبت هدیه شروع`
+                    : `💎 ${q.planTitle}`}
+                </span>
+                <div className="font-extrabold text-[#061138]">
+                  مصرف‌شده: {toPersianDigits(q.usedBookingsCount)} از{' '}
+                  {toPersianDigits(q.quotaLimit)} نوبت
                 </div>
-              );
-            },
+                <span
+                  className={`text-[10px] font-bold block ${
+                    q.isQuotaExhausted ? 'text-rose-600' : 'text-emerald-700'
+                  }`}
+                >
+                  {q.isQuotaExhausted
+                    ? '⚠️ سهمیه تمام‌شده — نیازمند تمدید'
+                    : `${toPersianDigits(q.remainingBookingsCount)} نوبت مانده · کارمزد ۰٪`}
+                </span>
+              </div>
+            ),
           },
           {
             key: 'bookings',
-            header: 'جمع کل خدمات و دریافتی حضوری سالن',
-            render: ({ dossier }) => (
+            header: 'نوبت‌ها، حجم خدمات و سهم حضوری',
+            render: ({ dossier, latestAppointment }) => (
               <div className="space-y-0.5 tabular-nums text-xs">
                 <span className="font-extrabold text-[#061138] block">
-                  {toPersianDigits(dossier.bookingsCount)} رزرو ثبت‌شده
+                  {toPersianDigits(dossier.bookingsCount)} رزرو فعال
+                  {dossier.cancelledBookingsCount > 0 ? (
+                    <span className="text-[10px] font-bold text-[#94A3B8] mr-1">
+                      ({toPersianDigits(dossier.cancelledBookingsCount)} لغوشده)
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-[#475569] block">
-                  جمع کل خدمات:{' '}
+                  جمع خدمات:{' '}
                   <strong className="text-[#061138]">
                     {formatPriceToman(dossier.totalServiceToman)}
                   </strong>
                 </span>
                 <span className="text-[11px] text-[#64748B] block">
-                  دریافتی حضوری در سالن ({toPersianDigits(100 - dossier.depositPercent)}٪):{' '}
+                  دریافتی حضوری ({toPersianDigits(100 - dossier.depositPercent)}٪):{' '}
                   <strong className="text-[#334155]">
                     {formatPriceToman(dossier.totalRemainingInSalonToman)}
                   </strong>
                 </span>
-                {dossier.latestAppointment ? (
+                {latestAppointment ? (
                   <span className="text-[10px] text-[#0057FF] bg-[#EFF6FF] border border-[#BFDBFE] px-1.5 py-0.5 rounded-md inline-block mt-0.5 font-bold">
-                    آخرین نوبت: {dossier.latestAppointment.serviceTitle} ({dossier.latestAppointment.dateJalali})
+                    آخرین: {latestAppointment.serviceTitle} ({latestAppointment.dateJalali})
                   </span>
                 ) : null}
               </div>
             ),
           },
           {
-            key: 'deposit',
-            header: 'بیعانه دریافتی آنلاین (۱۰۰٪ سهم سالن)',
-            render: ({ dossier }) => (
-              <div className="space-y-1 tabular-nums text-xs">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
-                  بیعانه تنظیمی سالن: {toPersianDigits(dossier.depositPercent)}٪
-                </span>
-                <span className="font-extrabold text-[#0057FF] block">
-                  {formatPriceToman(dossier.totalDepositCollectedToman)}
-                </span>
-                <span className="text-[10px] text-emerald-700 font-bold block">
-                  کارمزد کسرشده از بیعانه: ۰ تومان (۰٪)
-                </span>
-              </div>
-            ),
-          },
-          {
-            key: 'netPayable',
-            header: 'مبلغ قابل تسویه به شبا/کارت سالن',
-            render: ({ biz, dossier, totalAlreadySettledToman }) => {
-              const netPayable = Math.max(
-                0,
-                dossier.totalNetToSalonToman - totalAlreadySettledToman
-              );
+            key: 'depositAndPayable',
+            header: 'بیعانه آنلاین و مانده شبا (کارمزد ۰٪)',
+            render: ({ biz, dossier }) => {
               const accountStr = biz.bankShebaNumber || biz.bankCardNumber || '';
+              const shortAccount =
+                accountStr.length > 16
+                  ? `${accountStr.slice(0, 6)}…${accountStr.slice(-6)}`
+                  : accountStr;
               return (
                 <div className="space-y-1 tabular-nums text-xs">
-                  <span className="text-sm font-black text-emerald-700 block">
-                    {formatPriceToman(netPayable)}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#E0ECFF] text-[#0057FF] text-[10px] font-extrabold">
+                      {dossier.depositEnabled
+                        ? `بیعانه ${toPersianDigits(dossier.depositPercent)}٪`
+                        : 'بیعانه ۰٪'}
+                    </span>
+                    <span className="font-bold text-[#0057FF]">
+                      {formatPriceToman(dossier.totalDepositCollectedToman)}
+                    </span>
+                  </div>
+                  <div className="text-sm font-black text-emerald-700">
+                    مانده شبا: {formatPriceToman(dossier.netPayableToman)}
+                  </div>
                   {accountStr ? (
-                    <div className="flex flex-wrap items-center gap-1">
+                    <div className="flex items-center gap-1">
                       <span
                         dir="ltr"
+                        title={accountStr}
                         className="font-mono text-[10px] text-[#0057FF] bg-[#EFF6FF] px-1.5 py-0.5 rounded inline-block"
                       >
-                        {accountStr}
+                        {shortAccount}
                       </span>
                       <button
                         type="button"
@@ -445,8 +364,8 @@ const BusinessFinancialDossierTable: React.FC<{
                           navigator.clipboard?.writeText(accountStr);
                           showToast(`شماره شبا/کارت «${biz.name}» کپی شد.`);
                         }}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#061138] text-white text-[10px] font-bold hover:bg-[#0057FF] cursor-pointer"
-                        title="کپی شماره شبا یا کارت"
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#061138] text-white text-[10px] font-bold hover:bg-[#0057FF] cursor-pointer shrink-0"
+                        title={`کپی ${accountStr}`}
                       >
                         <Copy className="w-2.5 h-2.5" />
                         <span>کپی</span>
@@ -454,12 +373,12 @@ const BusinessFinancialDossierTable: React.FC<{
                     </div>
                   ) : (
                     <span className="text-[10px] text-amber-700 block">
-                      شبا/کارت هنوز ثبت نشده
+                      شبا/کارت ثبت نشده
                     </span>
                   )}
-                  {totalAlreadySettledToman > 0 ? (
+                  {dossier.totalAlreadySettledToman > 0 ? (
                     <span className="text-[10px] text-emerald-600 block font-bold">
-                      تسویه‌شده قبلی: {formatPriceToman(totalAlreadySettledToman)}
+                      تسویه‌شده: {formatPriceToman(dossier.totalAlreadySettledToman)}
                     </span>
                   ) : null}
                 </div>
@@ -468,17 +387,22 @@ const BusinessFinancialDossierTable: React.FC<{
           },
           {
             key: 'actions',
-            header: 'ثبت تسویه هفتگی و ارسال صورتحساب',
-            render: ({ biz }) => (
-              <div className="flex flex-wrap items-center gap-1.5">
+            header: 'عملیات تسویه',
+            render: ({ biz, dossier }) => (
+              <div className="flex flex-col gap-1.5 min-w-[116px]">
                 <Button
                   type="button"
                   variant="primary"
                   size="sm"
+                  disabled={dossier.netPayableToman <= 0}
                   onClick={() => settleBusinessDossierByAdmin(biz.id)}
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>ثبت واریز شبا + ارسال صورتحساب</span>
+                  <span>
+                    {dossier.netPayableToman > 0
+                      ? 'ثبت واریز شبا'
+                      : 'تسویه کامل'}
+                  </span>
                 </Button>
                 {onInspectBusiness ? (
                   <Button
@@ -488,7 +412,7 @@ const BusinessFinancialDossierTable: React.FC<{
                     onClick={() => onInspectBusiness(biz)}
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>جزئیات پرونده</span>
+                    <span>پرونده کامل</span>
                   </Button>
                 ) : null}
               </div>
@@ -496,6 +420,40 @@ const BusinessFinancialDossierTable: React.FC<{
           },
         ]}
       />
+
+      {/* نوار جمع کل تراز‌شده (۱۰۰٪ برابر با مجموع ردیف‌ها و کارت‌های بالای داشبورد) */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2 border-t border-[#CBD5E1]/70 text-xs tabular-nums">
+        <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0]">
+          <span className="text-[10px] text-[#64748B] block">جمع نوبت‌های فعال</span>
+          <strong className="font-black text-[#061138]">
+            {toPersianDigits(platformSummary.totalBookings)} رزرو
+          </strong>
+        </div>
+        <div className="p-2.5 rounded-xl bg-white border border-[#E2E8F0]">
+          <span className="text-[10px] text-[#64748B] block">جمع ارزش کل خدمات</span>
+          <strong className="font-black text-[#061138]">
+            {formatPriceToman(platformSummary.totalServiceVolumeToman)}
+          </strong>
+        </div>
+        <div className="p-2.5 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE]">
+          <span className="text-[10px] text-[#1D4ED8] block">جمع بیعانه آنلاین</span>
+          <strong className="font-black text-[#0057FF]">
+            {formatPriceToman(platformSummary.totalOnlineDepositsToman)}
+          </strong>
+        </div>
+        <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1]">
+          <span className="text-[10px] text-[#475569] block">واریزشده به سالن‌ها</span>
+          <strong className="font-black text-[#334155]">
+            {formatPriceToman(platformSummary.totalPaidSettlementsToman)}
+          </strong>
+        </div>
+        <div className="p-2.5 rounded-xl bg-[#ECFDF5] border border-[#10B981]/35 col-span-2 sm:col-span-1">
+          <span className="text-[10px] text-[#047857] block">مانده قابل تسویه شبا</span>
+          <strong className="font-black text-[#059669]">
+            {formatPriceToman(platformSummary.totalPendingPayableToman)}
+          </strong>
+        </div>
+      </div>
     </Card>
   );
 };
@@ -512,6 +470,7 @@ const BusinessFullInspectModal: React.FC<{
     specialists,
     appointments,
     paymentConfig,
+    paymentOrders,
     settlementRequests,
     updateBusinessProfile,
     settleBusinessDossierByAdmin,
@@ -522,20 +481,19 @@ const BusinessFullInspectModal: React.FC<{
   const bizServices = services.filter((s) => s.businessId === business.id);
   const bizSpecialists = specialists.filter((sp) => sp.businessId === business.id);
   const bizHours = business.workingHours || [];
-  const dossier = computeBusinessDossierMetrics(
+  const dossier = computeBusinessFinancialDossier({
     business,
     appointments,
     services,
-    paymentConfig
-  );
-  const paidSettlementsTotal = settlementRequests
-    .filter((s) => s.businessId === business.id && s.status === 'PAID')
-    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-  const netPayableToman = Math.max(
-    0,
-    dossier.totalNetToSalonToman - paidSettlementsTotal
-  );
-  const q = dossier.quotaStatus;
+    settlementRequests,
+    paymentOrders,
+    commissionConfig: paymentConfig,
+  });
+  const netPayableToman = dossier.netPayableToman;
+  const q = resolveBusinessSubscriptionQuotaStatus({
+    business,
+    appointments: dossier.bookings,
+  });
 
   return (
     <Modal
@@ -903,20 +861,28 @@ export const AdminDashboardPage: React.FC = () => {
     adminNotifications,
     markAdminNotificationRead,
     clearAllAdminNotifications,
+    syncAdminLiveNow,
   } = usePrototypeData();
-  const [chartRange, setChartRange] = useState<'7d' | '30d' | '1y'>('7d');
+  const [analyticsMetric, setAnalyticsMetric] = useState<'bookings' | 'volume' | 'deposits'>('bookings');
   const [isNotifCollapsed, setIsNotifCollapsed] = useState(false);
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
-  // در پنل مدیریت کلان، سالن‌های نمونه نمایشی و سالن‌های رد صلاحیت‌شده کنار گذاشته می‌شوند و فقط کسب‌وکارهای واقعی فعال نمایش می‌یابند
-  const realBusinesses = businesses.filter(
-    (b) =>
-      !b.isSampleShowcase &&
-      b.approvalStatus !== 'REJECTED' &&
-      !String(b.name || '').includes('مهتاب') &&
-      !String(b.ownerName || '').includes('مهتاب')
-  );
+  useEffect(() => {
+    void syncAdminLiveNow();
+  }, []);
+
+  // منبع واحد و قطعی تمام آمار کلان و ردیف‌های مالی کسب‌وکارها
+  const platformSummary = computePlatformAdminSummary({
+    businesses,
+    appointments,
+    services,
+    settlementRequests,
+    paymentOrders,
+    commissionConfig: paymentConfig,
+  });
+
+  const realBusinesses = platformSummary.realBusinesses;
 
   // صف بررسی فقط شامل کسب‌وکارهایی است که هنوز توسط مدیر کل تعیین تکلیف (تایید یا رد) نشده‌اند
   const sortedBusinesses = [...realBusinesses]
@@ -941,69 +907,8 @@ export const AdminDashboardPage: React.FC = () => {
       return 0;
     });
 
-  const pendingCount = sortedBusinesses.length;
-
-  const activeSubscriptionsCount = realBusinesses.length;
-
-  // تمام رزروهای واقعی دیتابیس (بدون نمونه‌های نمایشی و بدون کسب‌وکارهای رد صلاحیت‌شده)
-  const realAppointments = appointments.filter((a) => {
-    if (
-      /^apt-(?:[1-9]|1[0-2])$/.test(a.id) ||
-      /^biz-[1-8]$/.test(a.businessId) ||
-      a.status === 'CANCELLED' ||
-      String(a.businessName || '').includes('مهتاب')
-    ) {
-      return false;
-    }
-    const matchedBiz = businesses.find((b) =>
-      doesAppointmentBelongToBusiness(a, b)
-    );
-    if (matchedBiz && matchedBiz.approvalStatus === 'REJECTED') {
-      return false;
-    }
-    return true;
-  });
-
-  // محاسبه دقیق بیعانه‌های آنلاین، کارمزد پلتفرم و ارزش کل خدمات از روی نوبت‌های واقعی
-  let totalServiceVolumeToman = 0;
-  let totalOnlineDepositsToman = 0;
-  let totalPlatformCommissionToman = 0;
-  let totalSalonNetShareToman = 0;
-
-  for (const apt of realAppointments) {
-    const biz = realBusinesses.find((b) =>
-      doesAppointmentBelongToBusiness(apt, b)
-    );
-    const srv = services.find((s) => s.id === apt.serviceId);
-    const servicePrice = Math.max(
-      0,
-      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
-    );
-    const breakdown = resolveAppointmentFinancialBreakdown({
-      appointment: {
-        ...apt,
-        priceToman: servicePrice,
-      },
-      business: biz,
-      commissionConfig: paymentConfig,
-    });
-
-    totalServiceVolumeToman += breakdown.totalServicePriceToman;
-    totalOnlineDepositsToman += breakdown.baseDepositToman;
-    totalPlatformCommissionToman += breakdown.platformCommissionToman;
-    totalSalonNetShareToman += breakdown.salonNetDepositCreditedToman;
-  }
-
-  const approvedOrdersToman = paymentOrders
-    .filter((o) => o.status === 'APPROVED')
-    .reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
-
-  const paidSettlementsToman = settlementRequests
-    .filter((s) => s.status === 'PAID')
-    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-
-  const approvedRevenueToman =
-    totalOnlineDepositsToman + approvedOrdersToman + paidSettlementsToman;
+  const pendingCount = platformSummary.pendingBusinesses;
+  const activeSubscriptionsCount = platformSummary.totalBusinesses;
 
   // فقط اعلان‌های خوانده‌نشده در نوار بالا نمایش داده می‌شوند تا به‌محض تایید/رد یا بستن، از صفحه جمع شوند
   const unreadNotifications = adminNotifications.filter((n) => !n.isRead);
@@ -1194,23 +1099,36 @@ export const AdminDashboardPage: React.FC = () => {
         </Card>
       ) : null}
 
-      {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (فقط بر اساس آمار واقعی دیتابیس) */}
+      {/* ۱. نوار یکپارچه ۳ ستونی شاخص‌های کلیدی (۱۰۰٪ تراز با جدول پرونده مالی و دیتابیس مرکزی) */}
       <div className="rounded-3xl bg-white border border-[#E6E0F5] p-5 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x md:divide-x-reverse divide-[#E6E0F5] shadow-2xs">
         {/* ستون ۱: کل رزروهای واقعی و ارزش خدمات */}
         <div className="flex items-start justify-between gap-4 pt-2 md:pt-0">
           <div className="space-y-2">
-            <span className="text-xs font-bold text-[#6B6480] block">
-              کل رزروهای واقعی و حجم خدمات ارائه‌شده
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-[#6B6480]">
+                کل رزروهای واقعی و حجم خدمات
+              </span>
+              <ClickPopover
+                iconOnly
+                tone="violet"
+                align="right"
+                title="تفکیک وضعیت رزروهای واقعی"
+              >
+                <p>در انتظار تایید سالن: <strong>{toPersianDigits(platformSummary.pendingBookings)} نوبت</strong></p>
+                <p>تاییدشده: <strong>{toPersianDigits(platformSummary.confirmedBookings)} نوبت</strong></p>
+                <p>انجام‌شده: <strong>{toPersianDigits(platformSummary.completedBookings)} نوبت</strong></p>
+                <p className="text-[#64748B]">لغوشده (خارج از آمار مالی): <strong>{toPersianDigits(platformSummary.cancelledBookings)} نوبت</strong></p>
+              </ClickPopover>
+            </div>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
-              {toPersianDigits(realAppointments.length)} رزرو ثبت‌شده
+              {toPersianDigits(platformSummary.totalBookings)} رزرو فعال
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                جمع کل خدمات: {formatPriceToman(totalServiceVolumeToman)}
+                حجم خدمات: {formatPriceToman(platformSummary.totalServiceVolumeToman)}
               </span>
               <span className="text-[#6B6480] tabular-nums">
-                ({toPersianDigits(categories.length)} سرفصل فعال)
+                ({toPersianDigits(categories.length)} سرفصل)
               </span>
             </div>
           </div>
@@ -1219,21 +1137,29 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۲: مراکز واقعی در انتظار تایید */}
+        {/* ستون ۲: وضعیت مراکز واقعی و صف تایید */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
             <span className="text-xs font-bold text-[#6B6480] block">
-              مراکز در انتظار بررسی و تایید
+              مراکز در انتظار تایید
             </span>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#1E1B2E] tabular-nums">
               {toPersianDigits(pendingCount)} کسب‌وکار
             </p>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#F59E0B] font-extrabold tabular-nums">
-                اولویت بررسی
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-extrabold tabular-nums ${
+                  pendingCount > 0
+                    ? 'bg-[#FFFBEB] text-[#F59E0B]'
+                    : 'bg-[#ECFDF5] text-[#10B981]'
+                }`}
+              >
+                {pendingCount > 0
+                  ? 'اولویت بررسی'
+                  : `${toPersianDigits(platformSummary.activeBusinesses)} مرکز تاییدشده ✓`}
               </span>
               <span className="text-[#6B6480] tabular-nums">
-                از مجموع {toPersianDigits(realBusinesses.length)} مرکز واقعی ثبت‌نام‌شده
+                از {toPersianDigits(platformSummary.totalBusinesses)} مرکز واقعی
               </span>
             </div>
           </div>
@@ -1242,24 +1168,49 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* ستون ۳: مجموع بیعانه‌های سالن‌ها (کارمزد ۰٪) و درآمد اشتراک و تبلیغات */}
+        {/* ستون ۳: گردش مالی آنلاین (بدون دوباره‌شماری تسویه) و تفکیک بیعانه امانی / درآمد پلتفرم */}
         <div className="flex items-start justify-between gap-4 pt-4 md:pt-0 md:pr-6">
           <div className="space-y-2">
-            <span className="text-xs font-bold text-[#6B6480] block">
-              گردش مالی تاییدشده، اشتراک‌ها و بیعانه سالن‌ها ({toPersianDigits(activeSubscriptionsCount)}{' '}
-              مرکز فعال)
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-[#6B6480]">
+                گردش آنلاین ({toPersianDigits(activeSubscriptionsCount)} مرکز)
+              </span>
+              <ClickPopover
+                iconOnly
+                tone="emerald"
+                align="left"
+                wide
+                title="تفکیک دقیق گردش مالی آنلاین (بدون دوباره‌شماری)"
+              >
+                <p>
+                  <strong>بیعانه امانی سالن‌ها (۱۰۰٪ سهم سالن):</strong>{' '}
+                  {formatPriceToman(platformSummary.totalOnlineDepositsToman)}
+                </p>
+                <p>
+                  <strong>تسویه‌شده به شبای سالن‌ها:</strong>{' '}
+                  {formatPriceToman(platformSummary.totalPaidSettlementsToman)}
+                </p>
+                <p>
+                  <strong>مانده قابل پرداخت به سالن‌ها:</strong>{' '}
+                  {formatPriceToman(platformSummary.totalPendingPayableToman)}
+                </p>
+                <p className="pt-1 border-t border-[#E2E8F0] text-[#059669] font-bold">
+                  درآمد خالص پلتفرم (اشتراک و تبلیغات تاییدشده):{' '}
+                  {formatPriceToman(platformSummary.platformNetRevenueToman)}
+                </p>
+              </ClickPopover>
+            </div>
             <p className="text-2xl sm:text-3xl font-extrabold text-[#8B5CF6] tabular-nums">
-              {approvedRevenueToman > 0
-                ? formatPriceToman(approvedRevenueToman)
+              {platformSummary.grossOnlineTurnoverToman > 0
+                ? formatPriceToman(platformSummary.grossOnlineTurnoverToman)
                 : '۰ تومان'}
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#10B981] font-extrabold tabular-nums">
-                بیعانه سالن‌ها (کارمزد ۰٪): {formatPriceToman(totalSalonNetShareToman)}
+                مانده تسویه شبا: {formatPriceToman(platformSummary.totalPendingPayableToman)}
               </span>
               <span className="text-[#6B6480] tabular-nums font-bold">
-                فروش اشتراک و تبلیغات: {formatPriceToman(approvedOrdersToman)}
+                درآمد اشتراک: {formatPriceToman(platformSummary.platformNetRevenueToman)}
               </span>
             </div>
           </div>
@@ -1275,260 +1226,147 @@ export const AdminDashboardPage: React.FC = () => {
         onInspectBusiness={(biz) => setInspectingBusiness(biz)}
       />
 
-      {/* ۲. نمودار تحلیلی رزروها و عملکرد واقعی پلتفرم */}
-      <Card className="rounded-3xl p-6 space-y-5">
+      {/* ۲. نمودار تحلیلی واقعی مقایسه عملکرد کسب‌وکارها (۱۰۰٪ مبتنی بر داده‌های زنده دیتابیس) */}
+      <Card className="rounded-3xl p-5 sm:p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <h2 className="text-base sm:text-lg font-extrabold text-[#1E1B2E]">
-              نمودار روند ثبت‌نام سالن‌ها و رزروهای واقعی (Booking Analytics)
-            </h2>
-            <div className="flex flex-wrap items-center gap-4 text-xs text-[#6B6480]">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-extrabold text-[#1E1B2E]">
+                مقایسه زنده عملکرد و فروش کسب‌وکارها
+              </h2>
+              <ClickPopover
+                iconOnly
+                tone="violet"
+                align="right"
+                title="داده‌های واقعی نمودار عملکرد"
+              >
+                <p>
+                  تمامی میله‌های این نمودار به‌صورت مستقیم از رزروهای واقعی و بیعانه‌های ثبت‌شده هر سالن محاسبه می‌شوند و هیچ داده نمایشی یا ثابتی در آن وجود ندارد.
+                </p>
+              </ClickPopover>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-xs text-[#6B6480] tabular-nums">
               <span className="inline-flex items-center gap-1.5 font-bold">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#8B5CF6]" />
-                <span>
-                  مراکز واقعی ثبت‌شده: {toPersianDigits(realBusinesses.length)} سالن
-                </span>
+                <span>{toPersianDigits(platformSummary.totalBusinesses)} مرکز فعال</span>
               </span>
-              <span className="inline-flex items-center gap-1.5 font-medium text-[#6B6480]">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#A78BFA]/70" />
-                <span>
-                  نوبت‌های ثبت‌شده: {toPersianDigits(realAppointments.length)} مورد
-                </span>
+              <span className="inline-flex items-center gap-1.5 font-bold">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
+                <span>{toPersianDigits(platformSummary.totalBookings)} نوبت فعال</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-bold">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#0057FF]" />
+                <span>جمع بیعانه: {formatPriceToman(platformSummary.totalOnlineDepositsToman)}</span>
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 p-1 rounded-full bg-[#FAF8FF] border border-[#E6E0F5]">
+          <div className="flex items-center gap-1 p-1 rounded-full bg-[#FAF8FF] border border-[#E6E0F5]">
             {[
-              { id: '7d', label: '۷ روز گذشته' },
-              { id: '30d', label: '۳۰ روز گذشته' },
-              { id: '1y', label: 'یک سال' },
-            ].map((rng) => (
+              { id: 'bookings' as const, label: 'تعداد رزرو' },
+              { id: 'volume' as const, label: 'حجم خدمات' },
+              { id: 'deposits' as const, label: 'بیعانه آنلاین' },
+            ].map((tab) => (
               <button
-                key={rng.id}
+                key={tab.id}
                 type="button"
-                onClick={() => setChartRange(rng.id as '7d' | '30d' | '1y')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
-                  chartRange === rng.id
+                onClick={() => setAnalyticsMetric(tab.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                  analyticsMetric === tab.id
                     ? 'bg-[#8B5CF6] text-white shadow-2xs'
                     : 'text-[#6B6480] hover:text-[#1E1B2E]'
                 }`}
               >
-                {rng.label}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
 
-        {(() => {
-          const chartConfig =
-            chartRange === '7d'
-              ? {
-                  periodTitle: 'روند ۷ روز گذشته (هفتگی)',
-                  yLabels: ['۴۰', '۳۰', '۲۰', '۱۰'],
-                  highlightX: 505,
-                  highlightCx: 533,
-                  highlightCy: 76,
-                  tooltipX: 445,
-                  secondaryPath:
-                    'M65,155 C145,148 215,150 295,135 C375,120 455,130 533,108 C605,95 650,110 685,98',
-                  primaryPath:
-                    'M65,145 C145,132 215,138 295,115 C375,92 455,110 533,76 C605,64 650,82 685,68',
-                  points: [
-                    { x: 65, y: 145, label: 'شنبه' },
-                    { x: 170, y: 135, label: 'یکشنبه' },
-                    { x: 275, y: 118, label: 'دوشنبه' },
-                    { x: 380, y: 98, label: 'سه‌شنبه' },
-                    { x: 455, y: 106, label: 'چهارشنبه' },
-                    { x: 533, y: 76, label: 'پنجشنبه', active: true },
-                    { x: 655, y: 68, label: 'جمعه' },
-                  ],
-                }
-              : chartRange === '30d'
-                ? {
-                    periodTitle: 'روند ۳۰ روز گذشته (بازه‌های ۵ روزه ماه)',
-                    yLabels: ['۱۲۰', '۹۰', '۶۰', '۳۰'],
-                    highlightX: 467,
-                    highlightCx: 495,
-                    highlightCy: 68,
-                    tooltipX: 407,
-                    secondaryPath:
-                      'M65,162 C155,150 245,140 340,126 C420,114 495,96 580,88 C630,82 660,78 685,74',
-                    primaryPath:
-                      'M65,152 C155,136 245,120 340,102 C420,86 495,68 580,58 C630,52 660,48 685,44',
-                    points: [
-                      { x: 65, y: 152, label: '۱ تا ۵ ماه' },
-                      { x: 190, y: 132, label: '۶ تا ۱۰ ماه' },
-                      { x: 315, y: 106, label: '۱۱ تا ۱۵ ماه' },
-                      { x: 410, y: 88, label: '۱۶ تا ۲۰ ماه' },
-                      { x: 495, y: 68, label: '۲۱ تا ۲۵ ماه', active: true },
-                      { x: 600, y: 55, label: '۲۶ تا ۳۰ ماه' },
-                      { x: 675, y: 44, label: 'امروز' },
-                    ],
-                  }
-                : {
-                    periodTitle: 'روند ۱ ساله (۱۲ ماه سال)',
-                    yLabels: ['۴۰۰', '۳۰۰', '۲۰۰', '۱۰۰'],
-                    highlightX: 547,
-                    highlightCx: 575,
-                    highlightCy: 56,
-                    tooltipX: 480,
-                    secondaryPath:
-                      'M55,168 C140,160 230,148 320,132 C410,118 500,98 575,82 C625,72 655,66 685,60',
-                    primaryPath:
-                      'M55,160 C140,148 230,132 320,112 C410,94 500,74 575,56 C625,46 655,40 685,35',
-                    points: [
-                      { x: 55, y: 160, label: 'فروردین' },
-                      { x: 112, y: 152, label: 'اردیبهشت' },
-                      { x: 169, y: 142, label: 'خرداد' },
-                      { x: 226, y: 132, label: 'تیر' },
-                      { x: 283, y: 120, label: 'مرداد' },
-                      { x: 340, y: 108, label: 'شهریور' },
-                      { x: 397, y: 96, label: 'مهر' },
-                      { x: 454, y: 82, label: 'آبان' },
-                      { x: 511, y: 68, label: 'آذر' },
-                      { x: 575, y: 56, label: 'دی', active: true },
-                      { x: 630, y: 45, label: 'بهمن' },
-                      { x: 685, y: 35, label: 'اسفند' },
-                    ],
-                  };
-
-          return (
-            <div className="relative pt-4">
-              <svg viewBox="0 0 720 220" className="w-full h-52 overflow-visible">
-                <defs>
-                  <linearGradient
-                    id="adm-bar-highlight"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.16" />
-                    <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-
-                {[35, 80, 125, 170].map((y, idx) => (
-                  <g key={y}>
-                    <line
-                      x1="45"
-                      y1={y}
-                      x2="695"
-                      y2={y}
-                      stroke="#F3EEFF"
-                      strokeDasharray="4 4"
-                    />
-                    <text
-                      x="35"
-                      y={y + 4}
-                      textAnchor="end"
-                      className="fill-[#6B6480] text-[10px] font-bold"
-                    >
-                      {chartConfig.yLabels[idx]}
-                    </text>
-                  </g>
-                ))}
-
-                <rect
-                  x={chartConfig.highlightX}
-                  y="20"
-                  width="56"
-                  height="155"
-                  rx="14"
-                  fill="url(#adm-bar-highlight)"
-                />
-
-                <path
-                  d={chartConfig.secondaryPath}
-                  fill="none"
-                  stroke="#A78BFA"
-                  strokeOpacity="0.7"
-                  strokeWidth="2.5"
-                  strokeDasharray="6 6"
-                  strokeLinecap="round"
-                />
-
-                <path
-                  d={chartConfig.primaryPath}
-                  fill="none"
-                  stroke="#8B5CF6"
-                  strokeWidth="3.5"
-                  strokeLinecap="round"
-                />
-
-                {chartConfig.points.map((pt) => (
-                  <circle
-                    key={pt.label}
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={pt.active ? 6 : 3.5}
-                    fill="#FFFFFF"
-                    stroke="#8B5CF6"
-                    strokeWidth={pt.active ? 3.5 : 2}
-                  />
-                ))}
-
-                <g transform={`translate(${chartConfig.tooltipX}, 14)`}>
-                  <rect
-                    x="0"
-                    y="0"
-                    width="186"
-                    height="42"
-                    rx="12"
-                    fill="#1E1B2E"
-                  />
-                  <text
-                    x="93"
-                    y="16"
-                    textAnchor="middle"
-                    className="fill-white text-[10px] font-extrabold"
-                  >
-                    {chartConfig.periodTitle}
-                  </text>
-                  <text
-                    x="93"
-                    y="32"
-                    textAnchor="middle"
-                    className="fill-amber-300 text-[11px] font-extrabold"
-                  >
-                    {toPersianDigits(realBusinesses.length)} سالن ·{' '}
-                    {toPersianDigits(realAppointments.length)} رزرو ثبت‌شده
-                  </text>
-                </g>
-
-                {chartConfig.points.map((d) => (
-                  <text
-                    key={d.label}
-                    x={d.x}
-                    y="198"
-                    textAnchor="middle"
-                    className={`${
-                      chartRange === '1y' ? 'text-[9.5px]' : 'text-[10.5px]'
-                    } font-bold ${
-                      d.active ? 'fill-[#8B5CF6] font-extrabold' : 'fill-[#6B6480]'
-                    }`}
-                  >
-                    {d.label}
-                  </text>
-                ))}
-              </svg>
-            </div>
-          );
-        })()}
+        {platformSummary.businessDossiers.length === 0 ? (
+          <div className="rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] p-5 text-center text-xs text-[#6B6480]">
+            هنوز کسب‌وکار فعالی برای نمایش نمودار عملکرد ثبت نشده است.
+          </div>
+        ) : (
+          (() => {
+            const values = platformSummary.businessDossiers.map((d) =>
+              analyticsMetric === 'bookings'
+                ? d.bookingsCount
+                : analyticsMetric === 'volume'
+                  ? d.totalServiceToman
+                  : d.totalDepositCollectedToman
+            );
+            const maxVal = Math.max(1, ...values);
+            return (
+              <div className="space-y-3">
+                {platformSummary.businessDossiers.slice(0, 8).map((d, idx) => {
+                  const val = values[idx];
+                  const pct = val > 0 ? Math.max(6, Math.round((val / maxVal) * 100)) : 0;
+                  return (
+                    <div key={d.business.id} className="space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setInspectingBusiness(d.business)}
+                          className="font-extrabold text-[#061138] hover:text-[#0057FF] transition-colors cursor-pointer"
+                        >
+                          {d.business.name}
+                          <span className="text-[11px] font-medium text-[#64748B] mr-1.5">
+                            ({d.business.neighborhood || d.business.city})
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-2 tabular-nums">
+                          <span className="font-extrabold text-[#1E1B2E]">
+                            {analyticsMetric === 'bookings'
+                              ? `${toPersianDigits(d.bookingsCount)} رزرو`
+                              : formatPriceToman(val)}
+                          </span>
+                          {d.netPayableToman > 0 ? (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                              مانده شبا: {formatPriceToman(d.netPayableToman)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="w-full h-2.5 rounded-full bg-[#F3EEFF] overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            analyticsMetric === 'bookings'
+                              ? 'bg-[#8B5CF6]'
+                              : analyticsMetric === 'volume'
+                                ? 'bg-[#0057FF]'
+                                : 'bg-[#10B981]'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()
+        )}
       </Card>
 
       {/* ۳. جدول صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده واقعی */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+          <div className="flex items-center gap-2">
             <h2 className="text-base font-extrabold text-[#1E1B2E]">
               صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده (
               {toPersianDigits(sortedBusinesses.length)} مرکز واقعی)
             </h2>
-            <p className="text-xs text-[#6B6480]">
-              اطلاعات خلاصه در جدول نمایش داده شده است؛ با زدن «مشاهده کامل پنل سالن» تمام جزئیات، خدمات، متخصصان و زمان درخواست را ببینید
-            </p>
+            <ClickPopover
+              iconOnly
+              tone="slate"
+              align="right"
+              title="راهنمای صف بررسی کسب‌وکارها"
+            >
+              <p>
+                با کلیک روی «مشاهده کامل پنل سالن» می‌توانید تمام خدمات، متخصصان، ساعات کاری، شبا و پرونده مالی هر سالن را پیش از تایید یا رد بررسی کنید.
+              </p>
+            </ClickPopover>
           </div>
         </div>
 
@@ -3890,23 +3728,28 @@ export const AdminSubscriptionsPage: React.FC = () => {
       {/* بخش ۱: ۳ پکیج اشتراک ۱ ماهه تایم‌تو (با کارمزد ۰٪ و ۱۰ نوبت هدیه شروع) */}
       <Card className="border-2 border-[#0057FF]/30 bg-gradient-to-br from-[#EFF6FF] via-white to-[#F8FAFC] space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#BFDBFE] pb-3">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <Crown className="w-5 h-5 text-[#0057FF]" />
-              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-                ۱. پکیج‌های اشتراک ۱ ماهه تایم‌تو (پس از اتمام {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه شروع — کارمزد ۰٪)
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
-                کارمزد رزرو آنلاین: ۰٪ در تمام پکیج‌ها
-              </span>
-            </div>
-            <p className="text-xs text-[#475569] leading-relaxed">
-              هر کسب‌وکار جدید در شروع کار <strong>{toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه (با شمارنده زنده و کارمزد ۰٪)</strong> دریافت می‌کند. پس از تکمیل ۱۰ نوبت، برای ادامه دریافت نوبت آنلاین یکی از ۳ پکیج ۱ ماهه زیر را انتخاب و خریداری می‌نماید.
-            </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Crown className="w-5 h-5 text-[#0057FF]" />
+            <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+              ۱. پکیج‌های اشتراک ۱ ماهه تایم‌تو
+            </h2>
+            <ClickPopover
+              iconOnly
+              tone="blue"
+              align="right"
+              title="نحوه عملکرد ۱۰ نوبت رایگان و اشتراک‌های ۱ ماهه"
+            >
+              <p>
+                هر کسب‌وکار جدید در شروع کار <strong>{toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت رایگان هدیه</strong> (با کارمزد ۰٪) دریافت می‌کند و پس از اتمام، یکی از ۳ پکیج ۱ ماهه زیر را انتخاب می‌نماید.
+              </p>
+            </ClickPopover>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
+              کارمزد نوبت: ۰٪
+            </span>
           </div>
           <Link to="/admin/payments">
             <Button variant="outline" size="sm">
-              <span>مشاهده تسویه شبا و تراکنش‌های اشتراک ←</span>
+              <span>تسویه شبا و تراکنش‌ها ←</span>
             </Button>
           </Link>
         </div>
@@ -4012,16 +3855,21 @@ export const AdminSubscriptionsPage: React.FC = () => {
       {/* بخش ۲: وضعیت اشتراک ماهانه و شمارنده نوبت کسب‌وکارهای فعال + تغییر یا تمدید سریع با ۱ کلیک */}
       <Card className="border-2 border-amber-400/70 bg-gradient-to-br from-amber-50/70 via-white to-[#FFFBEB] space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 pb-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-600" />
-              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-                ۲. وضعیت اشتراک ماهانه، شمارنده نوبت و فعال‌سازی سریع پکیج برای کسب‌وکارها
-              </h2>
-            </div>
-            <p className="text-xs text-[#475569] leading-relaxed">
-              در این بخش مشاهده می‌کنید هر کسب‌وکار در حال حاضر چند نوبت از سهمیه خود (۱۰ نوبت هدیه شروع یا پکیج ۱ ماهه) را مصرف کرده است و با ۱ کلیک می‌توانید پکیج اشتراک آن را ارتقا یا تمدید نمایید.
-            </p>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-amber-600" />
+            <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
+              ۲. وضعیت سهمیه و فعال‌سازی سریع اشتراک کسب‌وکارها
+            </h2>
+            <ClickPopover
+              iconOnly
+              tone="amber"
+              align="right"
+              title="مدیریت شمارنده نوبت و تمدید سریع"
+            >
+              <p>
+                در این بخش میزان مصرف سهمیه هر کسب‌وکار (۱۰ نوبت هدیه شروع یا پکیج ۱ ماهه) نمایش داده می‌شود و با ۱ کلیک می‌توانید پکیج آن را ارتقا یا تمدید نمایید.
+              </p>
+            </ClickPopover>
           </div>
         </div>
 
@@ -4994,6 +4842,7 @@ export const AdminPaymentsPage: React.FC = () => {
     markSettlementPaid,
     runNightlyBatchSettlement,
     sendAppointmentReminders,
+    syncAdminLiveNow,
     showToast,
   } = usePrototypeData();
 
@@ -5011,6 +4860,7 @@ export const AdminPaymentsPage: React.FC = () => {
   const [detectedServerIp, setDetectedServerIp] = useState<string>('');
 
   useEffect(() => {
+    void syncAdminLiveNow();
     fetch('/api/v1/payments/zibal/server-ip')
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { outgoingIp?: string } | null) => {
@@ -5063,26 +4913,25 @@ export const AdminPaymentsPage: React.FC = () => {
     );
   };
 
-  const salonsWithWalletBalance = businesses.filter((b) => {
-    if (b.isSampleShowcase) return false;
-    const dossier = computeBusinessDossierMetrics(
-      b,
-      appointments,
-      services,
-      paymentConfig
-    );
-    const paidSum = settlementRequests
-      .filter((s) => s.businessId === b.id && s.status === 'PAID')
-      .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-    return Math.max(0, dossier.totalNetToSalonToman - paidSum) > 0;
+  const paymentSummary = computePlatformAdminSummary({
+    businesses,
+    appointments,
+    services,
+    settlementRequests,
+    paymentOrders,
+    commissionConfig: paymentConfig,
   });
+
+  const salonsWithWalletBalance = paymentSummary.businessDossiers.filter(
+    (d) => d.netPayableToman > 0
+  );
 
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal)، تسویه ۱۰۰٪ بیعانه سالن‌ها (کارمزد ۰٪) و تراکنش‌های اشتراک"
-        title="مدیریت درگاه آنلاین زیبال، تسویه هفتگی شبا (پایا) و سفارش‌های اشتراک ماهانه"
-        subtitle="در مدل جدید، کارمزد پلتفرم از نوبت‌ها ۰٪ است؛ ۱۰۰٪ بیعانه دریافتی مشتریان در کیف پول سالن جمع شده و در سیکل هفتگی به شبا/کارت صاحب کسب‌وکار واریز می‌شود."
+        kicker="مالی · درگاه پرداخت اینترنتی زیبال (Zibal) و تسویه هفتگی شبا"
+        title="مدیریت مالی، تسویه شبا (پایا) و سفارش‌های اشتراک"
+        subtitle="واریز ۱۰۰٪ بیعانه سالن‌ها (کارمزد ۰٪)، تسویه پایا و تایید تراکنش‌های اشتراک ماهانه"
         routePattern="/admin/payments"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -5090,109 +4939,62 @@ export const AdminPaymentsPage: React.FC = () => {
         ]}
       />
 
-      {/* راهنمای عملی تسویه شبا: وقتی دکمه تسویه را می‌زنیم، پول چگونه برای صاحب کسب‌وکار شبا می‌شود؟ */}
-      <Card className="border-2 border-emerald-400/70 bg-gradient-to-br from-emerald-50/80 via-white to-[#ECFDF5]/50 space-y-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 pb-2.5">
-          <div className="flex items-center gap-2">
-            <Check className="w-5 h-5 text-emerald-700" />
-            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              فرآیند واقعی انتقال پول به شبا (پایا): وقتی دکمه «تسویه» را می‌زنیم چه اتفاقی می‌افتد؟
-            </h2>
-          </div>
-          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black">
-            واریز ۱۰۰٪ بیعانه به حساب سالن (کارمزد نوبت: ۰٪)
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
-            <p className="font-extrabold text-[#061138]">
-              ۱. جمع شدن خودکار بیعانه‌ها در حساب درگاه زیبال شما
-            </p>
-            <p className="text-[#475569] leading-relaxed">
-              وقتی مشتری نوبت رزرو می‌کند، مبلغ بیعانه از طریق درگاه زیبال مستقیماً وارد کیف پول زیبال شما (متصل به شبای خودتان) می‌شود و در پنل تایم‌تو، معادل ۱۰۰٪ آن در «موجودی قابل تسویه سالن» ثبت می‌گردد.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
-            <p className="font-extrabold text-[#0057FF]">
-              ۲. انتقال بانکی پایا (تکی یا فایل اکسل دسته‌ای CSV)
-            </p>
-            <p className="text-[#475569] leading-relaxed">
-              در روز تسویه (مثلاً شنبه‌ها)، در جدول زیر یا با ۱ کلیک <strong>«کپی شبا/کارت»</strong> را می‌زنید و از اینترنت‌بانک/همراه‌بانک خودتان پایا می‌زنید، یا دکمه <strong>«دانلود فایل CSV واریز گروهی پایا»</strong> را می‌زنید و فایل را در اینترنت‌بانک یا پنل تسویه زیبال آپلود می‌کنید.
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-1.5">
-            <p className="font-extrabold text-[#059669]">
-              ۳. ثبت کد پیگیری پایا و صدور خودکار رسید در پنل سالن‌دار
-            </p>
-            <p className="text-[#475569] leading-relaxed">
-              پس از انجام واریز بانکی، دکمه <strong>«ثبت واریز شبا + ارسال صورتحساب»</strong> را می‌زنید و کد پیگیری پایا را وارد می‌کنید. موجودی کیف پول سالن صفر شده و رسید رسمی تسویه شبا در پیشخوان صاحب کسب‌وکار نمایش داده می‌شود.
-            </p>
-          </div>
-        </div>
-      </Card>
+      {/* پرونده مالی و کارکرد هر کسب‌وکار و ثبت واریز هفتگی + ارسال صورتحساب */}
+      <BusinessFinancialDossierTable businesses={businesses} />
 
       {/* کارت ۱: تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) */}
       <Card className="space-y-4 border-2 border-[#0057FF]/25">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#061138] text-[#00E5FF] flex items-center justify-center">
-              <CreditCard className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-2xl bg-[#061138] text-[#00E5FF] flex items-center justify-center shrink-0">
+              <CreditCard className="w-4 h-4" />
             </div>
-            <div>
+            <div className="flex items-center gap-2">
               <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                تنظیمات درگاه پرداخت اینترنتی زیبال (Zibal) — شاپرک بانک مرکزی
+                تنظیمات درگاه پرداخت زیبال (Zibal)
               </h2>
-              <p className="text-xs text-[#64748B]">
-                کد مرچنت دریافتی از پنل زیبال (برای دریافت آنلاین هزینه اشتراک‌های ماهانه، جایگاه‌های تبلیغاتی و بیعانه نوبت‌ها)
-              </p>
+              <ClickPopover
+                iconOnly
+                tone="blue"
+                align="right"
+                wide
+                title="راهنمای رفع خطای ۱۱۵ زیبال و IP سرور"
+              >
+                <p>
+                  در پنل زیبال (<strong>panel.zibal.ir ← درگاه‌های پرداخت ← ویرایش درگاه</strong>) اگر گزینه «محدودیت IP» فعال باشد، یا تیک آن را بردارید و یا آی‌پی‌های زیر را در لیست مجاز وارد کنید:
+                </p>
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                    <span className="text-[11px] text-[#475569]">IP دامنه اصلی (لیارا):</span>
+                    <code dir="ltr" className="font-mono font-black text-[#061138]">185.208.181.150</code>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE]">
+                    <span className="text-[11px] text-[#1D4ED8]">IP خروجی فعلی سرور:</span>
+                    <code dir="ltr" className="font-mono font-black text-[#0057FF]">{detectedServerIp || '34.34.229.54'}</code>
+                  </div>
+                </div>
+              </ClickPopover>
             </div>
           </div>
-          <StatusBadge
-            label="درگاه زیبال فعال · کارمزد نوبت ۰٪"
-            tone="success"
-          />
-        </div>
-
-        {/* راهنمای رفع خطای 115 زیبال و نمایش خودکار IP سرور */}
-        <div className="p-4 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] space-y-2.5 text-xs">
-          <p className="font-extrabold text-[#1E3A8A]">
-            🌐 آدرس‌های IP سرور جهت ثبت در پنل زیبال (رفع خطای ۱۱۵ زیبال):
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="p-3 rounded-xl bg-white border border-[#BFDBFE] flex items-center justify-between gap-2">
-              <div>
-                <span className="text-[11px] text-[#64748B] block">
-                  IP دامنه اصلی سایت (timeto24.ir در لیارا):
-                </span>
-                <code dir="ltr" className="text-sm font-black text-[#061138] font-mono">
-                  185.208.181.150
-                </code>
-              </div>
-              <span className="px-2 py-1 rounded-lg bg-[#DBEAFE] text-[#1D4ED8] text-[10px] font-extrabold">
-                سرور لیارا
-              </span>
-            </div>
-
-            <div className="p-3 rounded-xl bg-white border border-[#BFDBFE] flex items-center justify-between gap-2">
-              <div>
-                <span className="text-[11px] text-[#64748B] block">
-                  IP خروجی فعلی همین سرور (تشخیص خودکار):
-                </span>
-                <code dir="ltr" className="text-sm font-black text-[#0057FF] font-mono">
-                  {detectedServerIp || '34.34.229.54'}
-                </code>
-              </div>
-              <span className="px-2 py-1 rounded-lg bg-[#DCFCE7] text-[#15803D] text-[10px] font-extrabold">
-                IP خروجی فعال
-              </span>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const ip = detectedServerIp || '34.34.229.54';
+                navigator.clipboard?.writeText(ip);
+                showToast(`آی‌پی خروجی سرور (${ip}) کپی شد ✓`);
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] text-[11px] font-mono font-bold text-[#0057FF] hover:bg-[#DBEAFE] cursor-pointer"
+              title="کپی آی‌پی سرور جهت ثبت در زیبال"
+            >
+              <span>IP: {detectedServerIp || '34.34.229.54'}</span>
+              <Copy className="w-3 h-3" />
+            </button>
+            <StatusBadge
+              label="درگاه زیبال فعال"
+              tone="success"
+            />
           </div>
-          <p className="text-[11px] text-[#1E40AF] leading-relaxed">
-            💡 در پنل زیبال (<strong>panel.zibal.ir ← درگاه‌های پرداخت ← ویرایش درگاه</strong>) اگر گزینه «حساسیت به IP / محدودیت IP» فعال باشد، یا تیک محدودیت IP را بردارید تا از هر سروری کار کند، و یا آی‌پی‌های بالا را در بخش IP مجاز درگاه وارد نمایید.
-          </p>
         </div>
 
         <form onSubmit={handleSaveGateway} className="space-y-4">
@@ -5261,19 +5063,24 @@ export const AdminPaymentsPage: React.FC = () => {
         </form>
       </Card>
 
-      {/* پرونده مالی و کارکرد هر کسب‌وکار و ثبت واریز هفتگی + ارسال صورتحساب */}
-      <BusinessFinancialDossierTable businesses={businesses} />
-
       {/* کارت ۲: تسویه‌حساب هفتگی شبا (پایا) با سالن‌داران */}
       <Card className="space-y-4 border-2 border-[#059669]/30 bg-gradient-to-br from-[#ECFDF5]/60 to-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#A7F3D0] pb-3">
-          <div>
+          <div className="flex items-center gap-2">
             <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              لیست درخواست‌های تسویه‌حساب کیف پول سالن‌ها به شماره شبا (IR) — سیکل هفتگی پایا
+              لیست درخواست‌های تسویه شبا (پایا)
             </h2>
-            <p className="text-xs text-[#475569] mt-0.5">
-              ۱۰۰٪ بیعانه‌های نوبت‌های انجام‌شده در کیف پول هر سالن آزاد می‌شود. می‌توانید با ۱ کلیک درخواست تسویه دسته‌ای ایجاد کنید، فایل اکسل/CSV پایا بگیرید و پس از واریز بانکی، تایید نهایی را بزنید.
-            </p>
+            <ClickPopover
+              iconOnly
+              tone="emerald"
+              align="right"
+              wide
+              title="مراحل واقعی انتقال پول به شبا (پایا)"
+            >
+              <p><strong>۱.</strong> بیعانه نوبت‌ها از طریق درگاه زیبال وارد کیف پول زیبال شما می‌شود و ۱۰۰٪ آن در مانده سالن ثبت می‌گردد.</p>
+              <p><strong>۲.</strong> در روز تسویه، با کپی شبا یا دانلود فایل CSV پایا، انتقال بانکی را از اینترنت‌بانک یا پنل زیبال انجام دهید.</p>
+              <p><strong>۳.</strong> پس از واریز، با زدن «تایید واریز شبا» رسید رسمی و کد پیگیری در پنل صاحب سالن ثبت و مانده او صفر می‌شود.</p>
+            </ClickPopover>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -5408,15 +5215,41 @@ export const AdminPaymentsPage: React.FC = () => {
       </Card>
 
       {/* کارت ۳: مدیریت پترن‌های ملی‌پیامک و ارسال خودکار یادآور نوبت‌ها */}
-      <Card className="space-y-4 border border-[#CBD5E1] bg-[#F8FAFC]">
+      <Card className="space-y-3 border border-[#CBD5E1] bg-[#F8FAFC]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="flex items-center gap-2">
             <h2 className="text-sm font-extrabold text-[#061138]">
-              سیستم پیامک چندپترنه ملی‌پیامک (ثبت نوبت + تایید + یادآور روز قبل)
+              سیستم پیامک ملی‌پیامک و یادآور نوبت‌ها
             </h2>
-            <p className="text-xs text-[#475569] mt-0.5">
-              ارسال پیامک آنی به سالن‌دار هنگام رزرو، پیامک تایید به مشتری، و ارسال گروهی پیامک یادآوری به تمام نوبت‌های تاییدشده فردا
-            </p>
+            <ClickPopover
+              iconOnly
+              tone="blue"
+              align="right"
+              wide
+              title="جدول متغیرهای پترن ملی‌پیامک ({0} تا {3})"
+            >
+              <p className="text-[11px] text-[#475569]">
+                ارسال آنی پیامک به سالن‌دار هنگام رزرو، تایید به مشتری و یادآور گروهی نوبت‌ها:
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                <div className="rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] p-2">
+                  <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{0}'}</span>{' '}
+                  <strong>نام مشتری / کد تایید</strong>
+                </div>
+                <div className="rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] p-2">
+                  <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{1}'}</span>{' '}
+                  <strong>نام سالن یا خدمت</strong>
+                </div>
+                <div className="rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] p-2">
+                  <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{2}'}</span>{' '}
+                  <strong>تاریخ شمسی نوبت</strong>
+                </div>
+                <div className="rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] p-2">
+                  <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{3}'}</span>{' '}
+                  <strong>ساعت دقیق نوبت</strong>
+                </div>
+              </div>
+            </ClickPopover>
           </div>
           <Button
             type="button"
@@ -5435,39 +5268,10 @@ export const AdminPaymentsPage: React.FC = () => {
             <Megaphone className="w-4 h-4" />
             <span>
               {sendingReminders
-                ? 'در حال ارسال پیامک یادآوری...'
-                : 'ارسال پیامک یادآوری به تمام نوبت‌های تاییدشده'}
+                ? 'در حال ارسال...'
+                : 'ارسال یادآوری نوبت‌های تاییدشده'}
             </span>
           </Button>
-        </div>
-
-        {/* جدول راهنمای دقیق معنی متغیرهای {0} تا {3} در کد بک‌اند برای ثبت در ملی‌پیامک */}
-        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-3.5 space-y-2.5 text-xs">
-          <div className="font-extrabold text-[#061138]">
-            جدول معنی دقیق متغیرهای ارسال‌شده از بک‌اند به ملی‌پیامک (تطابق ۱۰۰٪ با کد سرور):
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
-              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{0}'}</span>
-              <span className="font-bold text-[#061138] mr-1.5">نام مشتری (در پترن ورود: کد تایید)</span>
-              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: سارا محمدی</span>
-            </div>
-            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
-              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{1}'}</span>
-              <span className="font-bold text-[#061138] mr-1.5">نام سالن یا عنوان خدمت</span>
-              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: سالن رویال / کاشت ناخن</span>
-            </div>
-            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
-              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{2}'}</span>
-              <span className="font-bold text-[#061138] mr-1.5">تاریخ شمسی نوبت</span>
-              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: ۱۴۰۵/۰۸/۱۶</span>
-            </div>
-            <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] p-2.5">
-              <span dir="ltr" className="font-mono font-extrabold text-[#0057FF]">{'{3}'}</span>
-              <span className="font-bold text-[#061138] mr-1.5">ساعت دقیق نوبت</span>
-              <span className="block text-[11px] text-[#475569] mt-0.5">مثال: ۱۶:۳۰</span>
-            </div>
-          </div>
         </div>
       </Card>
 
@@ -5602,7 +5406,7 @@ export const AdminPaymentsPage: React.FC = () => {
   );
 };
 
-/** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) — فقط بر اساس آمار واقعی دیتابیس (بدون نمونه‌های نمایشی) */
+/** ۷. گزارش‌های تحلیلی پلتفرم (/admin/reports) — هم‌تراز ۱۰۰٪ با داشبورد کلان و دیتابیس واقعی */
 export const AdminReportsPage: React.FC = () => {
   const {
     businesses,
@@ -5612,54 +5416,36 @@ export const AdminReportsPage: React.FC = () => {
     paymentConfig,
     settlementRequests,
     supportTickets,
+    syncAdminLiveNow,
   } = usePrototypeData();
 
-  const realBusinesses = businesses.filter((b) => !b.isSampleShowcase);
-  const realAppointments = appointments.filter(
-    (a) =>
-      !/^apt-(?:[1-9]|1[0-2])$/.test(a.id) &&
-      !/^biz-[1-8]$/.test(a.businessId) &&
-      a.status !== 'CANCELLED'
-  );
-  const approvedOrders = paymentOrders.filter((o) => o.status === 'APPROVED');
+  useEffect(() => {
+    void syncAdminLiveNow();
+  }, []);
 
-  let onlineDepositsToman = 0;
-  for (const apt of realAppointments) {
-    const biz = realBusinesses.find((b) =>
-      doesAppointmentBelongToBusiness(apt, b)
-    );
-    const srv = services.find((s) => s.id === apt.serviceId);
-    const servicePrice = Math.max(
-      0,
-      Number(apt.priceToman) || Number(srv?.priceToman) || 350_000
-    );
-    const breakdown = resolveAppointmentFinancialBreakdown({
-      appointment: {
-        ...apt,
-        priceToman: servicePrice,
-      },
-      business: biz,
-      commissionConfig: paymentConfig,
-    });
-    onlineDepositsToman += breakdown.baseDepositToman;
-  }
+  const summary = computePlatformAdminSummary({
+    businesses,
+    appointments,
+    services,
+    settlementRequests,
+    paymentOrders,
+    commissionConfig: paymentConfig,
+  });
 
-  const paidSettlementsToman = settlementRequests
-    .filter((s) => s.status === 'PAID')
-    .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-
-  const totalRevenueToman =
-    onlineDepositsToman +
-    paidSettlementsToman +
-    approvedOrders.reduce((sum, o) => sum + (Number(o.amountToman) || 0), 0);
+  const approvedOrdersCount = paymentOrders.filter(
+    (o) =>
+      o.status === 'APPROVED' &&
+      !/^biz-[1-8]$/.test(o.businessId || '') &&
+      !String(o.businessName || '').includes('مهتاب')
+  ).length;
 
   // محاسبه واقعی توزیع کسب‌وکارها بر اساس شهر و محله
   const locationMap: Record<string, number> = {};
-  for (const b of realBusinesses) {
+  for (const b of summary.realBusinesses) {
     const key = `${b.city} — ${b.neighborhood || 'مرکز شهر'}`;
     locationMap[key] = (locationMap[key] || 0) + 1;
   }
-  const totalReal = realBusinesses.length;
+  const totalReal = summary.totalBusinesses;
   const cityBreakdown = Object.entries(locationMap).map(([city, count]) => ({
     city,
     countNum: count,
@@ -5670,9 +5456,9 @@ export const AdminReportsPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        kicker="گزارش‌های کلان · آمار واقعی پلتفرم در اصفهان"
-        title="گزارش‌های تحلیلی کلان پلتفرم (داده‌های واقعی)"
-        subtitle="آمار واقعی توزیع کسب‌وکارهای ثبت‌نام‌شده، تعداد رزروهای ثبت‌شده و مجموع تراکنش‌های تاییدشده (بدون احتساب سالن‌های نمونه)"
+        kicker="گزارش‌های کلان · آمار واقعی پلتفرم"
+        title="گزارش‌های تحلیلی کلان پلتفرم"
+        subtitle="گزارش دقیق توزیع جغرافیایی، رزروهای فعال و تراز مالی واقعی (همگام با دیتابیس مرکزی)"
         routePattern="/admin/reports"
         breadcrumbs={[
           { label: 'پنل مدیریت', href: '/admin' },
@@ -5683,11 +5469,11 @@ export const AdminReportsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="space-y-4">
           <h2 className="text-sm font-extrabold text-[#061138]">
-            توزیع جغرافیایی کسب‌وکارهای واقعی ثبت‌نام‌شده ({toPersianDigits(totalReal)} مرکز)
+            توزیع جغرافیایی کسب‌وکارهای واقعی ({toPersianDigits(totalReal)} مرکز)
           </h2>
           {cityBreakdown.length === 0 ? (
             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#64748B] leading-relaxed">
-              هنوز کسب‌وکار واقعی خارج از نمونه‌های نمایشی ثبت نشده است. به‌محض ثبت اولین سالن، نمودار تفکیک محله‌های اصفهان به‌صورت خودکار محاسبه می‌شود.
+              هنوز کسب‌وکار واقعی ثبت نشده است.
             </div>
           ) : (
             <div className="space-y-3.5">
@@ -5713,40 +5499,59 @@ export const AdminReportsPage: React.FC = () => {
 
         <Card className="space-y-4 flex flex-col justify-between">
           <div className="space-y-3">
-            <h2 className="text-sm font-extrabold text-[#1E1B2E]">
-              خلاصه عملکرد واقعی مالی و عملیاتی پلتفرم
-            </h2>
-            <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-extrabold text-[#1E1B2E]">
+                تراز مالی و عملیاتی کلان پلتفرم
+              </h2>
+              <ClickPopover
+                iconOnly
+                tone="violet"
+                align="right"
+                title="نحوه محاسبه تراز مالی"
+              >
+                <p>
+                  تمامی اعداد این صفحه از همان موتور محاسباتی داشبورد اصلی و جدول پرونده مالی استخراج می‌شوند و بدون هیچ‌گونه دوباره‌شماری، ۱۰۰٪ هم‌تراز هستند.
+                </p>
+              </ClickPopover>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs tabular-nums">
               <div className="p-3.5 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] space-y-1">
-                <span className="text-[#6B6480] block">مجموع درآمد تاییدشده:</span>
-                <span className="text-base font-extrabold text-[#8B5CF6] tabular-nums block">
-                  {totalRevenueToman > 0
-                    ? formatPriceToman(totalRevenueToman)
-                    : '۰ تومان'}
+                <span className="text-[#6B6480] block">گردش مالی کل آنلاین:</span>
+                <span className="text-base font-extrabold text-[#8B5CF6] block">
+                  {formatPriceToman(summary.grossOnlineTurnoverToman)}
                 </span>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-1">
-                <span className="text-[#64748B] block">کل نوبت‌های واقعی:</span>
-                <span className="text-base font-extrabold text-[#061138] tabular-nums block">
-                  {toPersianDigits(realAppointments.length)} نوبت
+                <span className="text-[10px] text-[#6B6480] block">
+                  بیعانه امانی + اشتراک/تبلیغات
                 </span>
               </div>
               <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#10B981]/30 space-y-1">
-                <span className="text-[#047857] block">تراکنش‌های موفق:</span>
-                <span className="text-base font-extrabold text-[#065F46] tabular-nums block">
-                  {toPersianDigits(approvedOrders.length)} سفارش
+                <span className="text-[#047857] block">درآمد خالص پلتفرم:</span>
+                <span className="text-base font-extrabold text-[#065F46] block">
+                  {formatPriceToman(summary.platformNetRevenueToman)}
+                </span>
+                <span className="text-[10px] text-[#047857] block">
+                  {toPersianDigits(approvedOrdersCount)} سفارش اشتراک/تبلیغات
                 </span>
               </div>
               <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-1">
-                <span className="text-[#1D4ED8] block">تیکت‌های پشتیبانی:</span>
-                <span className="text-base font-extrabold text-[#0057FF] tabular-nums block">
-                  {toPersianDigits(supportTickets.length)} تیکت
+                <span className="text-[#1D4ED8] block">بیعانه امانی سالن‌ها:</span>
+                <span className="text-base font-extrabold text-[#0057FF] block">
+                  {formatPriceToman(summary.totalOnlineDepositsToman)}
+                </span>
+                <span className="text-[10px] text-[#1D4ED8] block">
+                  مانده شبا: {formatPriceToman(summary.totalPendingPayableToman)}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-1">
+                <span className="text-[#64748B] block">کل نوبت‌های فعال:</span>
+                <span className="text-base font-extrabold text-[#061138] block">
+                  {toPersianDigits(summary.totalBookings)} نوبت
+                </span>
+                <span className="text-[10px] text-[#64748B] block">
+                  ارزش خدمات: {formatPriceToman(summary.totalServiceVolumeToman)} · {toPersianDigits(supportTickets.length)} تیکت
                 </span>
               </div>
             </div>
-          </div>
-          <div className="p-3.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] text-xs text-[#6B6480]">
-            تمامی اعداد این صفحه مستقیماً از دیتابیس واقعی استخراج شده‌اند و سالن‌های نمونه نمایشی در این آمار لحاظ نشده‌اند.
           </div>
         </Card>
       </div>
@@ -6541,13 +6346,29 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
           </Card>
 
           <Card padding="lg" className="space-y-4 border-2 border-[#F59E0B]/40 bg-[#FFFBEB]/60">
-            <div className="space-y-1">
-              <h3 className="text-sm font-extrabold text-[#061138]">
-                تنظیمات اعلان هوشمند مدیر کل
-              </h3>
-              <p className="text-xs text-[#64748B] leading-relaxed">
-                به‌محض ثبت‌نام کسب‌وکار جدید، ثبت فیش واریزی یا ارسال تیکت پشتیبانی، در بالای پنل مدیریت اعلان دریافت می‌کنید.
-              </p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-[#061138]">
+                  تنظیمات اعلان هوشمند مدیر کل
+                </h3>
+                <ClickPopover
+                  iconOnly
+                  tone="amber"
+                  align="right"
+                  title="نحوه دریافت اعلان‌ها و حفظ داده‌ها"
+                >
+                  <p>
+                    به‌محض ثبت‌نام کسب‌وکار جدید، ثبت سفارش مالی یا ارسال تیکت پشتیبانی، در بالای پنل مدیریت اعلان دریافت می‌کنید.
+                  </p>
+                  <p className="pt-1 border-t border-[#E2E8F0] text-[#059669] font-bold">
+                    تمامی اطلاعات ({toPersianDigits(realBusinessesCount)} مرکز واقعی و {toPersianDigits(adminUsers.length)} کاربر) در دیتابیس مستقل PostgreSQL ذخیره شده و در آپدیت‌ها محفوظ می‌مانند.
+                  </p>
+                </ClickPopover>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
+                <CheckCircle2 className="w-3 h-3" />
+                PostgreSQL امن
+              </span>
             </div>
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-xs font-bold text-[#061138] cursor-pointer">
@@ -6578,16 +6399,6 @@ SMS_SENDER=${senderInput.trim() || '50004001'}`;
                 <span>اعلان فوری هنگام ثبت سفارش پلن یا تبلیغ</span>
               </label>
             </div>
-          </Card>
-
-          <Card padding="lg" className="space-y-2.5 bg-[#ECFDF5] border border-[#10B981]/40 text-xs text-[#065F46]">
-            <p className="font-extrabold text-[#047857] flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>تضمین حفظ ۱۰۰٪ اطلاعات در آپدیت‌های بعدی لیارا</span>
-            </p>
-            <p className="leading-relaxed">
-              تمامی اطلاعات کسب‌وکارهای ثبت‌شده ({toPersianDigits(realBusinessesCount)} مرکز واقعی)، کاربران ({toPersianDigits(adminUsers.length)} کاربر)، نوبت‌ها، پلن‌ها و جایگاه‌های تبلیغاتی در <strong>دیتابیس مستقل PostgreSQL لیارا</strong> ذخیره می‌شوند. با آپدیت کردن کد برنامه هیچ اطلاعاتی از دیتابیس پاک نخواهد شد.
-            </p>
           </Card>
 
           <Card variant="dark" padding="lg" className="space-y-3">

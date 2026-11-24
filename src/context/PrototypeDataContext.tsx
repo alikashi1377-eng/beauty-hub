@@ -63,6 +63,7 @@ import {
 import { validateReviewContent } from '../utils/reviewModeration';
 import {
   calculateBookingFinancialBreakdown,
+  computeBusinessFinancialDossier,
   isAppointmentEligibleForSettlement,
   normalizeDepositPercent,
   resolveAppointmentFinancialBreakdown,
@@ -161,6 +162,8 @@ interface PrototypeDataContextValue {
   ) => boolean;
   deleteAdminUserRecord: (phone: string) => void;
   refreshRealData: () => Promise<void>;
+  syncAdminLiveNow: () => Promise<void>;
+  lastSyncedAtIso: string | null;
   selectedCity: string;
   setSelectedCity: (city: string) => void;
   favoriteBusinessIds: string[];
@@ -1057,10 +1060,18 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const mergeSavedAppointments = (
     incoming: AppointmentItem[],
     bizLookup?: BusinessItem[],
-    authoritativeFromServer?: boolean
+    authoritativeFromServer?: boolean,
+    servicesLookup?: ServiceItem[]
   ): AppointmentItem[] => {
     try {
       const bizPool = bizLookup && bizLookup.length > 0 ? bizLookup : businesses;
+      const srvPool =
+        servicesLookup && servicesLookup.length > 0 ? servicesLookup : services;
+      const srvById = new Map<string, ServiceItem>();
+      for (const srv of srvPool) {
+        if (srv?.id) srvById.set(srv.id, srv);
+      }
+
       const savedRaw = window.localStorage.getItem('timeto_saved_appointments_v1');
       const savedList: AppointmentItem[] = savedRaw ? JSON.parse(savedRaw) : [];
       const map = new Map<string, AppointmentItem>();
@@ -1069,7 +1080,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           !item ||
           !item.id ||
           /^biz-[1-8]$/.test(item.businessId) ||
-          /^apt-100[1-9]$/.test(item.id) ||
+          /^apt-(?:[1-9]|1[0-2]|100[1-9])$/.test(item.id) ||
           item.businessSlug === 'royal-golzar' ||
           String(item.businessName || '').includes('مهتاب')
         ) {
@@ -1121,10 +1132,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             b.slug === correctedItem.businessSlug ||
             b.name === correctedItem.businessName
         );
+        const matchedService = correctedItem.serviceId
+          ? srvById.get(correctedItem.serviceId)
+          : undefined;
 
         const resolved = resolveAppointmentFinancialBreakdown({
           appointment: correctedItem,
           business: matchedBiz,
+          service: matchedService,
         });
         const fixedItem: AppointmentItem = {
           ...correctedItem,
@@ -1199,28 +1214,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         if (val.referenceCode) existingRefs.add(val.referenceCode);
       }
 
-      let myBookedIds = new Set<string>();
-      try {
-        const rawMyIds = window.localStorage.getItem('timeto_my_booked_apt_ids_v1');
-        if (rawMyIds) {
-          myBookedIds = new Set<string>(JSON.parse(rawMyIds) || []);
-        }
-      } catch {
-        // ignore
-      }
-
       for (const item of savedList) {
         if (isInvalidOrRejectedApt(item)) continue;
         if (map.has(item.id) || (item.referenceCode && existingRefs.has(item.referenceCode))) {
           continue;
         }
-        const isRecentOrOwn =
+        // در حالت همگام‌سازی قطعی با دیتابیس، فقط نوبت‌هایی که کمتر از ۲ دقیقه پیش همین لحظه ثبت شده‌اند نگه داشته می‌شوند تا نوبت شبح/قدیمی برنگردد
+        const isInFlightOrNonAuthoritative =
           !authoritativeFromServer ||
-          myBookedIds.has(item.id) ||
-          (item.referenceCode && myBookedIds.has(item.referenceCode)) ||
           (typeof item.createdAtMs === 'number' &&
-            Date.now() - item.createdAtMs < 15 * 60 * 1000);
-        if (isRecentOrOwn) {
+            Date.now() - item.createdAtMs < 2 * 60 * 1000);
+        if (isInFlightOrNonAuthoritative) {
           map.set(item.id, normalizeAptFinancials(item));
           if (item.referenceCode) existingRefs.add(item.referenceCode);
         }
@@ -1429,6 +1433,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     return [];
   });
+  const [lastSyncedAtIso, setLastSyncedAtIso] = useState<string | null>(null);
   const [smsLogs, setSmsLogs] = useState<SmsMessageLogItem[]>(() => {
     try {
       const saved = window.localStorage.getItem('timeto_sms_logs_v1');
@@ -2010,7 +2015,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const mergedApts = mergeSavedAppointments(
             serverApts,
             nextBusinesses,
-            serverApts.length > 0
+            serverApts.length > 0,
+            nextServices
           );
           persistSavedAppointments(mergedApts);
           return mergedApts;
@@ -2043,13 +2049,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ? sharedData.settlementRequests
           : response.data.settlementRequests;
         if (Array.isArray(resolvedSettlements)) {
-          setSettlementRequests((prev) => {
+          setSettlementRequests(() => {
             const byId = new Map<string, SettlementRequestItem>();
             for (const s of resolvedSettlements || []) {
               if (s && s.id) byId.set(s.id, s);
-            }
-            for (const s of prev) {
-              if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
             }
             const merged = Array.from(byId.values());
             try {
@@ -2068,13 +2071,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ? sharedData.platformBusinessNotices
           : response.data.platformBusinessNotices;
         if (Array.isArray(resolvedNotices)) {
-          setPlatformBusinessNotices((prev) => {
+          setPlatformBusinessNotices(() => {
             const byId = new Map<string, PlatformBusinessNoticeItem>();
             for (const n of resolvedNotices || []) {
               if (n && n.id) byId.set(n.id, n);
-            }
-            for (const n of prev) {
-              if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
             }
             const merged = Array.from(byId.values());
             try {
@@ -2089,120 +2089,158 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           });
         }
 
+        if (Array.isArray(sharedData?.paymentOrders)) {
+          setPaymentOrders(() => {
+            const byId = new Map<string, PaymentOrderItem>();
+            for (const ord of sharedData.paymentOrders || []) {
+              if (ord && ord.id) byId.set(ord.id, ord);
+            }
+            const merged = Array.from(byId.values());
+            try {
+              window.localStorage.setItem(
+                'timeto_payment_orders_v2',
+                JSON.stringify(merged)
+              );
+            } catch {
+              // ignore
+            }
+            return merged;
+          });
+        }
+
         setCustomers(mergeManualCustomers([]));
         setCampaigns([]);
         setAdminUsers(response.data.registeredUsers ?? []);
         setOwnedBusinessId(localOwnedBizId);
 
-        // دریافت داده قطعی دیتابیس PostgreSQL و تمدید کوکی نشست کاربر فعال (بدون ارسال کش قدیمی مرورگر تا نمایش عادی و Incognito صددرصد یکسان باشند)
+        // دریافت داده قطعی و همزمان دیتابیس PostgreSQL و تمدید کوکی نشست کاربر فعال
         try {
-          void realApiClient
-            .syncRegisteredAccounts({
-              accounts: [],
-              issueSessionForPhone: localPersistedUser?.phone || undefined,
-              appointments: [],
-            })
-            .then((syncRes) => {
-              if (Array.isArray(syncRes.registeredUsers)) {
-                setAdminUsers(syncRes.registeredUsers);
+          const syncRes = await realApiClient.syncRegisteredAccounts({
+            accounts: [],
+            issueSessionForPhone: localPersistedUser?.phone || undefined,
+            appointments: [],
+          });
+          if (Array.isArray(syncRes.registeredUsers)) {
+            setAdminUsers(syncRes.registeredUsers);
+          }
+          let latestServices = nextServices;
+          if (
+            Array.isArray(syncRes.services) &&
+            syncRes.services.length > 0
+          ) {
+            const srvMap = new Map<string, ServiceItem>();
+            for (const s of syncRes.services) {
+              if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+                srvMap.set(s.id, s);
               }
-              let latestServices = nextServices;
-              if (
-                Array.isArray(syncRes.services) &&
-                syncRes.services.length > 0
-              ) {
-                const srvMap = new Map<string, ServiceItem>();
-                for (const s of syncRes.services) {
-                  if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
-                    srvMap.set(s.id, s);
-                  }
+            }
+            latestServices = applySavedServiceSortOrder(
+              Array.from(srvMap.values())
+            );
+            setServices(latestServices);
+          }
+          if (
+            Array.isArray(syncRes.specialists) &&
+            syncRes.specialists.length > 0
+          ) {
+            setSpecialists(() => {
+              const spcMap = new Map<string, SpecialistItem>();
+              for (const sp of syncRes.specialists || []) {
+                if (
+                  sp &&
+                  sp.id &&
+                  !/^biz-[1-8]$/.test(sp.businessId) &&
+                  !/^spc-[1-8]$/.test(sp.id)
+                ) {
+                  spcMap.set(sp.id, sp);
                 }
-                latestServices = applySavedServiceSortOrder(
-                  Array.from(srvMap.values())
+              }
+              return Array.from(spcMap.values());
+            });
+          }
+          let latestBusinesses = nextBusinesses;
+          if (
+            Array.isArray(syncRes.businesses) &&
+            syncRes.businesses.length > 0
+          ) {
+            latestBusinesses = syncStartingPricesWithServices(
+              mergeBusinessOverrides(
+                syncRes.businesses,
+                syncRes.registeredUsers,
+                true
+              ),
+              latestServices
+            );
+            setBusinesses(latestBusinesses);
+          }
+          if (Array.isArray(syncRes.appointments)) {
+            const syncedApts = syncRes.appointments;
+            setAppointments(() => {
+              const merged = mergeSavedAppointments(
+                syncedApts,
+                latestBusinesses,
+                true,
+                latestServices
+              );
+              persistSavedAppointments(merged);
+              return merged;
+            });
+          }
+          if (
+            syncRes.paymentConfig &&
+            typeof syncRes.paymentConfig === 'object'
+          ) {
+            setPaymentConfig((prev) => ({
+              ...prev,
+              ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
+            }));
+          }
+          if (Array.isArray(syncRes.settlementRequests)) {
+            setSettlementRequests(() => {
+              const byId = new Map<string, SettlementRequestItem>();
+              for (const s of syncRes.settlementRequests || []) {
+                if (s && s.id) byId.set(s.id, s);
+              }
+              const merged = Array.from(byId.values());
+              try {
+                window.localStorage.setItem(
+                  'timeto_settlement_requests_v1',
+                  JSON.stringify(merged)
                 );
-                setServices(latestServices);
+              } catch {
+                // ignore
               }
-              if (
-                Array.isArray(syncRes.specialists) &&
-                syncRes.specialists.length > 0
-              ) {
-                setSpecialists(() => {
-                  const spcMap = new Map<string, SpecialistItem>();
-                  for (const sp of syncRes.specialists || []) {
-                    if (
-                      sp &&
-                      sp.id &&
-                      !/^biz-[1-8]$/.test(sp.businessId) &&
-                      !/^spc-[1-8]$/.test(sp.id)
-                    ) {
-                      spcMap.set(sp.id, sp);
-                    }
-                  }
-                  return Array.from(spcMap.values());
-                });
+              return merged;
+            });
+          }
+          if (Array.isArray(syncRes.paymentOrders)) {
+            setPaymentOrders(() => {
+              const byId = new Map<string, PaymentOrderItem>();
+              for (const ord of syncRes.paymentOrders || []) {
+                if (ord && ord.id) byId.set(ord.id, ord);
               }
-              let latestBusinesses = nextBusinesses;
-              if (
-                Array.isArray(syncRes.businesses) &&
-                syncRes.businesses.length > 0
-              ) {
-                latestBusinesses = syncStartingPricesWithServices(
-                  mergeBusinessOverrides(
-                    syncRes.businesses,
-                    syncRes.registeredUsers,
-                    true
-                  ),
-                  latestServices
+              const merged = Array.from(byId.values());
+              try {
+                window.localStorage.setItem(
+                  'timeto_payment_orders_v2',
+                  JSON.stringify(merged)
                 );
-                setBusinesses(latestBusinesses);
+              } catch {
+                // ignore
               }
-              if (Array.isArray(syncRes.appointments)) {
-                const syncedApts = syncRes.appointments;
-                setAppointments(() => {
-                  const merged = mergeSavedAppointments(
-                    syncedApts,
-                    latestBusinesses,
-                    true
-                  );
-                  persistSavedAppointments(merged);
-                  return merged;
-                });
+              return merged;
+            });
+          }
+          if (Array.isArray(syncRes.platformBusinessNotices)) {
+            setPlatformBusinessNotices(() => {
+              const byId = new Map<string, PlatformBusinessNoticeItem>();
+              for (const n of syncRes.platformBusinessNotices || []) {
+                if (n && n.id) byId.set(n.id, n);
               }
-              if (
-                syncRes.paymentConfig &&
-                typeof syncRes.paymentConfig === 'object'
-              ) {
-                setPaymentConfig((prev) => ({
-                  ...prev,
-                  ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
-                }));
-              }
-              if (Array.isArray(syncRes.settlementRequests)) {
-                setSettlementRequests((prev) => {
-                  const byId = new Map<string, SettlementRequestItem>();
-                  for (const s of syncRes.settlementRequests || []) {
-                    if (s && s.id) byId.set(s.id, s);
-                  }
-                  for (const s of prev) {
-                    if (s && s.id && !byId.has(s.id)) byId.set(s.id, s);
-                  }
-                  return Array.from(byId.values());
-                });
-              }
-              if (Array.isArray(syncRes.platformBusinessNotices)) {
-                setPlatformBusinessNotices((prev) => {
-                  const byId = new Map<string, PlatformBusinessNoticeItem>();
-                  for (const n of syncRes.platformBusinessNotices || []) {
-                    if (n && n.id) byId.set(n.id, n);
-                  }
-                  for (const n of prev) {
-                    if (n && n.id && !byId.has(n.id)) byId.set(n.id, n);
-                  }
-                  return Array.from(byId.values());
-                });
-              }
-            })
-            .catch(() => {});
+              return Array.from(byId.values());
+            });
+          }
+          setLastSyncedAtIso(new Date().toISOString());
         } catch {
           // ignore
         }
@@ -2268,11 +2306,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setAppointments((prev) =>
           prev.length > 0
             ? prev
-            : mergeSavedAppointments(SAMPLE_APPOINTMENTS, SAMPLE_BUSINESSES)
+            : mergeSavedAppointments(
+                SAMPLE_APPOINTMENTS,
+                SAMPLE_BUSINESSES,
+                false,
+                SAMPLE_SERVICES
+              )
         );
         setCustomers((prev) =>
           prev.length > 0 ? prev : mergeManualCustomers(SAMPLE_CUSTOMERS)
         );
+        setLastSyncedAtIso(new Date().toISOString());
         if (localPersistedUser) {
           setAuthUser(localPersistedUser);
           setBookingDraft((prev) => ({
@@ -2328,73 +2372,143 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const syncAdminLiveNow = async () => {
+    if (typeof window === 'undefined') return;
+    if (dataMode !== 'real') {
+      setLastSyncedAtIso(new Date().toISOString());
+      return;
+    }
+    try {
+      const syncRes = await realApiClient.syncRegisteredAccounts({
+        accounts: [],
+        appointments: [],
+      });
+      if (Array.isArray(syncRes.registeredUsers)) {
+        setAdminUsers(syncRes.registeredUsers);
+      }
+      let latestSyncedServices: ServiceItem[] | null = null;
+      if (Array.isArray(syncRes.services) && syncRes.services.length > 0) {
+        const srvMap = new Map<string, ServiceItem>();
+        for (const s of syncRes.services || []) {
+          if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
+            srvMap.set(s.id, s);
+          }
+        }
+        const resolvedSrvs = applySavedServiceSortOrder(
+          Array.from(srvMap.values())
+        );
+        latestSyncedServices = resolvedSrvs;
+        setServices(resolvedSrvs);
+      }
+      let latestSyncedBusinesses: BusinessItem[] | null = null;
+      if (
+        Array.isArray(syncRes.businesses) &&
+        syncRes.businesses.length > 0
+      ) {
+        const mergedBiz = mergeBusinessOverrides(
+          syncRes.businesses,
+          syncRes.registeredUsers,
+          true
+        );
+        latestSyncedBusinesses = latestSyncedServices
+          ? syncStartingPricesWithServices(mergedBiz, latestSyncedServices)
+          : mergedBiz;
+        setBusinesses(latestSyncedBusinesses);
+      }
+      if (Array.isArray(syncRes.appointments)) {
+        setAppointments(() => {
+          const merged = mergeSavedAppointments(
+            syncRes.appointments || [],
+            latestSyncedBusinesses || syncRes.businesses || [],
+            true,
+            latestSyncedServices || undefined
+          );
+          persistSavedAppointments(merged);
+          return merged;
+        });
+      }
+      if (
+        syncRes.paymentConfig &&
+        typeof syncRes.paymentConfig === 'object'
+      ) {
+        setPaymentConfig((prev) => ({
+          ...prev,
+          ...(syncRes.paymentConfig as Partial<PaymentGatewayConfig>),
+        }));
+      }
+      if (Array.isArray(syncRes.settlementRequests)) {
+        setSettlementRequests(() => {
+          const byId = new Map<string, SettlementRequestItem>();
+          for (const s of syncRes.settlementRequests || []) {
+            if (s && s.id) byId.set(s.id, s);
+          }
+          const merged = Array.from(byId.values());
+          try {
+            window.localStorage.setItem(
+              'timeto_settlement_requests_v1',
+              JSON.stringify(merged)
+            );
+          } catch {
+            // ignore
+          }
+          return merged;
+        });
+      }
+      if (Array.isArray(syncRes.paymentOrders)) {
+        setPaymentOrders(() => {
+          const byId = new Map<string, PaymentOrderItem>();
+          for (const ord of syncRes.paymentOrders || []) {
+            if (ord && ord.id) byId.set(ord.id, ord);
+          }
+          const merged = Array.from(byId.values());
+          try {
+            window.localStorage.setItem(
+              'timeto_payment_orders_v2',
+              JSON.stringify(merged)
+            );
+          } catch {
+            // ignore
+          }
+          return merged;
+        });
+      }
+      if (Array.isArray(syncRes.platformBusinessNotices)) {
+        setPlatformBusinessNotices(() => {
+          const byId = new Map<string, PlatformBusinessNoticeItem>();
+          for (const n of syncRes.platformBusinessNotices || []) {
+            if (n && n.id) byId.set(n.id, n);
+          }
+          return Array.from(byId.values());
+        });
+      }
+      setLastSyncedAtIso(new Date().toISOString());
+    } catch {
+      // ignore transient network errors during background sync
+    }
+  };
+
   useEffect(() => {
     void refreshRealData();
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined' || dataMode !== 'real') return;
-    const syncLiveFromServer = () => {
-      void realApiClient
-        .syncRegisteredAccounts({
-          accounts: [],
-          appointments: [],
-        })
-        .then((syncRes) => {
-          if (Array.isArray(syncRes.registeredUsers)) {
-            setAdminUsers(syncRes.registeredUsers);
-          }
-          let latestSyncedServices: ServiceItem[] | null = null;
-          if (Array.isArray(syncRes.services) && syncRes.services.length > 0) {
-            const srvMap = new Map<string, ServiceItem>();
-            for (const s of syncRes.services || []) {
-              if (s && s.id && !/^biz-[1-8]$/.test(s.businessId)) {
-                srvMap.set(s.id, s);
-              }
-            }
-            const resolvedSrvs = applySavedServiceSortOrder(
-              Array.from(srvMap.values())
-            );
-            latestSyncedServices = resolvedSrvs;
-            setServices(resolvedSrvs);
-          }
-          if (
-            Array.isArray(syncRes.businesses) &&
-            syncRes.businesses.length > 0
-          ) {
-            setBusinesses((prevBiz) => {
-              const mergedBiz = mergeBusinessOverrides(
-                syncRes.businesses || prevBiz,
-                syncRes.registeredUsers,
-                true
-              );
-              return latestSyncedServices
-                ? syncStartingPricesWithServices(mergedBiz, latestSyncedServices)
-                : mergedBiz;
-            });
-          }
-          if (Array.isArray(syncRes.appointments)) {
-            setAppointments(() => {
-              const merged = mergeSavedAppointments(
-                syncRes.appointments || [],
-                syncRes.businesses || [],
-                true
-              );
-              persistSavedAppointments(merged);
-              return merged;
-            });
-          }
-        })
-        .catch(() => {});
-    };
-
     const onWindowFocus = () => {
-      syncLiveFromServer();
+      void syncAdminLiveNow();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncAdminLiveNow();
+      }
     };
     window.addEventListener('focus', onWindowFocus);
-    const intervalId = window.setInterval(syncLiveFromServer, 25000);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    const intervalId = window.setInterval(() => {
+      void syncAdminLiveNow();
+    }, 20000);
     return () => {
       window.removeEventListener('focus', onWindowFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.clearInterval(intervalId);
     };
   }, [dataMode]);
@@ -3544,6 +3658,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {
         // ignore
       }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ paymentOrders: next })
+          .catch(() => {});
+      }
       return next;
     });
     const orderNotif: AdminNotificationItem = {
@@ -3607,6 +3726,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch {
         // ignore
+      }
+      if (dataMode === 'real') {
+        void realApiClient
+          .savePlatformSharedState({ paymentOrders: next })
+          .catch(() => {});
       }
       return next;
     });
@@ -5397,77 +5521,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   function computeBusinessBookingDossierNumbers(targetBiz: BusinessItem) {
-    const bizApts = appointments.filter(
-      (a) =>
-        (a.businessId === targetBiz.id ||
-          a.businessSlug === targetBiz.slug ||
-          (a.businessName && a.businessName.trim() === targetBiz.name.trim())) &&
-        a.status !== AppointmentStatus.Cancelled &&
-        a.status !== AppointmentStatus.NoShow
-    );
-    let totalServicePriceToman = 0;
-    let totalDepositToman = 0;
-    let totalCommissionToman = 0;
-    let totalSalonNetToman = 0;
-
-    for (const apt of bizApts) {
-      const srvPrice = Math.max(0, Number(apt.priceToman) || 350_000);
-      const breakdown = calculateBookingFinancialBreakdown({
-        totalServicePriceToman: srvPrice,
-        depositPercent: targetBiz.depositPercent,
-        business: targetBiz,
-        commissionConfig: paymentConfig,
-      });
-      const dep =
-        typeof apt.depositPaidToman === 'number' && apt.depositPaidToman > 0
-          ? apt.depositPaidToman
-          : breakdown.baseDepositToman;
-      const comm =
-        typeof apt.platformCommissionToman === 'number' &&
-        apt.platformCommissionToman >= 0
-          ? apt.platformCommissionToman
-          : breakdown.platformCommissionToman;
-      const net =
-        typeof apt.salonNetDepositCreditedToman === 'number' &&
-        apt.salonNetDepositCreditedToman >= 0
-          ? apt.salonNetDepositCreditedToman
-          : Math.max(0, dep - comm);
-
-      totalServicePriceToman += srvPrice;
-      totalDepositToman += dep;
-      totalCommissionToman += comm;
-      totalSalonNetToman += net;
-    }
-
-    const commMeta = resolveBusinessCommissionMeta(targetBiz, paymentConfig);
-    const depositPercent = normalizeDepositPercent(targetBiz.depositPercent);
-    const totalRemainingInSalonToman = Math.max(
-      0,
-      totalServicePriceToman - totalDepositToman
-    );
-
-    const paidSettlementsTotal = settlementRequests
-      .filter((s) => s.businessId === targetBiz.id && s.status === 'PAID')
-      .reduce((sum, s) => sum + (Number(s.netPayoutToman) || 0), 0);
-
-    const pendingPayoutToman = Math.max(
-      0,
-      totalSalonNetToman - paidSettlementsTotal
-    );
-
+    const dossier = computeBusinessFinancialDossier({
+      business: targetBiz,
+      appointments,
+      services,
+      settlementRequests,
+      paymentOrders,
+      commissionConfig: paymentConfig,
+    });
     return {
-      bookingsCount: bizApts.length,
-      depositPercent,
-      commissionPercent: commMeta.commissionPercent,
-      totalServicePriceToman,
-      totalRemainingInSalonToman,
-      totalDepositToman,
-      totalCommissionToman,
-      totalSalonNetToman,
-      paidSettlementsTotal,
-      pendingPayoutToman,
+      bookingsCount: dossier.bookingsCount,
+      depositPercent: dossier.depositPercent,
+      commissionPercent: 0,
+      totalServicePriceToman: dossier.totalServiceToman,
+      totalRemainingInSalonToman: dossier.totalRemainingInSalonToman,
+      totalDepositToman: dossier.totalDepositCollectedToman,
+      totalCommissionToman: 0,
+      totalSalonNetToman: dossier.totalSalonGrossNetToman,
+      paidSettlementsTotal: dossier.totalAlreadySettledToman,
+      pendingPayoutToman: dossier.netPayableToman,
     };
-  };
+  }
 
   const settleBusinessDossierByAdmin = (
     businessId: string,
@@ -5481,9 +5555,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const dossier = computeBusinessBookingDossierNumbers(targetBiz);
     const payoutAmount = dossier.pendingPayoutToman;
-    if (payoutAmount <= 0 && dossier.bookingsCount === 0) {
+    if (payoutAmount <= 0) {
       showToast(
-        `برای سالن «${targetBiz.name}» هنوز رزروی ثبت نشده و مانده تسویه‌نشده‌ای وجود ندارد.`,
+        dossier.bookingsCount === 0
+          ? `برای سالن «${targetBiz.name}» هنوز رزروی ثبت نشده و مانده تسویه‌نشده‌ای وجود ندارد.`
+          : `تمام بیعانه‌های آنلاین «${targetBiz.name}» قبلاً تسویه شده و مانده پرداختنی ۰ تومان است.`,
         'info'
       );
       return null;
@@ -5509,9 +5585,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       ownerPhone: targetBiz.ownerPhone || targetBiz.phoneDisplay || '',
       shebaNumber: formattedSheba,
       cardNumber: targetBiz.bankCardNumber,
-      amountToman: dossier.totalDepositToman || payoutAmount,
-      commissionToman: dossier.totalCommissionToman,
-      netPayoutToman: payoutAmount > 0 ? payoutAmount : dossier.totalSalonNetToman,
+      amountToman: payoutAmount,
+      commissionToman: 0,
+      netPayoutToman: payoutAmount,
       bookingsCount: dossier.bookingsCount,
       totalServiceAmountToman: dossier.totalServicePriceToman,
       totalDepositCollectedToman: dossier.totalDepositToman,
@@ -5552,28 +5628,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     sendPlatformBusinessNotice({
       targetBusinessId: targetBiz.id,
       targetBusinessName: targetBiz.name,
-      title: `📊 صورتحساب و تاییدیه واریز هفتگی شبا (کد پایا: ${code})`,
-      message: `مدیریت محترم «${targetBiz.name}»؛ جزئیات کامل تسویه هفتگی شما به شرح زیر است: ۱) تعداد کل نوبت‌ها: ${toPersianDigits(
+      title: `📊 صورتحساب و تاییدیه واریز شبا (کد پایا: ${code})`,
+      message: `مدیریت محترم «${targetBiz.name}»؛ جزئیات کامل تسویه شما به شرح زیر است: ۱) تعداد کل نوبت‌های فعال: ${toPersianDigits(
         dossier.bookingsCount
-      )} رزرو با ارزش کل خدمات ارائه‌شده ${toPersianDigits(
+      )} رزرو با ارزش کل خدمات ${toPersianDigits(
         dossier.totalServicePriceToman.toLocaleString('fa-IR')
-      )} تومان | ۲) مبلغ دریافتی حضوری توسط سالن از مشتریان: ${toPersianDigits(
+      )} تومان | ۲) سهم دریافتی حضوری توسط سالن: ${toPersianDigits(
         dossier.totalRemainingInSalonToman.toLocaleString('fa-IR')
-      )} تومان | ۳) جمع کل بیعانه دریافتی آنلاین (${toPersianDigits(
-        dossier.depositPercent
-      )}٪): ${toPersianDigits(
+      )} تومان | ۳) جمع کل بیعانه آنلاین دریافتی: ${toPersianDigits(
         dossier.totalDepositToman.toLocaleString('fa-IR')
-      )} تومان | ۴) کسر سهم کارمزد پلتفرم (${toPersianDigits(
-        dossier.commissionPercent
-      )}٪ از کل ارزش خدمات): ${toPersianDigits(
-        dossier.totalCommissionToman.toLocaleString('fa-IR')
-      )} تومان | ۵) خالص واریزشده به شبای شما (بیعانه منهای کارمزد کل خدمات): ${toPersianDigits(
+      )} تومان (کارمزد پلتفرم ۰٪) | ۴) خالص واریزشده به شبای شما در این تسویه: ${toPersianDigits(
         settledRecord.netPayoutToman.toLocaleString('fa-IR')
       )} تومان (کد رهگیری پایا: ${code}).`,
     });
 
     showToast(
-      `واریز خالص ${toPersianDigits(settledRecord.netPayoutToman.toLocaleString('fa-IR'))} تومان برای «${targetBiz.name}» ثبت شد و صورتحساب ۵ بخشی کامل برای صاحب سالن ارسال گردید ✓`
+      `واریز خالص ${toPersianDigits(settledRecord.netPayoutToman.toLocaleString('fa-IR'))} تومان برای «${targetBiz.name}» ثبت شد و صورتحساب کامل برای صاحب سالن ارسال گردید ✓`
     );
     return settledRecord;
   };
@@ -8184,6 +8254,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           updateAdminUserRecord,
           deleteAdminUserRecord,
           refreshRealData,
+          syncAdminLiveNow,
+          lastSyncedAtIso,
           selectedCity,
           setSelectedCity,
           favoriteBusinessIds,

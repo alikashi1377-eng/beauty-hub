@@ -2852,6 +2852,7 @@ export function createApiV1Router(
       let syncedSettlementRequests: Array<Record<string, unknown>> | undefined;
       let syncedPaymentConfig: Record<string, unknown> | undefined;
       let syncedNotices: Array<Record<string, unknown>> | undefined;
+      let syncedPaymentOrders: Array<Record<string, unknown>> | undefined;
       try {
         // دیتابیس PostgreSQL مرجع واحد نوبت‌هاست؛ از تزریق نوبت‌های کش مرورگر (localStorage) جلوگیری می‌شود تا آمار مالی و رزروها کاملاً واقعی و دقیق بماند
         const [bootstrapPayload, sharedState, rejectedBizRes] = await Promise.all([
@@ -2949,8 +2950,12 @@ export function createApiV1Router(
         syncedSettlementRequests = sharedState.settlementRequests;
         syncedPaymentConfig = sharedState.paymentConfig;
         syncedNotices = sharedState.platformBusinessNotices;
+        syncedPaymentOrders = sharedState.paymentOrders;
         const bizByIdMap = new Map(
           (bootstrapPayload.businesses || []).map((b) => [b.id, b])
+        );
+        const srvByIdMap = new Map(
+          (bootstrapPayload.services || []).map((s) => [s.id, s])
         );
         const aptRes = await pool.query(`
           SELECT
@@ -2981,11 +2986,13 @@ export function createApiV1Router(
             AND COALESCE(b.approval_status, 'APPROVED') <> 'REJECTED'
             AND COALESCE(b.name, '') NOT ILIKE '%مهتاب%'
           ORDER BY a.service_starts_at DESC, a.created_at DESC
-          LIMIT 300
+          LIMIT 1000
         `);
         syncedAppointments = aptRes.rows.map((r: Record<string, unknown>) => {
-          const rowPrice = Number(r.service_price_toman_snapshot) || 0;
-          const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+          const rowPrice = Math.max(0, Number(r.service_price_toman_snapshot) || 0);
+          const matchedSrv = srvByIdMap.get(String(r.service_external_id));
+          const effectivePrice =
+            rowPrice > 0 ? rowPrice : Math.max(0, Number(matchedSrv?.priceToman) || 0);
           const matchedBiz = bizByIdMap.get(String(r.business_external_id));
           const rawDepPct = Number(matchedBiz?.depositPercent);
           const depPct =
@@ -2993,7 +3000,7 @@ export function createApiV1Router(
               ? Math.min(100, Math.max(20, Math.round(rawDepPct)))
               : 30;
           const exactDeposit =
-            matchedBiz?.depositEnabled === false
+            matchedBiz?.depositEnabled === false || effectivePrice <= 0
               ? 0
               : Math.max(0, Math.round((effectivePrice * depPct) / 100));
           return {
@@ -3012,7 +3019,7 @@ export function createApiV1Router(
             dateJalali: String(r.date_jalali),
             timeSlot: String(r.time_slot_label),
             durationMinutes: Number(r.duration_minutes_snapshot),
-            priceToman: rowPrice,
+            priceToman: effectivePrice,
             depositPaidToman: exactDeposit,
             status: String(r.status),
             notes: r.notes ? String(r.notes) : undefined,
@@ -3033,6 +3040,7 @@ export function createApiV1Router(
         settlementRequests: syncedSettlementRequests,
         paymentConfig: syncedPaymentConfig,
         platformBusinessNotices: syncedNotices,
+        paymentOrders: syncedPaymentOrders,
         sessionToken: result.sessionToken,
         expiresAt: result.expiresAt,
         user: result.user,
@@ -3072,6 +3080,7 @@ export function createApiV1Router(
         settlementRequests?: Array<Record<string, unknown>>;
         paymentConfig?: Record<string, unknown>;
         platformBusinessNotices?: Array<Record<string, unknown>>;
+        paymentOrders?: Array<Record<string, unknown>>;
       };
       await saveSharedPlatformStateInDb(pool, {
         settlementRequests: Array.isArray(body.settlementRequests)
@@ -3083,6 +3092,9 @@ export function createApiV1Router(
             : undefined,
         platformBusinessNotices: Array.isArray(body.platformBusinessNotices)
           ? body.platformBusinessNotices
+          : undefined,
+        paymentOrders: Array.isArray(body.paymentOrders)
+          ? body.paymentOrders
           : undefined,
       });
       const data = await getSharedPlatformState(pool);

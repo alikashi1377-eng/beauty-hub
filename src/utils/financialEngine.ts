@@ -3,6 +3,9 @@ import {
   AppointmentStatus,
   BusinessItem,
   BusinessType,
+  PaymentOrderItem,
+  ServiceItem,
+  SettlementRequestItem,
 } from '../types';
 import { getUpcomingJalaliDays, toEnglishDigitsClient } from './formatters';
 
@@ -578,14 +581,46 @@ export function resolveAppointmentFinancialBreakdown(params: {
     | 'categorySlug'
     | 'targetGender'
     | 'name'
+    | 'depositEnabled'
     | 'depositPercent'
     | 'isVipPartner'
     | 'vipCommissionPercent'
   > | null;
+  service?: Pick<ServiceItem, 'priceToman'> | null;
   commissionConfig?: CategoryCommissionConfig;
 }): BookingFinancialBreakdown {
   const rawPrice = Number(params.appointment.priceToman) || 0;
-  const effectiveServicePrice = rawPrice > 0 ? rawPrice : 350_000;
+  const fallbackServicePrice = Number(params.service?.priceToman) || 0;
+  const effectiveServicePrice =
+    rawPrice > 0 ? rawPrice : fallbackServicePrice > 0 ? fallbackServicePrice : 0;
+
+  const isDepositDisabled = params.business?.depositEnabled === false;
+  const savedDeposit = Math.max(0, Number(params.appointment.depositPaidToman) || 0);
+
+  if (isDepositDisabled && savedDeposit <= 0) {
+    const standardZero = calculateBookingFinancialBreakdown({
+      totalServicePriceToman: effectiveServicePrice,
+      depositPercent: 0,
+      business: params.business,
+      commissionConfig: params.commissionConfig,
+    });
+    return {
+      ...standardZero,
+      totalServicePriceToman: effectiveServicePrice,
+      depositPercent: 0,
+      baseDepositToman: 0,
+      depositBaseToman: 0,
+      zibalGatewayFeeToman: 0,
+      valueAddedTaxFeeToman: 0,
+      customerGatewayAndTaxFeeToman: 0,
+      totalCustomerOnlinePayableToman: 0,
+      remainingInSalonToman: effectiveServicePrice,
+      platformCommissionPercent: 0,
+      platformCommissionToman: 0,
+      salonNetDepositCreditedToman: 0,
+    };
+  }
+
   const standard = calculateBookingFinancialBreakdown({
     totalServicePriceToman: effectiveServicePrice,
     depositPercent: params.business?.depositPercent,
@@ -593,15 +628,32 @@ export function resolveAppointmentFinancialBreakdown(params: {
     commissionConfig: params.commissionConfig,
   });
 
-  const savedDeposit = Number(params.appointment.depositPaidToman) || 0;
   if (savedDeposit <= 0) {
+    if (effectiveServicePrice <= 0) {
+      return {
+        ...standard,
+        totalServicePriceToman: 0,
+        baseDepositToman: 0,
+        depositBaseToman: 0,
+        zibalGatewayFeeToman: 0,
+        valueAddedTaxFeeToman: 0,
+        customerGatewayAndTaxFeeToman: 0,
+        totalCustomerOnlinePayableToman: 0,
+        remainingInSalonToman: 0,
+        platformCommissionPercent: 0,
+        platformCommissionToman: 0,
+        salonNetDepositCreditedToman: 0,
+      };
+    }
     return standard;
   }
 
   const baseDepositToman =
     savedDeposit === standard.totalCustomerOnlinePayableToman
       ? standard.baseDepositToman
-      : Math.min(effectiveServicePrice, savedDeposit);
+      : effectiveServicePrice > 0
+        ? Math.min(effectiveServicePrice, savedDeposit)
+        : savedDeposit;
 
   const remainingInSalonToman = Math.max(
     0,
@@ -619,3 +671,451 @@ export function resolveAppointmentFinancialBreakdown(params: {
     salonNetDepositCreditedToman: baseDepositToman,
   };
 }
+
+function normalizePersianMatchText(value?: string | null): string {
+  return String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .toLowerCase();
+}
+
+export function isSampleOrHiddenBusiness(
+  business: Pick<BusinessItem, 'id' | 'slug' | 'name' | 'ownerName' | 'approvalStatus'>
+): boolean {
+  if (!business || !business.id) return true;
+  if (/^biz-[1-8]$/.test(business.id)) return true;
+  if (business.slug === 'royal-golzar') return true;
+  if (business.approvalStatus === 'REJECTED') return true;
+  if (
+    String(business.name || '').includes('مهتاب') ||
+    String(business.ownerName || '').includes('مهتاب')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isSampleOrHiddenAppointment(
+  apt: Pick<AppointmentItem, 'id' | 'businessId' | 'businessSlug' | 'businessName'>
+): boolean {
+  if (!apt || !apt.id) return true;
+  if (/^biz-[1-8]$/.test(apt.businessId || '')) return true;
+  if (/^apt-(?:[1-9]|1[0-2]|100[1-9])$/.test(apt.id)) return true;
+  if (apt.businessSlug === 'royal-golzar') return true;
+  if (String(apt.businessName || '').includes('مهتاب')) return true;
+  return false;
+}
+
+export function filterRealAdminBusinesses(businesses: BusinessItem[]): BusinessItem[] {
+  const byKey = new Map<string, BusinessItem>();
+  for (const b of businesses || []) {
+    if (isSampleOrHiddenBusiness(b)) continue;
+    const key = b.id || b.slug;
+    if (key && !byKey.has(key)) {
+      byKey.set(key, b);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+export function dedupeAppointmentsCanonical(
+  appointments: AppointmentItem[]
+): AppointmentItem[] {
+  const byId = new Map<string, AppointmentItem>();
+  const refToId = new Map<string, string>();
+  const statusPriority: Record<string, number> = {
+    [AppointmentStatus.Completed]: 4,
+    [AppointmentStatus.Confirmed]: 3,
+    [AppointmentStatus.Pending]: 2,
+    [AppointmentStatus.NoShow]: 1,
+    [AppointmentStatus.Cancelled]: 0,
+  };
+
+  for (const apt of appointments || []) {
+    if (isSampleOrHiddenAppointment(apt)) continue;
+    const refKey = apt.referenceCode?.trim();
+    const existingId = byId.has(apt.id)
+      ? apt.id
+      : refKey && refToId.has(refKey)
+        ? refToId.get(refKey)!
+        : undefined;
+
+    if (!existingId) {
+      byId.set(apt.id, apt);
+      if (refKey) refToId.set(refKey, apt.id);
+      continue;
+    }
+
+    const prev = byId.get(existingId)!;
+    const prevScore =
+      (statusPriority[prev.status] ?? 0) * 10 +
+      (prev.priceToman > 0 ? 2 : 0) +
+      ((prev.depositPaidToman ?? 0) > 0 ? 1 : 0);
+    const nextScore =
+      (statusPriority[apt.status] ?? 0) * 10 +
+      (apt.priceToman > 0 ? 2 : 0) +
+      ((apt.depositPaidToman ?? 0) > 0 ? 1 : 0);
+
+    if (nextScore >= prevScore) {
+      byId.set(existingId, { ...prev, ...apt, id: existingId });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+export function doesAppointmentBelongToBusiness(
+  apt: Pick<AppointmentItem, 'businessId' | 'businessSlug' | 'businessName'>,
+  biz: Pick<BusinessItem, 'id' | 'slug' | 'name'>
+): boolean {
+  if (apt.businessId && biz.id && apt.businessId === biz.id) return true;
+  if (apt.businessSlug && biz.slug && apt.businessSlug === biz.slug) return true;
+  const aptName = normalizePersianMatchText(apt.businessName);
+  const bizName = normalizePersianMatchText(biz.name);
+  if (aptName && bizName && aptName === bizName) return true;
+  return false;
+}
+
+export function doesOrderBelongToBusiness(
+  order: Pick<PaymentOrderItem, 'businessId' | 'businessName'>,
+  biz: Pick<BusinessItem, 'id' | 'name'>
+): boolean {
+  if (order.businessId && biz.id && order.businessId === biz.id) return true;
+  const orderName = normalizePersianMatchText(order.businessName);
+  const bizName = normalizePersianMatchText(biz.name);
+  return Boolean(orderName && bizName && orderName === bizName);
+}
+
+export function doesSettlementBelongToBusiness(
+  settlement: Pick<SettlementRequestItem, 'businessId' | 'businessName'>,
+  biz: Pick<BusinessItem, 'id' | 'name'>
+): boolean {
+  if (settlement.businessId && biz.id && settlement.businessId === biz.id) {
+    return true;
+  }
+  const sName = normalizePersianMatchText(settlement.businessName);
+  const bizName = normalizePersianMatchText(biz.name);
+  return Boolean(sName && bizName && sName === bizName);
+}
+
+export interface BusinessFinancialDossierSummary {
+  business: BusinessItem;
+  bookings: AppointmentItem[];
+  cancelledBookingsCount: number;
+  bookingsCount: number;
+  pendingBookingsCount: number;
+  confirmedBookingsCount: number;
+  completedBookingsCount: number;
+  depositEnabled: boolean;
+  depositPercent: number;
+  commissionPercent: number;
+  totalServiceToman: number;
+  totalDepositCollectedToman: number;
+  totalRemainingInSalonToman: number;
+  totalPlatformCommissionToman: number;
+  totalSalonGrossNetToman: number;
+  totalAlreadySettledToman: number;
+  pendingSettlementRequestsToman: number;
+  netPayableToman: number;
+  approvedSubscriptionToman: number;
+  pendingSubscriptionToman: number;
+  freeTrialQuota: number;
+  freeTrialUsed: number;
+  freeTrialRemaining: number;
+  hasActivePaidSubscription: boolean;
+  latestPaidSettlement?: SettlementRequestItem;
+}
+
+export interface PlatformAdminFinancialSummary {
+  businessDossiers: BusinessFinancialDossierSummary[];
+  realBusinesses: BusinessItem[];
+  activeAppointments: AppointmentItem[];
+  totalBusinesses: number;
+  activeBusinesses: number;
+  pendingBusinesses: number;
+  totalBookings: number;
+  pendingBookings: number;
+  confirmedBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  totalServiceVolumeToman: number;
+  totalRemainingInSalonToman: number;
+  totalOnlineDepositsToman: number;
+  totalPaidSettlementsToman: number;
+  totalPendingPayableToman: number;
+  approvedOrdersToman: number;
+  pendingOrdersToman: number;
+  pendingOrdersCount: number;
+  /** درآمد خالص پلتفرم تایم‌تو (فقط فروش اشتراک و تبلیغات — کارمزد نوبت ۰٪) */
+  platformNetRevenueToman: number;
+  /** گردش مالی کل آنلاین (جمع بیعانه‌های امانی سالن‌ها + سفارش‌های تاییدشده اشتراک/تبلیغات، بدون دوباره‌شماری تسویه‌ها) */
+  grossOnlineTurnoverToman: number;
+}
+
+/**
+ * منبع واحد و قطعی محاسبه وضعیت رزروها و مالی یک کسب‌وکار در پنل مدیریت کلان و تسویه شبا
+ */
+export function computeBusinessFinancialDossier(params: {
+  business: BusinessItem;
+  appointments: AppointmentItem[];
+  services?: ServiceItem[];
+  settlementRequests: SettlementRequestItem[];
+  paymentOrders?: PaymentOrderItem[];
+  commissionConfig?: CategoryCommissionConfig;
+}): BusinessFinancialDossierSummary {
+  const {
+    business,
+    appointments,
+    services = [],
+    settlementRequests,
+    paymentOrders = [],
+    commissionConfig,
+  } = params;
+
+  const dedupedApts = dedupeAppointmentsCanonical(appointments);
+  const serviceById = new Map<string, ServiceItem>();
+  for (const srv of services) {
+    if (srv?.id) serviceById.set(srv.id, srv);
+  }
+
+  const allBizApts = dedupedApts.filter((a) =>
+    doesAppointmentBelongToBusiness(a, business)
+  );
+  const cancelledBookingsCount = allBizApts.filter(
+    (a) => a.status === AppointmentStatus.Cancelled
+  ).length;
+  const activeBizApts = allBizApts.filter(
+    (a) => a.status !== AppointmentStatus.Cancelled
+  );
+
+  let totalServiceToman = 0;
+  let totalDepositCollectedToman = 0;
+  let totalRemainingInSalonToman = 0;
+  let pendingBookingsCount = 0;
+  let confirmedBookingsCount = 0;
+  let completedBookingsCount = 0;
+
+  for (const apt of activeBizApts) {
+    if (apt.status === AppointmentStatus.Pending) pendingBookingsCount += 1;
+    else if (apt.status === AppointmentStatus.Confirmed) confirmedBookingsCount += 1;
+    else if (apt.status === AppointmentStatus.Completed) completedBookingsCount += 1;
+
+    const matchedService = apt.serviceId ? serviceById.get(apt.serviceId) : undefined;
+    const breakdown = resolveAppointmentFinancialBreakdown({
+      appointment: apt,
+      business,
+      service: matchedService,
+      commissionConfig,
+    });
+    totalServiceToman += breakdown.totalServicePriceToman;
+    totalDepositCollectedToman += breakdown.baseDepositToman;
+    totalRemainingInSalonToman += breakdown.remainingInSalonToman;
+  }
+
+  const bizSettlements = (settlementRequests || []).filter((s) =>
+    doesSettlementBelongToBusiness(s, business)
+  );
+  const paidSettlements = bizSettlements.filter((s) => s.status === 'PAID');
+  const totalAlreadySettledToman = paidSettlements.reduce(
+    (sum, s) => sum + Math.max(0, Number(s.netPayoutToman || s.amountToman) || 0),
+    0
+  );
+  const pendingSettlementRequestsToman = bizSettlements
+    .filter((s) => s.status === 'PENDING')
+    .reduce(
+      (sum, s) => sum + Math.max(0, Number(s.netPayoutToman || s.amountToman) || 0),
+      0
+    );
+
+  const totalSalonGrossNetToman = totalDepositCollectedToman;
+  const netPayableToman = Math.max(
+    0,
+    totalSalonGrossNetToman - totalAlreadySettledToman
+  );
+
+  const bizOrders = (paymentOrders || []).filter((o) =>
+    doesOrderBelongToBusiness(o, business)
+  );
+  const approvedSubscriptionToman = bizOrders
+    .filter((o) => o.status === 'APPROVED')
+    .reduce((sum, o) => sum + Math.max(0, Number(o.amountToman) || 0), 0);
+  const pendingSubscriptionToman = bizOrders
+    .filter((o) => o.status === 'PENDING')
+    .reduce((sum, o) => sum + Math.max(0, Number(o.amountToman) || 0), 0);
+
+  const depositEnabled = business.depositEnabled !== false;
+  const depositPercent = depositEnabled
+    ? normalizeDepositPercent(business.depositPercent)
+    : 0;
+  const bookingsCount = activeBizApts.length;
+  const freeTrialUsed = Math.min(FREE_TRIAL_BOOKING_QUOTA, bookingsCount);
+  const freeTrialRemaining = Math.max(0, FREE_TRIAL_BOOKING_QUOTA - bookingsCount);
+  const hasActivePaidSubscription =
+    business.subscriptionStatus === 'ACTIVE' &&
+    Boolean(business.subscriptionPlan) &&
+    !String(business.subscriptionPlan).includes('رایگان');
+
+  return {
+    business,
+    bookings: activeBizApts,
+    cancelledBookingsCount,
+    bookingsCount,
+    pendingBookingsCount,
+    confirmedBookingsCount,
+    completedBookingsCount,
+    depositEnabled,
+    depositPercent,
+    commissionPercent: 0,
+    totalServiceToman,
+    totalDepositCollectedToman,
+    totalRemainingInSalonToman,
+    totalPlatformCommissionToman: 0,
+    totalSalonGrossNetToman,
+    totalAlreadySettledToman,
+    pendingSettlementRequestsToman,
+    netPayableToman,
+    approvedSubscriptionToman,
+    pendingSubscriptionToman,
+    freeTrialQuota: FREE_TRIAL_BOOKING_QUOTA,
+    freeTrialUsed,
+    freeTrialRemaining,
+    hasActivePaidSubscription,
+    latestPaidSettlement: paidSettlements[0],
+  };
+}
+
+/**
+ * منبع واحد و تضمینی محاسبه آمار کلان پلتفرم در تمام صفحات پنل مدیریت (/admin, /admin/payments, /admin/reports)
+ * جمع ردیف‌های کسب‌وکارها همواره دقیقاً برابر با ارقام کلان بالای داشبورد است (بدون دوباره‌شماری تسویه شبا).
+ */
+export function computePlatformAdminSummary(params: {
+  businesses: BusinessItem[];
+  appointments: AppointmentItem[];
+  services?: ServiceItem[];
+  settlementRequests: SettlementRequestItem[];
+  paymentOrders: PaymentOrderItem[];
+  commissionConfig?: CategoryCommissionConfig;
+}): PlatformAdminFinancialSummary {
+  const realBusinesses = filterRealAdminBusinesses(params.businesses);
+  const dedupedApts = dedupeAppointmentsCanonical(params.appointments);
+
+  // هر نوبت فقط یک‌بار به اولین کسب‌وکار متناظرش منتسب می‌شود تا هیچ‌گونه هم‌پوشانی یا دوباره‌شماری رخ ندهد
+  const assignedAptIds = new Set<string>();
+  const businessDossiers: BusinessFinancialDossierSummary[] = realBusinesses.map(
+    (biz) => {
+      const bizMatchedApts = dedupedApts.filter((apt) => {
+        if (assignedAptIds.has(apt.id)) return false;
+        if (doesAppointmentBelongToBusiness(apt, biz)) {
+          assignedAptIds.add(apt.id);
+          return true;
+        }
+        return false;
+      });
+      return computeBusinessFinancialDossier({
+        business: biz,
+        appointments: bizMatchedApts,
+        services: params.services,
+        settlementRequests: params.settlementRequests,
+        paymentOrders: params.paymentOrders,
+        commissionConfig: params.commissionConfig,
+      });
+    }
+  );
+
+  // مرتب‌سازی: ابتدا سالن‌های دارای مانده تسویه‌نشده یا نوبت بیشتر
+  businessDossiers.sort(
+    (a, b) =>
+      b.netPayableToman - a.netPayableToman ||
+      b.bookingsCount - a.bookingsCount ||
+      b.totalServiceToman - a.totalServiceToman
+  );
+
+  const activeAppointments = businessDossiers.flatMap((d) => d.bookings);
+  const totalBookings = businessDossiers.reduce((s, d) => s + d.bookingsCount, 0);
+  const pendingBookings = businessDossiers.reduce(
+    (s, d) => s + d.pendingBookingsCount,
+    0
+  );
+  const confirmedBookings = businessDossiers.reduce(
+    (s, d) => s + d.confirmedBookingsCount,
+    0
+  );
+  const completedBookings = businessDossiers.reduce(
+    (s, d) => s + d.completedBookingsCount,
+    0
+  );
+  const cancelledBookings = businessDossiers.reduce(
+    (s, d) => s + d.cancelledBookingsCount,
+    0
+  );
+  const totalServiceVolumeToman = businessDossiers.reduce(
+    (s, d) => s + d.totalServiceToman,
+    0
+  );
+  const totalRemainingInSalonToman = businessDossiers.reduce(
+    (s, d) => s + d.totalRemainingInSalonToman,
+    0
+  );
+  const totalOnlineDepositsToman = businessDossiers.reduce(
+    (s, d) => s + d.totalDepositCollectedToman,
+    0
+  );
+  const totalPaidSettlementsToman = businessDossiers.reduce(
+    (s, d) => s + d.totalAlreadySettledToman,
+    0
+  );
+  const totalPendingPayableToman = businessDossiers.reduce(
+    (s, d) => s + d.netPayableToman,
+    0
+  );
+
+  const validOrders = (params.paymentOrders || []).filter(
+    (o) =>
+      o &&
+      o.id &&
+      !/^biz-[1-8]$/.test(o.businessId || '') &&
+      !String(o.businessName || '').includes('مهتاب')
+  );
+  const approvedOrdersToman = validOrders
+    .filter((o) => o.status === 'APPROVED')
+    .reduce((sum, o) => sum + Math.max(0, Number(o.amountToman) || 0), 0);
+  const pendingOrders = validOrders.filter((o) => o.status === 'PENDING');
+  const pendingOrdersToman = pendingOrders.reduce(
+    (sum, o) => sum + Math.max(0, Number(o.amountToman) || 0),
+    0
+  );
+
+  const activeBusinesses = realBusinesses.filter(
+    (b) => b.approvalStatus === 'APPROVED'
+  ).length;
+  const pendingBusinesses = realBusinesses.filter(
+    (b) => b.approvalStatus === 'PENDING_REVIEW'
+  ).length;
+
+  return {
+    businessDossiers,
+    realBusinesses,
+    activeAppointments,
+    totalBusinesses: realBusinesses.length,
+    activeBusinesses,
+    pendingBusinesses,
+    totalBookings,
+    pendingBookings,
+    confirmedBookings,
+    completedBookings,
+    cancelledBookings,
+    totalServiceVolumeToman,
+    totalRemainingInSalonToman,
+    totalOnlineDepositsToman,
+    totalPaidSettlementsToman,
+    totalPendingPayableToman,
+    approvedOrdersToman,
+    pendingOrdersToman,
+    pendingOrdersCount: pendingOrders.length,
+    platformNetRevenueToman: approvedOrdersToman,
+    grossOnlineTurnoverToman: totalOnlineDepositsToman + approvedOrdersToman,
+  };
+}
+

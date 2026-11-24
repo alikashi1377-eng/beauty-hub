@@ -71,7 +71,7 @@ export const PublicMobileBottomNav: React.FC = () => {
       aria-label="منوی دسترسی سریع پایین موبایل"
       className={`lg:hidden rounded-3xl bg-[#041033]/98 backdrop-blur-xl border-2 border-[#0057FF]/80 ring-1 ring-[#00E5FF]/40 shadow-[0_18px_42px_-4px_rgba(0,45,160,0.65)] px-2 py-1.5 ${
         isBookingFlow
-          ? 'relative mx-3.5 mt-6 mb-24 z-10'
+          ? 'relative mx-3.5 mt-2 mb-4 z-10'
           : 'fixed bottom-2.5 inset-x-3 z-40'
       }`}
     >

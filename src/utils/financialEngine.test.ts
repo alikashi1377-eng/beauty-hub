@@ -1,458 +1,283 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ALLOWED_DEPOSIT_PERCENTS,
-  calculateBookingFinancialBreakdown,
-  FREE_TRIAL_BOOKING_QUOTA,
-  isAppointmentEligibleForSettlement,
-  normalizeDepositPercent,
+  computeBusinessFinancialDossier,
+  computePlatformAdminSummary,
   resolveAppointmentFinancialBreakdown,
-  resolveBusinessCommissionMeta,
-  resolveBusinessSubscriptionQuotaStatus,
-  TIMETO_MONTHLY_PACKAGES,
-  validateServiceAntiFraud,
 } from './financialEngine';
-import { AppointmentStatus, BusinessType } from '../types';
 import {
-  buildCustomerBookingTimeSlots,
-  computeAdPackagePriceAndTitle,
-  formatCompactPriceToman,
-  formatCustomerWorkingHourMinimal,
-  formatPriceToman,
-  formatServicePriceShort,
-  formatWorkingHourDisplay,
-  getPlanStaffLimitCount,
-  resolveEffectiveWorkingHour,
-} from './formatters';
+  AppointmentItem,
+  AppointmentStatus,
+  BusinessItem,
+  BusinessType,
+  PaymentOrderItem,
+  ServiceItem,
+  SettlementRequestItem,
+  SubscriptionStatus,
+} from '../types';
 
-test('normalizeDepositPercent enforces 20..100% deposit range (preserving presets 20, 30, 50, 100) and defaults invalid/0 to 30', () => {
-  assert.deepEqual(ALLOWED_DEPOSIT_PERCENTS, [20, 30, 50, 100]);
-  assert.equal(normalizeDepositPercent(0), 30);
-  assert.equal(normalizeDepositPercent(undefined), 30);
-  assert.equal(normalizeDepositPercent(10), 20);
-  assert.equal(normalizeDepositPercent(20), 20);
-  assert.equal(normalizeDepositPercent(25), 25);
-  assert.equal(normalizeDepositPercent(30), 30);
-  assert.equal(normalizeDepositPercent(35), 35);
-  assert.equal(normalizeDepositPercent(40), 40);
-  assert.equal(normalizeDepositPercent(50), 50);
-  assert.equal(normalizeDepositPercent(100), 100);
-  assert.equal(normalizeDepositPercent(150), 100);
-
-  const custom25 = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 400_000,
-    depositPercent: 25,
-    business: {
-      type: BusinessType.MenBarbershop,
-      typeLabel: 'پیرایش مردانه',
-      categorySlug: 'mens-barbershop',
-      targetGender: 'MALE',
-      name: 'سالن امیرحسین جزینی',
-    },
-  });
-  assert.equal(custom25.depositPercent, 25);
-  assert.equal(custom25.baseDepositToman, 100_000);
-  assert.equal(custom25.remainingInSalonToman, 300_000);
-  assert.equal(custom25.platformCommissionPercent, 0);
-  assert.equal(custom25.platformCommissionToman, 0);
-  assert.equal(custom25.salonNetDepositCreditedToman, 100_000);
-});
-
-test('resolveBusinessCommissionMeta differentiates Men, Laser, and Women segments while enforcing 0% commission in the subscription model', () => {
-  const menMeta = resolveBusinessCommissionMeta({
-    type: BusinessType.MenBarbershop,
-    typeLabel: 'آرایشگاه مردانه',
-    categorySlug: 'mens-barbershop',
-    targetGender: 'MALE',
-    name: 'پیرایش رویال',
-  });
-  assert.equal(menMeta.segment, 'MEN');
-  assert.equal(menMeta.commissionPercent, 0);
-
-  const laserMeta = resolveBusinessCommissionMeta({
+function makeBusiness(overrides: Partial<BusinessItem> = {}): BusinessItem {
+  return {
+    id: 'biz-real-1',
+    slug: 'ayra-salon',
+    name: 'سالن زیبایی آیرا',
     type: BusinessType.WomenSalon,
-    typeLabel: 'مرکز لیزر موهای زائد',
-    categorySlug: 'laser-hair-removal',
-    targetGender: 'BOTH',
-    name: 'کلینیک لیزر الکساندرایت',
-  });
-  assert.equal(laserMeta.segment, 'LASER');
-  assert.equal(laserMeta.commissionPercent, 0);
-
-  const womenMeta = resolveBusinessCommissionMeta({
-    type: BusinessType.WomenSalon,
-    typeLabel: 'سالن زیبایی زنانه',
+    typeLabel: 'سالن زیبایی',
     categorySlug: 'hair-color',
-    targetGender: 'FEMALE',
-    name: 'سالن زیبایی گلها',
+    city: 'تهران',
+    neighborhood: 'سعادت‌آباد',
+    address: 'تهران، سعادت‌آباد',
+    phoneDisplay: '09121111111',
+    ownerName: 'سارا احمدی',
+    ownerPhone: '09121111111',
+    rating: 4.9,
+    reviewCount: 12,
+    startingPriceToman: 500_000,
+    shortDescription: 'سالن تخصصی',
+    aboutText: 'سالن تخصصی زیبایی',
+    verifiedBadge: true,
+    approvalStatus: 'APPROVED',
+    subscriptionPlan: 'هدیه شروع فعالیت (۱۰ نوبت رایگان)',
+    subscriptionStatus: SubscriptionStatus.Trial,
+    workingHours: [],
+    visualTheme: 'violet',
+    depositEnabled: true,
+    depositPercent: 30,
+    ...overrides,
+  };
+}
+
+function makeAppointment(overrides: Partial<AppointmentItem> = {}): AppointmentItem {
+  return {
+    id: 'apt-real-1',
+    referenceCode: 'TT-9001',
+    businessId: 'biz-real-1',
+    businessSlug: 'ayra-salon',
+    businessName: 'سالن زیبایی آیرا',
+    serviceId: 'srv-1',
+    serviceTitle: 'رنگ مو تخصصی',
+    specialistId: 'sp-1',
+    specialistName: 'سارا احمدی',
+    customerName: 'مریم رضایی',
+    customerPhone: '09129999999',
+    customerPhoneMasked: '0912***9999',
+    dateJalali: '1405/09/05',
+    timeSlot: '11:00',
+    durationMinutes: 60,
+    priceToman: 1_000_000,
+    depositPaidToman: 300_000,
+    status: AppointmentStatus.Confirmed,
+    ...overrides,
+  };
+}
+
+test('resolveAppointmentFinancialBreakdown respects depositEnabled=false and never fabricates 350,000', () => {
+  const noDepositBiz = makeBusiness({ depositEnabled: false, depositPercent: 30 });
+  const apt = makeAppointment({ priceToman: 800_000, depositPaidToman: 0 });
+  const bd = resolveAppointmentFinancialBreakdown({
+    appointment: apt,
+    business: noDepositBiz,
   });
-  assert.equal(womenMeta.segment, 'WOMEN');
-  assert.equal(womenMeta.commissionPercent, 0);
+
+  assert.equal(bd.totalServicePriceToman, 800_000);
+  assert.equal(bd.baseDepositToman, 0);
+  assert.equal(bd.remainingInSalonToman, 800_000);
+  assert.equal(bd.zibalGatewayFeeToman, 0);
+  assert.equal(bd.valueAddedTaxFeeToman, 0);
+
+  const zeroPriceApt = makeAppointment({ priceToman: 0, depositPaidToman: 0 });
+  const zeroBd = resolveAppointmentFinancialBreakdown({
+    appointment: zeroPriceApt,
+    business: makeBusiness(),
+    service: null,
+  });
+  assert.equal(zeroBd.totalServicePriceToman, 0);
+  assert.equal(zeroBd.baseDepositToman, 0);
+
+  const matchedService: Pick<ServiceItem, 'priceToman'> = { priceToman: 500_000 };
+  const resolvedFromService = resolveAppointmentFinancialBreakdown({
+    appointment: zeroPriceApt,
+    business: makeBusiness({ depositPercent: 20 }),
+    service: matchedService,
+  });
+  assert.equal(resolvedFromService.totalServicePriceToman, 500_000);
+  assert.equal(resolvedFromService.baseDepositToman, 100_000);
+  assert.equal(resolvedFromService.remainingInSalonToman, 400_000);
 });
 
-test('calculateBookingFinancialBreakdown computes exact 1M service with 20% deposit, 2% Zibal+Tax customer fee, and 0% salon commission (100% deposit credited)', () => {
-  const result = calculateBookingFinancialBreakdown({
-    totalServicePriceToman: 1_000_000,
+test('computePlatformAdminSummary matches sum of per-business dossiers with zero double-counting', () => {
+  const bizA = makeBusiness({
+    id: 'biz-real-a',
+    slug: 'salon-a',
+    name: 'سالن آیرا',
+    depositPercent: 30,
+  });
+  const bizB = makeBusiness({
+    id: 'biz-real-b',
+    slug: 'barber-b',
+    name: 'پیرایش امیرحسین',
+    type: BusinessType.MenBarbershop,
     depositPercent: 20,
-    business: {
-      type: BusinessType.WomenSalon,
-      typeLabel: 'سالن زیبایی زنانه',
-      categorySlug: 'hair-color',
-      targetGender: 'FEMALE',
-      name: 'سالن زیبایی گلها',
-    },
+    approvalStatus: 'PENDING_REVIEW',
+  });
+  const sampleBiz = makeBusiness({ id: 'biz-1', slug: 'sample-1', name: 'نمونه' });
+  const hiddenMahtab = makeBusiness({ id: 'biz-real-m', slug: 'mahtab', name: 'سالن مهتاب' });
+  const rejectedBiz = makeBusiness({
+    id: 'biz-real-rej',
+    slug: 'rej-salon',
+    name: 'سالن رد شده',
+    approvalStatus: 'REJECTED',
   });
 
-  // ۲۰٪ از ۱,۰۰۰,۰۰۰ تومان = ۲۰۰,۰۰۰ تومان بیعانه پایه
-  assert.equal(result.baseDepositToman, 200_000);
-  // الباقی حضوری در سالن = ۸۰۰,۰۰۰ تومان
-  assert.equal(result.remainingInSalonToman, 800_000);
-  // ۱٪ زیبال (حداقل ۲,۲۰۰) = ۲,۲۰۰ تومان + ۱٪ مالیات (۲,۰۰۰ تومان) = ۴,۲۰۰ تومان
-  assert.equal(result.zibalGatewayFeeToman, 2_200);
-  assert.equal(result.valueAddedTaxFeeToman, 2_000);
-  assert.equal(result.customerGatewayAndTaxFeeToman, 4_200);
-  // پرداختی کل مشتری در درگاه = ۲۰۴,۲۰۰ تومان
-  assert.equal(result.totalCustomerOnlinePayableToman, 204_200);
-  // در مدل اشتراک ماهانه، کمیسیون کسرشده از سالن ۰٪ است و ۱۰۰٪ بیعانه (۲۰۰,۰۰۰ تومان) به کیف پول سالن واریز می‌شود
-  assert.equal(result.platformCommissionPercent, 0);
-  assert.equal(result.platformCommissionToman, 0);
-  assert.equal(result.salonNetDepositCreditedToman, 200_000);
-});
-
-test('resolveBusinessSubscriptionQuotaStatus tracks 10 free trial bookings and 3 monthly subscription packages (690k, 1,090k, 1,690k)', () => {
-  assert.equal(FREE_TRIAL_BOOKING_QUOTA, 10);
-  assert.equal(TIMETO_MONTHLY_PACKAGES.length, 3);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[0].monthlyPriceToman, 690_000);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[0].monthlyBookingCap, 50);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[0].canCreateComboPackages, true);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[0].canPublishStories, false);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[0].adDiscountPercent, 0);
-
-  assert.equal(TIMETO_MONTHLY_PACKAGES[1].monthlyPriceToman, 1_090_000);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[1].monthlyBookingCap, 130);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[1].canCreateComboPackages, true);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[1].canPublishStories, true);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[1].adDiscountPercent, 15);
-
-  assert.equal(TIMETO_MONTHLY_PACKAGES[2].monthlyPriceToman, 1_690_000);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[2].monthlyBookingCap, 400);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[2].canCreateComboPackages, true);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[2].canPublishStories, true);
-  assert.equal(TIMETO_MONTHLY_PACKAGES[2].adDiscountPercent, 30);
-
-  // ۱. وضعیت ۱۰ نوبت هدیه شروع (مثلاً ۳ نوبت استفاده شده -> ۷ نوبت باقی‌مانده)
-  const sampleAppointments = Array.from({ length: 3 }, () => ({
-    businessId: 'biz-trial',
-    businessSlug: 'trial-salon',
-    businessName: 'سالن تست',
-    status: AppointmentStatus.Confirmed,
-  }));
-  const trialStatus = resolveBusinessSubscriptionQuotaStatus({
-    business: {
-      id: 'biz-trial',
-      slug: 'trial-salon',
-      name: 'سالن تست',
-      subscriptionPlan: '',
-    },
-    appointments: sampleAppointments,
-  });
-  assert.equal(trialStatus.isFreeTrial, true);
-  assert.equal(trialStatus.quotaLimit, 10);
-  assert.equal(trialStatus.remainingBookingsCount, 7);
-  assert.equal(trialStatus.isQuotaExhausted, false);
-  assert.equal(trialStatus.canCreateComboPackages, true);
-  assert.equal(trialStatus.canPublishStories, false);
-
-  // ۲. وضعیت پکیج حرفه‌ای (تا ۱۳۰ نوبت، استوری فعال، ۱۵٪ تخفیف بنر، تا ۳ متخصص)
-  const proStatus = resolveBusinessSubscriptionQuotaStatus({
-    business: {
-      id: 'biz-pro',
-      slug: 'pro-salon',
-      name: 'سالن حرفه‌ای',
-      subscriptionPlan: 'پکیج حرفه‌ای ⭐ (پرفروش)',
-    },
-    activePlanId: 'plan-professional',
-    appointments: Array.from({ length: 25 }, () => ({
-      businessId: 'biz-pro',
-      businessSlug: 'pro-salon',
-      businessName: 'سالن حرفه‌ای',
+  const appointments: AppointmentItem[] = [
+    makeAppointment({
+      id: 'apt-r1',
+      referenceCode: 'TT-101',
+      businessId: 'biz-real-a',
+      businessSlug: 'salon-a',
+      businessName: 'سالن آیرا',
+      priceToman: 1_000_000,
+      depositPaidToman: 300_000,
+      status: AppointmentStatus.Confirmed,
+    }),
+    // Duplicate by referenceCode — must be deduplicated!
+    makeAppointment({
+      id: 'apt-r1-dup',
+      referenceCode: 'TT-101',
+      businessId: 'biz-real-a',
+      businessSlug: 'salon-a',
+      businessName: 'سالن آیرا',
+      priceToman: 1_000_000,
+      depositPaidToman: 300_000,
+      status: AppointmentStatus.Pending,
+    }),
+    // Cancelled booking — excluded from active booking totals & deposits
+    makeAppointment({
+      id: 'apt-r2-cancelled',
+      referenceCode: 'TT-102',
+      businessId: 'biz-real-a',
+      businessSlug: 'salon-a',
+      businessName: 'سالن آیرا',
+      priceToman: 900_000,
+      depositPaidToman: 270_000,
+      status: AppointmentStatus.Cancelled,
+    }),
+    makeAppointment({
+      id: 'apt-r3',
+      referenceCode: 'TT-103',
+      businessId: 'biz-real-b',
+      businessSlug: 'barber-b',
+      businessName: 'پیرایش امیرحسین',
+      priceToman: 500_000,
+      depositPaidToman: 100_000,
       status: AppointmentStatus.Completed,
-    })),
-  });
-  assert.equal(proStatus.isFreeTrial, false);
-  assert.equal(proStatus.quotaLimit, 130);
-  assert.equal(proStatus.remainingBookingsCount, 105);
-  assert.equal(proStatus.canPublishStories, true);
-  assert.equal(proStatus.adDiscountPercent, 15);
-  assert.equal(proStatus.staffLimitCount, 3);
-  assert.equal(getPlanStaffLimitCount('پکیج حرفه‌ای'), 3);
-  assert.equal(getPlanStaffLimitCount('پکیج VIP'), 10);
-  assert.equal(getPlanStaffLimitCount('پکیج پایه'), 1);
-});
-
-test('computeAdPackagePriceAndTitle enforces 7-day and 14-day (2-week maximum) durations and applies 15% / 30% subscription discounts', () => {
-  // حتی اگر ۳۰ روز پاس داده شود، سقف مجاز همان ۱۴ روز (۲ هفته) است
-  const search14Base = computeAdPackagePriceAndTitle({
-    placementSlot: 'SEARCH_TOP',
-    durationDays: 30,
-    discountPercent: 0,
-  });
-  assert.equal(search14Base.normalizedDurationDays, 14);
-  assert.equal(search14Base.originalAmountToman, 990_000);
-  assert.equal(search14Base.amountToman, 990_000);
-
-  const search7ProDiscount = computeAdPackagePriceAndTitle({
-    placementSlot: 'SEARCH_TOP',
-    durationDays: 7,
-    discountPercent: 15,
-  });
-  assert.equal(search7ProDiscount.normalizedDurationDays, 7);
-  assert.equal(search7ProDiscount.originalAmountToman, 590_000);
-  assert.equal(search7ProDiscount.discountPercent, 15);
-  assert.equal(search7ProDiscount.amountToman, Math.round(590_000 * 0.85));
-
-  const banner14VipDiscount = computeAdPackagePriceAndTitle({
-    placementSlot: 'HOME_BANNER',
-    durationDays: 14,
-    discountPercent: 30,
-  });
-  assert.equal(banner14VipDiscount.normalizedDurationDays, 14);
-  assert.equal(banner14VipDiscount.originalAmountToman, 1_490_000);
-  assert.equal(banner14VipDiscount.discountPercent, 30);
-  assert.equal(banner14VipDiscount.amountToman, Math.round(1_490_000 * 0.7));
-});
-
-test('validateServiceAntiFraud blocks fake low prices, phone numbers, @ handles, and circumvention keywords', () => {
-  const lowPrice = validateServiceAntiFraud({
-    title: 'رنگ و لایت مو',
-    description: 'تخصصی',
-    priceToman: 15_000,
-  });
-  assert.equal(lowPrice.valid, false);
-
-  const phoneInDesc = validateServiceAntiFraud({
-    title: 'کاشت ناخن',
-    description: 'برای هماهنگی با 09121234567 تماس بگیرید',
-    priceToman: 350_000,
-  });
-  assert.equal(phoneInDesc.valid, false);
-
-  const instaInDesc = validateServiceAntiFraud({
-    title: 'میکاپ عروس',
-    description: 'پیج ما @royal_salon_esf',
-    priceToman: 1_500_000,
-  });
-  assert.equal(instaInDesc.valid, false);
-
-  const circumventionText = validateServiceAntiFraud({
-    title: 'کراتین مو (قیمت توافقی)',
-    description: 'بدون بیعانه',
-    priceToman: 500_000,
-  });
-  assert.equal(circumventionText.valid, false);
-
-  const validService = validateServiceAntiFraud({
-    title: 'لایت و آمبره تخصصی مو',
-    description: 'با مواد ایتالیایی بدون آسیب',
-    priceToman: 950_000,
-  });
-  assert.equal(validService.valid, true);
-});
-
-test('isAppointmentEligibleForSettlement blocks future appointments and allows completed or past appointments', () => {
-  const futurePending = isAppointmentEligibleForSettlement({
-    id: 'apt-1',
-    referenceCode: 'TM-100',
-    businessId: 'biz-1',
-    businessSlug: 'royal',
-    businessName: 'سالن رویال',
-    customerName: 'سارا',
-    customerPhoneMasked: '09131112233',
-    serviceId: 'srv-1',
-    serviceTitle: 'کاشت ناخن',
-    specialistId: 'spc-1',
-    specialistName: 'نگار',
-    dateJalali: '۱۴۰۹/۱۲/۲۵',
-    timeSlot: '۱۶:۰۰',
-    durationMinutes: 60,
-    priceToman: 500_000,
-    depositPaidToman: 150_000,
-    status: AppointmentStatus.Confirmed,
-  });
-  assert.equal(futurePending, false);
-
-  const completedApt = isAppointmentEligibleForSettlement({
-    id: 'apt-2',
-    referenceCode: 'TM-101',
-    businessId: 'biz-1',
-    businessSlug: 'royal',
-    businessName: 'سالن رویال',
-    customerName: 'سارا',
-    customerPhoneMasked: '09131112233',
-    serviceId: 'srv-1',
-    serviceTitle: 'کاشت ناخن',
-    specialistId: 'spc-1',
-    specialistName: 'نگار',
-    dateJalali: '۱۴۰۹/۱۲/۲۵',
-    timeSlot: '۱۶:۰۰',
-    durationMinutes: 60,
-    priceToman: 500_000,
-    depositPaidToman: 150_000,
-    status: AppointmentStatus.Completed,
-  });
-  assert.equal(completedApt, true);
-});
-
-test('resolveAppointmentFinancialBreakdown resolves mandatory online deposit with 0% commission (100% credited to wallet)', () => {
-  const dbAptWithoutDeposit = resolveAppointmentFinancialBreakdown({
-    appointment: {
-      priceToman: 650_000,
-      depositPaidToman: 0,
-    },
-    business: {
-      type: BusinessType.MenBarbershop,
-      typeLabel: 'پیرایش مردانه',
-      categorySlug: 'mens-barbershop',
-      targetGender: 'MALE',
-      name: 'پیرایش VIP',
-      depositPercent: 30,
-    },
-  });
-
-  // ۳۰٪ از ۶۵۰,۰۰۰ تومان = ۱۹۵,۰۰۰ تومان بیعانه دریافتی آنلاین
-  assert.equal(dbAptWithoutDeposit.baseDepositToman, 195_000);
-  // الباقی حضوری در سالن = ۴۵۵,۰۰۰ تومان
-  assert.equal(dbAptWithoutDeposit.remainingInSalonToman, 455_000);
-  // کمیسیون کسرشده از سالن = ۰ تومان (۰٪)
-  assert.equal(dbAptWithoutDeposit.platformCommissionToman, 0);
-  // ۱۰۰٪ بیعانه پایه به کیف پول سالن‌دار واریز می‌شود = ۱۹۵,۰۰۰ تومان
-  assert.equal(dbAptWithoutDeposit.salonNetDepositCreditedToman, 195_000);
-});
-
-test('formatCompactPriceToman and formatCustomerWorkingHourMinimal format thousands (<1M) and millions (>=1M) clearly', () => {
-  assert.equal(formatCompactPriceToman(200_000), '۲۰۰ هزار تومان');
-  assert.equal(formatCompactPriceToman(400_000), '۴۰۰ هزار تومان');
-  assert.equal(formatCompactPriceToman(1_000_000), '۱ میلیون تومان');
-  assert.equal(formatCompactPriceToman(1_500_000), '۱.۵ میلیون تومان');
-  assert.equal(formatCompactPriceToman(1_250_000), '۱.۲۵ میلیون تومان');
-  assert.equal(
-    formatServicePriceShort({ priceToman: 350_000, pricingType: 'FIXED' }),
-    '۳۵۰ هزار تومان'
-  );
-  assert.equal(
-    formatServicePriceShort({
-      priceToman: 800_000,
-      maxPriceToman: 1_500_000,
-      pricingType: 'RANGE',
     }),
-    '۸۰۰ هزار تا ۱.۵ میلیون تومان'
-  );
-  assert.equal(
-    formatServicePriceShort({
-      priceToman: 1_200_000,
-      maxPriceToman: 2_500_000,
-      pricingType: 'RANGE',
+    // Sample appointment — must be ignored
+    makeAppointment({
+      id: 'apt-1',
+      referenceCode: 'TT-SAMPLE',
+      businessId: 'biz-1',
+      businessSlug: 'sample-1',
+      businessName: 'نمونه',
+      priceToman: 2_000_000,
+      depositPaidToman: 600_000,
     }),
-    '۱.۲ تا ۲.۵ میلیون تومان'
-  );
-  assert.equal(
-    formatCustomerWorkingHourMinimal({
-      dayName: 'شنبه',
-      isOpen: true,
-      openTime: '۰۹:۳۰',
-      closeTime: '۱۳:۳۰',
-      hasBreak: true,
-      secondOpenTime: '۱۶:۰۰',
-      secondCloseTime: '۲۱:۰۰',
-    }),
-    '۰۹:۳۰ تا ۱۳:۳۰ · ۱۶:۰۰ تا ۲۱:۰۰'
-  );
-});
+  ];
 
-test('buildCustomerBookingTimeSlots generates both morning and afternoon shift slots when midday break is active', () => {
-  const twoShiftDay = {
-    dayName: 'شنبه',
-    isOpen: true,
-    openTime: '۰۹:۳۰',
-    closeTime: '۱۳:۳۰',
-    hasBreak: true,
-    secondOpenTime: '۱۶:۰۰',
-    secondCloseTime: '۲۱:۰۰',
-  };
-  const schedule = buildCustomerBookingTimeSlots({
-    dayWorkingHour: twoShiftDay,
-    serverSlots: [
-      { time: '۰۹:۳۰', available: true },
-      { time: '۱۰:۰۰', available: true },
-      { time: '۱۰:۳۰', available: true },
-      { time: '۱۱:۰۰', available: true },
-      { time: '۱۱:۳۰', available: true },
-      { time: '۱۲:۰۰', available: true },
-      { time: '۱۲:۳۰', available: true },
-      { time: '۱۳:۰۰', available: true },
-    ],
-    durationMinutes: 30,
+  const settlements: SettlementRequestItem[] = [
+    {
+      id: 'set-1',
+      businessId: 'biz-real-a',
+      businessName: 'سالن آیرا',
+      ownerName: 'سارا احمدی',
+      ownerPhone: '09121111111',
+      amountToman: 200_000,
+      commissionToman: 0,
+      netPayoutToman: 200_000,
+      shebaNumber: 'IR120170000000123456789012',
+      status: 'PAID',
+      createdAtJalali: '1405/09/04',
+      paidTrackingCode: 'PAYA-111',
+    },
+  ];
+
+  const orders: PaymentOrderItem[] = [
+    {
+      id: 'ord-1',
+      businessId: 'biz-real-a',
+      businessName: 'سالن آیرا',
+      itemType: 'PLAN',
+      itemId: 'plan-professional',
+      itemTitle: 'پکیج حرفه‌ای',
+      amountToman: 1_090_000,
+      paymentMethod: 'ZIBAL',
+      trackingCode: 'ZBL-1001',
+      status: 'APPROVED',
+      createdAtJalali: '1405/09/01',
+    },
+    {
+      id: 'ord-2',
+      businessId: 'biz-real-b',
+      businessName: 'پیرایش امیرحسین',
+      itemType: 'AD_PACKAGE',
+      itemId: 'ad-home-1',
+      itemTitle: 'بنر ویژه',
+      amountToman: 450_000,
+      paymentMethod: 'ZIBAL',
+      trackingCode: 'ZBL-1002',
+      status: 'PENDING',
+      createdAtJalali: '1405/09/03',
+    },
+  ];
+
+  const summary = computePlatformAdminSummary({
+    businesses: [bizA, bizB, sampleBiz, hiddenMahtab, rejectedBiz],
+    appointments,
+    settlementRequests: settlements,
+    paymentOrders: orders,
   });
 
-  assert.equal(schedule.morningSlots.length > 0, true);
-  assert.equal(schedule.afternoonSlots.length > 0, true);
-  assert.equal(
-    schedule.morningSlots.some((s) => s.time === '۰۹:۳۰' && s.available),
-    true
-  );
-  assert.equal(
-    schedule.afternoonSlots.some((s) => s.time === '۱۶:۰۰' && s.available),
-    true
-  );
-  assert.equal(
-    schedule.afternoonSlots.some((s) => s.time === '۲۰:۳۰' && s.available),
-    true
-  );
-  assert.equal(
-    schedule.allSlots.some((s) => s.time === '۱۴:۳۰'),
-    false
-  );
+  // Only the 2 real businesses remain
+  assert.equal(summary.totalBusinesses, 2);
+  assert.equal(summary.activeBusinesses, 1);
+  assert.equal(summary.pendingBusinesses, 1);
+  assert.equal(summary.businessDossiers.length, 2);
 
-  const dbTruncatedDay = {
-    dayName: 'یکشنبه',
-    isOpen: true,
-    openTime: '۰۹:۳۰',
-    closeTime: '۱۳:۳۰',
-  };
-  const recovered = resolveEffectiveWorkingHour(dbTruncatedDay);
-  assert.equal(recovered?.hasBreak, true);
-  assert.equal(recovered?.secondOpenTime, '۱۶:۰۰');
-  assert.equal(recovered?.secondCloseTime, '۲۱:۰۰');
-  assert.equal(
-    formatWorkingHourDisplay(dbTruncatedDay),
-    'شیفت صبح: ۰۹:۳۰ تا ۱۳:۳۰ | شیفت عصر: ۱۶:۰۰ تا ۲۱:۰۰'
-  );
-});
+  // Exact balance: sum of rows === platform KPI totals
+  const sumBookings = summary.businessDossiers.reduce((s, d) => s + d.bookingsCount, 0);
+  const sumService = summary.businessDossiers.reduce((s, d) => s + d.totalServiceToman, 0);
+  const sumDeposits = summary.businessDossiers.reduce((s, d) => s + d.totalDepositCollectedToman, 0);
+  const sumPaid = summary.businessDossiers.reduce((s, d) => s + d.totalAlreadySettledToman, 0);
+  const sumPending = summary.businessDossiers.reduce((s, d) => s + d.netPayableToman, 0);
 
-test('formatPriceToman never returns رایگان and 400,000 Toman service with 30% deposit yields exact 120,000 deposit, 0 commission, 120,000 net payable, and 280,000 in-person', () => {
-  assert.equal(formatPriceToman(0), '۰ تومان');
-  assert.equal(formatPriceToman(-500), '۰ تومان');
+  assert.equal(summary.totalBookings, 2);
+  assert.equal(summary.totalBookings, sumBookings);
+  assert.equal(summary.totalServiceVolumeToman, 1_500_000);
+  assert.equal(summary.totalServiceVolumeToman, sumService);
+  assert.equal(summary.totalOnlineDepositsToman, 400_000);
+  assert.equal(summary.totalOnlineDepositsToman, sumDeposits);
+  assert.equal(summary.totalPaidSettlementsToman, 200_000);
+  assert.equal(summary.totalPaidSettlementsToman, sumPaid);
+  assert.equal(summary.totalPendingPayableToman, 200_000);
+  assert.equal(summary.totalPendingPayableToman, sumPending);
 
-  const jaziniBreakdown = resolveAppointmentFinancialBreakdown({
-    appointment: {
-      priceToman: 400_000,
-      depositPaidToman: 120_000,
-    },
-    business: {
-      type: BusinessType.MenBarbershop,
-      typeLabel: 'آرایشگاه مردانه',
-      categorySlug: 'mens-barbershop',
-      targetGender: 'MALE',
-      name: 'سالن امیرحسین جزینی',
-      depositPercent: 30,
-    },
+  // Zero double-counting check: paid Sheba settlements MUST NOT inflate platform revenue or turnover
+  assert.equal(summary.platformNetRevenueToman, 1_090_000);
+  assert.equal(summary.grossOnlineTurnoverToman, 400_000 + 1_090_000);
+  assert.equal(summary.pendingOrdersToman, 450_000);
+  assert.equal(summary.pendingOrdersCount, 1);
+
+  // Individual dossier consistency check
+  const dossierA = computeBusinessFinancialDossier({
+    business: bizA,
+    appointments,
+    settlementRequests: settlements,
+    paymentOrders: orders,
   });
-
-  assert.equal(jaziniBreakdown.totalServicePriceToman, 400_000);
-  assert.equal(jaziniBreakdown.depositPercent, 30);
-  assert.equal(jaziniBreakdown.baseDepositToman, 120_000);
-  assert.equal(jaziniBreakdown.remainingInSalonToman, 280_000);
-  assert.equal(jaziniBreakdown.platformCommissionPercent, 0);
-  assert.equal(jaziniBreakdown.platformCommissionToman, 0);
-  assert.equal(jaziniBreakdown.salonNetDepositCreditedToman, 120_000);
+  assert.equal(dossierA.bookingsCount, 1);
+  assert.equal(dossierA.cancelledBookingsCount, 1);
+  assert.equal(dossierA.totalDepositCollectedToman, 300_000);
+  assert.equal(dossierA.totalAlreadySettledToman, 200_000);
+  assert.equal(dossierA.netPayableToman, 100_000);
+  assert.equal(dossierA.approvedSubscriptionToman, 1_090_000);
 });

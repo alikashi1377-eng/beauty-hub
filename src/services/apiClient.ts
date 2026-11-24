@@ -18,6 +18,7 @@ import {
   MarketingCampaignItem,
   OnboardingDraft,
   PaymentGatewayConfig,
+  PaymentOrderItem,
   PlatformBusinessNoticeItem,
   ReviewItem,
   ServiceItem,
@@ -754,6 +755,7 @@ export const realApiClient = {
     settlementRequests?: SettlementRequestItem[];
     paymentConfig?: Partial<PaymentGatewayConfig>;
     platformBusinessNotices?: PlatformBusinessNoticeItem[];
+    paymentOrders?: PaymentOrderItem[];
     sessionToken?: string;
     expiresAt?: string;
     user?: AuthenticatedSessionUser;
@@ -768,6 +770,7 @@ export const realApiClient = {
       settlementRequests?: SettlementRequestItem[];
       paymentConfig?: Partial<PaymentGatewayConfig>;
       platformBusinessNotices?: PlatformBusinessNoticeItem[];
+      paymentOrders?: PaymentOrderItem[];
       sessionToken?: string;
       expiresAt?: string;
       user?: AuthenticatedSessionUser;
@@ -786,6 +789,7 @@ export const realApiClient = {
       settlementRequests?: SettlementRequestItem[];
       paymentConfig?: Partial<PaymentGatewayConfig>;
       platformBusinessNotices?: PlatformBusinessNoticeItem[];
+      paymentOrders?: PaymentOrderItem[];
     };
   }> {
     return requestJson<{
@@ -794,6 +798,7 @@ export const realApiClient = {
         settlementRequests?: SettlementRequestItem[];
         paymentConfig?: Partial<PaymentGatewayConfig>;
         platformBusinessNotices?: PlatformBusinessNoticeItem[];
+        paymentOrders?: PaymentOrderItem[];
       };
     }>('/api/v1/platform/shared-state');
   },
@@ -802,11 +807,13 @@ export const realApiClient = {
     settlementRequests?: SettlementRequestItem[];
     paymentConfig?: PaymentGatewayConfig;
     platformBusinessNotices?: PlatformBusinessNoticeItem[];
+    paymentOrders?: PaymentOrderItem[];
   }): Promise<{
     data?: {
       settlementRequests?: SettlementRequestItem[];
       paymentConfig?: Partial<PaymentGatewayConfig>;
       platformBusinessNotices?: PlatformBusinessNoticeItem[];
+      paymentOrders?: PaymentOrderItem[];
     };
   }> {
     return requestJson<{
@@ -815,6 +822,7 @@ export const realApiClient = {
         settlementRequests?: SettlementRequestItem[];
         paymentConfig?: Partial<PaymentGatewayConfig>;
         platformBusinessNotices?: PlatformBusinessNoticeItem[];
+        paymentOrders?: PaymentOrderItem[];
       };
     }>('/api/v1/platform/shared-state', {
       method: 'POST',

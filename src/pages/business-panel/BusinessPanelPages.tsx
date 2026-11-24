@@ -57,7 +57,6 @@ import {
   formatWorkingHourDisplay,
   getAppointmentStatusMeta,
   getPlanStaffLimitCount,
-  getSuggestedServiceTitlesForCategory,
   getUpcomingJalaliDays,
   isValidIranMobile,
   normalizeIranMobileInput,
@@ -515,7 +514,7 @@ export const BusinessDashboardPage: React.FC = () => {
               </span>
             ) : null}
             <ClickPopover
-              label="راهنمای سهمیه و تسویه ۰٪"
+              iconOnly
               title="قوانین ۱۰ نوبت هدیه، اشتراک ماهانه و تسویه شبا"
               tone="blue"
             >
@@ -724,7 +723,7 @@ export const BusinessDashboardPage: React.FC = () => {
                   🏆 باشگاه مشتریان و امتیاز وفاداری
                 </span>
                 <ClickPopover
-                  label="فرمول امتیاز و سطح‌بندی"
+                  iconOnly
                   title="نحوه محاسبه امتیاز وفاداری و سطح‌بندی مشتریان"
                   tone="violet"
                 >
@@ -770,13 +769,13 @@ export const BusinessDashboardPage: React.FC = () => {
                 <AlertCircle className="w-4 h-4" />
               </span>
               <div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
                     اولویت ۱: نوبت‌های در انتظار تایید شما
                   </h2>
                   <ClickPopover
-                    label="راهنمای تایید نوبت و مهلت SLA"
-                    title="تایید دستی یا خودکار نوبت‌های آنلاین"
+                    iconOnly
+                    title="تایید دستی یا خودکار نوبت‌های آنلاین (مهلت SLA)"
                     tone="amber"
                   >
                     <div className="space-y-1.5">
@@ -789,9 +788,6 @@ export const BusinessDashboardPage: React.FC = () => {
                     </div>
                   </ClickPopover>
                 </div>
-                <p className="text-xs text-[#64748B]">
-                  درخواست‌های رزرو جدید را مستقیم تایید کنید یا تایید خودکار را فعال نمایید
-                </p>
               </div>
             </div>
 
@@ -1438,7 +1434,7 @@ export const BusinessCalendarPage: React.FC = () => {
               </label>
             ) : null}
             <ClickPopover
-              label="راهنمای محاسبه هوشمند تایم خالی"
+              iconOnly
               title="نحوه محاسبه بازه‌های ۱۵، ۳۰ و ۴۵ دقیقه‌ای در تقویم"
               tone="blue"
               align="end"
@@ -1457,12 +1453,13 @@ export const BusinessCalendarPage: React.FC = () => {
         }
       />
 
-      <Card className="space-y-5">
-        {/* نوار انتخاب سریع روزهایی که دارای نوبت فعال هستند */}
+      <Card className="!p-3 sm:!p-5 space-y-3 sm:space-y-4">
+        {/* نوار فشرده انتخاب سریع روزهای دارای نوبت */}
         {bizAppointments.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
-            <span className="text-xs font-extrabold text-[#6B6480]">
-              روزهای دارای نوبت در تقویم شما:
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-2.5 border-b border-[#E6E0F5]">
+            <span className="text-[11px] sm:text-xs font-extrabold text-[#6B6480] whitespace-nowrap shrink-0">
+              <span className="sm:hidden">دارای نوبت:</span>
+              <span className="hidden sm:inline">روزهای دارای نوبت در تقویم شما:</span>
             </span>
             {calendarDays
               .map((d, idx) => ({
@@ -1481,15 +1478,15 @@ export const BusinessCalendarPage: React.FC = () => {
                     setSelectedDayIndex(d.idx);
                     setViewMode('day');
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                     selectedDayIndex === d.idx && viewMode === 'day'
                       ? 'bg-[#8B5CF6] text-white shadow-2xs'
                       : 'bg-[#FAF8FF] text-[#1E1B2E] border border-[#D4C9EE] hover:border-[#8B5CF6]'
                   }`}
                 >
-                  <span>{d.date}</span>
+                  <span className="tabular-nums">{d.date}</span>
                   <span
-                    className={`px-1.5 py-0.5 rounded-md text-[10px] tabular-nums ${
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] tabular-nums whitespace-nowrap ${
                       selectedDayIndex === d.idx && viewMode === 'day'
                         ? 'bg-white/20 text-white'
                         : 'bg-[#EDE9FE] text-[#6D28D9]'
@@ -1502,31 +1499,34 @@ export const BusinessCalendarPage: React.FC = () => {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E6E0F5]">
-          <div className="flex items-center gap-2">
+        {/* نوار کنترل فشرده تاریخ، فیلتر متخصص و تغییر نمای روزانه/هفتگی */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 sm:gap-3 pb-3 border-b border-[#E6E0F5]">
+          <div className="flex items-center justify-between gap-1.5 sm:gap-2">
             <Button
               variant="outline"
               size="sm"
+              className="!px-2 !h-8 sm:!h-9 shrink-0"
               disabled={selectedDayIndex <= 0}
               onClick={() => setSelectedDayIndex((i) => Math.max(0, i - 1))}
               aria-label="روز قبل"
             >
               <ChevronRight className="w-4 h-4" />
             </Button>
-            <div className="text-center px-3.5 py-1.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5]">
-              <span className="text-sm font-extrabold text-[#1E1B2E] tabular-nums">
+            <div className="flex-1 lg:flex-none flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 h-8 sm:h-9 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] min-w-0">
+              <span className="text-xs sm:text-sm font-extrabold text-[#1E1B2E] truncate tabular-nums">
                 {currentDay?.label}
               </span>
-              <span className="text-xs text-[#6B6480] mr-2 tabular-nums">
+              <span className="text-[11px] text-[#6B6480] tabular-nums whitespace-nowrap shrink-0">
                 ({currentDay?.date})
               </span>
-              <span className="mr-2 px-2 py-0.5 rounded-md bg-[#EDE9FE] text-[#6D28D9] text-[11px] font-extrabold tabular-nums">
+              <span className="px-1.5 sm:px-2 py-0.5 rounded-md bg-[#EDE9FE] text-[#6D28D9] text-[10px] sm:text-[11px] font-extrabold tabular-nums whitespace-nowrap shrink-0">
                 {toPersianDigits(dayAppointments.length)} نوبت
               </span>
             </div>
             <Button
               variant="outline"
               size="sm"
+              className="!px-2 !h-8 sm:!h-9 shrink-0"
               disabled={selectedDayIndex >= calendarDays.length - 1}
               onClick={() =>
                 setSelectedDayIndex((i) =>
@@ -1539,14 +1539,14 @@ export const BusinessCalendarPage: React.FC = () => {
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:flex sm:items-center gap-2">
             <select
               aria-label="فیلتر متخصص در تقویم"
               value={staffFilter}
               onChange={(e) => setStaffFilter(e.target.value)}
-              className="rounded-xl border border-[#D4C9EE] bg-white px-3.5 py-2 text-xs font-bold text-[#1E1B2E] focus:outline-none focus:border-[#8B5CF6]"
+              className="w-full sm:w-auto min-w-0 !h-8 sm:!h-9 !min-h-0 !py-0 !px-2.5 sm:!px-3 !rounded-xl border border-[#D4C9EE] bg-white !text-[11px] sm:!text-xs !font-bold text-[#1E1B2E] focus:outline-none focus:border-[#8B5CF6] truncate"
             >
-              <option value="ALL">همه متخصصان (نمای ستونی)</option>
+              <option value="ALL">همه متخصصان</option>
               {calendarStaffList.map((sp) => (
                 <option key={sp.id} value={sp.id}>
                   {sp.fullName}
@@ -1554,28 +1554,30 @@ export const BusinessCalendarPage: React.FC = () => {
               ))}
             </select>
 
-            <div className="flex items-center gap-1 bg-[#FAF8FF] p-1 rounded-xl border border-[#E6E0F5]">
+            <div className="inline-flex items-center gap-0.5 bg-[#FAF8FF] p-0.5 rounded-xl border border-[#E6E0F5] h-8 sm:h-9 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('day')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                className={`px-2.5 sm:px-3.5 h-full rounded-lg text-[11px] sm:text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
                   viewMode === 'day'
                     ? 'bg-[#8B5CF6] text-white shadow-2xs'
                     : 'text-[#6B6480] hover:text-[#1E1B2E]'
                 }`}
               >
-                نمای روزانه
+                <span className="sm:hidden">روزانه</span>
+                <span className="hidden sm:inline">نمای روزانه</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('week')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                className={`px-2.5 sm:px-3.5 h-full rounded-lg text-[11px] sm:text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
                   viewMode === 'week'
                     ? 'bg-[#8B5CF6] text-white shadow-2xs'
                     : 'text-[#6B6480] hover:text-[#1E1B2E]'
                 }`}
               >
-                نمای هفتگی
+                <span className="sm:hidden">هفتگی</span>
+                <span className="hidden sm:inline">نمای هفتگی</span>
               </button>
             </div>
           </div>
@@ -1588,154 +1590,352 @@ export const BusinessCalendarPage: React.FC = () => {
               description="برای این روز ساعت کاری فعالی تنظیم نشده و نوبتی نیز ثبت نگردیده است."
             />
           ) : (
-            <div className="overflow-x-auto rounded-2xl border border-[#E6E0F5]">
-              <table className="w-full text-xs border-collapse min-w-[640px]">
-                <thead>
-                  <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF]">
-                    <th className="py-3.5 px-3 text-right w-24 font-extrabold text-[#6B6480]">
-                      ساعت
-                    </th>
-                    {visibleStaff.map((sp) => (
-                      <th
-                        key={sp.id}
-                        className="py-3.5 px-4 text-right font-extrabold text-[#1E1B2E] border-r border-[#E6E0F5]"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={sp.fullName} size="sm" tone="violet" />
-                          <div>
-                            <p className="text-xs font-extrabold">{sp.fullName}</p>
-                            <p className="text-[11px] font-medium text-[#6B6480]">
-                              {sp.roleTitle}
-                            </p>
-                          </div>
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E6E0F5]">
+            <>
+              {/* نمای تایم‌لاین خوانا و تمام‌عرض اختصاصی موبایل (بدون بریدگی و اسکرول افقی) */}
+              <div className="md:hidden rounded-2xl border border-[#E6E0F5] bg-white overflow-hidden">
+                {visibleStaff.length === 1 ? (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[#FAF8FF] border-b border-[#E6E0F5]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar
+                        name={visibleStaff[0].fullName}
+                        size="sm"
+                        tone="violet"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
+                          {visibleStaff[0].fullName}
+                        </p>
+                        <p className="text-[10px] font-medium text-[#6B6480] truncate">
+                          {visibleStaff[0].roleTitle}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-[#6D28D9] bg-[#EDE9FE] px-2 py-0.5 rounded-md whitespace-nowrap shrink-0 tabular-nums">
+                      {toPersianDigits(timeSlots.length)} بازه
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="divide-y divide-[#F1ECFA]">
                   {timeSlots.map((slot) => {
                     const slotMins = parseTimeToMinutes(slot);
-                    return (
-                      <tr key={slot} className="hover:bg-[#FAF8FF]/50">
-                        <td className="py-4 px-3 font-extrabold text-[#6B6480] tabular-nums bg-[#FAF8FF]/40">
-                          {slot}
-                        </td>
-                        {visibleStaff.map((sp, colIdx) => {
-                          const matchedApts = dayAppointments.filter(
-                            (a) =>
-                              normalizeTimeKey(a.timeSlot) === normalizeTimeKey(slot) &&
-                              isAppointmentForStaffColumn(a, sp, colIdx)
-                          );
-                          const occupyingApt =
-                            matchedApts.length === 0 && slotMins >= 0
-                              ? dayAppointments.find((a) => {
-                                  if (
-                                    a.status === AppointmentStatus.Cancelled ||
-                                    !isAppointmentForStaffColumn(a, sp, colIdx)
-                                  ) {
-                                    return false;
-                                  }
-                                  const st = parseTimeToMinutes(a.timeSlot);
-                                  const dur = Math.max(
-                                    15,
-                                    Number(a.durationMinutes) || 45
-                                  );
-                                  return st >= 0 && slotMins > st && slotMins < st + dur;
-                                })
-                              : undefined;
+                    const slotBookedItems: Array<{
+                      apt: (typeof dayAppointments)[number];
+                      staffName: string;
+                    }> = [];
+                    const slotOccupiedItems: Array<{
+                      apt: (typeof dayAppointments)[number];
+                      staffName: string;
+                    }> = [];
+                    let freeStaffCount = 0;
 
-                          return (
-                            <td
-                              key={sp.id}
-                              className="p-2.5 border-r border-[#E6E0F5] align-top"
-                            >
-                              {matchedApts.length > 0 ? (
-                                <div className="space-y-2">
-                                  {matchedApts.map((matched) => {
-                                    const statusMeta = getAppointmentStatusMeta(
-                                      matched.status
-                                    );
-                                    const endMins =
-                                      parseTimeToMinutes(matched.timeSlot) +
-                                      Math.max(
-                                        15,
-                                        Number(matched.durationMinutes) || 45
-                                      );
-                                    return (
-                                      <button
-                                        key={matched.id}
-                                        type="button"
-                                        onClick={() => setSelectedApt(matched)}
-                                        className="w-full text-right p-2.5 sm:p-3 rounded-xl bg-[#EDE9FE]/90 hover:bg-[#EDE9FE] border border-[#C4B5FD] space-y-1 cursor-pointer transition-all"
-                                      >
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="font-extrabold text-[#1E1B2E] truncate">
-                                            {matched.customerName}
-                                          </span>
-                                          <StatusBadge
-                                            label={statusMeta.label}
-                                            tone={statusMeta.tone}
-                                          />
-                                        </div>
-                                        <p className="text-[11px] font-bold text-[#4C1D95] truncate">
-                                          {matched.serviceTitle}
-                                        </p>
-                                        <div className="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-[#DDD6FE] text-[#6D28D9]">
-                                          <span className="tabular-nums font-bold">
-                                            {matched.timeSlot} تا{' '}
-                                            {formatMinutesToPersianTime(endMins)} (
-                                            {formatDurationMinutes(
-                                              matched.durationMinutes || 45
-                                            )}
-                                            )
-                                          </span>
-                                          <span className="font-extrabold text-[#0057FF]">
-                                            جزئیات و تسویه ▾
-                                          </span>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : occupyingApt ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedApt(occupyingApt)}
-                                  className="w-full text-right p-3 rounded-xl bg-[#FEF3C7]/70 border border-[#FDE68A] text-[#92400E] text-[11px] flex items-center justify-between cursor-pointer"
-                                >
-                                  <span className="font-bold">
-                                    در حال انجام نوبت «{occupyingApt.customerName}» ({occupyingApt.serviceTitle})
+                    visibleStaff.forEach((sp, colIdx) => {
+                      const matchedApts = dayAppointments.filter(
+                        (a) =>
+                          normalizeTimeKey(a.timeSlot) ===
+                            normalizeTimeKey(slot) &&
+                          isAppointmentForStaffColumn(a, sp, colIdx)
+                      );
+                      if (matchedApts.length > 0) {
+                        matchedApts.forEach((apt) =>
+                          slotBookedItems.push({ apt, staffName: sp.fullName })
+                        );
+                        return;
+                      }
+                      const occupyingApt =
+                        slotMins >= 0
+                          ? dayAppointments.find((a) => {
+                              if (
+                                a.status === AppointmentStatus.Cancelled ||
+                                !isAppointmentForStaffColumn(a, sp, colIdx)
+                              ) {
+                                return false;
+                              }
+                              const st = parseTimeToMinutes(a.timeSlot);
+                              const dur = Math.max(
+                                15,
+                                Number(a.durationMinutes) || 45
+                              );
+                              return (
+                                st >= 0 && slotMins > st && slotMins < st + dur
+                              );
+                            })
+                          : undefined;
+
+                      if (occupyingApt) {
+                        slotOccupiedItems.push({
+                          apt: occupyingApt,
+                          staffName: sp.fullName,
+                        });
+                      } else {
+                        freeStaffCount += 1;
+                      }
+                    });
+
+                    const hasBusy =
+                      slotBookedItems.length > 0 || slotOccupiedItems.length > 0;
+
+                    return (
+                      <div
+                        key={`m-${slot}`}
+                        className="grid grid-cols-[50px_minmax(0,1fr)] items-stretch"
+                      >
+                        <div
+                          className={`flex items-center justify-center border-l border-[#E6E0F5] text-[11px] font-extrabold tabular-nums px-1 py-2 ${
+                            slotBookedItems.length > 0
+                              ? 'bg-[#EDE9FE]/70 text-[#5B21B6]'
+                              : slotOccupiedItems.length > 0
+                              ? 'bg-[#FEF3C7]/60 text-[#92400E]'
+                              : 'bg-[#FAF8FF]/60 text-[#6B6480]'
+                          }`}
+                        >
+                          {slot}
+                        </div>
+
+                        <div className="p-1.5 space-y-1.5 min-w-0">
+                          {slotBookedItems.map(({ apt, staffName }) => {
+                            const statusMeta = getAppointmentStatusMeta(
+                              apt.status
+                            );
+                            const endMins =
+                              parseTimeToMinutes(apt.timeSlot) +
+                              Math.max(15, Number(apt.durationMinutes) || 45);
+                            return (
+                              <button
+                                key={`m-apt-${apt.id}`}
+                                type="button"
+                                onClick={() => setSelectedApt(apt)}
+                                className="w-full text-right p-2.5 rounded-xl bg-[#F5F3FF] active:bg-[#EDE9FE] border border-[#C4B5FD] space-y-1 cursor-pointer transition-all"
+                              >
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <span className="text-xs font-extrabold text-[#1E1B2E] truncate">
+                                    {apt.customerName}
                                   </span>
-                                  <span className="text-[10px] font-extrabold">
-                                    اشغال تا{' '}
-                                    {formatMinutesToPersianTime(
-                                      parseTimeToMinutes(occupyingApt.timeSlot) +
-                                        Math.max(
-                                          15,
-                                          Number(occupyingApt.durationMinutes) || 45
-                                        )
+                                  <StatusBadge
+                                    label={statusMeta.label}
+                                    tone={statusMeta.tone}
+                                  />
+                                </div>
+                                <p className="text-[11px] font-bold text-[#4C1D95] leading-snug line-clamp-2">
+                                  {apt.serviceTitle}
+                                </p>
+                                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] pt-1 border-t border-[#DDD6FE] text-[#6D28D9]">
+                                  <span className="tabular-nums font-bold">
+                                    {apt.timeSlot} تا{' '}
+                                    {formatMinutesToPersianTime(endMins)} •{' '}
+                                    {formatDurationMinutes(
+                                      apt.durationMinutes || 45
                                     )}
+                                    {visibleStaff.length > 1
+                                      ? ` • ${staffName}`
+                                      : ''}
                                   </span>
-                                </button>
-                              ) : (
-                                <div className="p-3 rounded-xl border border-dashed border-[#E6E0F5] text-[#6B6480] text-[11px] flex items-center justify-between">
-                                  <span>بازه آزاد</span>
-                                  <span className="text-[10px]">قابل رزرو</span>
+                                  <span className="font-extrabold text-[#0057FF] whitespace-nowrap">
+                                    جزئیات و تسویه ←
+                                  </span>
                                 </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                              </button>
+                            );
+                          })}
+
+                          {slotOccupiedItems.map(({ apt, staffName }) => {
+                            const endMins =
+                              parseTimeToMinutes(apt.timeSlot) +
+                              Math.max(15, Number(apt.durationMinutes) || 45);
+                            return (
+                              <button
+                                key={`m-occ-${apt.id}-${staffName}`}
+                                type="button"
+                                onClick={() => setSelectedApt(apt)}
+                                className="w-full text-right px-2.5 py-2 rounded-xl bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[11px] flex items-center justify-between gap-2 cursor-pointer"
+                              >
+                                <span className="font-bold truncate min-w-0">
+                                  در حال انجام: {apt.customerName}
+                                  {visibleStaff.length > 1
+                                    ? ` (${staffName})`
+                                    : ''}
+                                </span>
+                                <span className="text-[10px] font-extrabold whitespace-nowrap shrink-0 tabular-nums">
+                                  تا {formatMinutesToPersianTime(endMins)}
+                                </span>
+                              </button>
+                            );
+                          })}
+
+                          {!hasBusy ? (
+                            <div className="px-2.5 py-1.5 rounded-xl border border-dashed border-[#E6E0F5] text-[#94A3B8] text-[11px] flex items-center justify-between">
+                              <span>بازه آزاد</span>
+                              <span className="text-[10px]">قابل رزرو</span>
+                            </div>
+                          ) : freeStaffCount > 0 && visibleStaff.length > 1 ? (
+                            <div className="px-2 py-0.5 text-[10px] font-bold text-[#64748B]">
+                              {toPersianDigits(freeStaffCount)} متخصص دیگر آزاد است
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </div>
+
+              {/* نمای جدول چندستونه متخصصان برای تبلت و دسکتاپ */}
+              <div className="hidden md:block overflow-x-auto rounded-2xl border border-[#E6E0F5]">
+                <table className="w-full text-xs border-collapse table-fixed min-w-[640px]">
+                  <thead>
+                    <tr className="border-b border-[#E6E0F5] bg-[#FAF8FF]">
+                      <th className="py-3 px-2.5 text-right w-16 font-extrabold text-[#6B6480]">
+                        ساعت
+                      </th>
+                      {visibleStaff.map((sp) => (
+                        <th
+                          key={sp.id}
+                          className="py-3 px-4 text-right font-extrabold text-[#1E1B2E] border-r border-[#E6E0F5]"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={sp.fullName} size="sm" tone="violet" />
+                            <div>
+                              <p className="text-xs font-extrabold">{sp.fullName}</p>
+                              <p className="text-[11px] font-medium text-[#6B6480]">
+                                {sp.roleTitle}
+                              </p>
+                            </div>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E6E0F5]">
+                    {timeSlots.map((slot) => {
+                      const slotMins = parseTimeToMinutes(slot);
+                      return (
+                        <tr key={slot} className="hover:bg-[#FAF8FF]/50">
+                          <td className="py-3.5 px-3 font-extrabold text-[#6B6480] tabular-nums bg-[#FAF8FF]/40">
+                            {slot}
+                          </td>
+                          {visibleStaff.map((sp, colIdx) => {
+                            const matchedApts = dayAppointments.filter(
+                              (a) =>
+                                normalizeTimeKey(a.timeSlot) ===
+                                  normalizeTimeKey(slot) &&
+                                isAppointmentForStaffColumn(a, sp, colIdx)
+                            );
+                            const occupyingApt =
+                              matchedApts.length === 0 && slotMins >= 0
+                                ? dayAppointments.find((a) => {
+                                    if (
+                                      a.status === AppointmentStatus.Cancelled ||
+                                      !isAppointmentForStaffColumn(a, sp, colIdx)
+                                    ) {
+                                      return false;
+                                    }
+                                    const st = parseTimeToMinutes(a.timeSlot);
+                                    const dur = Math.max(
+                                      15,
+                                      Number(a.durationMinutes) || 45
+                                    );
+                                    return (
+                                      st >= 0 &&
+                                      slotMins > st &&
+                                      slotMins < st + dur
+                                    );
+                                  })
+                                : undefined;
+
+                            return (
+                              <td
+                                key={sp.id}
+                                className="p-2 border-r border-[#E6E0F5] align-top"
+                              >
+                                {matchedApts.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {matchedApts.map((matched) => {
+                                      const statusMeta =
+                                        getAppointmentStatusMeta(matched.status);
+                                      const endMins =
+                                        parseTimeToMinutes(matched.timeSlot) +
+                                        Math.max(
+                                          15,
+                                          Number(matched.durationMinutes) || 45
+                                        );
+                                      return (
+                                        <button
+                                          key={matched.id}
+                                          type="button"
+                                          onClick={() => setSelectedApt(matched)}
+                                          className="w-full text-right p-2.5 sm:p-3 rounded-xl bg-[#EDE9FE]/90 hover:bg-[#EDE9FE] border border-[#C4B5FD] space-y-1 cursor-pointer transition-all"
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="font-extrabold text-[#1E1B2E] truncate">
+                                              {matched.customerName}
+                                            </span>
+                                            <StatusBadge
+                                              label={statusMeta.label}
+                                              tone={statusMeta.tone}
+                                            />
+                                          </div>
+                                          <p className="text-[11px] font-bold text-[#4C1D95] truncate">
+                                            {matched.serviceTitle}
+                                          </p>
+                                          <div className="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-[#DDD6FE] text-[#6D28D9]">
+                                            <span className="tabular-nums font-bold">
+                                              {matched.timeSlot} تا{' '}
+                                              {formatMinutesToPersianTime(endMins)} (
+                                              {formatDurationMinutes(
+                                                matched.durationMinutes || 45
+                                              )}
+                                              )
+                                            </span>
+                                            <span className="font-extrabold text-[#0057FF]">
+                                              جزئیات و تسویه ▾
+                                            </span>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : occupyingApt ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedApt(occupyingApt)}
+                                    className="w-full text-right p-2.5 rounded-xl bg-[#FEF3C7]/70 border border-[#FDE68A] text-[#92400E] text-[11px] flex items-center justify-between gap-2 cursor-pointer"
+                                  >
+                                    <span className="font-bold truncate">
+                                      در حال انجام نوبت «{occupyingApt.customerName}» ({occupyingApt.serviceTitle})
+                                    </span>
+                                    <span className="text-[10px] font-extrabold whitespace-nowrap shrink-0">
+                                      اشغال تا{' '}
+                                      {formatMinutesToPersianTime(
+                                        parseTimeToMinutes(
+                                          occupyingApt.timeSlot
+                                        ) +
+                                          Math.max(
+                                            15,
+                                            Number(occupyingApt.durationMinutes) ||
+                                              45
+                                          )
+                                      )}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div className="px-3 py-2 rounded-xl border border-dashed border-[#E6E0F5] text-[#6B6480] text-[11px] flex items-center justify-between">
+                                    <span>بازه آزاد</span>
+                                    <span className="text-[10px]">قابل رزرو</span>
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-4">
             {calendarDays.slice(0, 7).map((d, dIdx) => {
               const dayApts = bizAppointments
                 .filter((a) => normalizeDateKey(a.dateJalali) === d.date)
@@ -1746,52 +1946,57 @@ export const BusinessCalendarPage: React.FC = () => {
               return (
                 <div
                   key={d.date}
-                  className="p-4 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] space-y-3"
+                  className="p-3 sm:p-4 rounded-2xl border border-[#E6E0F5] bg-[#FAF8FF] space-y-2 sm:space-y-3"
                 >
-                  <div className="flex items-center justify-between border-b border-[#E6E0F5] pb-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#E6E0F5] pb-2">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedDayIndex(dIdx);
                         setViewMode('day');
                       }}
-                      className="text-xs font-extrabold text-[#1E1B2E] hover:text-[#8B5CF6] cursor-pointer"
+                      className="text-xs font-extrabold text-[#1E1B2E] hover:text-[#8B5CF6] cursor-pointer truncate"
                     >
                       {d.label}
                     </button>
-                    <span className="text-[11px] text-[#6B6480] tabular-nums">
-                      {d.date} ({toPersianDigits(dayApts.length)} نوبت)
+                    <span className="text-[10px] sm:text-[11px] text-[#6B6480] tabular-nums whitespace-nowrap shrink-0">
+                      {d.date} •{' '}
+                      <span className="font-extrabold text-[#6D28D9]">
+                        {toPersianDigits(dayApts.length)} نوبت
+                      </span>
                     </span>
                   </div>
                   {dayApts.length === 0 ? (
-                    <p className="text-[11px] text-[#6B6480] py-3 text-center">
-                      نوبتی برای این روز ثبت نشده است
+                    <p className="text-[11px] text-[#94A3B8] py-1.5 text-center">
+                      نوبتی ثبت نشده است
                     </p>
                   ) : (
-                    dayApts.map((apt) => {
-                      const stMeta = getAppointmentStatusMeta(apt.status);
-                      return (
-                        <button
-                          key={`${d.date}-${apt.id}`}
-                          type="button"
-                          onClick={() => setSelectedApt(apt)}
-                          className="w-full text-right p-3 rounded-xl bg-white hover:border-[#8B5CF6] border border-[#E6E0F5] text-xs space-y-1 cursor-pointer transition-all"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-extrabold text-[#1E1B2E] tabular-nums">
-                              ساعت {apt.timeSlot} — {apt.customerName}
+                    <div className="space-y-1.5">
+                      {dayApts.map((apt) => {
+                        const stMeta = getAppointmentStatusMeta(apt.status);
+                        return (
+                          <button
+                            key={`${d.date}-${apt.id}`}
+                            type="button"
+                            onClick={() => setSelectedApt(apt)}
+                            className="w-full text-right p-2.5 rounded-xl bg-white hover:border-[#8B5CF6] border border-[#E6E0F5] text-xs space-y-1 cursor-pointer transition-all"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-extrabold text-[#1E1B2E] tabular-nums truncate">
+                                {apt.timeSlot} — {apt.customerName}
+                              </p>
+                              <StatusBadge
+                                label={stMeta.label}
+                                tone={stMeta.tone}
+                              />
+                            </div>
+                            <p className="text-[11px] text-[#6B6480] truncate">
+                              {apt.serviceTitle} • {formatPriceToman(apt.priceToman)}
                             </p>
-                            <StatusBadge
-                              label={stMeta.label}
-                              tone={stMeta.tone}
-                            />
-                          </div>
-                          <p className="text-[#6B6480]">
-                            {apt.serviceTitle} ({formatPriceToman(apt.priceToman)})
-                          </p>
-                        </button>
-                      );
-                    })
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               );
@@ -2041,14 +2246,15 @@ export const BusinessAppointmentsPage: React.FC = () => {
         ]}
       />
 
-      <Card className="mb-6 space-y-4">
-        {/* نوار وضعیت سریع */}
-        <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-[#E6E0F5]">
+      <Card className="mb-4 sm:mb-6 !p-3 sm:!p-5 space-y-2.5 sm:space-y-4">
+        {/* نوار وضعیت سریع — تک‌خطی و اسکرول‌پذیر در موبایل */}
+        <div className="flex items-center gap-1.5 sm:gap-2 pb-2 sm:pb-3 border-b border-[#E6E0F5] overflow-x-auto no-scrollbar sm:flex-wrap">
           {[
-            { id: 'ALL', label: 'همه نوبت‌ها', count: bizAppointments.length },
+            { id: 'ALL', label: 'همه', fullLabel: 'همه نوبت‌ها', count: bizAppointments.length },
             {
               id: AppointmentStatus.Pending,
-              label: 'در انتظار تایید سالن',
+              label: 'در انتظار تایید',
+              fullLabel: 'در انتظار تایید سالن',
               count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Pending
               ).length,
@@ -2056,6 +2262,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
             {
               id: AppointmentStatus.Confirmed,
               label: 'تاییدشده',
+              fullLabel: 'تاییدشده',
               count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Confirmed
               ).length,
@@ -2063,6 +2270,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
             {
               id: AppointmentStatus.Completed,
               label: 'انجام‌شده',
+              fullLabel: 'انجام‌شده',
               count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Completed
               ).length,
@@ -2070,6 +2278,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
             {
               id: AppointmentStatus.Cancelled,
               label: 'لغوشده',
+              fullLabel: 'لغوشده',
               count: bizAppointments.filter(
                 (a) => a.status === AppointmentStatus.Cancelled
               ).length,
@@ -2083,15 +2292,16 @@ export const BusinessAppointmentsPage: React.FC = () => {
                 onClick={() =>
                   setStatusFilter(tab.id as AppointmentStatus | 'ALL')
                 }
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   active
                     ? 'bg-[#8B5CF6] text-white'
                     : 'bg-[#FAF8FF] text-[#6B6480] border border-[#E6E0F5] hover:text-[#1E1B2E]'
                 }`}
               >
-                <span>{tab.label}</span>
+                <span className="sm:hidden">{tab.label}</span>
+                <span className="hidden sm:inline">{tab.fullLabel}</span>
                 <span
-                  className={`px-1.5 py-0.5 rounded-md text-[11px] tabular-nums ${
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] sm:text-[11px] tabular-nums ${
                     active ? 'bg-white/20 text-white' : 'bg-[#E6E0F5]'
                   }`}
                 >
@@ -2102,31 +2312,34 @@ export const BusinessAppointmentsPage: React.FC = () => {
           })}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <FormField id="apt-status-filter" label="فیلتر وضعیت">
-            <Select
-              id="apt-status-filter"
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as AppointmentStatus | 'ALL')
-              }
-              options={[
-                { value: 'ALL', label: 'همه وضعیت‌ها' },
-                { value: AppointmentStatus.Pending, label: 'در انتظار تایید' },
-                { value: AppointmentStatus.Confirmed, label: 'تاییدشده' },
-                { value: AppointmentStatus.Completed, label: 'انجام‌شده' },
-                { value: AppointmentStatus.Cancelled, label: 'لغوشده' },
-              ]}
-            />
-          </FormField>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+          <div className="hidden sm:block">
+            <FormField id="apt-status-filter" label="فیلتر وضعیت">
+              <Select
+                id="apt-status-filter"
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as AppointmentStatus | 'ALL')
+                }
+                options={[
+                  { value: 'ALL', label: 'همه وضعیت‌ها' },
+                  { value: AppointmentStatus.Pending, label: 'در انتظار تایید' },
+                  { value: AppointmentStatus.Confirmed, label: 'تاییدشده' },
+                  { value: AppointmentStatus.Completed, label: 'انجام‌شده' },
+                  { value: AppointmentStatus.Cancelled, label: 'لغوشده' },
+                ]}
+              />
+            </FormField>
+          </div>
 
-          <FormField id="apt-staff-filter" label="فیلتر متخصص">
+          <FormField id="apt-staff-filter" label="متخصص">
             <Select
               id="apt-staff-filter"
               value={staffFilter}
               onChange={(e) => setStaffFilter(e.target.value)}
+              className="!py-1.5 sm:!py-2.5 !text-xs sm:!text-sm"
               options={[
-                { value: 'ALL', label: 'همه متخصصان این مرکز' },
+                { value: 'ALL', label: 'همه متخصصان' },
                 ...bizSpecialists.map((sp) => ({
                   value: sp.fullName,
                   label: sp.fullName,
@@ -2135,11 +2348,12 @@ export const BusinessAppointmentsPage: React.FC = () => {
             />
           </FormField>
 
-          <FormField id="apt-date-filter" label="فیلتر تاریخ مراجعه">
+          <FormField id="apt-date-filter" label="تاریخ مراجعه">
             <Select
               id="apt-date-filter"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
+              className="!py-1.5 sm:!py-2.5 !text-xs sm:!text-sm"
               options={[
                 { value: 'ALL', label: 'همه تاریخ‌ها' },
                 ...uniqueDates.map((d) => ({ value: d, label: d })),
@@ -2550,6 +2764,11 @@ export const BusinessServicesPage: React.FC = () => {
   const [customStageInput, setCustomStageInput] = useState('');
   const [description, setDescription] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [stagesPickerOpen, setStagesPickerOpen] = useState(false);
+  const [notesPickerOpen, setNotesPickerOpen] = useState(false);
+  const [isCreatingCustomCategory, setIsCreatingCustomCategory] =
+    useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
 
   const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
   const [dragOverServiceId, setDragOverServiceId] = useState<string | null>(
@@ -2564,7 +2783,6 @@ export const BusinessServicesPage: React.FC = () => {
     selectedCat === 'ALL'
       ? bizServices
       : bizServices.filter((s) => s.category === selectedCat);
-  const suggestedTitles = getSuggestedServiceTitlesForCategory(category);
   const currentChecklist =
     CATEGORY_PACKAGE_STAGE_CHECKLISTS[category] ??
     CATEGORY_PACKAGE_STAGE_CHECKLISTS['پوست و فیشیال'];
@@ -2864,6 +3082,10 @@ export const BusinessServicesPage: React.FC = () => {
     setCustomStageInput('');
     setDescription('');
     setFormErrors({});
+    setStagesPickerOpen(false);
+    setNotesPickerOpen(false);
+    setIsCreatingCustomCategory(false);
+    setCustomCategoryInput('');
     setModalOpen(true);
   };
 
@@ -2872,11 +3094,7 @@ export const BusinessServicesPage: React.FC = () => {
     const stages = srv.packageIncludes ?? [];
     setServiceMode(stages.length > 0 ? 'PACKAGE' : 'SINGLE');
     setTitle(srv.title);
-    setCategory(
-      srv.categorySlug === 'laser-hair-removal' || srv.category.includes('لیزر')
-        ? 'لیزر موهای زائد'
-        : srv.category
-    );
+    setCategory(srv.category?.trim() || activeKitCategory || detectedPrimaryCategory);
     setDurationMinutes(String(srv.durationMinutes));
     setPricingType(srv.pricingType || 'FIXED');
     setPriceToman(formatNumericInputWithCommas(String(srv.priceToman)));
@@ -2891,6 +3109,10 @@ export const BusinessServicesPage: React.FC = () => {
     setCustomStageInput('');
     setDescription(srv.description);
     setFormErrors({});
+    setStagesPickerOpen(false);
+    setNotesPickerOpen(false);
+    setIsCreatingCustomCategory(false);
+    setCustomCategoryInput('');
     setModalOpen(true);
   };
 
@@ -2916,9 +3138,12 @@ export const BusinessServicesPage: React.FC = () => {
     const numericPrice = parseNumericInput(priceToman);
     const numericMaxPrice = parseNumericInput(maxPriceToman);
     const numericDuration = parseNumericInput(durationMinutes) || 60;
+    const finalCategory = (
+      isCreatingCustomCategory ? customCategoryInput : category
+    ).trim();
     const validation = validateServiceForm({
       title,
-      category,
+      category: finalCategory,
       durationMinutes: numericDuration,
       priceToman: numericPrice,
     });
@@ -2926,10 +3151,10 @@ export const BusinessServicesPage: React.FC = () => {
       setFormErrors(validation.errors);
       const firstErr =
         validation.errors.title ||
+        validation.errors.category ||
         validation.errors.priceToman ||
         validation.errors.durationMinutes ||
-        validation.errors.category ||
-        'لطفاً فیلدهای خالی (عنوان خدمت و قیمت) را تکمیل کنید.';
+        'لطفاً فیلدهای خالی (عنوان، دسته‌بندی و قیمت) را تکمیل کنید.';
       showToast(firstErr, 'warning');
       return;
     }
@@ -2952,13 +3177,24 @@ export const BusinessServicesPage: React.FC = () => {
 
     const matchedCat = (
       categories.length > 0 ? categories : SAMPLE_CATEGORIES
-    ).find((c) => c.title === category);
+    ).find((c) => c.title === finalCategory);
     const resolvedCategorySlug =
-      category.includes('لیزر')
+      matchedCat?.slug ??
+      (finalCategory.includes('لیزر')
         ? 'laser-hair-removal'
-        : category.includes('پوست') || category.includes('فیشیال')
+        : finalCategory.includes('پوست') || finalCategory.includes('فیشیال')
         ? 'skincare-facial'
-        : matchedCat?.slug ?? editingService?.categorySlug ?? 'hair-color';
+        : finalCategory.includes('ناخن')
+        ? 'nail-care'
+        : finalCategory.includes('میکاپ') || finalCategory.includes('عروس')
+        ? 'makeup-bridal'
+        : finalCategory.includes('مژه') || finalCategory.includes('ابرو')
+        ? 'eyelash-eyebrow'
+        : finalCategory.includes('مردانه') || finalCategory.includes('پیرایش')
+        ? 'men-barbershop'
+        : editingService?.category === finalCategory && editingService?.categorySlug
+        ? editingService.categorySlug
+        : `custom-${encodeURIComponent(finalCategory)}`);
 
     const resolvedMaxPrice =
       pricingType === 'RANGE'
@@ -2972,7 +3208,7 @@ export const BusinessServicesPage: React.FC = () => {
       updateService(editingService.id, {
         categorySlug: resolvedCategorySlug,
         title: title.trim(),
-        category,
+        category: finalCategory,
         durationMinutes: numericDuration,
         pricingType,
         priceToman: numericPrice,
@@ -2986,7 +3222,7 @@ export const BusinessServicesPage: React.FC = () => {
         businessId: currentBiz?.id ?? 'biz-owner-zero',
         categorySlug: resolvedCategorySlug,
         title: title.trim(),
-        category,
+        category: finalCategory,
         durationMinutes: numericDuration,
         pricingType,
         priceToman: numericPrice,
@@ -3090,16 +3326,39 @@ export const BusinessServicesPage: React.FC = () => {
         title="خدمات و تعرفه‌های سالن"
         subtitle={`حوزه تخصصی: «${detectedPrimaryCategory}»`}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
+            <Button
+              variant="primary"
+              size="sm"
+              className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs"
+              onClick={() => openAddModal('SINGLE')}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>افزودن خدمت تکی</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs border-[#0057FF]/40 text-[#0057FF]"
+              onClick={() => openAddModal('PACKAGE')}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="sm:hidden">پکیج جدید</span>
+              <span className="hidden sm:inline">ساخت پکیج چندمرحله‌ای</span>
+            </Button>
             <Button
               variant={kitPanelOpen ? 'secondary' : 'outline'}
               size="sm"
+              className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs"
               onClick={() => setKitPanelOpen((prev) => !prev)}
             >
-              <span>
+              <span className="sm:hidden">
+                {kitPanelOpen ? 'بستن کیت' : '✨ کیت آماده'}
+              </span>
+              <span className="hidden sm:inline">
                 {kitPanelOpen
                   ? `بستن کیت آماده «${activeKitCategory}»`
-                  : `✨ باز کردن کیت آماده «${activeKitCategory}»`}
+                  : `✨ کیت آماده «${activeKitCategory}»`}
               </span>
             </Button>
             {bizServices.length > 0 ? (
@@ -3107,7 +3366,7 @@ export const BusinessServicesPage: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmClearAllOpen(true)}
-                className="text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
+                className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs text-[#EF4444] border-[#FECACA] hover:bg-[#FEF2F2]"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>
@@ -3115,22 +3374,6 @@ export const BusinessServicesPage: React.FC = () => {
                 </span>
               </Button>
             ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openAddModal('SINGLE')}
-            >
-              <Plus className="w-4 h-4" />
-              <span>خدمت تکی</span>
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => openAddModal('PACKAGE')}
-            >
-              <Plus className="w-4 h-4" />
-              <span>ساخت پکیج سفارشی / چندمرحله‌ای</span>
-            </Button>
           </div>
         }
       />
@@ -3661,19 +3904,19 @@ export const BusinessServicesPage: React.FC = () => {
 
             if (!hasBankInfo) {
               return (
-                <div className="p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#6EE7B7] flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="space-y-0.5">
-                    <p className="font-extrabold text-[#065F46]">
-                      ✓ خدمات شما ثبت شد! گام بعدی تکمیل نشده: ثبت شماره کارت و شبا جهت واریز بیعانه‌ها
+                <div className="p-2.5 sm:p-3.5 rounded-2xl bg-[#ECFDF5] border border-[#6EE7B7] flex items-center justify-between gap-2.5 text-xs">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="font-extrabold text-[#065F46] text-[11px] sm:text-xs truncate sm:whitespace-normal">
+                      ✓ خدمات ثبت شد · گام بعدی: ثبت شبا و کارت
                     </p>
-                    <p className="text-[11px] text-[#047857]">
-                      برای اینکه بیعانه نوبت‌های آنلاین مستقیماً به حساب شما تسویه شود، شماره کارت یا شبای خود را ثبت کنید.
+                    <p className="hidden sm:block text-[11px] text-[#047857]">
+                      برای واریز مستقیم بیعانه نوبت‌های آنلاین به حساب شما، شماره کارت یا شبای خود را ثبت کنید.
                     </p>
                   </div>
-                  <Link to="/app/subscription">
-                    <Button variant="primary" size="sm">
-                      <span>رفتن به ثبت کارت و شبا</span>
-                      <ChevronLeft className="w-4 h-4" />
+                  <Link to="/app/subscription" className="shrink-0">
+                    <Button variant="primary" size="sm" className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs">
+                      <span>ثبت شبا</span>
+                      <ChevronLeft className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3681,19 +3924,19 @@ export const BusinessServicesPage: React.FC = () => {
             }
             if (!hasAvatarInfo || !hasAddressInfo) {
               return (
-                <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="space-y-0.5">
-                    <p className="font-extrabold text-[#1E3A8A]">
-                      ✓ خدمات شما ثبت شد! گام بعدی تکمیل نشده: تکمیل عکس پروفایل و نشانی سالن
+                <div className="p-2.5 sm:p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#93C5FD] flex items-center justify-between gap-2.5 text-xs">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="font-extrabold text-[#1E3A8A] text-[11px] sm:text-xs truncate sm:whitespace-normal">
+                      ✓ خدمات ثبت شد · گام بعدی: تکمیل عکس و نشانی سالن
                     </p>
-                    <p className="text-[11px] text-[#1D4ED8]">
+                    <p className="hidden sm:block text-[11px] text-[#1D4ED8]">
                       برای نمایش کامل در نتایج جست‌وجو، تصویر پروفایل و آدرس دقیق سالن را تکمیل نمایید.
                     </p>
                   </div>
-                  <Link to="/app/profile">
-                    <Button variant="primary" size="sm">
-                      <span>تکمیل مشخصات پروفایل</span>
-                      <ChevronLeft className="w-4 h-4" />
+                  <Link to="/app/profile" className="shrink-0">
+                    <Button variant="primary" size="sm" className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs">
+                      <span>تکمیل پروفایل</span>
+                      <ChevronLeft className="w-3.5 h-3.5" />
                     </Button>
                   </Link>
                 </div>
@@ -3731,40 +3974,36 @@ export const BusinessServicesPage: React.FC = () => {
             ))}
           </div>
 
-          {/* نوار خلوت و جمع‌وجور راهنما با Popover کلیکی برای قیمت‌گذاری (ثابت / بازه‌ای / پایه) و تغییر ترتیب خدمات */}
-          <div className="px-3.5 py-2.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
-            <div className="flex flex-wrap items-center gap-2">
+          {/* نوار مینیمال وضعیت لیست خدمات + آیکون راهنمای قیمت‌گذاری و ترتیب نمایش */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold text-[#061138]">
+                چیدمان و تعرفه خدمات ({toPersianDigits(visibleServices.length)} خدمت فعال)
+              </span>
               <ClickPopover
-                label="راهنمای قیمت‌گذاری (ثابت / بازه‌ای / پایه)"
-                title="تفاوت ۳ مدل قیمت‌گذاری خدمات در پروفایل و رزرو"
+                iconOnly
+                wide
+                title="راهنمای قیمت‌گذاری (ثابت / بازه‌ای / پایه) و تغییر ترتیب خدمات"
                 tone="violet"
               >
-                <ul className="space-y-1.5 list-disc pr-4">
-                  <li>
-                    <strong>قیمت ثابت (قطعی):</strong> مبلغ دقیق خدمت مشخص است (مثلاً ۶۵۰,۰۰۰ تومان).
-                  </li>
-                  <li>
-                    <strong>قیمت بازه‌ای (از ... تا ...):</strong> مناسب خدماتی که بسته به حجم مو یا مواد متغیرند (مثلاً از ۱,۲۰۰,۰۰۰ تا ۲,۴۰۰,۰۰۰ تومان). بیعانه بر اساس کف قیمت محاسبه می‌شود.
-                  </li>
-                  <li>
-                    <strong>قیمت پایه (شروع از ...):</strong> مبلغ پایه نمایش داده می‌شود (مثلاً شروع از ۹۵۰,۰۰۰ تومان) و مابقی پس از مشاوره حضوری در سالن تعیین می‌گردد.
-                  </li>
-                </ul>
-              </ClickPopover>
-
-              <ClickPopover
-                label="راهنمای جابه‌جایی ترتیب خدمات"
-                title="نحوه تغییر چیدمان خدمات در منوی رزرو مشتری"
-                tone="blue"
-              >
-                <p>
-                  برای تغییر جایگاه هر خدمت در منوی رزرو، دستگیره سمت راست کارت را با انگشت یا ماوس نگه دارید و به بالا یا پایین بکشید، یا از دکمه‌های <strong>↑ ↓</strong> روی هر کارت استفاده کنید. ترتیب جدید بلافاصله در پروفایل عمومی ذخیره می‌شود.
-                </p>
+                <div className="space-y-2">
+                  <ul className="space-y-1.5 list-disc pr-4">
+                    <li>
+                      <strong>قیمت ثابت (قطعی):</strong> مبلغ دقیق خدمت مشخص است (مثلاً ۶۵۰,۰۰۰ تومان).
+                    </li>
+                    <li>
+                      <strong>قیمت بازه‌ای (از ... تا ...):</strong> مناسب خدماتی که بسته به حجم مو یا مواد متغیرند (بیعانه بر اساس کف قیمت محاسبه می‌شود).
+                    </li>
+                    <li>
+                      <strong>قیمت پایه (شروع از ...):</strong> کف قیمت نمایش داده می‌شود و مابقی پس از مشاوره حضوری در سالن تعیین می‌گردد.
+                    </li>
+                  </ul>
+                  <p className="pt-1.5 border-t border-[#E2E8F0]">
+                    <strong>تغییر ترتیب در منوی رزرو:</strong> دستگیره سمت راست کارت را بکشید یا از دکمه‌های <strong>↑ ↓</strong> استفاده کنید؛ ترتیب جدید بلافاصله در پروفایل عمومی ذخیره می‌شود.
+                  </p>
+                </div>
               </ClickPopover>
             </div>
-            <span className="text-[11px] font-extrabold text-[#0057FF] bg-[#EFF6FF] px-2.5 py-1 rounded-xl border border-[#BFDBFE]">
-              {toPersianDigits(visibleServices.length)} خدمت فعال
-            </span>
           </div>
 
           {/* لیست تعاملی خدمات با قابلیت کشیدن با انگشت (Touch Drag) و ماوس (Mouse Drag) */}
@@ -4082,368 +4321,483 @@ export const BusinessServicesPage: React.FC = () => {
         </>
       ) : null}
 
-      {/* مودال جامع ساخت پکیج و شخصی‌سازی کامل خدمت (با چک‌لیست مراحل و مواد مصرفی تا هیچ موردی از قلم نیفتد) */}
+      {/* مودال ساده، تمیز و کاربردی ویرایش و شخصی‌سازی خدمت / پکیج */}
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={
           editingService
-            ? 'ویرایش و شخصی‌سازی کامل خدمت / پکیج'
-            : 'تعریف خدمت یا ساخت پکیج سفارشی جدید'
+            ? 'ویرایش خدمت / پکیج'
+            : 'افزودن خدمت / پکیج جدید'
         }
-      >
-        <form onSubmit={handleSaveService} className="space-y-4" noValidate>
-          {/* ۱. انتخاب حالت خدمت تکی یا پکیج چندمرحله‌ای */}
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#F1F5F9] border border-[#CBD5E1]">
-            <button
-              type="button"
-              onClick={() => setServiceMode('PACKAGE')}
-              className={`py-2 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                serviceMode === 'PACKAGE'
-                  ? 'bg-[#061138] text-[#00E5FF] shadow-xs'
-                  : 'text-[#475569] hover:text-[#061138]'
-              }`}
-            >
-              📦 پکیج چندمرحله‌ای (با چک‌لیست آیتم‌ها)
-            </button>
-            <button
-              type="button"
-              onClick={() => setServiceMode('SINGLE')}
-              className={`py-2 px-3 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
-                serviceMode === 'SINGLE'
-                  ? 'bg-[#061138] text-white shadow-xs'
-                  : 'text-[#475569] hover:text-[#061138]'
-              }`}
-            >
-              ✂️ خدمت تکی ساده
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField
-              id="srv-form-cat"
-              label="دسته‌بندی تخصصی"
-              required
-              error={formErrors.category}
-            >
-              <Select
-                id="srv-form-cat"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                options={Array.from(
-                  new Set([
-                    activeKitCategory,
-                    ...(category ? [category] : []),
-                  ])
-                ).map((titleItem) => ({
-                  value: titleItem,
-                  label: titleItem,
-                }))}
-              />
-            </FormField>
-
-            <FormField
-              id="srv-form-dur"
-              label="مدت زمان حدودی (دقیقه)"
-              required
-              error={formErrors.durationMinutes}
-            >
-              <Input
-                id="srv-form-dur"
-                dir="ltr"
-                type="number"
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(e.target.value)}
-              />
-            </FormField>
-          </div>
-
-          <FormField
-            id="srv-form-title"
-            label={
-              serviceMode === 'PACKAGE'
-                ? 'عنوان پکیج اختصاصی شما'
-                : 'عنوان خدمت'
-            }
-            required
-            error={formErrors.title}
-          >
-            <Input
-              id="srv-form-title"
-              value={title}
-              hasError={Boolean(formErrors.title)}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={
-                serviceMode === 'PACKAGE'
-                  ? 'مثلاً: پکیج VIP فیشیال، هیدرودرمی و نوردرمانی (۷ مرحله‌ای)'
-                  : 'نام خدمت را بنویسید یا از پیشنهادهای زیر انتخاب کنید'
-              }
-            />
-          </FormField>
-
-          {suggestedTitles.length > 0 ? (
-            <div className="space-y-1.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] p-2.5">
-              <span className="text-[11px] font-extrabold text-[#475569] block">
-                پیشنهاد سریع عنوان در دسته «{category}» (با لمس جایگذاری می‌شود):
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestedTitles.map((sug) => (
-                  <button
-                    key={sug}
-                    type="button"
-                    onClick={() => setTitle(sug)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold cursor-pointer border transition-colors ${
-                      title === sug
-                        ? 'bg-[#0057FF] text-white border-[#0057FF]'
-                        : 'bg-white text-[#061138] border-[#CBD5E1] hover:border-[#0057FF]'
-                    }`}
-                  >
-                    + {sug}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* ۲. سازنده هوشمند مراحل و آیتم‌های داخل پکیج (چک‌لیست آماده + افزودن مورد دلخواه) */}
-          {serviceMode === 'PACKAGE' ? (
-            <div className="p-3.5 rounded-2xl bg-[#F0FDFA] border border-[#99F6E4] space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="text-xs font-extrabold text-[#065F46] block">
-                    چک‌لیست آماده مراحل و آیتم‌های «{category}» (تا هیچ موردی از قلم نیفتد):
-                  </span>
-                  <span className="text-[11px] text-[#0F766E]">
-                    روی هر مرحله که در این پکیج انجام می‌دهید کلیک کنید تا تیک بخورد یا مرحله دلخواه خودتان را اضافه کنید
-                  </span>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-[#059669] text-white text-[11px] font-black tabular-nums">
-                  {toPersianDigits(selectedPackageStages.length)} مرحله انتخاب‌شده
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-1">
-                {currentChecklist.stages.map((st) => {
-                  const isChecked = selectedPackageStages.includes(st);
-                  return (
-                    <button
-                      key={st}
-                      type="button"
-                      onClick={() => handleToggleStageInModal(st)}
-                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
-                        isChecked
-                          ? 'bg-[#059669] text-white border-[#059669] shadow-2xs'
-                          : 'bg-white text-[#064E3B] border-[#A7F3D0] hover:border-[#059669]'
-                      }`}
-                    >
-                      <span>{isChecked ? '✓' : '+'}</span>
-                      <span>{st}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* افزودن مرحله یا آیتم سفارشی توسط صاحب کسب‌وکار */}
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  value={customStageInput}
-                  onChange={(e) => setCustomStageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCustomStageInModal();
-                    }
-                  }}
-                  placeholder="مرحله یا آیتم اختصاصی دیگری دارید؟ اینجا بنویسید (مثلاً: ماسک طلای ۲۴ عیار)..."
-                  className="flex-1 rounded-xl border border-[#A7F3D0] bg-white px-3 py-1.5 text-xs font-bold text-[#061138] focus:border-[#059669] focus:outline-none"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleAddCustomStageInModal}
-                >
-                  + افزودن مرحله
-                </Button>
-              </div>
-
-              {selectedPackageStages.length > 0 ? (
-                <div className="pt-2 border-t border-[#99F6E4] space-y-1.5">
-                  <span className="text-[11px] font-extrabold text-[#065F46] block">
-                    ترتیب مراحل ثبت‌شده در پکیج شما (با زدن ✕ حذف می‌شود):
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedPackageStages.map((st, idx) => (
-                      <span
-                        key={`${st}-${idx}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[#059669]/40 text-[11px] font-extrabold text-[#061138]"
-                      >
-                        <span className="text-[#059669] tabular-nums">
-                          {toPersianDigits(idx + 1)}.
-                        </span>
-                        <span>{st}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStageInModal(st)}
-                          className="text-rose-500 hover:text-rose-700 font-black cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* ۳. انتخاب مدل قیمت‌گذاری (مقطوع / بازه قیمتی / شروع قیمت پایه + مشاوره حضوری) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-extrabold text-[#061138] block">
-              مدل نمایش قیمت به مشتری (ویژه خدماتی که قیمتشان به مواد مصرفی یا حجم کار بستگی دارد):
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                {
-                  id: 'FIXED' as const,
-                  title: '۱. قیمت مقطوع و ثابت',
-                  sub: 'مثلاً ۶۵۰,۰۰۰ تومان',
-                },
-                {
-                  id: 'RANGE' as const,
-                  title: '۲. بازه قیمتی (از ... تا ...)',
-                  sub: 'بر اساس مواد یا حجم کار',
-                },
-                {
-                  id: 'STARTING_FROM' as const,
-                  title: '۳. شروع قیمت پایه + مشاوره',
-                  sub: 'تعیین دقیق پس از آنالیز حضوری',
-                },
-              ].map((mode) => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  onClick={() => setPricingType(mode.id)}
-                  className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
-                    pricingType === mode.id
-                      ? 'bg-[#061138] text-white border-[#061138]'
-                      : 'bg-[#F8FAFC] text-[#061138] border-[#CBD5E1]'
-                  }`}
-                >
-                  <p className="text-xs font-extrabold">{mode.title}</p>
-                  <p
-                    className={`text-[10px] mt-0.5 ${
-                      pricingType === mode.id
-                        ? 'text-[#00E5FF]'
-                        : 'text-[#64748B]'
-                    }`}
-                  >
-                    {mode.sub}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField
-              id="srv-form-price"
-              label={
-                pricingType === 'RANGE'
-                  ? 'حداقل قیمت (از تومان)'
-                  : pricingType === 'STARTING_FROM'
-                  ? 'شروع قیمت پایه (تومان)'
-                  : 'قیمت مقطوع (تومان)'
-              }
-              required
-              error={formErrors.priceToman}
-            >
-              <Input
-                id="srv-form-price"
-                dir="ltr"
-                type="text"
-                inputMode="numeric"
-                value={priceToman}
-                onChange={(e) =>
-                  setPriceToman(formatNumericInputWithCommas(e.target.value))
-                }
-                placeholder="650,000"
-              />
-            </FormField>
-
-            {pricingType === 'RANGE' ? (
-              <FormField
-                id="srv-form-max-price"
-                label="حداکثر قیمت (تا تومان)"
-                required
-              >
-                <Input
-                  id="srv-form-max-price"
-                  dir="ltr"
-                  type="text"
-                  inputMode="numeric"
-                  value={maxPriceToman}
-                  onChange={(e) =>
-                    setMaxPriceToman(
-                      formatNumericInputWithCommas(e.target.value)
-                    )
-                  }
-                  placeholder="950,000"
-                />
-              </FormField>
-            ) : null}
-          </div>
-
-          {/* ۴. تگ‌های آماده برند متریال و شرایط خدمت + توضیحات */}
-          <div className="space-y-2">
-            <FormField
-              id="srv-form-desc"
-              label="توضیحات تکمیلی، برند متریال یا شرایط پذیرش"
-              optionalLabel="با کلیک روی پیشنهادها خودکار اضافه می‌شود"
-            >
-              <Input
-                id="srv-form-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="توضیح کوتاه درباره برند مواد، نوع پوست/مو مناسب یا شرایط قیمت..."
-              />
-            </FormField>
-            <div className="flex flex-wrap gap-1.5">
-              {currentChecklist.materialsAndNotes.map((note) => (
-                <button
-                  key={note}
-                  type="button"
-                  onClick={() =>
-                    setDescription((prev) =>
-                      prev.includes(note)
-                        ? prev
-                        : prev.trim()
-                        ? `${prev.trim()} · ${note}`
-                        : note
-                    )
-                  }
-                  className="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-[10px] font-bold text-[#334155] hover:text-[#0057FF] cursor-pointer transition-colors"
-                >
-                  + {note}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
             <Button
               variant="outline"
               size="sm"
+              className="flex-1 sm:flex-none"
               onClick={() => setModalOpen(false)}
             >
               انصراف
             </Button>
-            <Button type="submit" variant="primary" size="sm">
-              ذخیره نهایی خدمت / پکیج
+            <Button
+              type="submit"
+              form="service-customize-form"
+              variant="primary"
+              size="sm"
+              className="flex-1 sm:flex-none"
+            >
+              {editingService ? 'ذخیره تغییرات' : 'ثبت خدمت'}
             </Button>
           </div>
-        </form>
+        }
+      >
+        {(() => {
+          const categoryOptions = Array.from(
+            new Set([
+              ...uniqueCats,
+              activeKitCategory,
+              ...(category ? [category] : []),
+              ...allKitDomains,
+            ])
+          ).filter(Boolean);
+          const commitCustomCategory = () => {
+            const clean = customCategoryInput.trim();
+            if (!clean) return;
+            setCategory(clean);
+            setIsCreatingCustomCategory(false);
+            setCustomCategoryInput('');
+            setFormErrors((prev) => {
+              const next = { ...prev };
+              delete next.category;
+              return next;
+            });
+          };
+          return (
+            <form
+              id="service-customize-form"
+              onSubmit={handleSaveService}
+              className="space-y-3.5"
+              noValidate
+            >
+              {/* ۱. انتخاب ساده نوع خدمت (پکیج یا تکی) */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-[#F1F5F9] border border-[#E2E8F0]">
+                <button
+                  type="button"
+                  onClick={() => setServiceMode('PACKAGE')}
+                  className={`py-1.5 px-2.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                    serviceMode === 'PACKAGE'
+                      ? 'bg-[#061138] text-[#00E5FF] shadow-2xs'
+                      : 'text-[#475569] hover:text-[#061138]'
+                  }`}
+                >
+                  📦 پکیج چندمرحله‌ای
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setServiceMode('SINGLE')}
+                  className={`py-1.5 px-2.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                    serviceMode === 'SINGLE'
+                      ? 'bg-[#061138] text-white shadow-2xs'
+                      : 'text-[#475569] hover:text-[#061138]'
+                  }`}
+                >
+                  ✂️ خدمت تکی
+                </button>
+              </div>
+
+              {/* ۲. عنوان و دسته‌بندی (با امکان انتخاب یا تعریف دسته‌بندی کاملاً جدید) */}
+              <FormField
+                id="srv-form-title"
+                label={serviceMode === 'PACKAGE' ? 'عنوان پکیج' : 'عنوان خدمت'}
+                required
+                error={formErrors.title}
+              >
+                <Input
+                  id="srv-form-title"
+                  value={title}
+                  hasError={Boolean(formErrors.title)}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={
+                    serviceMode === 'PACKAGE'
+                      ? 'مثلاً: پکیج لیزر فول‌بادی یا فیشیال VIP'
+                      : 'نام خدمت را وارد کنید'
+                  }
+                />
+              </FormField>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="srv-form-cat"
+                    className="text-xs font-extrabold text-[#1E1B2E]"
+                  >
+                    دسته‌بندی خدمت <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingCustomCategory((v) => !v);
+                      setCustomCategoryInput('');
+                    }}
+                    className="text-[11px] font-extrabold text-[#0057FF] hover:underline cursor-pointer whitespace-nowrap"
+                  >
+                    {isCreatingCustomCategory
+                      ? 'بازگشت به لیست دسته‌ها'
+                      : '+ دسته‌بندی جدید'}
+                  </button>
+                </div>
+
+                {isCreatingCustomCategory ? (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="srv-form-cat"
+                      value={customCategoryInput}
+                      hasError={Boolean(formErrors.category)}
+                      onChange={(e) => setCustomCategoryInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          commitCustomCategory();
+                        }
+                      }}
+                      placeholder="نام دسته جدید (مثلاً: ماساژ، بافت مو، تتو...)"
+                    />
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={commitCustomCategory}
+                      className="shrink-0"
+                    >
+                      تایید
+                    </Button>
+                  </div>
+                ) : (
+                  <Select
+                    id="srv-form-cat"
+                    value={category}
+                    hasError={Boolean(formErrors.category)}
+                    onChange={(e) => {
+                      if (e.target.value === '__ADD_NEW_CATEGORY__') {
+                        setIsCreatingCustomCategory(true);
+                        setCustomCategoryInput('');
+                      } else {
+                        setCategory(e.target.value);
+                      }
+                    }}
+                    options={[
+                      ...categoryOptions.map((titleItem) => ({
+                        value: titleItem,
+                        label: titleItem,
+                      })),
+                      {
+                        value: '__ADD_NEW_CATEGORY__',
+                        label: '+ ایجاد دسته‌بندی جدید...',
+                      },
+                    ]}
+                  />
+                )}
+                {formErrors.category ? (
+                  <p className="text-[11px] font-bold text-rose-600">
+                    {formErrors.category}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* ۳. مدل قیمت‌گذاری و مبلغ + مدت زمان (دم‌دست و بدون اسکرول اضافه) */}
+              <div className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC]/80 p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-extrabold text-[#061138]">
+                    تعرفه و مدت زمان
+                  </span>
+                  <ClickPopover
+                    iconOnly
+                    tone="blue"
+                    title="مدل‌های نمایش قیمت به مشتری"
+                  >
+                    <ul className="list-disc pr-4 space-y-1">
+                      <li>
+                        <strong>مقطوع:</strong> یک مبلغ ثابت و دقیق نمایش داده می‌شود.
+                      </li>
+                      <li>
+                        <strong>بازه‌ای:</strong> حداقل تا حداکثر قیمت (مناسب خدمات وابسته به حجم کار یا مواد).
+                      </li>
+                      <li>
+                        <strong>از پایه:</strong> شروع قیمت پایه + تعیین دقیق پس از مشاوره حضوری.
+                      </li>
+                    </ul>
+                  </ClickPopover>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-white border border-[#E2E8F0]">
+                  {[
+                    { id: 'FIXED' as const, label: 'مقطوع' },
+                    { id: 'RANGE' as const, label: 'بازه‌ای' },
+                    { id: 'STARTING_FROM' as const, label: 'از پایه' },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setPricingType(mode.id)}
+                      className={`py-1.5 rounded-lg text-[11px] sm:text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                        pricingType === mode.id
+                          ? 'bg-[#0057FF] text-white shadow-2xs'
+                          : 'text-[#475569] hover:text-[#061138]'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+
+                {pricingType === 'RANGE' ? (
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <FormField
+                        id="srv-form-price"
+                        label="از (تومان)"
+                        required
+                        error={formErrors.priceToman}
+                      >
+                        <Input
+                          id="srv-form-price"
+                          dir="ltr"
+                          type="text"
+                          inputMode="numeric"
+                          value={priceToman}
+                          onChange={(e) =>
+                            setPriceToman(
+                              formatNumericInputWithCommas(e.target.value)
+                            )
+                          }
+                          placeholder="650,000"
+                        />
+                      </FormField>
+                      <FormField
+                        id="srv-form-max-price"
+                        label="تا (تومان)"
+                        required
+                      >
+                        <Input
+                          id="srv-form-max-price"
+                          dir="ltr"
+                          type="text"
+                          inputMode="numeric"
+                          value={maxPriceToman}
+                          onChange={(e) =>
+                            setMaxPriceToman(
+                              formatNumericInputWithCommas(e.target.value)
+                            )
+                          }
+                          placeholder="950,000"
+                        />
+                      </FormField>
+                    </div>
+                    <FormField
+                      id="srv-form-dur"
+                      label="مدت زمان (دقیقه)"
+                      required
+                      error={formErrors.durationMinutes}
+                    >
+                      <Input
+                        id="srv-form-dur"
+                        dir="ltr"
+                        type="number"
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <FormField
+                      id="srv-form-price"
+                      label={
+                        pricingType === 'STARTING_FROM'
+                          ? 'شروع از (تومان)'
+                          : 'قیمت (تومان)'
+                      }
+                      required
+                      error={formErrors.priceToman}
+                    >
+                      <Input
+                        id="srv-form-price"
+                        dir="ltr"
+                        type="text"
+                        inputMode="numeric"
+                        value={priceToman}
+                        onChange={(e) =>
+                          setPriceToman(
+                            formatNumericInputWithCommas(e.target.value)
+                          )
+                        }
+                        placeholder="650,000"
+                      />
+                    </FormField>
+                    <FormField
+                      id="srv-form-dur"
+                      label="مدت (دقیقه)"
+                      required
+                      error={formErrors.durationMinutes}
+                    >
+                      <Input
+                        id="srv-form-dur"
+                        dir="ltr"
+                        type="number"
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                )}
+              </div>
+
+              {/* ۴. مراحل پکیج (فقط در حالت پکیج — جمع‌وجور و با چک‌لیست بازشو) */}
+              {serviceMode === 'PACKAGE' ? (
+                <div className="rounded-2xl bg-[#F0FDFA]/80 border border-[#99F6E4] p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-extrabold text-[#065F46]">
+                        مراحل پکیج
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-[#059669] text-white text-[10px] font-black tabular-nums whitespace-nowrap">
+                        {toPersianDigits(selectedPackageStages.length)} مورد
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStagesPickerOpen((v) => !v)}
+                      className="text-[11px] font-extrabold text-[#0F766E] bg-white border border-[#99F6E4] px-2.5 py-1 rounded-lg hover:bg-[#CCFBF1]/50 cursor-pointer whitespace-nowrap"
+                    >
+                      {stagesPickerOpen ? 'بستن لیست ▴' : '+ چک‌لیست آماده'}
+                    </button>
+                  </div>
+
+                  {selectedPackageStages.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedPackageStages.map((st, idx) => (
+                        <span
+                          key={`${st}-${idx}`}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-[#059669]/35 text-[11px] font-bold text-[#061138]"
+                        >
+                          <span className="text-[#059669] tabular-nums font-extrabold">
+                            {toPersianDigits(idx + 1)}.
+                          </span>
+                          <span>{st}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleStageInModal(st)}
+                            aria-label={`حذف مرحله ${st}`}
+                            className="text-rose-500 hover:text-rose-700 font-black cursor-pointer mr-0.5"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={customStageInput}
+                      onChange={(e) => setCustomStageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCustomStageInModal();
+                        }
+                      }}
+                      placeholder="افزودن مرحله دلخواه (مثلاً: ماسک آبرسان)..."
+                      className="flex-1 min-w-0 h-8 rounded-xl border border-[#A7F3D0] bg-white px-2.5 text-xs font-bold text-[#061138] focus:border-[#059669] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCustomStageInModal}
+                      className="h-8 px-3 rounded-xl bg-[#059669] text-white text-xs font-extrabold hover:bg-[#047857] cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      + افزودن
+                    </button>
+                  </div>
+
+                  {stagesPickerOpen ? (
+                    <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pt-2 border-t border-[#99F6E4]">
+                      {currentChecklist.stages.map((st) => {
+                        const isChecked = selectedPackageStages.includes(st);
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => handleToggleStageInModal(st)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
+                              isChecked
+                                ? 'bg-[#059669] text-white border-[#059669]'
+                                : 'bg-white text-[#064E3B] border-[#A7F3D0] hover:border-[#059669]'
+                            }`}
+                          >
+                            <span>{isChecked ? '✓' : '+'}</span>
+                            <span>{st}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* ۵. توضیحات کوتاه (اختیاری + تگ‌های آماده بازشو) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    htmlFor="srv-form-desc"
+                    className="text-xs font-extrabold text-[#1E1B2E]"
+                  >
+                    توضیحات کوتاه{' '}
+                    <span className="font-normal text-[#94A3B8]">(اختیاری)</span>
+                  </label>
+                  {currentChecklist.materialsAndNotes.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setNotesPickerOpen((v) => !v)}
+                      className="text-[11px] font-bold text-[#0057FF] hover:underline cursor-pointer"
+                    >
+                      {notesPickerOpen ? 'بستن تگ‌ها ▴' : '+ تگ آماده'}
+                    </button>
+                  ) : null}
+                </div>
+                <Input
+                  id="srv-form-desc"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="برند مواد، دستگاه یا نکات مهم برای مشتری..."
+                />
+                {notesPickerOpen ? (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {currentChecklist.materialsAndNotes.map((note) => (
+                      <button
+                        key={note}
+                        type="button"
+                        onClick={() =>
+                          setDescription((prev) =>
+                            prev.includes(note)
+                              ? prev
+                              : prev.trim()
+                              ? `${prev.trim()} · ${note}`
+                              : note
+                          )
+                        }
+                        className="px-2 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#E0ECFF] border border-[#CBD5E1] text-[10px] font-bold text-[#334155] hover:text-[#0057FF] cursor-pointer transition-colors"
+                      >
+                        + {note}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
       {/* دیالوگ تایید حذف خدمت */}
@@ -5273,132 +5627,136 @@ export const BusinessCustomersPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-4">
       <PageHeader
         kicker="مشتریان · باشگاه و پرونده مراجعان سالن"
-        title="مدیریت و خروجی اطلاعات مشتریان"
-        subtitle="مشتریان حضوری و آنلاین خود را مدیریت کنید، به صورت تکی یا گروهی وارد نمایید و هر زمان خواستید از شماره‌ها و اطلاعات آن‌ها خروجی اکسل بگیرید"
+        title="مدیریت مشتریان"
+        subtitle="مشتریان حضوری و آنلاین خود را مدیریت کنید"
         routePattern="/app/customers"
         breadcrumbs={[
           { label: 'پنل کسب‌وکار', href: '/app' },
           { label: 'پرونده مشتریان' },
         ]}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               size="sm"
-              onClick={handleExportCustomersCsv}
-            >
-              <Download className="w-4 h-4 text-[#0057FF]" />
-              <span>خروجی اکسل (CSV) مشتریان</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void handleCopyAllCustomerPhones()}
-            >
-              <Copy className="w-4 h-4 text-[#0057FF]" />
-              <span>کپی یکجای شماره‌ها</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
+              className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs"
               onClick={() => setIsBulkModalOpen(true)}
             >
-              <Users className="w-4 h-4" />
-              <span>افزودن سریع گروهی</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>افزودن گروهی</span>
             </Button>
             <Button
               variant="primary"
               size="sm"
+              className="!px-2.5 !py-1.5 !text-[11px] sm:!text-xs"
               onClick={openAddSingleModal}
             >
-              <Plus className="w-4 h-4" />
-              <span>+ افزودن مشتری جدید</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>مشتری جدید</span>
             </Button>
           </div>
         }
       />
 
-      {/* نوار ابزار خروجی سریع شماره‌ها و اطلاعات مشتریان */}
-      <div className="rounded-2xl border border-[#BFDBFE] bg-gradient-to-r from-[#EFF6FF] to-[#F8FAFC] p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <p className="text-xs sm:text-sm font-black text-[#061138]">
-            پشتیبان‌گیری و خروجی گرفتن از لیست مشتریان ({toPersianDigits(mergedBusinessCustomers.length)} نفر)
+      {/* نوار ابزار مینیمال خروجی و کپی سریع شماره‌ها */}
+      <div className="rounded-2xl border border-[#BFDBFE] bg-gradient-to-r from-[#EFF6FF] to-[#F8FAFC] px-3 py-1.5 sm:px-3.5 sm:py-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="text-[11px] sm:text-xs font-extrabold text-[#061138] whitespace-nowrap">
+            <span className="sm:hidden">
+              خروجی ({toPersianDigits(mergedBusinessCustomers.length)} نفر)
+            </span>
+            <span className="hidden sm:inline">
+              خروجی و پشتیبان‌گیری ({toPersianDigits(mergedBusinessCustomers.length)} نفر)
+            </span>
           </p>
-          <p className="text-[11px] font-semibold text-[#475569]">
-            شامل تمام مشتریان نوبت آنلاین و مشتریان حضوری ثبت‌شده به همراه نام، شماره موبایل، تعداد مراجعات و خدمات دریافتی
-          </p>
+          <ClickPopover
+            iconOnly
+            tone="blue"
+            title="محتوای فایل خروجی مشتریان"
+          >
+            <p>
+              فایل اکسل/CSV شامل تمام مشتریان نوبت آنلاین و حضوری ثبت‌شده به همراه نام، شماره موبایل، تعداد مراجعات و خدمات دریافتی است.
+            </p>
+          </ClickPopover>
         </div>
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleExportCustomersCsv}
-            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0057FF] px-3.5 py-2 text-xs font-black text-white shadow-xs hover:bg-[#0046CC] transition cursor-pointer"
+            className="inline-flex items-center justify-center gap-1 rounded-xl bg-[#0057FF] px-2.5 py-1.5 text-[11px] font-black text-white shadow-xs hover:bg-[#0046CC] transition cursor-pointer whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>دانلود فایل اکسل / CSV</span>
+            <span>اکسل</span>
           </button>
           <button
             type="button"
             onClick={() => void handleCopyAllCustomerPhones()}
-            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#CBD5E1] bg-white px-3.5 py-2 text-xs font-extrabold text-[#061138] hover:border-[#0057FF] hover:text-[#0057FF] transition cursor-pointer"
+            className="inline-flex items-center justify-center gap-1 rounded-xl border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-[11px] font-extrabold text-[#061138] hover:border-[#0057FF] hover:text-[#0057FF] transition cursor-pointer whitespace-nowrap"
           >
             <Copy className="w-3.5 h-3.5" />
-            <span>کپی همه شماره‌ها</span>
+            <span>کپی شماره‌ها</span>
           </button>
         </div>
       </div>
 
-      {/* کارت راهنمای ثبت سریع مشتریان حضوری + آمار مشتریان */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="md:col-span-2">
-          <FormField
-            id="cust-search"
-            label="جست‌وجوی نام، شماره موبایل، خدمت یا یادداشت تخصصی"
+      {/* نوار جمع‌وجور آمار کل + وفادار و جست‌وجوی سریع مشتریان */}
+      <div className="grid grid-cols-2 md:grid-cols-12 gap-2 sm:gap-3 items-stretch">
+        <div className="md:col-span-3 rounded-2xl bg-white border border-[#E2E8F0] px-3 py-2 sm:py-2.5 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] text-[#64748B] font-bold block truncate">
+              کل پرونده‌ها
+            </span>
+            <span className="text-sm sm:text-lg font-black text-[#061138] tabular-nums">
+              {toPersianDigits(mergedBusinessCustomers.length)}{' '}
+              <span className="text-[10px] font-bold text-[#64748B]">نفر</span>
+            </span>
+          </div>
+          <ClickPopover
+            iconOnly
+            tone="slate"
+            title="پرونده‌های ثبت‌شده سالن"
           >
-            <Input
-              id="cust-search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="مثلاً سارا احمدی، 0913 یا بالیاژ..."
-            />
-          </FormField>
-        </Card>
+            <p>
+              شامل تمام مشتریان نوبت آنلاین و مشتریان حضوری است که به‌صورت دستی یا گروهی وارد کرده‌اید.
+            </p>
+          </ClickPopover>
+        </div>
 
-        <Card variant="muted" className="flex flex-col justify-center space-y-1">
-          <p className="text-xs text-[#6B6480] font-bold">
-            کل پرونده‌های ثبت‌شده سالن
-          </p>
-          <p className="text-2xl font-extrabold text-[#061138] tabular-nums">
-            {toPersianDigits(mergedBusinessCustomers.length)} نفر
-          </p>
-          <p className="text-[11px] text-[#6B6480]">
-            شامل مشتریان آنلاین و حضوری
-          </p>
-        </Card>
-
-        <Card variant="muted" className="flex flex-col justify-center space-y-1">
-          <p className="text-xs text-[#6B6480] font-bold">
-            مشتریان وفادار (۳+ مراجعه)
-          </p>
-          <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
-            {toPersianDigits(
-              mergedBusinessCustomers.filter((c) => c.totalVisits >= 3).length
-            )}{' '}
-            نفر
-          </p>
+        <div className="md:col-span-3 rounded-2xl bg-[#FAF8FF] border border-[#DDD6FE] px-3 py-2 sm:py-2.5 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] text-[#6D28D9] font-bold block truncate">
+              وفادار (۳+ مراجعه)
+            </span>
+            <span className="text-sm sm:text-lg font-black text-[#7C3AED] tabular-nums">
+              {toPersianDigits(
+                mergedBusinessCustomers.filter((c) => c.totalVisits >= 3).length
+              )}{' '}
+              <span className="text-[10px] font-bold text-[#6D28D9]">نفر</span>
+            </span>
+          </div>
           <Link
             to="/app/marketing"
-            className="text-[11px] font-bold text-[#0057FF] hover:underline"
+            className="text-[10px] font-extrabold text-[#0057FF] bg-white border border-[#BFDBFE] px-2 py-1 rounded-lg hover:bg-[#EFF6FF] shrink-0"
           >
-            ارسال پیامک گروهی به مشتریان ←
+            پیامک ←
           </Link>
-        </Card>
+        </div>
+
+        <div className="col-span-2 md:col-span-6 rounded-2xl bg-white border border-[#CBD5E1] px-3 py-1.5 sm:py-2 flex items-center gap-2">
+          <Input
+            id="cust-search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="جست‌وجوی نام، موبایل، خدمت یا یادداشت..."
+            className="!border-0 !p-0 !h-7 sm:!h-8 !min-h-0 !shadow-none !bg-transparent !text-xs sm:!text-sm focus:!ring-0"
+          />
+        </div>
       </div>
 
-      {/* باشگاه مشتریان و سیستم امتیاز وفاداری تایم تو */}
+      {/* باشگاه مشتریان و سطوح وفاداری — مینیمال با پاپ‌اور راهنمای کلیکی */}
       {(() => {
         const bronzeCustomers = mergedBusinessCustomers.filter(
           (c) => (c.totalVisits || 0) <= 2
@@ -5414,71 +5772,70 @@ export const BusinessCustomersPage: React.FC = () => {
           0
         );
         return (
-          <Card className="border-2 border-[#8B5CF6]/25 bg-gradient-to-br from-[#FAF8FF] via-white to-[#EFF6FF] space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E6E0F5] pb-3">
-              <div className="space-y-1">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#EDE9FE] text-[#6D28D9] text-[10px] font-black">
-                  🏆 باشگاه مشتریان و سیستم امتیاز وفاداری تایم تو
+          <Card className="!p-3 sm:!p-4 border border-[#8B5CF6]/30 bg-gradient-to-br from-[#FAF8FF] via-white to-[#EFF6FF] space-y-2.5 sm:space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs sm:text-sm font-black text-[#061138] truncate">
+                  🏆 باشگاه وفاداری مشتریان
                 </span>
-                <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-                  چگونه امتیاز وفاداری مشتریان محاسبه و تبدیل به بازگشت مشتری می‌شود؟
-                </h2>
-                <p className="text-xs text-[#475569] leading-relaxed">
-                  مشتریان با هر رزرو آنلاین یا ثبت مراجعه، به‌صورت خودکار <strong>۱۵۰ امتیاز وفاداری</strong> و نشان <strong>«عضو باشگاه مشتریان»</strong> در حساب شخصی خود دریافت می‌کنند و در سالن شما به ۳ سطح برنزی، نقره‌ای و طلایی VIP دسته‌بندی می‌شوند.
-                </p>
+                <ClickPopover
+                  iconOnly
+                  wide
+                  tone="violet"
+                  title="نحوه محاسبه امتیاز و سطح‌بندی باشگاه مشتریان"
+                >
+                  <div className="space-y-1.5">
+                    <p>
+                      مشتریان با هر رزرو آنلاین یا ثبت مراجعه، به‌صورت خودکار <strong>۱۵۰ امتیاز وفاداری</strong> و نشان عضویت در حساب شخصی خود می‌گیرند:
+                    </p>
+                    <ul className="list-disc pr-4 space-y-1">
+                      <li><strong>🥉 برنزی:</strong> ۱ تا ۲ مراجعه (مشتریان جدید)</li>
+                      <li><strong>🥈 نقره‌ای:</strong> ۳ تا ۴ مراجعه (۴۵۰ تا ۶۰۰ امتیاز)</li>
+                      <li><strong>🥇 طلایی VIP:</strong> ۵ مراجعه و بیشتر (۷۵۰+ امتیاز)</li>
+                    </ul>
+                  </div>
+                </ClickPopover>
               </div>
               <Link to="/app/marketing" className="shrink-0">
-                <Button variant="primary" size="sm">
-                  <Sparkles className="w-4 h-4" />
-                  <span>ارسال پیامک کد تخفیف به مشتریان وفادار ←</span>
+                <Button variant="primary" size="sm" className="!px-2.5 !py-1 !text-[11px]">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>ارسال کد تخفیف ←</span>
                 </Button>
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 rounded-2xl bg-white border border-[#E2E8F0] space-y-1">
-                <span className="font-extrabold text-[#B45309] block">
-                  🥉 سطح برنزی (۱ تا ۲ نوبت)
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2.5 text-center tabular-nums">
+              <div className="px-2 py-2 rounded-xl bg-white border border-[#E2E8F0]">
+                <span className="text-[10px] font-extrabold text-[#B45309] block truncate">
+                  🥉 برنزی
                 </span>
-                <p className="text-lg font-black text-[#061138] tabular-nums">
-                  {toPersianDigits(bronzeCustomers.length)} نفر
+                <p className="text-xs sm:text-base font-black text-[#061138] mt-0.5">
+                  {toPersianDigits(bronzeCustomers.length)}
                 </p>
-                <span className="text-[10px] text-[#64748B] block">
-                  مشتریان جدید و در حال آشنایی
-                </span>
               </div>
-              <div className="p-3 rounded-2xl bg-white border border-[#CBD5E1] space-y-1">
-                <span className="font-extrabold text-[#475569] block">
-                  🥈 سطح نقره‌ای (۳ تا ۴ نوبت)
+              <div className="px-2 py-2 rounded-xl bg-white border border-[#CBD5E1]">
+                <span className="text-[10px] font-extrabold text-[#475569] block truncate">
+                  🥈 نقره‌ای
                 </span>
-                <p className="text-lg font-black text-[#061138] tabular-nums">
-                  {toPersianDigits(silverCustomers.length)} نفر
+                <p className="text-xs sm:text-base font-black text-[#061138] mt-0.5">
+                  {toPersianDigits(silverCustomers.length)}
                 </p>
-                <span className="text-[10px] text-[#64748B] block">
-                  مراجعان منظم (۴۵۰ تا ۶۰۰ امتیاز)
-                </span>
               </div>
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 space-y-1">
-                <span className="font-extrabold text-amber-900 block">
-                  🥇 سطح طلایی VIP (۵+ نوبت)
+              <div className="px-2 py-2 rounded-xl bg-amber-50 border border-amber-300">
+                <span className="text-[10px] font-extrabold text-amber-900 block truncate">
+                  🥇 طلایی VIP
                 </span>
-                <p className="text-lg font-black text-amber-950 tabular-nums">
-                  {toPersianDigits(goldCustomers.length)} نفر
+                <p className="text-xs sm:text-base font-black text-amber-950 mt-0.5">
+                  {toPersianDigits(goldCustomers.length)}
                 </p>
-                <span className="text-[10px] text-amber-800 block">
-                  مشتریان دائمی (۷۵۰+ امتیاز)
-                </span>
               </div>
-              <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-1">
-                <span className="font-extrabold text-[#0057FF] block">
-                  ⭐ مجموع امتیاز باشگاه سالن
+              <div className="px-2 py-2 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE]">
+                <span className="text-[10px] font-extrabold text-[#0057FF] block truncate">
+                  ⭐ امتیاز کل
                 </span>
-                <p className="text-lg font-black text-[#0057FF] tabular-nums">
-                  {toPersianDigits(totalLoyaltyPoints)} امتیاز
+                <p className="text-xs sm:text-base font-black text-[#0057FF] mt-0.5">
+                  {toPersianDigits(totalLoyaltyPoints)}
                 </p>
-                <span className="text-[10px] text-[#1E40AF] block">
-                  آماده دعوت به کمپین هدیه
-                </span>
               </div>
             </div>
           </Card>
@@ -7562,13 +7919,19 @@ export const BusinessMarketingPage: React.FC = () => {
             <div className="w-11 h-11 rounded-2xl bg-[#0057FF] text-white flex items-center justify-center shrink-0">
               <MessageSquare className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold text-[#061138]">
-                پنل ارسال پیامک به مشتریان سالن و گزارش سهمیه پیامک
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                پنل ارسال پیامک و گزارش سهمیه
               </h2>
-              <p className="text-xs text-[#64748B]">
-                مشتریان خود را به راحتی تیک بزنید، متن آماده انتخاب کنید و در لحظه پیامک بفرستید
-              </p>
+              <ClickPopover
+                iconOnly
+                tone="blue"
+                title="نحوه ارسال پیامک گروهی به مشتریان"
+              >
+                <p>
+                  مشتریان دلخواه را تیک بزنید، از متن‌های آماده کد تخفیف یا یادآوری انتخاب کنید و در لحظه برایشان پیامک ارسال نمایید.
+                </p>
+              </ClickPopover>
             </div>
           </div>
 
@@ -8565,16 +8928,17 @@ export const BusinessAnalyticsPage: React.FC = () => {
         ]}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#6B6480]">
-            کل دریافتی واقعی سالن (۱۰۰٪ بیعانه آنلاین + دریافتی حضوری)
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-5">
+        <Card className="!p-3 sm:!p-5 space-y-1 sm:space-y-2">
+          <p className="text-[11px] sm:text-xs font-bold text-[#6B6480] leading-snug">
+            <span className="sm:hidden">دریافتی واقعی سالن</span>
+            <span className="hidden sm:inline">کل دریافتی واقعی سالن (۱۰۰٪ بیعانه آنلاین + دریافتی حضوری)</span>
           </p>
-          <p className="text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
+          <p className="text-base sm:text-2xl font-extrabold text-[#8B5CF6] tabular-nums">
             {totalRevenueToman > 0 ? formatPriceToman(totalRevenueToman) : '۰ تومان'}
           </p>
-          <p className="text-xs text-[#64748B] font-semibold tabular-nums">
-            بیعانه آنلاین (کارمزد ۰٪):{' '}
+          <p className="text-[10px] sm:text-xs text-[#64748B] font-semibold tabular-nums leading-relaxed">
+            آنلاین:{' '}
             {netSalonDepositsCreditedToman > 0
               ? formatPriceToman(netSalonDepositsCreditedToman)
               : '۰ تومان'}{' '}
@@ -8584,44 +8948,44 @@ export const BusinessAnalyticsPage: React.FC = () => {
               : '۰ تومان'}
           </p>
         </Card>
-        <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#6B6480]">
-            موجودی آزاد قابل تسویه در سیکل هفتگی شبا
+        <Card className="!p-3 sm:!p-5 space-y-1 sm:space-y-2">
+          <p className="text-[11px] sm:text-xs font-bold text-[#6B6480] leading-snug">
+            <span className="sm:hidden">بیعانه‌های واریزی</span>
+            <span className="hidden sm:inline">کل بیعانه پایه واریزی مشتریان به کیف پول شما</span>
           </p>
-          <p className="text-2xl font-extrabold text-[#0057FF] tabular-nums">
-            {releasableWalletToman > 0
-              ? formatPriceToman(releasableWalletToman)
+          <p className="text-base sm:text-2xl font-extrabold text-[#059669] tabular-nums">
+            {onlineDepositsTotalToman > 0
+              ? formatPriceToman(onlineDepositsTotalToman)
               : '۰ تومان'}
           </p>
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-            <span className="text-[11px] text-[#B45309] font-bold tabular-nums">
+          <p className="text-[10px] sm:text-xs text-[#059669] font-bold tabular-nums">
+            کارمزد: ۰٪ · بازگشت: {toPersianDigits(repeatRatePct)}٪
+          </p>
+        </Card>
+        <Card className="col-span-2 md:col-span-1 !p-3 sm:!p-5 flex md:flex-col items-center md:items-stretch justify-between gap-2 sm:space-y-2">
+          <div className="space-y-0.5 sm:space-y-1 min-w-0">
+            <p className="text-[11px] sm:text-xs font-bold text-[#6B6480]">
+              موجودی آزاد قابل تسویه شبا
+            </p>
+            <p className="text-lg sm:text-2xl font-extrabold text-[#0057FF] tabular-nums">
+              {releasableWalletToman > 0
+                ? formatPriceToman(releasableWalletToman)
+                : '۰ تومان'}
+            </p>
+            <span className="text-[10px] sm:text-[11px] text-[#B45309] font-bold tabular-nums block">
               بلوکه نوبت آینده:{' '}
               {lockedFutureEscrowToman > 0
                 ? formatPriceToman(lockedFutureEscrowToman)
                 : '۰ تومان'}
             </span>
-            <button
-              type="button"
-              onClick={triggerAnalyticsShebaPayout}
-              className="px-2.5 py-1 rounded-lg bg-[#0057FF] hover:bg-[#0046CC] text-white text-[11px] font-extrabold transition-colors cursor-pointer"
-            >
-              تسویه هفتگی شبا ←
-            </button>
           </div>
-        </Card>
-        <Card className="space-y-2">
-          <p className="text-xs font-bold text-[#6B6480]">
-            کل بیعانه پایه واریزی مشتریان به کیف پول شما
-          </p>
-          <p className="text-2xl font-extrabold text-[#059669] tabular-nums">
-            {onlineDepositsTotalToman > 0
-              ? formatPriceToman(onlineDepositsTotalToman)
-              : '۰ تومان'}
-          </p>
-          <p className="text-xs text-[#059669] font-bold tabular-nums">
-            کارمزد کسرشده پلتفرم: ۰ تومان (۰٪) · بازگشت مجدد:{' '}
-            {toPersianDigits(repeatRatePct)}٪
-          </p>
+          <button
+            type="button"
+            onClick={triggerAnalyticsShebaPayout}
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-[11px] font-extrabold transition-colors cursor-pointer md:self-end"
+          >
+            تسویه شبا ←
+          </button>
         </Card>
       </div>
 
@@ -8630,14 +8994,22 @@ export const BusinessAnalyticsPage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-3">
           <div className="space-y-1">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-black">
-              سیکل هفتگی پایا (شنبه‌ها) · گزارش برداشت‌های شبا
+              سیکل هفتگی پایا (شنبه‌ها) · کارمزد ۰٪
             </span>
-            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              گزارش تسویه‌های هفتگی شبا و وضعیت واریز پایا
-            </h2>
-            <p className="text-xs text-[#64748B]">
-              خالص بیعانه نوبت‌های انجام‌شده در کیف پول شما آزاد می‌شود و در سیکل تسویه هفتگی پایا (شنبه‌ها) به شماره شبای ثبت‌شده شما واریز می‌گردد.
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                گزارش تسویه‌های هفتگی شبا و وضعیت واریز پایا
+              </h2>
+              <ClickPopover
+                iconOnly
+                title="نحوه تسویه شبا و زمان آزادسازی بیعانه"
+                tone="blue"
+              >
+                <p>
+                  ۱۰۰٪ بیعانه نوبت‌های انجام‌شده بدون کسر کارمزد در کیف پول شما آزاد می‌شود و پس از ثبت درخواست، در سیکل تسویه هفتگی پایا (شنبه‌ها) به شماره شبای ثبت‌شده شما واریز می‌گردد.
+                </p>
+              </ClickPopover>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -8659,12 +9031,9 @@ export const BusinessAnalyticsPage: React.FC = () => {
         </div>
 
         {bizSettlements.length === 0 ? (
-          <div className="p-5 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center space-y-1">
-            <p className="text-xs font-extrabold text-[#061138]">
-              هنوز درخواست برداشت شبا ثبت نکرده‌اید
-            </p>
-            <p className="text-[11px] text-[#64748B]">
-              هر زمان موجودی کیف پول بیعانه شما بالای صفر باشد، با زدن دکمه «درخواست تسویه به شبا» مبلغ در سیکل پایا فردا کاری به حساب شما واریز شده و گزارش روزانه آن در همین جدول ثبت می‌شود.
+          <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#CBD5E1] text-center">
+            <p className="text-xs font-extrabold text-[#64748B]">
+              هنوز درخواست تسویه شبا ثبت نشده است
             </p>
           </div>
         ) : (
@@ -8757,14 +9126,22 @@ export const BusinessAnalyticsPage: React.FC = () => {
         <Card className="lg:col-span-6 border-2 border-[#0057FF]/25 space-y-4">
           <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[10px] font-black">
-              روش اول · سریع‌ترین حالت برای آخر شب
+              روش اول · ثبت آخر شب
             </span>
-            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              ثبت یک‌جای کل دخل روزانه حضوری (کارت‌خوان / نقد)
-            </h2>
-            <p className="text-xs text-[#64748B]">
-              اگر فرصت ثبت تک‌به‌تک نوبت‌ها را ندارید، در پایان روز جمع کل دریافتی کارت‌خوان یا نقدی امروز را یک‌جا وارد کنید:
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                ثبت یک‌جای کل دخل روزانه حضوری (کارت‌خوان / نقد)
+              </h2>
+              <ClickPopover
+                iconOnly
+                title="ثبت تجمیعی دخل روزانه حضوری"
+                tone="blue"
+              >
+                <p>
+                  اگر فرصت ثبت تک‌به‌تک نوبت‌ها را ندارید، در پایان روز جمع کل دریافتی دستگاه کارت‌خوان یا نقدی سالن را یک‌جا وارد کنید تا در گزارش درآمد واقعی ماهانه و نمودار مالی شما لحاظ شود.
+                </p>
+              </ClickPopover>
+            </div>
           </div>
 
           <form onSubmit={handleAddDailyBulkIncome} className="space-y-3">
@@ -8865,14 +9242,22 @@ export const BusinessAnalyticsPage: React.FC = () => {
         <Card className="lg:col-span-6 border-2 border-[#059669]/25 space-y-4">
           <div className="space-y-1 border-b border-[#E2E8F0] pb-3">
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] text-[10px] font-black">
-              روش دوم · ثبت تکی ۱-کلیکی روی نوبت‌ها
+              روش دوم · ثبت تکی ۱-کلیکی
             </span>
-            <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
-              تسویه ۱-کلیکی الباقی نوبت‌ها در محل سالن
-            </h2>
-            <p className="text-xs text-[#64748B]">
-              در این لیست بیعانه دریافت‌شده آنلاین و الباقی قابل دریافت در سالن به تفکیک نمایش داده شده است. پس از دریافت الباقی در سالن، دکمه سبز را بزنید:
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                تسویه ۱-کلیکی الباقی نوبت‌ها در محل سالن
+              </h2>
+              <ClickPopover
+                iconOnly
+                title="تسویه حضوری الباقی هر نوبت"
+                tone="emerald"
+              >
+                <p>
+                  در این فهرست، بیعانه آنلاین پرداخت‌شده و مبلغ الباقی قابل دریافت در سالن به تفکیک نمایش داده می‌شود. پس از دریافت الباقی از مشتری در سالن، با یک کلیک روی دکمه سبز آن را در دخل روزانه ثبت کنید.
+                </p>
+              </ClickPopover>
+            </div>
           </div>
 
           {activeOrDoneAppointments.length === 0 ? (
@@ -9665,29 +10050,32 @@ export const BusinessSubscriptionPage: React.FC = () => {
         </div>
       ) : (
         /* نمای اصلی و خلوت: توضیح ۱۰ نوبت هدیه + دریافت شماره کارت/شبا جهت واریز بیعانه‌ها + تعیین درصد بیعانه */
-        <Card padding="lg">
-          <form onSubmit={handleSaveFinancialSettings} className="space-y-5">
-            {/* بنر شفاف ۱۰ نوبت هدیه شروع و علت دریافت شماره کارت و شبا */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-l from-[#ECFDF5] via-[#F0FDF4] to-[#EFF6FF] border-2 border-[#10B981]/50 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10B981] text-white text-xs font-black">
-                  🎁 هدیه شروع فعالیت شما: {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت اول کاملاً رایگان (با کارمزد ۰٪)
+        <Card className="!p-3.5 sm:!p-6">
+          <form onSubmit={handleSaveFinancialSettings} className="space-y-4 sm:space-y-5">
+            {/* بنر مینیمال ۱۰ نوبت هدیه شروع + آیکون راهنمای کلیکی */}
+            <div className="px-3 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-gradient-to-l from-[#ECFDF5] via-[#F0FDF4] to-[#EFF6FF] border border-[#10B981]/50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#10B981] text-white text-[11px] font-black">
+                  🎁 {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت اول رایگان (کارمزد ۰٪)
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full bg-white text-[#059669] border border-[#A7F3D0] text-[11px] font-extrabold tabular-nums">
-                  {toPersianDigits(quotaStatus.remainingBookingsCount)} نوبت از{' '}
-                  {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت هدیه باقی‌مانده
-                </span>
+                <ClickPopover
+                  iconOnly
+                  tone="emerald"
+                  title="چرا شماره کارت و شبا ثبت می‌کنیم؟"
+                >
+                  <p>
+                    برای شروع فعالیت نیازی به خرید اشتراک یا پرداخت هیچ هزینه‌ای ندارید. شماره کارت و شبای ثبت‌شده{' '}
+                    <strong className="text-[#061138]">
+                      صرفاً جهت واریز ۱۰۰٪ بیعانه‌های پرداختی مشتریان به حساب بانکی شما
+                    </strong>{' '}
+                    (در سیکل تسویه هفتگی شبا — شنبه‌ها) استفاده می‌شود و هیچ کارمزدی کسر نخواهد شد.
+                  </p>
+                </ClickPopover>
               </div>
-              <h2 className="text-sm sm:text-base font-black text-[#061138]">
-                ما ۱۰ نوبت اول را کاملاً رایگان به شما هدیه داده‌ایم؛ شماره کارت و شبا صرفاً برای واریز بیعانه‌ها به حساب شماست
-              </h2>
-              <p className="text-xs text-[#334155] leading-relaxed">
-                برای شروع فعالیت نیازی به خرید اشتراک یا پرداخت هیچ هزینه‌ای ندارید. شماره کارت و شماره شبایی که در کادر زیر وارد می‌کنید{' '}
-                <strong className="text-[#061138]">
-                  صرفاً جهت واریز ۱۰۰٪ بیعانه‌های پرداختی مشتریان به حساب بانکی شما
-                </strong>{' '}
-                (در سیکل تسویه هفتگی شبا — شنبه‌ها) استفاده می‌شود و هیچ کارمزدی از بیعانه‌های شما کسر نخواهد شد.
-              </p>
+              <span className="px-2 py-0.5 rounded-full bg-white text-[#059669] border border-[#A7F3D0] text-[10px] sm:text-[11px] font-extrabold tabular-nums">
+                {toPersianDigits(quotaStatus.remainingBookingsCount)} از{' '}
+                {toPersianDigits(FREE_TRIAL_BOOKING_QUOTA)} نوبت مانده
+              </span>
             </div>
 
             {validationError ? (
@@ -9701,15 +10089,21 @@ export const BusinessSubscriptionPage: React.FC = () => {
             ) : null}
 
             {/* ۱. اطلاعات حساب بانکی جهت واریز بیعانه نوبت‌ها */}
-            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
-              <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
-                <div>
-                  <h3 className="text-xs sm:text-sm font-extrabold text-[#061138]">
-                    ۱. اطلاعات حساب بانکی شما (جهت واریز هفتگی بیعانه‌های مشتریان)
+            <div className="p-3 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-3 sm:space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <h3 className="text-xs sm:text-sm font-extrabold text-[#061138] truncate">
+                    ۱. اطلاعات حساب بانکی (واریز شبا)
                   </h3>
-                  <p className="text-[11px] text-[#64748B] mt-0.5">
-                    بیعانه‌ای که مشتریان هنگام رزرو نوبت می‌پردازند، به این شماره کارت و شبا واریز می‌گردد:
-                  </p>
+                  <ClickPopover
+                    iconOnly
+                    tone="blue"
+                    title="محل واریز بیعانه نوبت‌های مشتریان"
+                  >
+                    <p>
+                      بیعانه‌ای که مشتریان هنگام رزرو نوبت می‌پردازند، بدون کسر کارمزد در سیکل پایا به همین شماره کارت و شبا واریز می‌گردد.
+                    </p>
+                  </ClickPopover>
                 </div>
                 {isBankSetupDone ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0] text-[10px] font-extrabold shrink-0">
@@ -9768,20 +10162,23 @@ export const BusinessSubscriptionPage: React.FC = () => {
             </div>
 
             {/* ۲. تعیین درصد بیعانه آنلاین و مهلت لغو نوبت */}
-            <div className="p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0]">
-                <div className="space-y-0.5">
-                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
-                    ۲. تعیین درصد بیعانه آنلاین هنگام رزرو نوبت:{' '}
-                    <span className="text-[#0057FF]">
-                      ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
-                    </span>
+            <div className="p-3 sm:p-4 rounded-2xl bg-white border border-[#CBD5E1] space-y-3 sm:space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#E2E8F0]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    ۲. درصد بیعانه آنلاین ({toPersianDigits(depositPercentRule)}٪)
                   </span>
-                  <span className="text-[11px] text-[#64748B] block">
-                    مشتری هنگام رزرو آنلاین این درصد را به عنوان بیعانه پرداخت می‌کند تا حضورش تضمین شود و وقت شما نسوزد:
-                  </span>
+                  <ClickPopover
+                    iconOnly
+                    tone="blue"
+                    title="چرا درصد بیعانه تعیین می‌کنیم؟"
+                  >
+                    <p>
+                      مشتری هنگام رزرو آنلاین این درصد از مبلغ خدمت را به عنوان بیعانه پرداخت می‌کند تا حضورش تضمین شود و وقت شما نسوزد؛ مابقی هزینه حضوری در سالن دریافت می‌شود.
+                    </p>
+                  </ClickPopover>
                 </div>
-                <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
                   بیعانه انتخابی: {toPersianDigits(depositPercentRule)}٪ ✓
                 </span>
               </div>
@@ -10068,17 +10465,25 @@ export const BusinessSettingsPage: React.FC = () => {
             <Card className="bg-gradient-to-l from-[#061138] via-[#0B1D56] to-[#0057FF] text-white border border-[#1E293B]">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1.5">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>اعتبار پیامک سالن شما</span>
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
+                      <MessageSquare className="w-4 h-4" />
+                      <span>اعتبار پیامک سالن شما</span>
+                    </span>
+                    <ClickPopover
+                      iconOnly
+                      tone="dark"
+                      title="نحوه ارسال پیامک خدماتی و تبلیغاتی"
+                    >
+                      <p>
+                        پیامک‌های تایید رزرو و یادآوری ۲۴ ساعت قبل به صورت خودکار از خط خدماتی پلتفرم ارسال می‌شود. برای ارسال پیامک گروهی و تبلیغاتی به مشتریان می‌توانید بسته پیامک تهیه کنید.
+                      </p>
+                    </ClickPopover>
+                  </div>
                   <h3 className="text-base sm:text-lg font-black text-white">
                     پیامک تایید نوبت: خودکار و فعال · شارژ پیامک تبلیغاتی:{' '}
                     {toPersianDigits(currentBiz?.extraSmsBalance ?? 0)} عدد
                   </h3>
-                  <p className="text-xs text-slate-200 leading-relaxed">
-                    پیامک‌های تایید رزرو به صورت خودکار از خط خدماتی پلتفرم ارسال می‌شود. برای ارسال پیامک گروهی و تبلیغاتی به مشتریان می‌توانید بسته پیامک تهیه کنید.
-                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <Link
@@ -10092,13 +10497,19 @@ export const BusinessSettingsPage: React.FC = () => {
             </Card>
 
             <Card padding="lg" className="space-y-4">
-              <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
                 <h3 className="text-sm font-extrabold text-[#061138]">
                   تنظیمات ارسال پیامک خودکار برای مشتریان و مدیر سالن
                 </h3>
-                <p className="text-xs text-[#64748B]">
-                  مشخص کنید در چه مراحلی پیامک اطلاع‌رسانی برای مراجعان یا شماره موبایل شما ارسال شود:
-                </p>
+                <ClickPopover
+                  iconOnly
+                  title="رویدادهای ارسال پیامک خودکار"
+                  tone="blue"
+                >
+                  <p>
+                    مشخص کنید در چه مراحلی (تایید نوبت، یادآوری ۲۴ ساعت قبل، اطلاع به موبایل مدیر یا تشکر پس از انجام خدمت) پیامک خودکار از خط خدماتی ارسال شود.
+                  </p>
+                </ClickPopover>
               </div>
               <div className="space-y-2.5 text-xs sm:text-sm text-[#061138]">
                 <label className="flex items-center justify-between gap-3 py-3 border-b border-[#E2E8F0] cursor-pointer">
@@ -10186,31 +10597,51 @@ export const BusinessSettingsPage: React.FC = () => {
           </div>
         ) : activeTab === 'booking_rules' ? (
           <Card padding="lg" className="space-y-5">
-            <div className="p-3.5 rounded-2xl bg-[#F0FDFA] border border-[#99F6E4] text-xs text-[#0F766E] space-y-1">
-              <p className="font-extrabold text-[#065F46]">
-                💡 قوانین بیعانه و کنسلی نوبت (کاملاً در اختیار شما به عنوان کارفرما)
-              </p>
-              <p className="leading-relaxed">
-                در صورت لغو نوبت توسط مشتری در مهلت مجاز، مبلغ بیعانه به‌صورت خودکار به «کیف پول مشتری» برمی‌گردد تا دوباره نوبت رزرو کند یا درخواست تسویه بزند. اگر مشتری دیرتر از مهلت مجاز تعیین‌شده توسط شما کنسل کند، قانون خسارت دیرکرد زیر اعمال می‌شود.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-extrabold text-[#061138]">
+                  تنظیمات درصد بیعانه آنلاین و قوانین کنسلی نوبت
+                </h3>
+                <ClickPopover
+                  iconOnly
+                  wide
+                  title="قوانین بیعانه، بازگشت وجه به کیف پول و خسارت دیرکرد"
+                  tone="emerald"
+                >
+                  <div className="space-y-1.5">
+                    <p>
+                      تعیین درصد بیعانه و مهلت کنسلی کاملاً در اختیار شما به عنوان کارفرما است.
+                    </p>
+                    <p>
+                      در صورت لغو نوبت توسط مشتری در مهلت مجاز، مبلغ بیعانه به‌صورت خودکار به <strong>«کیف پول مشتری»</strong> برمی‌گردد تا دوباره نوبت رزرو کند یا درخواست تسویه بزند. اگر مشتری دیرتر از مهلت مجاز کنسل کند، قانون خسارت دیرکرد زیر اعمال می‌شود.
+                    </p>
+                  </div>
+                </ClickPopover>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
+                بیعانه آنلاین الزامی: {toPersianDigits(depositPercentRule)}٪ ✓
+              </span>
             </div>
 
             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <span className="text-xs sm:text-sm font-extrabold text-[#061138] block">
-                    درصد بیعانه آنلاین هنگام ثبت نوبت توسط مشتری:{' '}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs sm:text-sm font-extrabold text-[#061138]">
+                    درصد بیعانه آنلاین هنگام ثبت نوبت:{' '}
                     <span className="text-[#0057FF]">
                       ({toPersianDigits(depositPercentRule)}٪ مبلغ کل خدمت)
                     </span>
                   </span>
-                  <p className="text-[11px] text-[#64748B] leading-relaxed">
-                    لطفاً یکی از ۴ ضریب پیشنهادی تایم تو (حداقل ۲۰٪ مبلغ کل خدمت) را انتخاب کنید. مبلغ بیعانه از صورت‌حساب حضوری مشتری کسر می‌شود.
-                  </p>
+                  <ClickPopover
+                    iconOnly
+                    title="نحوه انتخاب ضریب بیعانه آنلاین"
+                    tone="blue"
+                  >
+                    <p>
+                      یکی از ۴ ضریب پیشنهادی (حداقل ۲۰٪ مبلغ کل خدمت) را انتخاب کنید. مبلغ بیعانه هنگام رزرو از مشتری دریافت و از صورت‌حساب حضوری او در سالن کسر می‌شود.
+                    </p>
+                  </ClickPopover>
                 </div>
-                <span className="px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] border border-[#BFDBFE] text-[10px] font-black shrink-0">
-                  بیعانه آنلاین الزامی: {toPersianDigits(depositPercentRule)}٪ ✓
-                </span>
               </div>
 
               {/* ضرایب پیشنهادی استاندارد */}

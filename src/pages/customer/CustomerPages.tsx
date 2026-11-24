@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Link,
   useNavigate,
@@ -334,37 +334,6 @@ export const BookingStepPage: React.FC = () => {
   const [serviceSearchQuery, setServiceSearchQuery] = useState<string>('');
   const [activeStepIndicator, setActiveStepIndicator] = useState<1 | 2 | 3>(1);
   const [expandedServiceIds, setExpandedServiceIds] = useState<string[]>([]);
-  const [isMobileTopHeaderCollapsed, setIsMobileTopHeaderCollapsed] =
-    useState<boolean>(false);
-  const [isSearchFocused, setIsSearchFocused] = useState<boolean>(false);
-  const lastWindowScrollYRef = useRef<number>(0);
-  const touchStartYRef = useRef<number | null>(null);
-  const collapseLockUntilRef = useRef<number>(0);
-
-  useEffect(() => {
-    if (activeStepIndicator !== 1) {
-      setIsMobileTopHeaderCollapsed(false);
-      return;
-    }
-    const handleWindowScroll = () => {
-      if (window.innerWidth >= 1024) return;
-      const now = Date.now();
-      const currentY = window.scrollY || 0;
-      const prevY = lastWindowScrollYRef.current;
-      lastWindowScrollYRef.current = currentY;
-      if (now < collapseLockUntilRef.current) return;
-
-      if (currentY > 18 && currentY > prevY + 4 && !isSearchFocused) {
-        collapseLockUntilRef.current = now + 350;
-        setIsMobileTopHeaderCollapsed(true);
-      } else if (currentY <= 4 && prevY > 4) {
-        collapseLockUntilRef.current = now + 250;
-        setIsMobileTopHeaderCollapsed(false);
-      }
-    };
-    window.addEventListener('scroll', handleWindowScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleWindowScroll);
-  }, [activeStepIndicator, isSearchFocused]);
 
   const handleToggleServiceDetails = (
     e: React.MouseEvent,
@@ -761,16 +730,10 @@ export const BookingStepPage: React.FC = () => {
       : getBeautyPhotoUrl(business.name, business.typeLabel);
 
   return (
-    <div className="max-w-4xl mx-auto pb-8">
-      {/* هدر فشرده اطلاعات سالن (در موبایل هنگام اسکرول لیست خدمات مخفی می‌شود تا ۹۰٪ صفحه فقط خدمات باشد) */}
-      <div
-        className={`mb-2.5 sm:mb-3 flex flex-wrap items-center justify-between gap-3 ${
-          activeStepIndicator === 1 && isMobileTopHeaderCollapsed
-            ? 'max-lg:hidden'
-            : ''
-        }`}
-      >
-        <div className="flex items-center gap-3">
+    <div className="max-w-4xl mx-auto pb-4 lg:pb-8">
+      {/* هدر فشرده اطلاعات سالن */}
+      <div className="mb-2.5 sm:mb-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <img
             src={salonAvatar}
             alt={business.name}
@@ -792,7 +755,7 @@ export const BookingStepPage: React.FC = () => {
             </h1>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold">
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-[11px] sm:text-xs font-extrabold">
           <MapPin className="w-3.5 h-3.5" />
           <span>{business.neighborhood}</span>
         </span>
@@ -811,58 +774,24 @@ export const BookingStepPage: React.FC = () => {
         </div>
       ) : null}
 
-      {/* نوار مرحله‌به‌مرحله (در موبایل غیرچسبان و هنگام اسکرول خدمات مخفی می‌شود) */}
-      <div
-        className={
-          activeStepIndicator === 1 && isMobileTopHeaderCollapsed
-            ? 'max-lg:hidden'
-            : ''
-        }
-      >
-        <BookingFlowStepIndicator
-          currentStep={activeStepIndicator}
-          onSelectStep={handleNavigateStep}
-          hideSpecialistStep={bizSpecialists.length <= 1}
-        />
-      </div>
+      {/* نوار مرحله‌به‌مرحله (در موبایل غیرچسبان تا همراه صفحه به نرمی اسکرول شود) */}
+      <BookingFlowStepIndicator
+        currentStep={activeStepIndicator}
+        onSelectStep={handleNavigateStep}
+        hideSpecialistStep={bizSpecialists.length <= 1}
+      />
 
-      {/* گام ۱: انتخاب خدمت (در موبایل هنگام اسکرول به پایین، عنوان و سرچ و تب‌های بالا مخفی می‌شوند تا ۹۰٪ صفحه فقط کارت‌های خدمات باشد) */}
+      {/* گام ۱: انتخاب خدمت با هدر و فیلتر مینیمال در بالای کارت (اسکرول روان بدون پرش) */}
       {activeStepIndicator === 1 ? (
         <Card id="booking-step-1" className="rounded-3xl space-y-3">
-          {/* نوار بسیار باریک بازگردانی سرچ و دسته‌ها در موبایل وقتی کاربر به پایین اسکرول کرده است */}
-          {isMobileTopHeaderCollapsed ? (
-            <div className="lg:hidden flex items-center justify-between gap-2 pb-1.5 border-b border-[#E2E8F0]">
-              <button
-                type="button"
-                onClick={() => {
-                  collapseLockUntilRef.current = Date.now() + 400;
-                  setIsMobileTopHeaderCollapsed(false);
-                }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#CBD5E1] text-[11px] font-extrabold text-[#0057FF] cursor-pointer"
-              >
-                <span>🔍 جست‌وجو و فیلتر دسته‌ها</span>
-                <span className="text-[#475569]">
-                  ({toPersianDigits(visibleServices.length)} خدمت) ▾
-                </span>
-              </button>
-              <span className="px-2 py-0.5 rounded-full bg-[#E0E7FF] text-[#0057FF] text-[11px] font-extrabold tabular-nums">
-                {toPersianDigits(selectedServiceIds.length)} انتخاب‌شده
-              </span>
-            </div>
-          ) : null}
-
-          <div
-            className={`space-y-3 ${
-              isMobileTopHeaderCollapsed ? 'max-lg:hidden' : ''
-            }`}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-2.5">
-              <div className="flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
+          <div className="space-y-2 pb-2 border-b border-[#E2E8F0]">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-[#0057FF] text-white text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
                   ۱
                 </span>
-                <div>
-                  <h2 className="text-sm sm:text-base font-extrabold text-[#061138]">
+                <div className="min-w-0">
+                  <h2 className="text-xs sm:text-base font-extrabold text-[#061138] truncate">
                     انتخاب خدمت یا پکیج مورد نظر
                   </h2>
                   <p className="text-[11px] text-[#475569] hidden sm:block">
@@ -870,24 +799,22 @@ export const BookingStepPage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-full bg-[#E0E7FF] text-[#0057FF] text-xs font-extrabold tabular-nums">
-                {toPersianDigits(selectedServiceIds.length)} مورد انتخاب‌شده
+              <span className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-[#EFF6FF] text-[#0057FF] text-[11px] sm:text-xs font-extrabold tabular-nums shrink-0">
+                {toPersianDigits(selectedServiceIds.length)} انتخاب
               </span>
             </div>
 
-            {/* نوار جست‌وجو و دسته‌بندی سریع خدمات برای انتخاب آسان‌تر مشتری */}
+            {/* نوار جست‌وجو و تب‌های دسته‌بندی مینیمال (بدون پرش در اسکرول) */}
             {bizServices.length > 1 ? (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {bizServices.length > 3 ? (
                   <div className="relative">
                     <input
                       type="text"
                       value={serviceSearchQuery}
-                      onFocus={() => setIsSearchFocused(true)}
-                      onBlur={() => setIsSearchFocused(false)}
                       onChange={(e) => setServiceSearchQuery(e.target.value)}
-                      placeholder="جست‌وجوی سریع نام خدمت (مثلاً اصلاح، فیشیال، فول‌بادی...)"
-                      className="w-full rounded-2xl border border-[#CBD5E1] bg-[#F8FAFC] py-2 pr-3.5 pl-8 text-xs font-bold text-[#061138] placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                      placeholder="جست‌وجوی نام خدمت..."
+                      className="w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] py-2 pr-3 pl-7 text-xs font-semibold text-[#061138] placeholder:text-xs placeholder:text-[#64748B] focus:border-[#0057FF] focus:bg-white focus:outline-none transition-colors"
                     />
                     {serviceSearchQuery ? (
                       <button
@@ -901,14 +828,14 @@ export const BookingStepPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
                   <button
                     type="button"
                     onClick={() => setServiceCatFilter('ALL')}
-                    className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                    className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                       serviceCatFilter === 'ALL'
                         ? 'bg-[#0057FF] text-white'
-                        : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
+                        : 'bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]'
                     }`}
                   >
                     همه ({toPersianDigits(bizServices.length)})
@@ -917,7 +844,7 @@ export const BookingStepPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setServiceCatFilter('POPULAR')}
-                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                         serviceCatFilter === 'POPULAR'
                           ? 'bg-[#F59E0B] text-white'
                           : 'bg-[#FFFBEB] text-[#B45309] border border-[#FDE68A]'
@@ -931,10 +858,10 @@ export const BookingStepPage: React.FC = () => {
                       key={cat}
                       type="button"
                       onClick={() => setServiceCatFilter(cat)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                         serviceCatFilter === cat
                           ? 'bg-[#0057FF] text-white'
-                          : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1]'
+                          : 'bg-[#F8FAFC] text-[#475569] border border-[#E2E8F0]'
                       }`}
                     >
                       {cat}
@@ -945,51 +872,8 @@ export const BookingStepPage: React.FC = () => {
             ) : null}
           </div>
 
-          {/* فهرست خدمات: در موبایل بدون اسکرول داخلی محدود تا ۹۰٪ صفحه فقط خدمات جلوی چشم کاربر باشد */}
-          <div
-            className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 lg:max-h-[460px] lg:overflow-y-auto lg:pr-1"
-            onWheel={(e) => {
-              if (window.innerWidth >= 1024 || isSearchFocused) return;
-              if (e.deltaY > 8 && !isMobileTopHeaderCollapsed) {
-                collapseLockUntilRef.current = Date.now() + 350;
-                setIsMobileTopHeaderCollapsed(true);
-              } else if (
-                e.deltaY < -12 &&
-                (window.scrollY || 0) <= 8 &&
-                isMobileTopHeaderCollapsed
-              ) {
-                collapseLockUntilRef.current = Date.now() + 250;
-                setIsMobileTopHeaderCollapsed(false);
-              }
-            }}
-            onTouchStart={(e) => {
-              if (window.innerWidth >= 1024) return;
-              touchStartYRef.current = e.touches[0]?.clientY ?? null;
-            }}
-            onTouchMove={(e) => {
-              if (
-                window.innerWidth >= 1024 ||
-                isSearchFocused ||
-                touchStartYRef.current === null
-              ) {
-                return;
-              }
-              const currentTouchY =
-                e.touches[0]?.clientY ?? touchStartYRef.current;
-              const deltaY = touchStartYRef.current - currentTouchY;
-              if (deltaY > 18 && !isMobileTopHeaderCollapsed) {
-                collapseLockUntilRef.current = Date.now() + 350;
-                setIsMobileTopHeaderCollapsed(true);
-              } else if (
-                deltaY < -24 &&
-                (window.scrollY || 0) <= 8 &&
-                isMobileTopHeaderCollapsed
-              ) {
-                collapseLockUntilRef.current = Date.now() + 250;
-                setIsMobileTopHeaderCollapsed(false);
-              }
-            }}
-          >
+          {/* فهرست خدمات: در موبایل بدون اسکرول داخلی محدود تا صفحه روان اسکرول شود و خدمات کل دید کاربر را پر کنند */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 lg:max-h-[460px] lg:overflow-y-auto lg:pr-1">
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
               const stages = (srv.packageIncludes ?? []).filter(Boolean);
@@ -1167,31 +1051,28 @@ export const BookingStepPage: React.FC = () => {
             })}
           </div>
 
-          {/* نوار پایین گام ۱: در موبایل چسبیده به پایین صفحه (جایگزین منوی نواری موبایل) و در دسکتاپ در انتهای کارت */}
-          <div className="max-lg:fixed max-lg:bottom-0 max-lg:inset-x-0 max-lg:z-40 max-lg:bg-white/98 max-lg:backdrop-blur-md max-lg:px-3.5 max-lg:py-2.5 max-lg:border-t max-lg:border-[#CBD5E1] max-lg:shadow-[0_-12px_30px_-6px_rgba(6,17,56,0.18)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] flex items-center justify-between gap-2.5">
-            <div className="text-xs flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1 min-w-0">
-              <span className="text-[11px] text-[#64748B] font-semibold">
-                مجموع انتخاب شما:
+          {/* نوار پایین گام ۱: در موبایل چسبان (sticky) به پایین صفحه و هنگام رسیدن به انتهای لیست در جایگاه اصلی کارت قفل می‌شود تا با منوی پایین صفحه تداخل نداشته باشد */}
+          <div className="max-lg:sticky max-lg:bottom-0 max-lg:z-30 max-sm:-mx-5 max-sm:-mb-5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 max-lg:px-3.5 max-lg:py-2.5 max-lg:bg-white/95 max-lg:backdrop-blur-md max-lg:border-t max-lg:border-[#CBD5E1] max-lg:rounded-b-3xl max-lg:shadow-[0_-10px_24px_-8px_rgba(6,17,56,0.14)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] flex items-center justify-between gap-2">
+            <div className="text-xs flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5 min-w-0">
+              <span className="text-[10px] sm:text-xs text-[#64748B] font-semibold">
+                مجموع ({toPersianDigits(selectedServiceIds.length)} خدمت):
               </span>
-              <strong className="font-black text-[#061138] tabular-nums truncate">
-                {toPersianDigits(selectedServiceIds.length)} خدمت ·{' '}
-                <span className="text-[#0057FF]">
-                  {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
-                </span>
+              <strong className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums whitespace-nowrap">
+                {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
               </strong>
             </div>
             <Button
               variant="primary"
               size="sm"
-              className="shrink-0 justify-center px-4 py-2.5"
+              className="shrink-0 justify-center px-3.5 py-2.5 text-xs"
               onClick={() =>
                 setActiveStepIndicator(bizSpecialists.length <= 1 ? 3 : 2)
               }
             >
               <span>
                 {bizSpecialists.length <= 1
-                  ? 'مرحله بعد: زمان مراجعه'
-                  : 'مرحله بعد: انتخاب متخصص'}
+                  ? 'مرحله بعد: زمان'
+                  : 'مرحله بعد: متخصص'}
               </span>
               <ArrowLeft className="w-4 h-4 shrink-0" />
             </Button>
@@ -1201,7 +1082,7 @@ export const BookingStepPage: React.FC = () => {
 
       {/* گام ۲: انتخاب متخصص */}
       {activeStepIndicator === 2 ? (
-        <Card id="booking-step-2" className="rounded-3xl space-y-4 overflow-hidden">
+        <Card id="booking-step-2" className="rounded-3xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#CBD5E1] pb-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <span className="w-7 h-7 rounded-full bg-[#0057FF] text-white text-xs font-extrabold inline-flex items-center justify-center shrink-0">
@@ -1221,7 +1102,7 @@ export const BookingStepPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[340px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 lg:max-h-[360px] lg:overflow-y-auto lg:pr-1">
             {bizSpecialists.map((sp) => {
               const isSelected = selectedSpecialist?.id === sp.id;
               const spAvatar =
@@ -1280,7 +1161,7 @@ export const BookingStepPage: React.FC = () => {
             })}
           </div>
 
-          <div className="pt-3 border-t border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
+          <div className="max-lg:sticky max-lg:bottom-0 max-lg:z-30 max-sm:-mx-5 max-sm:-mb-5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 max-lg:px-4 max-lg:py-2.5 max-lg:bg-white/95 max-lg:backdrop-blur-md max-lg:border-t max-lg:border-[#CBD5E1] max-lg:rounded-b-3xl max-lg:shadow-[0_-10px_24px_-8px_rgba(6,17,56,0.14)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
             <Button
               variant="outline"
               size="sm"
@@ -1537,7 +1418,7 @@ export const BookingStepPage: React.FC = () => {
             )}
           </div>
 
-          <div className="pt-3 border-t border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
+          <div className="max-lg:sticky max-lg:bottom-0 max-lg:z-30 max-sm:-mx-5 max-sm:-mb-5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 max-lg:px-4 max-lg:py-2.5 max-lg:bg-white/95 max-lg:backdrop-blur-md max-lg:border-t max-lg:border-[#CBD5E1] max-lg:rounded-b-3xl max-lg:shadow-[0_-10px_24px_-8px_rgba(6,17,56,0.14)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] grid grid-cols-2 sm:flex sm:items-center sm:justify-between gap-2.5">
             <Button
               variant="outline"
               size="sm"

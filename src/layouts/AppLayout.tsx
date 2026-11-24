@@ -449,7 +449,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                   activeBusinessSwipeId
                 )
               }
-              className="flex-1 w-full px-4 pt-4 pb-36 sm:px-6 sm:pt-6 sm:pb-36 lg:px-8 lg:pt-8 lg:pb-12 min-w-0"
+              className="flex-1 w-full px-3.5 pt-2.5 pb-32 sm:px-6 sm:pt-5 sm:pb-36 lg:px-8 lg:pt-7 lg:pb-12 min-w-0"
             >
               {!businessProfileCompletion.isReadyForPublicShowcase &&
               !isBusinessOnboardingRouteAllowed(pathname) ? (
@@ -462,8 +462,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 />
               ) : (
                 <>
-                  {pathname !== '/app' ? (
-                    <div className="mb-4">
+                  {pathname !== '/app' &&
+                  businessProfileCompletion.totalPercent < 100 ? (
+                    <div className="mb-3">
                       <BusinessProfileCompletionBanner
                         summary={businessProfileCompletion}
                       />
@@ -553,7 +554,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         </>
       )}
 
-      {!isBusinessPanel && !isAdminPanel ? <PWAMobileInstallBanner /> : null}
+      {!isBusinessPanel &&
+      !isAdminPanel &&
+      !pathname.startsWith('/booking') ? (
+        <PWAMobileInstallBanner />
+      ) : null}
       {isAuthModalOpen ? (
         <React.Suspense fallback={null}>
           <TimetoAuthModal />
