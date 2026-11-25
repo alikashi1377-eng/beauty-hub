@@ -3228,13 +3228,57 @@ test('Appointment Cancellation SMS: notify-status with CANCELLED never invokes S
 
   const state: MockDbState = {
     sessions: new Map(),
-    users: new Map(),
+    users: new Map([
+      [
+        'user-owner-sms',
+        {
+          id: 'user-owner-sms',
+          phone: '09131110000',
+          full_name: 'مدیر سالن رز',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+    ]),
     admins: new Map(),
-    memberships: [],
-    businesses: new Map(),
+    memberships: [
+      {
+        user_id: 'user-owner-sms',
+        business_id: 'biz-roz',
+        business_slug: 'salon-roz',
+        member_role: 'OWNER',
+        is_active: true,
+      },
+    ],
+    businesses: new Map([
+      [
+        'biz-roz',
+        {
+          id: 'biz-roz',
+          slug: 'salon-roz',
+          name: 'سالن رز',
+          city: 'اصفهان',
+          neighborhood: 'چهارباغ',
+          address: 'اصفهان',
+          phone_display: '09131110000',
+          instagram_handle: null,
+          short_description: 'سالن رز',
+          about_text: 'سالن رز',
+          map_lat: null,
+          map_lng: null,
+          subscription_plan: 'پایه',
+          subscription_status: 'ACTIVE',
+          approval_status: 'APPROVED',
+        },
+      ],
+    ]),
     services: new Map(),
     appointments: new Map(),
   };
+  const ownerSmsToken = issueTestSession(state, {
+    sessionId: '55555555-5555-4555-8555-555555555551',
+    userId: 'user-owner-sms',
+  });
   const pool = createSecurityTestPool(state);
 
   const srv = await startEphemeralServer(
@@ -3269,7 +3313,10 @@ test('Appointment Cancellation SMS: notify-status with CANCELLED never invokes S
   try {
     const cancelRes = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-status`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerSmsToken}`,
+      },
       body: JSON.stringify({
         status: 'CANCELLED',
         customerName: 'سارا محمدی',
@@ -3292,7 +3339,10 @@ test('Appointment Cancellation SMS: notify-status with CANCELLED never invokes S
     // در وضعیت CONFIRMED باید همچنان پترن تایید مشتری (998877) فراخوانی شود
     const confirmRes = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-status`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerSmsToken}`,
+      },
       body: JSON.stringify({
         status: 'CONFIRMED',
         customerName: 'سارا محمدی',
@@ -3449,5 +3499,195 @@ test('SQL integrity: ensureAppointmentFromNotifyBookingInDb uses b.primary_categ
     q.sql.includes('INSERT INTO business_customers')
   );
   assert.ok(crmUpsert);
+});
+
+test('Security hardening: protected endpoints reject unauthenticated callers (401) and non-privileged roles (403)', async () => {
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map([
+      [
+        'sec-cust',
+        {
+          id: 'sec-cust',
+          phone: '09130001111',
+          full_name: 'مشتری عادی',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+      [
+        'sec-owner',
+        {
+          id: 'sec-owner',
+          phone: '09130002222',
+          full_name: 'صاحب سالن الف',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+    ]),
+    admins: new Map(),
+    memberships: [
+      {
+        user_id: 'sec-owner',
+        business_id: 'biz-owned',
+        business_slug: 'biz-owned',
+        member_role: 'OWNER',
+        is_active: true,
+      },
+    ],
+    businesses: new Map([
+      [
+        'biz-owned',
+        {
+          id: 'biz-owned',
+          slug: 'biz-owned',
+          name: 'سالن الف',
+          city: 'اصفهان',
+          neighborhood: 'مرداویج',
+          address: 'اصفهان',
+          phone_display: '09130002222',
+          instagram_handle: null,
+          short_description: 'سالن الف',
+          about_text: 'سالن الف',
+          map_lat: null,
+          map_lng: null,
+          subscription_plan: 'پایه',
+          subscription_status: 'ACTIVE',
+          approval_status: 'APPROVED',
+        },
+      ],
+      [
+        'biz-other',
+        {
+          id: 'biz-other',
+          slug: 'biz-other',
+          name: 'سالن ب',
+          city: 'اصفهان',
+          neighborhood: 'جلفا',
+          address: 'اصفهان',
+          phone_display: '09130003333',
+          instagram_handle: null,
+          short_description: 'سالن ب',
+          about_text: 'سالن ب',
+          map_lat: null,
+          map_lng: null,
+          subscription_plan: 'پایه',
+          subscription_status: 'ACTIVE',
+          approval_status: 'APPROVED',
+        },
+      ],
+    ]),
+    services: new Map(),
+    appointments: new Map(),
+  };
+
+  const custToken = issueTestSession(state, {
+    sessionId: '66666666-6666-4666-8666-666666666661',
+    userId: 'sec-cust',
+  });
+  const ownerToken = issueTestSession(state, {
+    sessionId: '66666666-6666-4666-8666-666666666662',
+    userId: 'sec-owner',
+  });
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+    },
+    createSecurityTestPool(state)
+  );
+
+  try {
+    // 1. Unauthenticated requests to newly protected endpoints must return 401
+    const unauthChecks = [
+      { path: '/api/v1/services/sync-item', method: 'POST', body: { action: 'upsert' } },
+      { path: '/api/v1/appointments/notify-status', method: 'POST', body: { status: 'CONFIRMED' } },
+      { path: '/api/v1/appointments/send-reminders', method: 'POST', body: {} },
+      { path: '/api/v1/auth/register-sync', method: 'POST', body: { phone: '09130001111' } },
+      { path: '/api/v1/platform/shared-state', method: 'GET' },
+      { path: '/api/v1/platform/shared-state', method: 'POST', body: {} },
+      { path: '/api/v1/payments/zibal/config', method: 'POST', body: { merchantId: 'attacker' } },
+      { path: '/api/v1/payments/zibal/server-ip', method: 'GET' },
+    ];
+    for (const chk of unauthChecks) {
+      const res = await fetch(`${srv.baseUrl}${chk.path}`, {
+        method: chk.method,
+        headers: chk.body ? { 'Content-Type': 'application/json' } : undefined,
+        body: chk.body ? JSON.stringify(chk.body) : undefined,
+      });
+      assert.equal(res.status, 401, `${chk.method} ${chk.path} must return 401 when unauthenticated`);
+    }
+
+    // 2. Customer must receive 403 on admin/business-only endpoints
+    const custForbiddenChecks = [
+      { path: '/api/v1/appointments/send-reminders', body: {} },
+      { path: '/api/v1/payments/zibal/config', body: { merchantId: 'hijack' } },
+      { path: '/api/v1/app/sms/send', body: { businessId: 'biz-owned', phone: '09130001111', message: 'hi' } },
+      { path: '/api/v1/services/sync-item', body: { action: 'upsert', businessId: 'biz-owned', title: 'تست' } },
+    ];
+    for (const chk of custForbiddenChecks) {
+      const res = await fetch(`${srv.baseUrl}${chk.path}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify(chk.body),
+      });
+      assert.equal(res.status, 403, `Customer POST ${chk.path} must return 403`);
+    }
+
+    // 3. Owner of biz-owned must receive 403 when mutating biz-other or platform paymentConfig
+    const crossBizSync = await fetch(`${srv.baseUrl}/api/v1/services/sync-item`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerToken}`,
+      },
+      body: JSON.stringify({
+        action: 'upsert',
+        businessId: 'biz-other',
+        title: 'خدمت غیرمجاز',
+      }),
+    });
+    assert.equal(crossBizSync.status, 403);
+
+    const crossBizSms = await fetch(`${srv.baseUrl}/api/v1/app/sms/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerToken}`,
+      },
+      body: JSON.stringify({
+        businessId: 'biz-other',
+        phone: '09130001111',
+        message: 'پیام غیرمجاز',
+      }),
+    });
+    assert.equal(crossBizSms.status, 403);
+
+    const ownerZibalConfig = await fetch(`${srv.baseUrl}/api/v1/payments/zibal/config`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ownerToken}`,
+      },
+      body: JSON.stringify({ merchantId: 'hijack-merchant' }),
+    });
+    assert.equal(ownerZibalConfig.status, 403);
+
+    // 4. GET /payments/zibal/config must never leak a raw secret merchantId
+    const zibalCfgGet = await fetch(`${srv.baseUrl}/api/v1/payments/zibal/config`);
+    assert.equal(zibalCfgGet.status, 200);
+    const zibalCfgJson = (await zibalCfgGet.json()) as { ok: boolean; merchantId?: string };
+    assert.equal(zibalCfgJson.ok, true);
+  } finally {
+    await srv.close();
+  }
 });
 

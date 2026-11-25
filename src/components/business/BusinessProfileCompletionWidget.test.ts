@@ -42,9 +42,9 @@ test('computeBusinessProfileCompletion returns only incomplete steps including f
     plans: [],
   });
 
-  // Only basic_location (15%) is complete; services (25%), working_hours (20%), specialists (15%), financial_info (15%), media_bio (10%) are incomplete
-  assert.equal(partial.totalPercent, 15);
-  assert.equal(partial.incompleteSteps.length, 5);
+  // Only basic_location (20%) is complete; services (25%), working_hours (20%), specialists (15%), financial_info (20%) are incomplete
+  assert.equal(partial.totalPercent, 20);
+  assert.equal(partial.incompleteSteps.length, 4);
   assert.equal(
     partial.incompleteSteps.some((s) => s.id === 'basic_location'),
     false

@@ -17,6 +17,7 @@ import {
 import {
   ApiClientError,
   AuthenticatedSessionUser,
+  getSavedSessionToken,
   realApiClient,
 } from '../services/apiClient';
 import {
@@ -1187,6 +1188,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const enriched: AppointmentItem = localMatch
             ? {
                 ...item,
+                status: authoritativeFromServer
+                  ? item.status
+                  : localMatch.status || item.status,
                 customerPhone:
                   item.customerPhone || localMatch.customerPhone,
                 paymentMethod:
@@ -1621,11 +1625,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             });
           } else if (
             paymentConfig.zibalMerchantId &&
-            paymentConfig.zibalMerchantId !== 'zibal'
+            paymentConfig.zibalMerchantId !== 'zibal' &&
+            getSavedSessionToken()
           ) {
+            const token = getSavedSessionToken();
             fetch('/api/v1/payments/zibal/config', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
               body: JSON.stringify({
                 merchantId: paymentConfig.zibalMerchantId,
               }),
@@ -3582,9 +3592,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         // ignore
       }
       if (next.zibalMerchantId) {
+        const token = getSavedSessionToken();
         fetch('/api/v1/payments/zibal/config', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({ merchantId: next.zibalMerchantId }),
         }).catch(() => {});
       }
@@ -4438,9 +4453,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             packageIncludes: item.packageIncludes ?? res.item.packageIncludes,
           };
           applyAddLocal(mergedItem);
+          const syncToken = getSavedSessionToken();
           void fetch('/api/v1/services/sync-item', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
+            },
             body: JSON.stringify({
               action: 'create',
               ...mergedItem,
@@ -4454,9 +4474,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             id: makeUniqueId('srv'),
           };
           applyAddLocal(fallbackItem);
+          const syncToken = getSavedSessionToken();
           void fetch('/api/v1/services/sync-item', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
+            },
             body: JSON.stringify({
               action: 'create',
               ...fallbackItem,
@@ -4535,9 +4560,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     applyUpdateLocal(patch);
 
     if (dataMode === 'real') {
+      const syncToken = getSavedSessionToken();
       void fetch('/api/v1/services/sync-item', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
+        },
         body: JSON.stringify({
           action: 'update',
           id,
@@ -4600,9 +4630,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     applyDeleteLocal();
 
     if (dataMode === 'real') {
+      const syncToken = getSavedSessionToken();
       void fetch('/api/v1/services/sync-item', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(syncToken ? { Authorization: `Bearer ${syncToken}` } : {}),
+        },
         body: JSON.stringify({
           action: 'delete',
           id,
@@ -5094,20 +5129,27 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
 
-      void fetch('/api/v1/appointments/notify-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appointmentId: id,
-          status,
-          customerName: targetApt.customerName,
-          customerPhone: targetApt.customerPhone || targetApt.customerPhoneMasked,
-          businessName: targetApt.businessName,
-          serviceTitle: targetApt.serviceTitle,
-          dateJalali: targetApt.dateJalali,
-          timeSlot: targetApt.timeSlot,
-        }),
-      }).catch(() => {});
+      const notifyToken = getSavedSessionToken();
+      if (notifyToken) {
+        void fetch('/api/v1/appointments/notify-status', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${notifyToken}`,
+          },
+          body: JSON.stringify({
+            appointmentId: id,
+            status,
+            customerName: targetApt.customerName,
+            customerPhone: targetApt.customerPhone || targetApt.customerPhoneMasked,
+            businessName: targetApt.businessName,
+            serviceTitle: targetApt.serviceTitle,
+            dateJalali: targetApt.dateJalali,
+            timeSlot: targetApt.timeSlot,
+          }),
+        }).catch(() => {});
+      }
     }
 
     if (dataMode === 'real') {

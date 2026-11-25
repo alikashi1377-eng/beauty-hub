@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
+import { TIMETO_LOGO_IMAGE_PATH } from '../ui/TimetoLogo';
 import { buildBusinessShortLink } from '../../utils/formatters';
 
 /**
@@ -377,19 +378,43 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.restore();
   };
 
-  /** ۵. رسم لوگوی سه‌بعدی وکتور Timeto و آدرس سایت timeto24.ir در پایین پوستر */
-  const drawBottomBrandAndWebsite = (ctx: CanvasRenderingContext2D) => {
+  /** ۵. رسم لوگوی رسمی Timeto و آدرس سایت timeto24.ir در پایین پوستر */
+  const drawBottomBrandAndWebsite = (
+    ctx: CanvasRenderingContext2D,
+    logoImg?: HTMLImageElement | null
+  ) => {
     ctx.save();
 
-    // ترسیم وکتور لوگوی سه‌بعدی Timeto (مطابق /public/icon.svg) با ماسک وکتور واقعی دور دایره ساعت
-    ctx.save();
-    ctx.translate(184, 956);
-    ctx.scale(0.5, 0.5);
+    if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
+      ctx.save();
+      const lx = 210;
+      const ly = 992;
+      const lSize = 164;
+      const lRadius = 34;
+      ctx.beginPath();
+      ctx.roundRect(lx, ly, lSize, lSize, lRadius);
+      ctx.clip();
+      ctx.fillStyle = '#010514';
+      ctx.fillRect(lx, ly, lSize, lSize);
+      ctx.drawImage(logoImg, lx, ly, lSize, lSize);
+      ctx.restore();
 
-    // ایجاد ماسک برش وکتور (Even-Odd Clip) دور دایره ساعت تا پس‌زمینه زیر آن کاملاً یکپارچه بماند
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, 512, 512);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0, 212, 255, 0.45)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(210, 992, 164, 164, 34);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      // پشتیبان وکتور در صورت عدم بارگذاری تصویر
+      ctx.save();
+      ctx.translate(184, 956);
+      ctx.scale(0.5, 0.5);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, 512, 512);
     ctx.arc(386, 168, 76, 0, Math.PI * 2, true);
     ctx.clip();
 
@@ -448,8 +473,9 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     ctx.moveTo(382, 138);
     ctx.lineTo(382, 172);
     ctx.lineTo(416, 172);
-    ctx.stroke();
-    ctx.restore();
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // نوشتار Timeto کنار لوگو
     ctx.fillStyle = '#FFFFFF';
@@ -503,7 +529,8 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
    */
   const renderFullVectorPoster4K = (
     ctx: CanvasRenderingContext2D,
-    qrImg: HTMLImageElement
+    qrImg: HTMLImageElement,
+    logoImg?: HTMLImageElement | null
   ) => {
     const fontStack = '"Estedad", -apple-system, BlinkMacSystemFont, sans-serif';
 
@@ -699,8 +726,8 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
     );
     ctx.restore();
 
-    // ۷. لوگوی سه‌بعدی وکتور Timeto و آدرس timeto24.ir در پایین پوستر
-    drawBottomBrandAndWebsite(ctx);
+    // ۷. لوگوی رسمی Timeto و آدرس timeto24.ir در پایین پوستر
+    drawBottomBrandAndWebsite(ctx, logoImg);
   };
 
   const ensurePosterFontsLoaded = async () => {
@@ -753,22 +780,33 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
       return;
     }
 
-    const qrImg = new Image();
-    qrImg.crossOrigin = 'anonymous';
-    qrImg.onload = () => {
-      ctx.save();
-      ctx.scale(PRINT_SCALE, PRINT_SCALE);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      renderFullVectorPoster4K(ctx, qrImg);
-      ctx.restore();
-      triggerCanvasDownload(canvas);
+    const loadImg = (src: string): Promise<HTMLImageElement | null> =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+
+    const [qrImg, logoImg] = await Promise.all([
+      loadImg(qrDataUrl),
+      loadImg(TIMETO_LOGO_IMAGE_PATH),
+    ]);
+
+    if (!qrImg) {
       setIsDownloading(false);
-    };
-    qrImg.onerror = () => {
-      setIsDownloading(false);
-    };
-    qrImg.src = qrDataUrl;
+      return;
+    }
+
+    ctx.save();
+    ctx.scale(PRINT_SCALE, PRINT_SCALE);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    renderFullVectorPoster4K(ctx, qrImg, logoImg);
+    ctx.restore();
+    triggerCanvasDownload(canvas);
+    setIsDownloading(false);
   };
 
   return (

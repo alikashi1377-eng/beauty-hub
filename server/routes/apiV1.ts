@@ -370,6 +370,24 @@ export function createApiV1Router(
     return config.nodeEnv === 'production';
   };
 
+  const userOwnsBusiness = (
+    authUser: Request['authUser'],
+    targetIds: Array<string | null | undefined>
+  ): boolean => {
+    if (!authUser) return false;
+    if (authUser.isPlatformAdmin) return true;
+    const cleanTargets = targetIds
+      .map((x) => String(x || '').trim())
+      .filter(Boolean);
+    if (cleanTargets.length === 0) return false;
+    return authUser.businessMemberships.some(
+      (m) =>
+        cleanTargets.includes(m.businessUuid) ||
+        cleanTargets.includes(m.businessId) ||
+        cleanTargets.includes(m.businessSlug)
+    );
+  };
+
   /**
    * ۱. دریافت داده‌های عمومی بازارچه (بدون اطلاعات خصوصی مشتریان و نوبت‌ها)
    * GET /api/v1/bootstrap
@@ -952,6 +970,7 @@ export function createApiV1Router(
 
   router.post(
     '/services/sync-item',
+    requireAuth,
     async (req: Request, res: Response) => {
       const { mode, pool } = await resolvePoolOrFail(res);
       if (mode === 'mock' || !pool) {
@@ -965,21 +984,39 @@ export function createApiV1Router(
         const bizId = String(req.body?.businessId || '').trim();
 
         if (action === 'delete' && srvId) {
-          await pool.query(
-            `UPDATE services SET is_active = FALSE WHERE id::text = $1 OR legacy_demo_id = $1`,
+          const ownerCheck = await pool.query(
+            `SELECT s.id, s.business_id, COALESCE(b.legacy_demo_id, b.id::text) AS biz_ext_id, b.slug AS biz_slug
+             FROM services s JOIN businesses b ON b.id = s.business_id
+             WHERE s.id::text = $1 OR s.legacy_demo_id = $1 LIMIT 1`,
             [srvId]
           );
+          const row = ownerCheck.rows[0];
+          if (!row) {
+            res.status(404).json({ ok: false, errorCode: 'SERVICE_NOT_FOUND', message: 'خدمت یافت نشد.' });
+            return;
+          }
+          if (!userOwnsBusiness(req.authUser, [row.business_id, row.biz_ext_id, row.biz_slug])) {
+            res.status(403).json({ ok: false, errorCode: 'BUSINESS_ACCESS_DENIED', message: 'دسترسی غیرمجاز به خدمات این کسب‌وکار.' });
+            return;
+          }
+          await pool.query(`UPDATE services SET is_active = FALSE WHERE id = $1`, [row.id]);
           res.status(200).json({ ok: true, mode: 'real' });
           return;
         }
 
         if (srvId) {
           const existingRes = await pool.query(
-            `SELECT id, COALESCE(legacy_demo_id, id::text) AS ext_id, business_id, title, description, duration_minutes, price_toman, category_slug, category_label, is_popular, is_active FROM services WHERE id::text = $1 OR legacy_demo_id = $1 LIMIT 1`,
+            `SELECT s.id, COALESCE(s.legacy_demo_id, s.id::text) AS ext_id, s.business_id, COALESCE(b.legacy_demo_id, b.id::text) AS biz_ext_id, b.slug AS biz_slug, s.title, s.description, s.duration_minutes, s.price_toman, s.category_slug, s.category_label, s.is_popular, s.is_active
+             FROM services s JOIN businesses b ON b.id = s.business_id
+             WHERE s.id::text = $1 OR s.legacy_demo_id = $1 LIMIT 1`,
             [srvId]
           );
           if (existingRes.rowCount && existingRes.rows[0]) {
             const cur = existingRes.rows[0];
+            if (!userOwnsBusiness(req.authUser, [cur.business_id, cur.biz_ext_id, cur.biz_slug])) {
+              res.status(403).json({ ok: false, errorCode: 'BUSINESS_ACCESS_DENIED', message: 'دسترسی غیرمجاز به خدمات این کسب‌وکار.' });
+              return;
+            }
             const nextTitle =
               req.body?.title !== undefined
                 ? String(req.body.title).trim() || String(cur.title)
@@ -1080,11 +1117,15 @@ export function createApiV1Router(
 
         if (bizId && req.body?.title) {
           const bizRes = await pool.query(
-            `SELECT id FROM businesses WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1 LIMIT 1`,
+            `SELECT id, COALESCE(legacy_demo_id, id::text) AS biz_ext_id, slug FROM businesses WHERE id::text = $1 OR legacy_demo_id = $1 OR slug = $1 LIMIT 1`,
             [bizId]
           );
           if (bizRes.rowCount && bizRes.rows[0]) {
             const bUuid = bizRes.rows[0].id;
+            if (!userOwnsBusiness(req.authUser, [bUuid, bizRes.rows[0].biz_ext_id, bizRes.rows[0].slug])) {
+              res.status(403).json({ ok: false, errorCode: 'BUSINESS_ACCESS_DENIED', message: 'دسترسی غیرمجاز به ثبت خدمت برای این کسب‌وکار.' });
+              return;
+            }
             const catRes = await pool.query(
               `SELECT id, slug, title FROM categories WHERE slug = $1 OR title = $2 ORDER BY sort_order ASC LIMIT 1`,
               [String(req.body?.categorySlug || 'hair-color'), String(req.body?.category || '')]
@@ -1574,10 +1615,12 @@ export function createApiV1Router(
 
   router.post(
     '/appointments/notify-status',
+    requireAuth,
     async (req: Request, res: Response) => {
       try {
         const aptId = String(req.body?.appointmentId || '').trim();
         const nextStatus = String(req.body?.status || '').trim();
+        const authUser = req.authUser!;
         if (
           aptId &&
           (nextStatus === 'PENDING' ||
@@ -1591,18 +1634,36 @@ export function createApiV1Router(
               customPool ??
               (config.dataMode === 'real' ? getOrCreatePool(config) : null);
             if (dbPool) {
-              await dbPool.query(
-                `
-                UPDATE appointments
-                SET status = $2
-                WHERE id::text = $1 OR legacy_demo_id = $1 OR reference_code = $1
-                `,
-                [aptId, nextStatus]
+              await updateAppointmentStatusInDb(
+                dbPool,
+                authUser,
+                aptId,
+                nextStatus as AppointmentStatus
               );
             }
-          } catch {
-            // ignore db status sync error
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : '';
+            if (
+              errMsg === 'APPOINTMENT_ACCESS_DENIED' ||
+              errMsg === 'BUSINESS_ACCESS_DENIED' ||
+              errMsg === 'CUSTOMER_CAN_ONLY_CANCEL_OWN_APPOINTMENT'
+            ) {
+              res.status(403).json({
+                ok: false,
+                errorCode: errMsg,
+                message: 'مجوز تغییر وضعیت این نوبت را ندارید.',
+              });
+              return;
+            }
           }
+        } else if (!authUser.isPlatformAdmin && authUser.businessMemberships.length === 0) {
+          // اگر بدون appointmentId فقط برای ارسال پیامک وضعیت فراخوانی شده، فقط مدیر کسب‌وکار یا مدیر کل مجاز است
+          res.status(403).json({
+            ok: false,
+            errorCode: 'BUSINESS_ACCESS_DENIED',
+            message: 'مجوز ارسال پیامک وضعیت نوبت را ندارید.',
+          });
+          return;
         }
 
         const result = await dispatchCustomerAppointmentStatusSms({
@@ -1719,6 +1780,18 @@ export function createApiV1Router(
     '/appointments/send-reminders',
     requireAuth,
     async (req: Request, res: Response) => {
+      if (
+        !req.authUser!.isPlatformAdmin &&
+        req.authUser!.businessMemberships.length === 0
+      ) {
+        res.status(403).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'BUSINESS_ACCESS_DENIED',
+          message: 'فقط صاحبان کسب‌وکار یا مدیر سامانه مجاز به ارسال یادآور نوبت هستند.',
+        });
+        return;
+      }
       try {
         const config = customEnv ?? loadServerEnv();
         const effectiveSms = customEnv
@@ -1901,6 +1974,7 @@ export function createApiV1Router(
 
   router.patch(
     '/reviews/:id/reply',
+    requireAuth,
     async (req: Request, res: Response) => {
       const { mode, pool } = await resolvePoolOrFail(res);
       if (mode === 'mock') {
@@ -1910,6 +1984,29 @@ export function createApiV1Router(
       if (!pool) return;
 
       try {
+        const revLookup = await pool.query(
+          `SELECT r.business_id, COALESCE(b.legacy_demo_id, b.id::text) AS biz_ext_id, b.slug AS biz_slug
+           FROM reviews r JOIN businesses b ON b.id = r.business_id
+           WHERE r.id::text = $1 OR r.legacy_demo_id = $1 LIMIT 1`,
+          [req.params.id]
+        );
+        const revRow = revLookup.rows[0];
+        if (
+          revRow &&
+          !userOwnsBusiness(req.authUser, [
+            revRow.business_id,
+            revRow.biz_ext_id,
+            revRow.biz_slug,
+          ])
+        ) {
+          res.status(403).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'BUSINESS_ACCESS_DENIED',
+            message: 'فقط مدیر همین کسب‌وکار مجاز به ثبت پاسخ دیدگاه است.',
+          });
+          return;
+        }
         const result = await replyToReviewInDb(
           pool,
           req.params.id,
@@ -1931,6 +2028,7 @@ export function createApiV1Router(
 
   router.post(
     '/reviews/:id/report',
+    requireAuth,
     async (req: Request, res: Response) => {
       const { mode, pool } = await resolvePoolOrFail(res);
       if (mode === 'mock') {
@@ -1940,6 +2038,29 @@ export function createApiV1Router(
       if (!pool) return;
 
       try {
+        const revLookup = await pool.query(
+          `SELECT r.business_id, COALESCE(b.legacy_demo_id, b.id::text) AS biz_ext_id, b.slug AS biz_slug
+           FROM reviews r JOIN businesses b ON b.id = r.business_id
+           WHERE r.id::text = $1 OR r.legacy_demo_id = $1 LIMIT 1`,
+          [req.params.id]
+        );
+        const revRow = revLookup.rows[0];
+        if (
+          revRow &&
+          !userOwnsBusiness(req.authUser, [
+            revRow.business_id,
+            revRow.biz_ext_id,
+            revRow.biz_slug,
+          ])
+        ) {
+          res.status(403).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'BUSINESS_ACCESS_DENIED',
+            message: 'فقط مدیر همین کسب‌وکار مجاز به گزارش دیدگاه است.',
+          });
+          return;
+        }
         const result = await reportReviewInDb(
           pool,
           req.params.id,
@@ -2356,23 +2477,11 @@ export function createApiV1Router(
           matchesStored = derivedHex === expectedHex;
         }
       }
-      // اگر کاربر در جدول users وجود دارد اما هنوز رکوردی در user_passwords نداشت، رمز فعلی را ثبت و تایید کن
-      if (!storedHash && password.length >= 4) {
-        await pool.query(
-          `
-          INSERT INTO user_passwords (user_id, password_hash, updated_at)
-          VALUES ($1, $2, NOW())
-          ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
-          `,
-          [uRow.id, candidateHash]
-        );
-        matchesStored = true;
-      }
-
+      // اگر کاربر رمز عبور ثابت تنظیم نکرده باشد، ورود بدون رمز ممنوع است و باید ابتدا با کد پیامکی وارد شود
       const matchesEnvAdminPwd =
-        (rawPhone === ownerPhone || rawPhone === '09134337596') &&
-        ((envAdminDefaultPwd.length >= 4 && password === envAdminDefaultPwd) ||
-          password === 'Admin@1405');
+        rawPhone === ownerPhone &&
+        envAdminDefaultPwd.length >= 8 &&
+        password === envAdminDefaultPwd;
 
       if (!matchesStored && !matchesEnvAdminPwd) {
         res.status(401).json({
@@ -2676,6 +2785,15 @@ export function createApiV1Router(
 
       try {
         const businessId = String(req.body?.businessId || '').trim();
+        if (!userOwnsBusiness(req.authUser, [businessId])) {
+          res.status(403).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'BUSINESS_ACCESS_DENIED',
+            message: 'مجوز ارسال پیامک از طرف این کسب‌وکار را ندارید.',
+          });
+          return;
+        }
         const messageText = String(req.body?.messageText || '').trim();
         const templateTitle = String(req.body?.templateTitle || 'پیامک سالن').trim();
         const rawPhones: string[] = Array.isArray(req.body?.recipientPhones)
@@ -2811,39 +2929,43 @@ export function createApiV1Router(
    * ۱۶. همگام‌سازی حساب‌های کاربری ثبت‌نام‌شده (مشتریان و صاحبان کسب‌وکار) با PostgreSQL
    * POST /api/v1/auth/register-sync
    */
-  router.post('/auth/register-sync', async (req: Request, res: Response) => {
-    const { mode, pool } = await resolvePoolOrFail(res);
-    if (mode === 'mock') {
-      res.status(200).json({ ok: true, mode: 'mock', registeredUsers: [] });
-      return;
-    }
-    if (!pool) return;
-
-    try {
-      const rawAccounts = Array.isArray(req.body?.accounts)
-        ? req.body.accounts
-        : req.body?.phone
-          ? [req.body]
-          : [];
-      const issueSessionForPhone =
-        typeof req.body?.issueSessionForPhone === 'string'
-          ? req.body.issueSessionForPhone
-          : typeof req.body?.phone === 'string' && !Array.isArray(req.body?.accounts)
-            ? req.body.phone
-            : undefined;
-
-      const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
-      const ua = String(req.headers['user-agent'] || 'web');
-
-      const result = await syncRegisteredAccountsInDb(pool, rawAccounts, {
-        issueSessionForPhone,
-        requestIp: ip,
-        userAgent: ua,
-      });
-
-      if (result.sessionToken) {
-        setSessionCookie(res, result.sessionToken, isProdMode());
+  router.post(
+    '/auth/register-sync',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const { mode, pool } = await resolvePoolOrFail(res);
+      if (mode === 'mock') {
+        res.status(200).json({ ok: true, mode: 'mock', registeredUsers: [] });
+        return;
       }
+      if (!pool) return;
+
+      try {
+        const authUser = req.authUser!;
+        const rawAccounts = Array.isArray(req.body?.accounts)
+          ? req.body.accounts
+          : req.body?.phone
+            ? [req.body]
+            : [];
+
+        // فقط مدیر کل مجاز به همگام‌سازی حساب سایر کاربران است؛ کاربر عادی صرفاً حساب خودش را همگام می‌کند
+        const scopedAccounts = authUser.isPlatformAdmin
+          ? rawAccounts
+          : rawAccounts.filter(
+              (acc: Record<string, unknown>) =>
+                normalizeIranMobile(acc?.phone) ===
+                normalizeIranMobile(authUser.phone)
+            );
+
+        const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
+        const ua = String(req.headers['user-agent'] || 'web');
+
+        // صدور نشست بدون OTP یا رمز عبور تاییدشده کاملاً ممنوع است
+        const result = await syncRegisteredAccountsInDb(pool, scopedAccounts, {
+          issueSessionForPhone: undefined,
+          requestIp: ip,
+          userAgent: ua,
+        });
 
       let syncedBusinesses: unknown[] | undefined;
       let syncedServices: unknown[] | undefined;
@@ -2957,37 +3079,83 @@ export function createApiV1Router(
         const srvByIdMap = new Map(
           (bootstrapPayload.services || []).map((s) => [s.id, s])
         );
-        const aptRes = await pool.query(`
-          SELECT
-            COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
-            a.reference_code,
-            COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
-            COALESCE(b.slug, '') AS business_slug,
-            COALESCE(b.name, 'سالن زیبایی') AS business_name,
-            COALESCE(s.legacy_demo_id, s.id::text, '') AS service_external_id,
-            a.service_title_snapshot,
-            COALESCE(sp.legacy_demo_id, sp.id::text, '') AS specialist_external_id,
-            a.specialist_name_snapshot,
-            a.customer_name,
-            a.customer_phone,
-            a.customer_phone_masked,
-            a.date_jalali,
-            a.time_slot_label,
-            a.duration_minutes_snapshot,
-            a.service_price_toman_snapshot,
-            a.status,
-            a.notes
-          FROM appointments a
-          LEFT JOIN businesses b ON b.id = a.business_id
-          LEFT JOIN services s ON s.id = a.service_id
-          LEFT JOIN specialists sp ON sp.id = a.specialist_id
-          WHERE COALESCE(b.legacy_demo_id, '') NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
-            AND COALESCE(a.legacy_demo_id, '') NOT IN ('apt-1','apt-2','apt-3','apt-4','apt-5','apt-6','apt-7','apt-8','apt-9','apt-10','apt-11','apt-12')
-            AND COALESCE(b.approval_status, 'APPROVED') <> 'REJECTED'
-            AND COALESCE(b.name, '') NOT ILIKE '%مهتاب%'
-          ORDER BY a.service_starts_at DESC, a.created_at DESC
-          LIMIT 1000
-        `);
+        const ownedBizUuids = authUser.businessMemberships.map(
+          (m) => m.businessUuid
+        );
+        const cleanUserPhone = normalizeIranMobile(authUser.phone);
+        const aptQuery = authUser.isPlatformAdmin
+          ? {
+              sql: `
+                SELECT
+                  COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+                  a.reference_code,
+                  COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+                  COALESCE(b.slug, '') AS business_slug,
+                  COALESCE(b.name, 'سالن زیبایی') AS business_name,
+                  COALESCE(s.legacy_demo_id, s.id::text, '') AS service_external_id,
+                  a.service_title_snapshot,
+                  COALESCE(sp.legacy_demo_id, sp.id::text, '') AS specialist_external_id,
+                  a.specialist_name_snapshot,
+                  a.customer_name,
+                  a.customer_phone,
+                  a.customer_phone_masked,
+                  a.date_jalali,
+                  a.time_slot_label,
+                  a.duration_minutes_snapshot,
+                  a.service_price_toman_snapshot,
+                  a.status,
+                  a.notes
+                FROM appointments a
+                LEFT JOIN businesses b ON b.id = a.business_id
+                LEFT JOIN services s ON s.id = a.service_id
+                LEFT JOIN specialists sp ON sp.id = a.specialist_id
+                WHERE COALESCE(b.legacy_demo_id, '') NOT IN ('biz-1','biz-2','biz-3','biz-4','biz-5','biz-6','biz-7','biz-8')
+                  AND COALESCE(a.legacy_demo_id, '') NOT IN ('apt-1','apt-2','apt-3','apt-4','apt-5','apt-6','apt-7','apt-8','apt-9','apt-10','apt-11','apt-12')
+                  AND COALESCE(b.approval_status, 'APPROVED') <> 'REJECTED'
+                  AND COALESCE(b.name, '') NOT ILIKE '%مهتاب%'
+                ORDER BY a.service_starts_at DESC, a.created_at DESC
+                LIMIT 1000
+              `,
+              params: [] as unknown[],
+            }
+          : {
+              sql: `
+                SELECT
+                  COALESCE(a.legacy_demo_id, a.id::text) AS external_id,
+                  a.reference_code,
+                  COALESCE(b.legacy_demo_id, b.id::text) AS business_external_id,
+                  COALESCE(b.slug, '') AS business_slug,
+                  COALESCE(b.name, 'سالن زیبایی') AS business_name,
+                  COALESCE(s.legacy_demo_id, s.id::text, '') AS service_external_id,
+                  a.service_title_snapshot,
+                  COALESCE(sp.legacy_demo_id, sp.id::text, '') AS specialist_external_id,
+                  a.specialist_name_snapshot,
+                  a.customer_name,
+                  a.customer_phone,
+                  a.customer_phone_masked,
+                  a.date_jalali,
+                  a.time_slot_label,
+                  a.duration_minutes_snapshot,
+                  a.service_price_toman_snapshot,
+                  a.status,
+                  a.notes
+                FROM appointments a
+                LEFT JOIN businesses b ON b.id = a.business_id
+                LEFT JOIN services s ON s.id = a.service_id
+                LEFT JOIN specialists sp ON sp.id = a.specialist_id
+                WHERE (
+                    a.customer_user_id = $1::uuid
+                    OR a.customer_phone = $2
+                    OR ($3::text[] IS NOT NULL AND array_length($3::text[], 1) > 0 AND a.business_id::text = ANY($3::text[]))
+                  )
+                  AND COALESCE(b.approval_status, 'APPROVED') <> 'REJECTED'
+                ORDER BY a.service_starts_at DESC, a.created_at DESC
+                LIMIT 500
+              `,
+              params: [authUser.userId, cleanUserPhone, ownedBizUuids] as unknown[],
+            };
+
+        const aptRes = await pool.query(aptQuery.sql, aptQuery.params);
         syncedAppointments = aptRes.rows.map((r: Record<string, unknown>) => {
           const rowPrice = Math.max(0, Number(r.service_price_toman_snapshot) || 0);
           const matchedSrv = srvByIdMap.get(String(r.service_external_id));
@@ -2996,11 +3164,11 @@ export function createApiV1Router(
           const matchedBiz = bizByIdMap.get(String(r.business_external_id));
           const rawDepPct = Number(matchedBiz?.depositPercent);
           const depPct =
-            Number.isFinite(rawDepPct) && rawDepPct >= 1 && rawDepPct <= 100
-              ? Math.min(100, Math.max(20, Math.round(rawDepPct)))
+            Number.isFinite(rawDepPct) && rawDepPct >= 0 && rawDepPct <= 100
+              ? Math.round(rawDepPct)
               : 30;
           const exactDeposit =
-            matchedBiz?.depositEnabled === false || effectivePrice <= 0
+            matchedBiz?.depositEnabled === false || depPct <= 0 || effectivePrice <= 0
               ? 0
               : Math.max(0, Math.round((effectivePrice * depPct) / 100));
           return {
@@ -3029,21 +3197,39 @@ export function createApiV1Router(
         // ignore fallback
       }
 
+      const safePaymentConfig = authUser.isPlatformAdmin
+        ? syncedPaymentConfig
+        : syncedPaymentConfig
+          ? {
+              mode: syncedPaymentConfig.mode,
+              platformCommissionPercent:
+                syncedPaymentConfig.platformCommissionPercent,
+              depositPercent: syncedPaymentConfig.depositPercent,
+              customerServiceFeeToman:
+                syncedPaymentConfig.customerServiceFeeToman,
+            }
+          : undefined;
+
       res.status(200).json({
         ok: true,
         mode: 'real',
-        registeredUsers: result.registeredUsers,
+        registeredUsers: authUser.isPlatformAdmin ? result.registeredUsers : [],
         businesses: syncedBusinesses,
         services: syncedServices,
         specialists: syncedSpecialists,
         appointments: syncedAppointments,
-        settlementRequests: syncedSettlementRequests,
-        paymentConfig: syncedPaymentConfig,
+        settlementRequests: authUser.isPlatformAdmin
+          ? syncedSettlementRequests
+          : (syncedSettlementRequests || []).filter((sr) =>
+              userOwnsBusiness(authUser, [String(sr.businessId || '')])
+            ),
+        paymentConfig: safePaymentConfig,
         platformBusinessNotices: syncedNotices,
-        paymentOrders: syncedPaymentOrders,
-        sessionToken: result.sessionToken,
-        expiresAt: result.expiresAt,
-        user: result.user,
+        paymentOrders: authUser.isPlatformAdmin
+          ? syncedPaymentOrders
+          : (syncedPaymentOrders || []).filter((po) =>
+              userOwnsBusiness(authUser, [String(po.businessId || '')])
+            ),
       });
     } catch (err) {
       handleRealModeRouteError(res, err);
@@ -3055,7 +3241,7 @@ export function createApiV1Router(
    * GET /api/v1/platform/shared-state
    * POST /api/v1/platform/shared-state
    */
-  router.get('/platform/shared-state', async (_req: Request, res: Response) => {
+  router.get('/platform/shared-state', requireAuth, async (req: Request, res: Response) => {
     const { mode, pool } = await resolvePoolOrFail(res);
     if (mode === 'mock' || !pool) {
       res.status(200).json({ ok: true, mode: 'mock', data: {} });
@@ -3063,38 +3249,106 @@ export function createApiV1Router(
     }
     try {
       const data = await getSharedPlatformState(pool);
-      res.status(200).json({ ok: true, mode: 'real', data });
+      const authUser = req.authUser!;
+      if (authUser.isPlatformAdmin) {
+        res.status(200).json({ ok: true, mode: 'real', data });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        data: {
+          settlementRequests: (data.settlementRequests || []).filter((sr) =>
+            userOwnsBusiness(authUser, [String(sr.businessId || '')])
+          ),
+          paymentConfig: data.paymentConfig
+            ? {
+                mode: data.paymentConfig.mode,
+                platformCommissionPercent:
+                  data.paymentConfig.platformCommissionPercent,
+                depositPercent: data.paymentConfig.depositPercent,
+                customerServiceFeeToman:
+                  data.paymentConfig.customerServiceFeeToman,
+              }
+            : undefined,
+          platformBusinessNotices: data.platformBusinessNotices,
+          paymentOrders: (data.paymentOrders || []).filter((po) =>
+            userOwnsBusiness(authUser, [String(po.businessId || '')])
+          ),
+        },
+      });
     } catch (err) {
       handleRealModeRouteError(res, err);
     }
   });
 
-  router.post('/platform/shared-state', async (req: Request, res: Response) => {
+  router.post('/platform/shared-state', requireAuth, async (req: Request, res: Response) => {
     const { mode, pool } = await resolvePoolOrFail(res);
     if (mode === 'mock' || !pool) {
       res.status(200).json({ ok: true, mode: 'mock', data: req.body || {} });
       return;
     }
     try {
+      const authUser = req.authUser!;
       const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
         settlementRequests?: Array<Record<string, unknown>>;
         paymentConfig?: Record<string, unknown>;
         platformBusinessNotices?: Array<Record<string, unknown>>;
         paymentOrders?: Array<Record<string, unknown>>;
       };
+
+      if (
+        !authUser.isPlatformAdmin &&
+        (body.paymentConfig !== undefined ||
+          body.platformBusinessNotices !== undefined)
+      ) {
+        res.status(403).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'ADMIN_ACCESS_DENIED',
+          message: 'تغییر تنظیمات مالی پلتفرم و اطلاعیه‌های سراسری فقط توسط مدیر کل مجاز است.',
+        });
+        return;
+      }
+
+      if (
+        !authUser.isPlatformAdmin &&
+        authUser.businessMemberships.length === 0
+      ) {
+        res.status(403).json({
+          ok: false,
+          mode: 'real',
+          errorCode: 'BUSINESS_ACCESS_DENIED',
+          message: 'شما مجوز ثبت تغییرات در این بخش را ندارید.',
+        });
+        return;
+      }
+
       await saveSharedPlatformStateInDb(pool, {
         settlementRequests: Array.isArray(body.settlementRequests)
-          ? body.settlementRequests
+          ? authUser.isPlatformAdmin
+            ? body.settlementRequests
+            : body.settlementRequests.filter((sr) =>
+                userOwnsBusiness(authUser, [String(sr.businessId || '')])
+              )
           : undefined,
         paymentConfig:
-          body.paymentConfig && typeof body.paymentConfig === 'object'
+          authUser.isPlatformAdmin &&
+          body.paymentConfig &&
+          typeof body.paymentConfig === 'object'
             ? body.paymentConfig
             : undefined,
-        platformBusinessNotices: Array.isArray(body.platformBusinessNotices)
-          ? body.platformBusinessNotices
-          : undefined,
+        platformBusinessNotices:
+          authUser.isPlatformAdmin &&
+          Array.isArray(body.platformBusinessNotices)
+            ? body.platformBusinessNotices
+            : undefined,
         paymentOrders: Array.isArray(body.paymentOrders)
-          ? body.paymentOrders
+          ? authUser.isPlatformAdmin
+            ? body.paymentOrders
+            : body.paymentOrders.filter((po) =>
+                userOwnsBusiness(authUser, [String(po.businessId || '')])
+              )
           : undefined,
       });
       const data = await getSharedPlatformState(pool);
@@ -3180,63 +3434,80 @@ export function createApiV1Router(
     '';
 
   router.get('/payments/zibal/config', (_req: Request, res: Response) => {
+    const isCustom = Boolean(
+      runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
+    );
     res.status(200).json({
       ok: true,
       provider: 'zibal',
-      merchantId: runtimeZibalMerchantId || 'zibal',
-      isCustomMerchant: Boolean(
-        runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
-      ),
+      merchantId: isCustom
+        ? `${runtimeZibalMerchantId.slice(0, 4)}****${runtimeZibalMerchantId.slice(-4)}`
+        : 'zibal',
+      isCustomMerchant: isCustom,
     });
   });
 
-  router.get('/payments/zibal/server-ip', async (_req: Request, res: Response) => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+  router.get(
+    '/payments/zibal/server-ip',
+    requireAuth,
+    requireRole('PLATFORM_ADMIN'),
+    async (_req: Request, res: Response) => {
       try {
-        const ipRes = await fetch('https://api.ipify.org?format=json', {
-          signal: controller.signal,
-        });
-        const data = (await ipRes.json()) as { ip?: string };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const ipRes = await fetch('https://api.ipify.org?format=json', {
+            signal: controller.signal,
+          });
+          const data = (await ipRes.json()) as { ip?: string };
+          res.status(200).json({
+            ok: true,
+            outgoingIp: data?.ip || '',
+            domainIp: '185.208.181.150',
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+      } catch {
         res.status(200).json({
           ok: true,
-          outgoingIp: data?.ip || '',
+          outgoingIp: '',
           domainIp: '185.208.181.150',
         });
-      } finally {
-        clearTimeout(timeout);
       }
-    } catch {
+    }
+  );
+
+  router.post(
+    '/payments/zibal/config',
+    requireAuth,
+    requireRole('PLATFORM_ADMIN'),
+    (req: Request, res: Response) => {
+      const incoming = String(req.body?.merchantId || '').trim();
+      runtimeZibalMerchantId = incoming;
+      try {
+        fs.writeFileSync(
+          zibalConfigFilePath,
+          JSON.stringify(
+            { merchantId: incoming, updatedAt: new Date().toISOString() },
+            null,
+            2
+          ),
+          'utf-8'
+        );
+      } catch {
+        // ignore write error
+      }
       res.status(200).json({
         ok: true,
-        outgoingIp: '',
-        domainIp: '185.208.181.150',
+        provider: 'zibal',
+        merchantId: runtimeZibalMerchantId || 'zibal',
+        isCustomMerchant: Boolean(
+          runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
+        ),
       });
     }
-  });
-
-  router.post('/payments/zibal/config', (req: Request, res: Response) => {
-    const incoming = String(req.body?.merchantId || '').trim();
-    runtimeZibalMerchantId = incoming;
-    try {
-      fs.writeFileSync(
-        zibalConfigFilePath,
-        JSON.stringify({ merchantId: incoming, updatedAt: new Date().toISOString() }, null, 2),
-        'utf-8'
-      );
-    } catch {
-      // ignore write error
-    }
-    res.status(200).json({
-      ok: true,
-      provider: 'zibal',
-      merchantId: runtimeZibalMerchantId || 'zibal',
-      isCustomMerchant: Boolean(
-        runtimeZibalMerchantId && runtimeZibalMerchantId !== 'zibal'
-      ),
-    });
-  });
+  );
 
   interface ZibalStoredOrder {
     orderId: string;
@@ -3298,22 +3569,8 @@ export function createApiV1Router(
 
   router.post('/payments/zibal/request', async (req: Request, res: Response) => {
     try {
-      const incomingMerchant = String(req.body?.merchantId || '').trim();
-      if (incomingMerchant && incomingMerchant !== 'zibal' && !runtimeZibalMerchantId) {
-        runtimeZibalMerchantId = incomingMerchant;
-        try {
-          fs.writeFileSync(
-            zibalConfigFilePath,
-            JSON.stringify({ merchantId: incomingMerchant, updatedAt: new Date().toISOString() }, null, 2),
-            'utf-8'
-          );
-        } catch {
-          // ignore
-        }
-      }
-
+      // مرچنت پرداخت همیشه فقط از پیکربندی امن سرور خوانده می‌شود و هرگز از درخواست کلاینت پذیرفته نمی‌شود
       const preferredMerchant =
-        (incomingMerchant && incomingMerchant !== 'zibal' ? incomingMerchant : '') ||
         runtimeZibalMerchantId ||
         process.env.ZIBAL_MERCHANT_ID?.trim() ||
         process.env.PAYMENT_MERCHANT_ID?.trim() ||
@@ -3463,7 +3720,6 @@ export function createApiV1Router(
   router.post('/payments/zibal/verify', async (req: Request, res: Response) => {
     try {
       const preferredMerchant =
-        String(req.body?.merchantId || '').trim() ||
         runtimeZibalMerchantId ||
         process.env.ZIBAL_MERCHANT_ID?.trim() ||
         process.env.PAYMENT_MERCHANT_ID?.trim() ||

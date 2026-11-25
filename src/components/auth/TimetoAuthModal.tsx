@@ -36,7 +36,9 @@ import {
   validateRegistrationStep3Profile,
 } from './timetoAuthFlow';
 
-const TIMETO_LOGO_URL = '/icon.svg';
+import { TIMETO_LOGO_IMAGE_PATH } from '../ui/TimetoLogo';
+
+const TIMETO_LOGO_URL = TIMETO_LOGO_IMAGE_PATH;
 
 export interface TimetoUnifiedAuthCardProps {
   initialScreen?: AuthFlowScreen;
@@ -853,11 +855,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
 
         {/* لوگو و عنوان برند تایم تو در بالای مودال/صفحه (مشابه ساختار رقیب با برند Timeto) */}
         <div className="mb-5 flex flex-col items-center text-center">
-          <div className="relative mb-2.5 flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-[#00E5FF]/50 bg-[#061138] p-1 shadow-[0_10px_25px_-8px_rgba(0,87,255,0.45)]">
+          <div className="relative mb-2.5 flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-[#00E5FF]/50 bg-[#010514] overflow-hidden shadow-[0_10px_25px_-8px_rgba(0,87,255,0.45)]">
             <img
               src={TIMETO_LOGO_URL}
               alt="لوگوی تایم تو"
-              className="h-full w-full rounded-xl object-cover"
+              className="h-full w-full object-cover"
             />
           </div>
           <span

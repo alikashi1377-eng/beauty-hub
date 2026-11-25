@@ -45,7 +45,7 @@ export const SAVED_ACCOUNTS_STORAGE_KEY = 'timeto_registered_accounts_v2';
 export const LAST_SAVED_CREDENTIAL_KEY = 'timeto_last_credential_memory_v2';
 export const PERSISTED_SESSION_USER_KEY = 'timeto_persisted_auth_user_v2';
 
-/** تولید رمز عبور پیشنهادی ۶ رقمی کاملاً تصادفی و بدون الگوی ثابت (شامل حروف بزرگ، کوچک، عدد و کاراکتر ویژه در جایگاه‌های تصادفی) */
+/** تولید رمز عبور پیشنهادی ۸ کاراکتری کاملاً تصادفی و ایمن (شامل حروف بزرگ، کوچک، عدد و کاراکتر ویژه در جایگاه‌های تصادفی) */
 export function generateSuggestedPassword(_phone?: string): string {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const lower = 'abcdefghijkmnpqrstuvwxyz';
@@ -53,9 +53,9 @@ export function generateSuggestedPassword(_phone?: string): string {
   const symbols = '@#$%&*!?';
 
   const getRandomInt = (max: number): number => {
-    if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    if (typeof globalThis.crypto?.getRandomValues === 'function') {
       const arr = new Uint32Array(1);
-      window.crypto.getRandomValues(arr);
+      globalThis.crypto.getRandomValues(arr);
       return arr[0] % max;
     }
     return Math.floor(Math.random() * max);
@@ -63,6 +63,8 @@ export function generateSuggestedPassword(_phone?: string): string {
 
   const chars: string[] = [
     upper[getRandomInt(upper.length)],
+    upper[getRandomInt(upper.length)],
+    lower[getRandomInt(lower.length)],
     lower[getRandomInt(lower.length)],
     lower[getRandomInt(lower.length)],
     digits[getRandomInt(digits.length)],

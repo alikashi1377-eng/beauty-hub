@@ -1,14 +1,9 @@
-const CACHE_NAME = 'timeto-pwa-v3';
+const CACHE_NAME = 'timeto-pwa-v4';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
-  '/icon.svg',
-  '/apple-touch-icon.png',
-  '/pwa-192x192.png',
-  '/pwa-512x512.png',
-  '/pwa-maskable-192x192.png',
-  '/pwa-maskable-512x512.png',
+  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg',
 ];
 
 self.addEventListener('install', (event) => {

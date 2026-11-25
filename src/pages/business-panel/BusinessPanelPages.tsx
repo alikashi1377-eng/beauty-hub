@@ -1382,7 +1382,7 @@ export const BusinessCalendarPage: React.FC = () => {
     sp: SpecialistItem,
     colIndex: number
   ): boolean => {
-    if (visibleStaff.length === 1 || calendarStaffList.length === 1) return true;
+    if (calendarStaffList.length === 1) return true;
     const directMatch =
       apt.specialistId === sp.id ||
       (apt.specialistName &&
@@ -5283,12 +5283,14 @@ export const BusinessCustomersPage: React.FC = () => {
           ) {
             return false;
           }
-          if (c.businessId) {
-            return c.businessId === currentBiz.id;
+          if (!c.businessId) {
+            return false;
           }
-          return true;
+          return (
+            c.businessId === currentBiz.id || c.businessId === currentBiz.slug
+          );
         })
-      : customers;
+      : [];
 
     for (const c of ownBusinessCustomers) {
       const cleanPhone = normalizeIranMobileInput(c.phone || c.phoneMasked || '');

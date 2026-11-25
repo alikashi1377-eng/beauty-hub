@@ -126,12 +126,20 @@ async function startServer() {
     if (fs.existsSync(distPath) && fs.existsSync(indexHtmlPath)) {
       // ۱. فشرده‌سازی فوق‌سریع Brotli / Gzip با کش حافظه برای تمام فایل‌های متنی (قبل از express.static تا /assets/*.css و /assets/*.js حتماً فشرده شوند)
       app.get(/\.(js|css|svg|json|webmanifest|txt)$/i, (req, res, next) => {
+        let decodedPath: string;
+        try {
+          decodedPath = decodeURIComponent(req.path);
+        } catch {
+          res.status(400).end();
+          return;
+        }
         const safeRelPath = path
-          .normalize(decodeURIComponent(req.path))
-          .replace(/^(\.\.(\/|\\|$))+/, '');
-        const fullFilePath = path.join(distPath, safeRelPath);
+          .normalize(decodedPath)
+          .replace(/^(\.\.(\/|\\|$))+/, '')
+          .replace(/^[/\\]+/, '');
+        const fullFilePath = path.resolve(distPath, safeRelPath);
         if (
-          !fullFilePath.startsWith(distPath) ||
+          !fullFilePath.startsWith(distPath + path.sep) ||
           !fs.existsSync(fullFilePath) ||
           !fs.statSync(fullFilePath).isFile()
         ) {

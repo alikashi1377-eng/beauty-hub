@@ -80,13 +80,45 @@ import {
 import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 import { PWAProfileInstallRow } from '../../components/ui/PWAInstallPrompt';
 
-/** تشخیص دقیق تعلق نوبت به مشتری فعلی (بر اساس شناسه نوبت ثبت‌شده در مرورگر، شماره موبایل یا نام) */
+/** تشخیص دقیق تعلق نوبت به مشتری فعلی با تضمین ایزولاسیون بین حساب‌های کاربری مختلف */
 const isAppointmentOwnedByCustomer = (
   a: AppointmentItem,
   authUser: { fullName?: string; phone?: string } | null | undefined,
   bookingDraft?: { customerName?: string; customerPhone?: string } | null
 ): boolean => {
-  // ۱. بررسی لیست شناسه‌های نوبت ثبت‌شده توسط همین مرورگر/مشتری
+  const authPhone = normalizeIranMobileInput(String(authUser?.phone || ''));
+  const aptFullPhone = normalizeIranMobileInput(
+    String(a.customerPhone || a.customerPhoneMasked || '')
+  );
+  const aptRawMasked = toEnglishDigitsClient(
+    String(a.customerPhoneMasked || a.customerPhone || '')
+  ).trim();
+
+  // گارد ایزولاسیون: اگر کاربر وارد حساب شده و شماره موبایل نوبت مشخص است ولی متعلق به شخص دیگری است، هرگز نمایش نده
+  if (authPhone.length === 11 && aptFullPhone.length === 11 && aptFullPhone !== authPhone) {
+    return false;
+  }
+
+  // ۱. تطبیق دقیق بر اساس شماره موبایل (کامل یا ماسک‌شده مثل 0913***1042)
+  const userPhones = [authUser?.phone, bookingDraft?.customerPhone]
+    .map((p) => normalizeIranMobileInput(String(p || '')))
+    .filter((p) => p.length === 11);
+
+  for (const up of userPhones) {
+    if (aptFullPhone.length === 11 && aptFullPhone === up) {
+      return true;
+    }
+    if (
+      aptRawMasked.includes('*') &&
+      aptRawMasked.length >= 8 &&
+      up.startsWith(aptRawMasked.slice(0, 4)) &&
+      up.endsWith(aptRawMasked.slice(-3))
+    ) {
+      return true;
+    }
+  }
+
+  // ۲. بررسی لیست شناسه‌های نوبت ثبت‌شده در همین مرورگر (تنها زمانی که با شماره حساب فعلی تعارض نداشته باشد)
   try {
     const rawBooked = window.localStorage.getItem('timeto_my_booked_apt_ids_v1');
     if (rawBooked) {
@@ -103,37 +135,11 @@ const isAppointmentOwnedByCustomer = (
     // ignore
   }
 
-  if (a.id.startsWith('apt-live-')) return true;
+  if (a.id.startsWith('apt-live-') && !authPhone) return true;
 
-  // ۲. تطبیق بر اساس شماره موبایل (کامل یا ماسک‌شده مثل 0913***1042)
-  const userPhones = [authUser?.phone, bookingDraft?.customerPhone]
-    .map((p) => normalizeIranMobileInput(String(p || '')))
-    .filter((p) => p.length === 11);
-
-  const aptFullPhone = normalizeIranMobileInput(
-    String(a.customerPhone || a.customerPhoneMasked || '')
-  );
-  const aptRawMasked = toEnglishDigitsClient(
-    String(a.customerPhoneMasked || a.customerPhone || '')
-  ).trim();
-
-  for (const up of userPhones) {
-    if (aptFullPhone.length === 11 && aptFullPhone === up) {
-      return true;
-    }
-    if (
-      aptRawMasked.includes('*') &&
-      aptRawMasked.length >= 8 &&
-      up.startsWith(aptRawMasked.slice(0, 4)) &&
-      up.endsWith(aptRawMasked.slice(-3))
-    ) {
-      return true;
-    }
-  }
-
-  // ۳. تطبیق بر اساس نام و نام خانوادگی (در صورتی که نام پیش‌فرض «کاربر تایم تو» نباشد)
+  // ۳. تطبیق بر اساس نام و نام خانوادگی (تنها در صورت نبود شماره موبایل معتبر روی نوبت)
   const aptName = (a.customerName || '').trim();
-  if (aptName) {
+  if (aptName && aptFullPhone.length !== 11) {
     const candidateNames = [authUser?.fullName, bookingDraft?.customerName]
       .map((n) => (n || '').trim())
       .filter((n) => n.length >= 2 && n !== 'کاربر تایم تو');
@@ -1621,7 +1627,6 @@ export const BookingConfirmPage: React.FC = () => {
     const isZibalWalletCallback = searchParams.get('zibal_wallet') === '1';
     const trackId = searchParams.get('trackId')?.trim();
     const orderIdParam = searchParams.get('orderId')?.trim() || '';
-    const successParam = searchParams.get('success')?.trim();
 
     if ((!isZibalBookingCallback && !isZibalWalletCallback) || !trackId) {
       return;
@@ -1665,7 +1670,7 @@ export const BookingConfirmPage: React.FC = () => {
 
         if (cancelled) return;
 
-        const isPaid = Boolean(data?.verified) || successParam === '1';
+        const isPaid = Boolean(data?.verified);
         const trackingRef = data?.refNumber || `ZBL-${trackId}`;
 
         // پاک کردن پارامترهای بازگشتی از آدرس مرورگر با حفظ تاریخچه
@@ -1726,8 +1731,8 @@ export const BookingConfirmPage: React.FC = () => {
           topUpCustomerWallet(
             topUpAmt,
             trackingRef,
-            targetPhone || bookingDraft.customerPhone || authUser?.phone,
-            targetName || bookingDraft.customerName || authUser?.fullName
+            authUser?.phone || targetPhone || bookingDraft.customerPhone,
+            authUser?.fullName || targetName || bookingDraft.customerName
           );
           setPaymentMethod('WALLET');
           setQuickTopUpSuccess(
@@ -2055,9 +2060,9 @@ export const BookingConfirmPage: React.FC = () => {
     setQuickTopUpSuccess('');
     setFormError('');
     const custPhone =
-      bookingDraft.customerPhone.trim() || authUser?.phone || '';
+      authUser?.phone?.trim() || bookingDraft.customerPhone.trim() || '';
     const custName =
-      bookingDraft.customerName.trim() || authUser?.fullName || '';
+      authUser?.fullName?.trim() || bookingDraft.customerName.trim() || '';
 
     if (dataMode === 'mock') {
       const refCode = `ZBL-TOPUP-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -2818,7 +2823,6 @@ export const CustomerOverviewPage: React.FC = () => {
   useEffect(() => {
     const isWalletCb = searchParams.get('zibal_wallet') === '1';
     const trackId = searchParams.get('trackId')?.trim();
-    const successParam = searchParams.get('success')?.trim();
     if (!isWalletCb || !trackId) return;
 
     let cancelled = false;
@@ -2855,7 +2859,7 @@ export const CustomerOverviewPage: React.FC = () => {
         cleaned.delete('orderId');
         setSearchParams(cleaned, { replace: true });
 
-        const isPaid = Boolean(data?.verified) || successParam === '1';
+        const isPaid = Boolean(data?.verified);
         if (!isPaid) {
           setWalletError(
             `پرداخت شارژ کیف پول در درگاه زیبال لغو شد یا ناموفق بود (کد رهگیری: ${trackId}).`

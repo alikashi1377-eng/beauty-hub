@@ -40,8 +40,10 @@ import {
 } from 'lucide-react';
 import {
   AdPackageItem,
+  AppointmentStatus,
   ApprovalStatus,
   BusinessItem,
+  BusinessType,
   CategoryItem,
   PlatformBusinessNoticeItem,
   SubscriptionPlanItem,
@@ -59,10 +61,14 @@ import {
   TIMETO_MONTHLY_PACKAGES,
   computeBusinessFinancialDossier,
   computePlatformAdminSummary,
+  dedupeAppointmentsCanonical,
+  doesAppointmentBelongToBusiness,
   normalizeDepositPercent,
+  resolveAppointmentFinancialBreakdown,
   resolveBusinessSubscriptionQuotaStatus,
 } from '../../utils/financialEngine';
 import { isBusinessReadyForPublicDisplay } from '../../components/business/BusinessProfileCompletionWidget';
+import { getSavedSessionToken } from '../../services/apiClient';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -225,6 +231,15 @@ const BusinessFinancialDossierTable: React.FC<{
                   <span className="font-extrabold text-[#061138]">
                     {biz.name}
                   </span>
+                  {biz.type === BusinessType.IndependentSpecialist ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-violet-50 text-violet-800 border border-violet-200 text-[10px] font-extrabold">
+                      متخصص مستقل
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                      سالن / مرکز
+                    </span>
+                  )}
                   {biz.isVipPartner ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
                       👑 سفیر برند VIP
@@ -865,6 +880,8 @@ export const AdminDashboardPage: React.FC = () => {
   } = usePrototypeData();
   const [analyticsMetric, setAnalyticsMetric] = useState<'bookings' | 'volume' | 'deposits'>('bookings');
   const [isNotifCollapsed, setIsNotifCollapsed] = useState(false);
+  const [bookingSearch, setBookingSearch] = useState('');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'ALL' | AppointmentStatus>('ALL');
   const [inspectingBusiness, setInspectingBusiness] =
     useState<BusinessItem | null>(null);
 
@@ -1348,6 +1365,211 @@ export const AdminDashboardPage: React.FC = () => {
           })()
         )}
       </Card>
+
+      {/* ۲.۵ دفتر زنده نوبت‌های ثبت‌شده کل سامانه (نام مشتری، موبایل، تاریخ، کسب‌وکار، مبلغ و وضعیت) */}
+      {(() => {
+        const dedupedApts = dedupeAppointmentsCanonical(appointments);
+        const liveBookingRows = dedupedApts
+          .map((apt) => {
+            const matchedBiz = realBusinesses.find((b) =>
+              doesAppointmentBelongToBusiness(apt, b)
+            );
+            if (!matchedBiz) return null;
+            const matchedSrv = services.find((s) => s.id === apt.serviceId);
+            const breakdown = resolveAppointmentFinancialBreakdown({
+              appointment: apt,
+              business: matchedBiz,
+              service: matchedSrv,
+              commissionConfig: paymentConfig,
+            });
+            return {
+              apt,
+              biz: matchedBiz,
+              breakdown,
+            };
+          })
+          .filter(
+            (
+              row
+            ): row is {
+              apt: (typeof appointments)[number];
+              biz: BusinessItem;
+              breakdown: ReturnType<typeof resolveAppointmentFinancialBreakdown>;
+            } => Boolean(row)
+          );
+
+        const q = bookingSearch.trim();
+        const filteredBookingRows = liveBookingRows.filter(({ apt, biz }) => {
+          const matchStatus =
+            bookingStatusFilter === 'ALL' || apt.status === bookingStatusFilter;
+          const matchSearch =
+            !q ||
+            (apt.customerName || '').includes(q) ||
+            (apt.customerPhone || '').includes(q) ||
+            (apt.referenceCode || '').includes(q) ||
+            biz.name.includes(q) ||
+            (apt.serviceTitle || '').includes(q) ||
+            (apt.dateJalali || '').includes(q);
+          return matchStatus && matchSearch;
+        });
+
+        const statusBadgeMap: Record<
+          AppointmentStatus,
+          { label: string; tone: 'warning' | 'success' | 'primary' | 'danger' | 'neutral' }
+        > = {
+          [AppointmentStatus.Pending]: { label: 'در انتظار تایید', tone: 'warning' },
+          [AppointmentStatus.Confirmed]: { label: 'تاییدشده', tone: 'primary' },
+          [AppointmentStatus.Completed]: { label: 'انجام‌شده', tone: 'success' },
+          [AppointmentStatus.Cancelled]: { label: 'لغوشده', tone: 'danger' },
+          [AppointmentStatus.NoShow]: { label: 'عدم حضور', tone: 'neutral' },
+        };
+
+        return (
+          <Card className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-extrabold text-[#1E1B2E]">
+                  دفتر زنده نوبت‌های ثبت‌شده کل سامانه (
+                  {toPersianDigits(filteredBookingRows.length)} نوبت)
+                </h2>
+                <ClickPopover
+                  iconOnly
+                  tone="slate"
+                  align="right"
+                  title="جزئیات دفتر نوبت‌های سامانه"
+                >
+                  <p>
+                    هر نوبت واقعی ثبت‌شده در تمام سالن‌ها و متخصصان مستقل با مشخصات کامل مشتری، تاریخ، ساعت، بیعانه آنلاین و وضعیت آنی در اینجا همگام است.
+                  </p>
+                </ClickPopover>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[minmax(220px,1fr)_165px] gap-2 w-full md:w-auto">
+                <Input
+                  value={bookingSearch}
+                  onChange={(e) => setBookingSearch(e.target.value)}
+                  placeholder="جست‌وجوی نام مشتری، موبایل، سالن یا کد رهگیری..."
+                  className="text-xs"
+                />
+                <Select
+                  value={bookingStatusFilter}
+                  onChange={(e) =>
+                    setBookingStatusFilter(e.target.value as 'ALL' | AppointmentStatus)
+                  }
+                  options={[
+                    { value: 'ALL', label: 'همه وضعیت‌ها' },
+                    { value: AppointmentStatus.Pending, label: 'در انتظار تایید' },
+                    { value: AppointmentStatus.Confirmed, label: 'تاییدشده' },
+                    { value: AppointmentStatus.Completed, label: 'انجام‌شده' },
+                    { value: AppointmentStatus.Cancelled, label: 'لغوشده' },
+                  ]}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+
+            <ResponsiveTable
+              keyExtractor={(row) => row.apt.id}
+              data={filteredBookingRows.slice(0, 30)}
+              emptyMessage="هیچ نوبتی با این فیلتر یافت نشد."
+              columns={[
+                {
+                  key: 'customer',
+                  header: 'مشتری و شماره همراه',
+                  render: ({ apt }) => (
+                    <div className="space-y-0.5 text-xs">
+                      <span className="font-extrabold text-[#061138] block">
+                        {apt.customerName || 'مشتری تایم تو'}
+                      </span>
+                      <span
+                        dir="ltr"
+                        className="font-mono font-bold text-[#0057FF] tabular-nums block"
+                      >
+                        {apt.customerPhone || 'ثبت‌نشده'}
+                      </span>
+                      <span
+                        dir="ltr"
+                        className="text-[10px] font-mono text-[#64748B] block"
+                      >
+                        {apt.referenceCode}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'business',
+                  header: 'کسب‌وکار / متخصص مستقل',
+                  render: ({ biz, apt }) => (
+                    <div className="space-y-0.5 text-xs">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="font-extrabold text-[#061138]">
+                          {biz.name}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                            biz.type === BusinessType.IndependentSpecialist
+                              ? 'bg-violet-50 text-violet-800 border border-violet-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {biz.type === BusinessType.IndependentSpecialist
+                            ? 'متخصص مستقل'
+                            : 'سالن'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-[#475569] block">
+                        {apt.serviceTitle} · {apt.specialistName || 'متخصص مجموعه'}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'schedule',
+                  header: 'تاریخ و ساعت نوبت',
+                  render: ({ apt }) => (
+                    <div className="space-y-0.5 text-xs tabular-nums">
+                      <span className="font-extrabold text-[#061138] block">
+                        {toPersianDigits(apt.dateJalali)}
+                      </span>
+                      <span className="text-[#475569] font-bold block">
+                        ساعت {toPersianDigits(apt.timeSlot)}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'finance',
+                  header: 'مبلغ خدمت و بیعانه آنلاین',
+                  render: ({ breakdown }) => (
+                    <div className="space-y-0.5 text-xs tabular-nums">
+                      <span className="font-extrabold text-[#061138] block">
+                        کل: {formatPriceToman(breakdown.totalServicePriceToman)}
+                      </span>
+                      <span className="text-[#0057FF] font-bold block">
+                        بیعانه: {formatPriceToman(breakdown.baseDepositToman)}
+                      </span>
+                      <span className="text-[10px] text-[#64748B] block">
+                        حضوری: {formatPriceToman(breakdown.remainingInSalonToman)}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'وضعیت نوبت',
+                  render: ({ apt }) => {
+                    const badge =
+                      statusBadgeMap[apt.status] || {
+                        label: apt.status,
+                        tone: 'neutral' as const,
+                      };
+                    return <StatusBadge label={badge.label} tone={badge.tone} />;
+                  },
+                },
+              ]}
+            />
+          </Card>
+        );
+      })()}
 
       {/* ۳. جدول صف بررسی و تایید کسب‌وکارهای ثبت‌نام‌شده واقعی */}
       <div className="space-y-3">
@@ -1980,6 +2202,17 @@ export const AdminBusinessesPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-extrabold text-[#1E1B2E]">
                       {b.name}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                        b.type === BusinessType.IndependentSpecialist
+                          ? 'bg-violet-50 text-violet-800 border-violet-200'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {b.type === BusinessType.IndependentSpecialist
+                        ? 'متخصص مستقل'
+                        : b.typeLabel || 'سالن / مرکز'}
                     </span>
                     {b.isVipPartner ? (
                       <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black">
@@ -2671,13 +2904,17 @@ export const AdminUsersPage: React.FC = () => {
     const isSalonOwner =
       Boolean(matchedBiz) ||
       u.roleLabel.includes('سالن') ||
-      u.roleLabel.includes('کسب‌وکار');
+      u.roleLabel.includes('کسب‌وکار') ||
+      u.roleLabel.includes('متخصص');
+    const isIndependentSpecialist =
+      matchedBiz?.type === BusinessType.IndependentSpecialist ||
+      u.roleLabel.includes('متخصص مستقل');
     const isPlatformAdmin = u.roleLabel.includes('مدیر کل');
 
     return {
       id: u.id,
       name: u.fullName,
-      roleLabel: u.roleLabel,
+      roleLabel: isIndependentSpecialist ? 'متخصص مستقل' : u.roleLabel,
       roleType: isSalonOwner ? ('BUSINESS_OWNER' as const) : ('CUSTOMER' as const),
       isPlatformAdmin,
       phone: cleanPhone || u.phone || u.phoneMasked,
@@ -4861,7 +5098,12 @@ export const AdminPaymentsPage: React.FC = () => {
 
   useEffect(() => {
     void syncAdminLiveNow();
-    fetch('/api/v1/payments/zibal/server-ip')
+    const token = getSavedSessionToken();
+    if (!token) return;
+    fetch('/api/v1/payments/zibal/server-ip', {
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { outgoingIp?: string } | null) => {
         if (d?.outgoingIp) setDetectedServerIp(d.outgoingIp);

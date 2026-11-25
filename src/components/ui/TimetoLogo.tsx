@@ -1,8 +1,9 @@
 import React from 'react';
 
-export const TIMETO_LOGO_IMAGE_PATH = '/icon.svg';
+export const TIMETO_LOGO_IMAGE_PATH =
+  '/assets/aistudio/photo_2026-10-26_09-25-182_bded1c84.jpg';
 export const TIMETO_BRAND_LOGO_URL = TIMETO_LOGO_IMAGE_PATH;
-export const TIMETO_SHOWCASE_IMAGE_PATH = '/icon.svg';
+export const TIMETO_SHOWCASE_IMAGE_PATH = TIMETO_LOGO_IMAGE_PATH;
 
 export const TimetoIconMark: React.FC<{
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -19,12 +20,12 @@ export const TimetoIconMark: React.FC<{
 
   return (
     <div
-      className={`relative ${iconBoxSize} bg-[#02081D] border border-[#00D4FF]/35 shadow-[0_6px_18px_-4px_rgba(0,132,255,0.45)] flex items-center justify-center overflow-hidden shrink-0 ${className}`}
+      className={`relative ${iconBoxSize} bg-[#010514] border border-[#00D4FF]/40 shadow-[0_6px_18px_-4px_rgba(0,132,255,0.45)] flex items-center justify-center overflow-hidden shrink-0 ${className}`}
     >
       <img
         src={TIMETO_LOGO_IMAGE_PATH}
         alt="لوگوی تایم تو (Timeto)"
-        className="w-full h-full object-contain"
+        className="w-full h-full object-cover"
       />
     </div>
   );
@@ -60,7 +61,7 @@ export const TimetoLogo: React.FC<{
 
   return (
     <div className="inline-flex items-center gap-1.5 sm:gap-2.5 select-none shrink-0">
-      {/* لوگوی وکتور باکیفیت Timeto */}
+      {/* لوگوی رسمی Timeto */}
       <TimetoIconMark size={size} />
 
       {/* تایپوگرافی برند Timeto | تایم تو */}
@@ -96,7 +97,7 @@ export const TimetoLogo: React.FC<{
 };
 
 /**
- * صفحه اسپلش / پیش‌نمایش شروع اپلیکیشن با لوگوی وکتور شفاف و اندازه استاندارد اپ
+ * صفحه اسپلش / پیش‌نمایش شروع اپلیکیشن با لوگوی رسمی تایم تو
  */
 export const TimetoStartupSplash: React.FC<{ visible: boolean }> = ({
   visible,
@@ -107,15 +108,15 @@ export const TimetoStartupSplash: React.FC<{ visible: boolean }> = ({
     <div
       role="status"
       aria-label="در حال راه‌اندازی اپلیکیشن تایم تو"
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#02081D] text-white transition-opacity duration-300"
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#010514] text-white transition-opacity duration-300"
     >
       <div className="relative flex flex-col items-center gap-5 px-6 text-center">
-        {/* آیکون اپ با ابعاد و حاشیه استاندارد iOS/Android و کیفیت وکتور بی‌نهایت */}
-        <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] overflow-hidden border border-[#00E5FF]/35 shadow-[0_0_44px_rgba(0,229,255,0.3)] bg-[#030B26] flex items-center justify-center">
+        {/* آیکون اپ با ابعاد و حاشیه استاندارد iOS/Android */}
+        <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-[28px] overflow-hidden border border-[#00E5FF]/40 shadow-[0_0_44px_rgba(0,229,255,0.3)] bg-[#010514] flex items-center justify-center">
           <img
             src={TIMETO_LOGO_IMAGE_PATH}
             alt="Timeto App Icon"
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover"
           />
         </div>
 

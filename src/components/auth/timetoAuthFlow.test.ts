@@ -7,10 +7,14 @@ import {
   validateRegistrationStep3Profile,
 } from './timetoAuthFlow';
 
-test('generateSuggestedPassword returns a strong 8+ character password using phone suffix', () => {
+test('generateSuggestedPassword returns a strong 8+ character random password with mixed classes', () => {
   const suggested = generateSuggestedPassword('09138201042');
-  assert.equal(suggested, 'Timeto@1042');
   assert.equal(suggested.length >= 8, true);
+  assert.match(suggested, /[A-Z]/);
+  assert.match(suggested, /[a-z]/);
+  assert.match(suggested, /[0-9]/);
+  assert.match(suggested, /[@#$%&*!?]/);
+  assert.equal(suggested.includes('1042'), false);
 });
 
 test('validateRegistrationStep1 enforces 11-digit mobile, 8+ char password, matching confirmation, and phone uniqueness', () => {

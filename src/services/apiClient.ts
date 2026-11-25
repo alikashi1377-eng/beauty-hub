@@ -792,6 +792,9 @@ export const realApiClient = {
       paymentOrders?: PaymentOrderItem[];
     };
   }> {
+    if (!getSavedSessionToken()) {
+      return { data: undefined };
+    }
     return requestJson<{
       ok: boolean;
       data?: {
@@ -816,6 +819,9 @@ export const realApiClient = {
       paymentOrders?: PaymentOrderItem[];
     };
   }> {
+    if (!getSavedSessionToken()) {
+      return { data: undefined };
+    }
     return requestJson<{
       ok: boolean;
       data?: {
