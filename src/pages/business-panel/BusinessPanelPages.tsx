@@ -6945,8 +6945,12 @@ export const BusinessProfileEditPage: React.FC = () => {
     setNeighborhood(currentBiz.neighborhood ?? 'چهارباغ بالا');
     setMapLat(currentBiz.mapLat ?? 32.6288);
     setMapLng(currentBiz.mapLng ?? 51.6621);
-    setShortDesc(currentBiz.shortDescription ?? '');
-  }, [currentBiz?.id]);
+    setShortDesc(currentBiz.shortDescription || currentBiz.aboutText || '');
+  }, [
+    currentBiz?.id,
+    currentBiz?.shortDescription,
+    currentBiz?.aboutText,
+  ]);
 
   if (!currentBiz) {
     return (
@@ -7023,6 +7027,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       mapLat: safeLat,
       mapLng: safeLng,
       shortDescription: resolvedShortDesc,
+      aboutText: resolvedShortDesc,
     };
 
     updateBusinessProfile(currentBiz.id, {
@@ -7036,6 +7041,7 @@ export const BusinessProfileEditPage: React.FC = () => {
       mapLat: updatedBizSnapshot.mapLat,
       mapLng: updatedBizSnapshot.mapLng,
       shortDescription: updatedBizSnapshot.shortDescription,
+      aboutText: updatedBizSnapshot.aboutText,
     });
     if (avatarUrl) {
       syncPrimarySpecialistAvatar(avatarUrl);
@@ -10517,10 +10523,10 @@ export const BusinessSettingsPage: React.FC = () => {
                 <label className="flex items-center justify-between gap-3 py-3 border-b border-[#E2E8F0] cursor-pointer">
                   <div>
                     <p className="font-extrabold text-[#061138]">
-                      ارسال پیامک تایید بلافاصله پس از ثبت نوبت
+                      ارسال پیامک تایید پس از تایید نوبت توسط سالن
                     </p>
                     <p className="text-[11px] text-[#64748B] mt-0.5">
-                      شامل نام سالن، تاریخ و ساعت مراجعه و کد رهگیری نوبت برای مشتری
+                      شامل نام سالن، تاریخ و ساعت مراجعه و کد رهگیری نوبت برای مشتری (بلافاصله پس از ثبت اولیه فقط برای مدیر سالن پیامک می‌رود)
                     </p>
                   </div>
                   <input

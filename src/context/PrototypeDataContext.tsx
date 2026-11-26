@@ -20,6 +20,7 @@ import {
   getSavedSessionToken,
   realApiClient,
 } from '../services/apiClient';
+import { resolveMergedAppointmentStatus } from '../utils/appointmentSync';
 import {
   AdPackageItem,
   AdminNotificationItem,
@@ -748,45 +749,59 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           String(b.name || '').includes('مهتاب');
 
         const rawMerged: BusinessItem = {
-          ...safeOv,
           ...b,
-          name: b.name || safeOv.name || 'سالن زیبایی',
-          city: b.city || safeOv.city || 'اصفهان',
-          neighborhood: b.neighborhood || safeOv.neighborhood || 'چهارباغ بالا',
-          address: b.address || safeOv.address || 'اصفهان',
-          ownerName: b.ownerName || safeOv.ownerName,
-          ownerPhone: b.ownerPhone || safeOv.ownerPhone || b.phoneDisplay,
-          depositEnabled: isJaziniSalon
-            ? true
-            : typeof b.depositEnabled === 'boolean'
-              ? b.depositEnabled
-              : safeOv.depositEnabled,
-          depositPercent: isJaziniSalon
-            ? 30
-            : typeof b.depositPercent === 'number' &&
-                b.depositPercent >= 1 &&
-                b.depositPercent <= 100
-              ? normalizeDepositPercent(b.depositPercent)
-              : safeOv.depositPercent !== undefined
-                ? normalizeDepositPercent(safeOv.depositPercent)
-                : undefined,
+          ...safeOv,
+          name: safeOv.name || b.name || 'سالن زیبایی',
+          city: safeOv.city || b.city || 'اصفهان',
+          neighborhood: safeOv.neighborhood || b.neighborhood || 'چهارباغ بالا',
+          address: safeOv.address || b.address || 'اصفهان',
+          ownerName: safeOv.ownerName || b.ownerName,
+          ownerPhone: safeOv.ownerPhone || b.ownerPhone || b.phoneDisplay,
+          shortDescription:
+            safeOv.shortDescription !== undefined
+              ? safeOv.shortDescription
+              : b.shortDescription,
+          aboutText:
+            safeOv.aboutText !== undefined
+              ? safeOv.aboutText
+              : safeOv.shortDescription !== undefined
+                ? safeOv.shortDescription
+                : b.aboutText,
+          depositEnabled:
+            typeof safeOv.depositEnabled === 'boolean'
+              ? safeOv.depositEnabled
+              : typeof b.depositEnabled === 'boolean'
+                ? b.depositEnabled
+                : isJaziniSalon
+                  ? true
+                  : undefined,
+          depositPercent:
+            safeOv.depositPercent !== undefined
+              ? normalizeDepositPercent(safeOv.depositPercent)
+              : typeof b.depositPercent === 'number' &&
+                  b.depositPercent >= 1 &&
+                  b.depositPercent <= 100
+                ? normalizeDepositPercent(b.depositPercent)
+                : isJaziniSalon
+                  ? 30
+                  : undefined,
           isVipPartner:
-            typeof b.isVipPartner === 'boolean'
-              ? b.isVipPartner
-              : safeOv.isVipPartner,
+            typeof safeOv.isVipPartner === 'boolean'
+              ? safeOv.isVipPartner
+              : b.isVipPartner,
           vipCommissionPercent:
-            typeof b.vipCommissionPercent === 'number'
-              ? b.vipCommissionPercent
-              : safeOv.vipCommissionPercent,
-          bankShebaNumber: b.bankShebaNumber || safeOv.bankShebaNumber,
-          bankCardNumber: b.bankCardNumber || safeOv.bankCardNumber,
-          bankAccountHolder: b.bankAccountHolder || safeOv.bankAccountHolder,
+            typeof safeOv.vipCommissionPercent === 'number'
+              ? safeOv.vipCommissionPercent
+              : b.vipCommissionPercent,
+          bankShebaNumber: safeOv.bankShebaNumber || b.bankShebaNumber,
+          bankCardNumber: safeOv.bankCardNumber || b.bankCardNumber,
+          bankAccountHolder: safeOv.bankAccountHolder || b.bankAccountHolder,
           contractAccepted:
-            typeof b.contractAccepted === 'boolean'
-              ? b.contractAccepted
-              : safeOv.contractAccepted,
+            typeof safeOv.contractAccepted === 'boolean'
+              ? safeOv.contractAccepted
+              : b.contractAccepted,
           contractAcceptedAtJalali:
-            b.contractAcceptedAtJalali || safeOv.contractAcceptedAtJalali,
+            safeOv.contractAcceptedAtJalali || b.contractAcceptedAtJalali,
           trialDaysRemaining: undefined,
           isSampleShowcase: false,
         };
@@ -1180,17 +1195,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
+      const incomingRefs = new Set<string>();
       for (const item of incoming) {
         if (!isInvalidOrRejectedApt(item)) {
+          if (
+            map.has(item.id) ||
+            (item.referenceCode && incomingRefs.has(item.referenceCode))
+          ) {
+            continue;
+          }
           const localMatch =
             savedByRefOrId.get(item.id) ||
             (item.referenceCode ? savedByRefOrId.get(item.referenceCode) : undefined);
           const enriched: AppointmentItem = localMatch
             ? {
                 ...item,
-                status: authoritativeFromServer
-                  ? item.status
-                  : localMatch.status || item.status,
+                status: resolveMergedAppointmentStatus({
+                  serverStatus: item.status,
+                  localStatus: localMatch.status,
+                  authoritativeFromServer: Boolean(authoritativeFromServer),
+                }),
                 customerPhone:
                   item.customerPhone || localMatch.customerPhone,
                 paymentMethod:
@@ -1210,6 +1234,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             : item;
           map.set(item.id, normalizeAptFinancials(enriched));
+          if (item.referenceCode) {
+            incomingRefs.add(item.referenceCode);
+          }
         }
       }
 
@@ -1738,9 +1765,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       const meRes = await realApiClient.fetchCustomerBootstrap();
       setFavoriteBusinessIds(meRes.data.favoriteBusinessIds);
-      setAppointments((prev) =>
-        mergeSavedAppointments([...meRes.data.appointments, ...prev])
-      );
+      setAppointments((prev) => {
+        const merged = mergeSavedAppointments(
+          meRes.data.appointments.length > 0 ? meRes.data.appointments : prev,
+          undefined,
+          meRes.data.appointments.length > 0
+        );
+        persistSavedAppointments(merged);
+        return merged;
+      });
     } catch {
       // ادامه در صورت نبود داده مشتری
     }
@@ -2025,7 +2058,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           const mergedApts = mergeSavedAppointments(
             serverApts,
             nextBusinesses,
-            serverApts.length > 0,
+            true,
             nextServices
           );
           persistSavedAppointments(mergedApts);
@@ -3121,7 +3154,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           Array.isArray(syncRes.businesses) &&
           syncRes.businesses.length > 0
         ) {
-          setBusinesses(mergeBusinessOverrides(syncRes.businesses));
+          setBusinesses(
+            mergeBusinessOverrides(syncRes.businesses, syncRes.registeredUsers, true)
+          );
         }
         if (syncRes.user) {
           sessionUser = {
@@ -3446,22 +3481,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     businessId: string,
     patch: Partial<BusinessItem>
   ) => {
-    setBusinesses((prev) => {
-      const existsInPrev = prev.some((b) => b.id === businessId);
-      const baseList =
-        !existsInPrev && currentBusiness && currentBusiness.id === businessId
-          ? [currentBusiness, ...prev]
-          : prev;
-      const next = baseList.map((b) =>
-        b.id === businessId
-          ? {
-              ...b,
-              ...patch,
-              approvalStatus:
-                patch.approvalStatus ?? b.approvalStatus ?? 'APPROVED',
-            }
-          : b
-      );
+    const persistLocalBusinessPatch = () => {
       try {
         const overridesRaw =
           window.localStorage.getItem('timeto_biz_overrides_v2') || '{}';
@@ -3504,6 +3524,31 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch {
         // ignore storage errors
+      }
+    };
+
+    if (dataMode !== 'real') {
+      persistLocalBusinessPatch();
+    }
+
+    setBusinesses((prev) => {
+      const existsInPrev = prev.some((b) => b.id === businessId);
+      const baseList =
+        !existsInPrev && currentBusiness && currentBusiness.id === businessId
+          ? [currentBusiness, ...prev]
+          : prev;
+      const next = baseList.map((b) =>
+        b.id === businessId
+          ? {
+              ...b,
+              ...patch,
+              approvalStatus:
+                patch.approvalStatus ?? b.approvalStatus ?? 'APPROVED',
+            }
+          : b
+      );
+      if (dataMode !== 'real') {
+        persistLocalBusinessPatch();
       }
       return next;
     });
@@ -5130,6 +5175,64 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const notifyToken = getSavedSessionToken();
+      if (dataMode === 'real') {
+        void realApiClient
+          .updateAppointmentStatus(id, status)
+          .then(() => {
+            showToast(
+              status === AppointmentStatus.Cancelled && refundedAmount > 0
+                ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
+                : status === AppointmentStatus.Confirmed
+                ? 'نوبت با موفقیت تایید شد و پیامک تایید نوبت برای مشتری ارسال گردید ✓'
+                : 'وضعیت نوبت بروزرسانی شد.'
+            );
+          })
+          .catch(async (err) => {
+            if (
+              notifyToken &&
+              err instanceof ApiClientError &&
+              err.errorCode === 'APPOINTMENT_NOT_FOUND'
+            ) {
+              try {
+                await fetch('/api/v1/appointments/notify-status', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${notifyToken}`,
+                  },
+                  body: JSON.stringify({
+                    appointmentId: id,
+                    status,
+                    customerName: targetApt.customerName,
+                    customerPhone:
+                      targetApt.customerPhone || targetApt.customerPhoneMasked,
+                    businessName: targetApt.businessName,
+                    serviceTitle: targetApt.serviceTitle,
+                    dateJalali: targetApt.dateJalali,
+                    timeSlot: targetApt.timeSlot,
+                  }),
+                });
+                showToast(
+                  status === AppointmentStatus.Confirmed
+                    ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید ✓'
+                    : 'وضعیت نوبت بروزرسانی شد.'
+                );
+                return;
+              } catch {
+                // fall through
+              }
+            }
+            showToast(
+              err instanceof Error
+                ? err.message
+                : 'بروزرسانی وضعیت نوبت در سرور با خطا مواجه شد.',
+              'warning'
+            );
+          });
+        return;
+      }
+
       if (notifyToken) {
         void fetch('/api/v1/appointments/notify-status', {
           method: 'POST',
@@ -5156,22 +5259,10 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       void realApiClient
         .updateAppointmentStatus(id, status)
         .then(() => {
-          showToast(
-            status === AppointmentStatus.Cancelled && refundedAmount > 0
-              ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
-              : status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد و پیامک تایید نوبت برای مشتری ارسال گردید ✓'
-              : 'وضعیت نوبت بروزرسانی شد.'
-          );
+          showToast('وضعیت نوبت بروزرسانی شد.');
         })
         .catch(() => {
-          showToast(
-            status === AppointmentStatus.Cancelled && refundedAmount > 0
-              ? `نوبت لغو شد، پیامک اطلاع‌رسانی برای مشتری ارسال گردید و مبلغ ${formatPriceToman(refundedAmount)} بابت بازگشت بیعانه فوراً به کیف پول مشتری واریز شد ✓`
-              : status === AppointmentStatus.Confirmed
-              ? 'نوبت با موفقیت تایید شد و پیامک تایید برای مشتری ارسال گردید ✓'
-              : 'وضعیت نوبت بروزرسانی شد.'
-          );
+          showToast('وضعیت نوبت ثبت شد.');
         });
       return;
     }
@@ -7023,7 +7114,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           // ignore
         }
         setCategories(res.data.categories);
-        setBusinesses(mergeBusinessOverrides(res.data.businesses));
+        setBusinesses(mergeBusinessOverrides(res.data.businesses, undefined, true));
         if (res.user) {
           setAuthUser(res.user);
           await loadAuthenticatedRoleData(res.user);
@@ -7523,21 +7614,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       };
       return [newCustomer, ...prev];
     });
-    // ثبت گزارش پیامک ثبت اولیه یا تایید خودکار نوبت
+    // ثبت گزارش پیامک اطلاع‌رسانی برای مدیر سالن (پیامک تایید مشتری صرفاً پس از تایید سالن ارسال می‌شود)
+    const ownerAlertPhone =
+      resolvedOwnerPhone || biz?.phoneDisplay || optimisticApt.customerPhoneMasked;
     const newBookingSmsLog: SmsMessageLogItem = {
       id: `sms-book-${Date.now()}`,
       businessId: resolvedBizId,
       businessName: optimisticApt.businessName,
       recipientsCount: 1,
-      recipientPhones: [
-        optimisticApt.customerPhone || optimisticApt.customerPhoneMasked,
-      ],
+      recipientPhones: [ownerAlertPhone],
       messageText: isAutoConfirmEnabled
         ? `${optimisticApt.customerName} عزیز، نوبت «${optimisticApt.serviceTitle}» در ${optimisticApt.businessName} برای ${optimisticApt.dateJalali} ساعت ${optimisticApt.timeSlot} به صورت خودکار تایید نهایی شد. کد پیگیری: ${refCode}`
-        : `${optimisticApt.customerName} عزیز، درخواست نوبت «${optimisticApt.serviceTitle}» در ${optimisticApt.businessName} برای ${optimisticApt.dateJalali} ساعت ${optimisticApt.timeSlot} ثبت شد و منتظر تایید مدیریت سالن است. کد پیگیری: ${refCode}`,
+        : `نوبت جدید ${optimisticApt.customerName} («${optimisticApt.serviceTitle}») برای ${optimisticApt.dateJalali} ساعت ${optimisticApt.timeSlot} ثبت شد (کد: ${refCode}) و منتظر تایید مدیریت سالن است.`,
       templateTitle: isAutoConfirmEnabled
         ? 'تایید خودکار نوبت پس از پرداخت بیعانه'
-        : 'ثبت اولیه نوبت (در انتظار تایید سالن)',
+        : 'اطلاع‌رسانی ثبت نوبت به مدیر سالن',
       createdAtJalali: `${optimisticApt.dateJalali} - اکنون`,
       status: 'SENT',
     };
@@ -7727,29 +7818,6 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev,
           lastReferenceCode: res.item.referenceCode,
         }));
-        void fetch('/api/v1/appointments/notify-booking', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            businessSlug: resolvedBizSlug,
-            businessId: resolvedBizId,
-            businessName: resolvedBizName,
-            ownerPhone: resolvedOwnerPhone,
-            customerName:
-              effectiveDraft.customerName ||
-              authUser?.fullName ||
-              'مراجع تایم‌تو',
-            customerPhone:
-              effectiveDraft.customerPhone || authUser?.phone || '',
-            serviceTitle: summary.combinedTitle || 'خدمات زیبایی',
-            priceToman: resolvedSubmitServicePrice,
-            durationMinutes: summary.totalDurationMinutes || 60,
-            dateJalali: effectiveDraft.dateJalali,
-            timeSlot: effectiveDraft.timeSlot,
-            depositPaidToman: resolvedSubmitDeposit,
-            referenceCode: res.item.referenceCode,
-          }),
-        }).catch(() => {});
         showToast(
           'پرداخت بیعانه تایید شد، نوبت شما ثبت گردید و پیامک اطلاع‌رسانی برای تایید به مدیر سالن ارسال شد ✓'
         );

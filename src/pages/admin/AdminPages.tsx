@@ -113,6 +113,7 @@ const BusinessFinancialDossierTable: React.FC<{
     syncAdminLiveNow,
     lastSyncedAtIso,
     isLoadingInitialData,
+    dataMode,
     showToast,
   } = usePrototypeData();
   const [isManualSyncing, setIsManualSyncing] = useState(false);
@@ -160,8 +161,33 @@ const BusinessFinancialDossierTable: React.FC<{
   const handleInstantSync = async () => {
     setIsManualSyncing(true);
     try {
+      let recoveredCount = 0;
+      const token = getSavedSessionToken();
+      if (dataMode === 'real' && token) {
+        try {
+          const recRes = await fetch('/api/v1/payments/zibal/reconcile-pending', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({}),
+          });
+          if (recRes.ok) {
+            const recData = (await recRes.json()) as { recoveredCount?: number };
+            recoveredCount = Number(recData?.recoveredCount || 0);
+          }
+        } catch {
+          // ignore transient Zibal reconcile network issue and proceed with DB sync
+        }
+      }
       await syncAdminLiveNow();
-      showToast('تمامی آمار رزروها، بیعانه‌ها و تسویه‌ها به‌صورت آنی همگام‌سازی شد ✓');
+      showToast(
+        recoveredCount > 0
+          ? `${toPersianDigits(recoveredCount)} تراکنش معلق زیبال بازیابی و تمامی آمار مالی به‌صورت آنی همگام‌سازی شد ✓`
+          : 'تمامی آمار رزروها، بیعانه‌ها و تسویه‌ها به‌صورت آنی همگام‌سازی شد ✓'
+      );
     } finally {
       setIsManualSyncing(false);
     }

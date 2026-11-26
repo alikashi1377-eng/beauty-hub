@@ -3170,7 +3170,9 @@ test('Step 2 Booking Engine & Availability Overhaul: Dynamic slots, closing boun
   }
 });
 
-test('Booking SMS Notification: POST /api/v1/appointments/notify-booking dispatches SMS to both business owner and customer and deduplicates repeated calls', async () => {
+test('Booking SMS Notification: POST /api/v1/appointments/notify-booking notifies only the business owner and never sends premature customer confirmation SMS', async () => {
+  const capturedPayloads: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const originalFetch = globalThis.fetch;
   const state: MockDbState = {
     sessions: new Map(),
     users: new Map(),
@@ -3189,10 +3191,27 @@ test('Booking SMS Notification: POST /api/v1/appointments/notify-booking dispatc
       DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
       SESSION_SECRET: TEST_SESSION_SECRET,
       OTP_HMAC_SECRET: TEST_OTP_SECRET,
-      SMS_PROVIDER: 'disabled',
+      SMS_PROVIDER: 'melipayamak',
+      SMS_API_KEY: 'test-melipayamak-token',
+      SMS_SENDER: '50004001',
+      SMS_BOOKING_OWNER_TEMPLATE: '776655',
+      SMS_BOOKING_CUSTOMER_TEMPLATE: '998877',
     },
     pool
   );
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = typeof input === 'string' ? input : input.toString();
+    if (urlStr.includes('console.melipayamak.com')) {
+      const parsedBody = init?.body ? JSON.parse(String(init.body)) : {};
+      capturedPayloads.push({ url: urlStr, body: parsedBody });
+      return new Response(JSON.stringify({ recId: '123456789' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
 
   try {
     const res = await fetch(`${srv.baseUrl}/api/v1/appointments/notify-booking`, {
@@ -3217,7 +3236,13 @@ test('Booking SMS Notification: POST /api/v1/appointments/notify-booking dispatc
       customerSmsSent: boolean;
     };
     assert.equal(body.ok, true);
+    assert.equal(body.ownerSmsSent, true);
+    assert.equal(body.customerSmsSent, false);
+    assert.equal(capturedPayloads.length, 1);
+    assert.equal(capturedPayloads[0].body.bodyId, 776655);
+    assert.equal(capturedPayloads[0].body.to, '09131112233');
   } finally {
+    globalThis.fetch = originalFetch;
     await srv.close();
   }
 });
@@ -3690,4 +3715,335 @@ test('Security hardening: protected endpoints reject unauthenticated callers (40
     await srv.close();
   }
 });
+
+test('SQL integrity: updateBusinessProfileInDb syncs about_text with shortDescription and updateAppointmentStatusInDb matches reference_code', async () => {
+  const executedQueries: Array<{ sql: string; params?: unknown[] }> = [];
+  const spyPool = {
+    async connect() {
+      return {
+        async query(sql: string, params?: unknown[]) {
+          executedQueries.push({ sql, params });
+          if (
+            sql.includes('FROM businesses') &&
+            !sql.includes('UPDATE businesses')
+          ) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'biz-uuid-desc',
+                  external_id: 'biz-desc',
+                  slug: 'salon-desc',
+                  name: 'سالن تست',
+                  type: 'WOMEN_SALON',
+                  type_label: 'سالن زیبایی زنانه',
+                  city: 'اصفهان',
+                  neighborhood: 'چهارباغ',
+                  address: 'اصفهان',
+                  phone_display: '09130000000',
+                  instagram_handle: null,
+                  short_description: 'توضیح قبلی',
+                  about_text: 'توضیح قبلی',
+                  map_lat: 32.65,
+                  map_lng: 51.66,
+                  visual_theme: 'rose',
+                  starting_price_toman: 350000,
+                  verified_badge: true,
+                  approval_status: 'APPROVED',
+                  subscription_plan: 'پایه',
+                  subscription_status: 'ACTIVE',
+                },
+              ],
+            };
+          }
+          if (sql.includes('UPDATE businesses')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'biz-uuid-desc',
+                  external_id: 'biz-desc',
+                  slug: 'salon-desc',
+                  name: 'سالن تست',
+                  short_description: params?.[6],
+                  about_text: params?.[7],
+                },
+              ],
+            };
+          }
+          if (sql.includes('FROM appointments')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'apt-uuid-1',
+                  business_id: 'biz-uuid-desc',
+                  customer_user_id: 'cust-1',
+                  customer_phone: '09131112233',
+                  status: 'PENDING',
+                  service_title_snapshot: 'اصلاح مو',
+                  customer_name: 'مریم',
+                  date_jalali: '۱۴۰۵/۰۱/۱۰',
+                  time_slot_label: '۱۲:۰۰',
+                  business_name: 'سالن تست',
+                },
+              ],
+            };
+          }
+          if (sql.includes('FROM business_members')) {
+            return { rowCount: 1, rows: [{ member_role: 'OWNER' }] };
+          }
+          return { rowCount: 1, rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+
+  const { updateBusinessProfileInDb, updateAppointmentStatusInDb } = await import(
+    './repositories/beautyhubRepository'
+  );
+
+  await updateBusinessProfileInDb(
+    spyPool as never,
+    {
+      userId: 'admin-1',
+      phone: '09138201042',
+      fullName: 'ادمین',
+      defaultCity: 'اصفهان',
+      roles: ['PLATFORM_ADMIN'],
+      isPlatformAdmin: true,
+      businessMemberships: [],
+      sessionId: 'sess-1',
+    },
+    'salon-desc',
+    { shortDescription: 'توضیحات جدید سالن تست برای صفحه عمومی' }
+  );
+
+  const bizUpdate = executedQueries.find((q) => q.sql.includes('UPDATE businesses'));
+  assert.ok(bizUpdate);
+  assert.equal(bizUpdate.params?.[7], 'توضیحات جدید سالن تست برای صفحه عمومی');
+  assert.equal(bizUpdate.params?.[8], 'توضیحات جدید سالن تست برای صفحه عمومی');
+
+  await updateAppointmentStatusInDb(
+    spyPool as never,
+    {
+      userId: 'admin-1',
+      phone: '09138201042',
+      fullName: 'ادمین',
+      defaultCity: 'اصفهان',
+      roles: ['PLATFORM_ADMIN'],
+      isPlatformAdmin: true,
+      businessMemberships: [],
+      sessionId: 'sess-1',
+    },
+    'ZB-4926693834',
+    'CONFIRMED' as never
+  );
+
+  const aptLookup = executedQueries.find((q) => q.sql.includes('FROM appointments'));
+  assert.ok(aptLookup);
+  assert.ok(aptLookup.sql.includes('reference_code = $1'));
+});
+
+test('Zibal gateway integration: /request persists order in DB KV store, /verify recovers and creates booking, and /reconcile-pending verifies unsettled orders for PLATFORM_ADMIN only', async () => {
+  const kvStore = new Map<string, unknown>();
+  const originalFetch = globalThis.fetch;
+
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map([
+      [
+        'admin-user',
+        {
+          id: 'admin-user',
+          phone: '09138201042',
+          full_name: 'مدیر کل',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+      [
+        'cust-user',
+        {
+          id: 'cust-user',
+          phone: '09131112233',
+          full_name: 'مشتری تست',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+    ]),
+    admins: new Map([['admin-user', { is_active: true, revoked_at: null }]]),
+    memberships: [],
+    businesses: new Map(),
+    services: new Map(),
+    appointments: new Map(),
+  };
+
+  const basePool = createSecurityTestPool(state);
+  const poolWithKv = {
+    async connect() {
+      const client = await basePool.connect();
+      return {
+        async query(sql: string, params?: unknown[]) {
+          if (sql.includes('FROM platform_kv_store') && params?.[0]) {
+            const val = kvStore.get(String(params[0]));
+            return val !== undefined
+              ? { rowCount: 1, rows: [{ value_json: val }] }
+              : { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('INSERT INTO platform_kv_store') && params?.[0]) {
+            kvStore.set(String(params[0]), JSON.parse(String(params[1] || 'null')));
+            return { rowCount: 1, rows: [] };
+          }
+          return client.query(sql, params);
+        },
+        release() {
+          client.release();
+        },
+      };
+    },
+    async query(sql: string, params?: unknown[]) {
+      if (sql.includes('FROM platform_kv_store') && params?.[0]) {
+        const val = kvStore.get(String(params[0]));
+        return val !== undefined
+          ? { rowCount: 1, rows: [{ value_json: val }] }
+          : { rowCount: 0, rows: [] };
+      }
+      if (sql.includes('INSERT INTO platform_kv_store') && params?.[0]) {
+        kvStore.set(String(params[0]), JSON.parse(String(params[1] || 'null')));
+        return { rowCount: 1, rows: [] };
+      }
+      return basePool.query(sql, params);
+    },
+  };
+
+  const adminToken = issueTestSession(state, {
+    sessionId: '77777777-7777-4777-8777-777777777771',
+    userId: 'admin-user',
+  });
+  const custToken = issueTestSession(state, {
+    sessionId: '77777777-7777-4777-8777-777777777772',
+    userId: 'cust-user',
+  });
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+      SMS_PROVIDER: 'disabled',
+    },
+    poolWithKv as never
+  );
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = typeof input === 'string' ? input : input.toString();
+    if (urlStr === 'https://gateway.zibal.ir/v1/request') {
+      return new Response(
+        JSON.stringify({ result: 100, trackId: '4918368429', message: 'success' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    if (urlStr === 'https://gateway.zibal.ir/v1/verify') {
+      const parsed = init?.body ? JSON.parse(String(init.body)) : {};
+      return new Response(
+        JSON.stringify({
+          result: 100,
+          refNumber: `REF-${parsed.trackId}`,
+          status: 1,
+          message: 'success',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const reqRes = await fetch(`${srv.baseUrl}/api/v1/payments/zibal/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        purpose: 'booking',
+        businessId: 'biz-ayra',
+        businessSlug: 'ayra',
+        businessName: 'مرکز لیزر آیرا',
+        amountToman: 87200,
+        customerPhone: '09381401916',
+        customerName: 'مشتری تست',
+        orderId: 'ZBL-BK-TEST-1',
+        bookingDraft: {
+          serviceTitle: 'لیزر فول‌بادی',
+          servicePriceToman: 1500000,
+          depositAmountToman: 87200,
+          dateJalali: '۱۴۰۵/۰۹/۲۰',
+          timeSlot: '۱۰:۳۰',
+        },
+      }),
+    });
+    assert.equal(reqRes.status, 200);
+    const reqJson = (await reqRes.json()) as { ok: boolean; trackId: string };
+    assert.equal(reqJson.ok, true);
+    assert.equal(reqJson.trackId, '4918368429');
+
+    const storedKvOrders = kvStore.get('zibal_gateway_orders_v1') as Array<{
+      trackId: string;
+      verifiedAt?: string;
+    }>;
+    assert.ok(Array.isArray(storedKvOrders) && storedKvOrders.length === 1);
+    assert.equal(storedKvOrders[0].trackId, '4918368429');
+    assert.equal(storedKvOrders[0].verifiedAt, undefined);
+
+    // Non-admin caller must be blocked from reconcile-pending
+    const forbiddenRec = await fetch(
+      `${srv.baseUrl}/api/v1/payments/zibal/reconcile-pending`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${custToken}`,
+        },
+        body: JSON.stringify({}),
+      }
+    );
+    assert.equal(forbiddenRec.status, 403);
+
+    // Admin reconcile-pending must verify unverified DB orders cleanly
+    const recRes = await fetch(
+      `${srv.baseUrl}/api/v1/payments/zibal/reconcile-pending`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`,
+        },
+        body: JSON.stringify({}),
+      }
+    );
+    assert.equal(recRes.status, 200);
+    const recJson = (await recRes.json()) as {
+      ok: boolean;
+      checkedCount: number;
+      recoveredCount: number;
+    };
+    assert.equal(recJson.ok, true);
+    assert.equal(recJson.checkedCount, 1);
+    assert.equal(recJson.recoveredCount, 1);
+
+    const updatedKvOrders = kvStore.get('zibal_gateway_orders_v1') as Array<{
+      verifiedAt?: string;
+      refNumber?: string;
+    }>;
+    assert.ok(updatedKvOrders[0].verifiedAt);
+    assert.equal(updatedKvOrders[0].refNumber, 'REF-4918368429');
+  } finally {
+    globalThis.fetch = originalFetch;
+    await srv.close();
+  }
+});
+
 

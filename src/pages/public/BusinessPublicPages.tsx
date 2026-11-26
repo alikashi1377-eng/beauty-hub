@@ -34,6 +34,7 @@ import {
   normalizeIranMobileInput,
   toPersianDigits,
 } from '../../utils/formatters';
+import { resolveDisplayBusinessDescription } from '../../utils/appointmentSync';
 import { validateReviewContent } from '../../utils/reviewModeration';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -541,7 +542,7 @@ export const BusinessPublicProfileView: React.FC<{
                 <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed max-w-2xl">
                   {mode === 'pro' && matchedSpecialist
                     ? matchedSpecialist.bio
-                    : business.aboutText}
+                    : resolveDisplayBusinessDescription(business)}
                 </p>
               </div>
             </div>
@@ -1608,7 +1609,7 @@ export const BusinessPublicProfileView: React.FC<{
                   <span>درباره {displayName}</span>
                 </h3>
                 <p className="text-xs sm:text-sm text-[#6B6480] leading-relaxed">
-                  {business.aboutText}
+                  {resolveDisplayBusinessDescription(business)}
                 </p>
               </div>
 

@@ -1478,6 +1478,7 @@ export const BookingConfirmPage: React.FC = () => {
     customerWalletBalanceToman,
     topUpCustomerWallet,
     payFromCustomerWallet,
+    syncAdminLiveNow,
   } = usePrototypeData();
 
   const [formError, setFormError] = useState('');
@@ -1691,6 +1692,7 @@ export const BookingConfirmPage: React.FC = () => {
         }
 
         if (data?.alreadyVerified) {
+          await syncAdminLiveNow().catch(() => undefined);
           if (isZibalBookingCallback) {
             navigate('/booking/result');
           }
@@ -1804,7 +1806,7 @@ export const BookingConfirmPage: React.FC = () => {
           });
         }
 
-        const createdApt = await submitBooking(
+        await submitBooking(
           {
             depositPaidToman: resolvedDeposit,
             paymentMethod: 'GATEWAY',
@@ -1817,6 +1819,7 @@ export const BookingConfirmPage: React.FC = () => {
             businessName: resolvedBizName,
           }
         );
+        await syncAdminLiveNow().catch(() => undefined);
 
         void resolvedBizId;
         void resolvedBizSlug;
@@ -1992,7 +1995,24 @@ export const BookingConfirmPage: React.FC = () => {
           customerName: bookingDraft.customerName.trim(),
           bookingDraft: {
             ...bookingDraft,
+            businessId: business.id,
             businessSlug: business.slug,
+            businessName: business.name,
+            serviceId: bookingDraft.serviceId || service?.id,
+            serviceIds:
+              bookingDraft.serviceIds && bookingDraft.serviceIds.length > 0
+                ? bookingDraft.serviceIds
+                : service?.id
+                  ? [service.id]
+                  : [],
+            specialistId: bookingDraft.specialistId || specialist?.id,
+            serviceTitle: selectedServicesSummary.combinedTitle || service.title,
+            servicePriceToman: selectedServicesSummary.totalPriceToman || service.priceToman,
+            durationMinutes:
+              selectedServicesSummary.totalDurationMinutes ||
+              service.durationMinutes ||
+              60,
+            depositAmountToman,
           },
         }),
       });
@@ -2686,7 +2706,7 @@ export const BookingResultPage: React.FC = () => {
             نوبت شما در تقویم «{business?.name ?? 'سالن'}» ثبت گردید
           </h2>
           <p className="text-xs text-[#475569] max-w-md mx-auto leading-relaxed">
-            پیامک تایید نوبت و رسید بیعانه برای شما و صاحب کسب‌وکار ارسال شد.
+            درخواست نوبت و رسید بیعانه به مدیر سالن پیامک شد؛ پس از تایید نوبت توسط سالن، پیامک تایید نهایی برای شما ارسال می‌گردد.
           </p>
         </div>
 
@@ -3555,6 +3575,8 @@ export const CustomerAppointmentsPage: React.FC = () => {
     bookingDraft,
     updateAppointmentStatus,
     customerWalletBalanceToman,
+    syncAdminLiveNow,
+    dataMode,
   } = usePrototypeData();
   const [activeTab, setActiveTab] = useState('upcoming');
   const [selectedApt, setSelectedApt] = useState<AppointmentItem | null>(null);
@@ -3563,6 +3585,12 @@ export const CustomerAppointmentsPage: React.FC = () => {
   );
   const [simulateLateCancel, setSimulateLateCancel] = useState(false);
   const [cancelRefundNotice, setCancelRefundNotice] = useState('');
+
+  useEffect(() => {
+    if (dataMode === 'real') {
+      void syncAdminLiveNow();
+    }
+  }, [dataMode]);
 
   const myAppointments = appointments.filter((a) =>
     isAppointmentOwnedByCustomer(a, authUser, bookingDraft)

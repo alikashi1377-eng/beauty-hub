@@ -22,6 +22,7 @@ import {
   resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../utils/formatters';
+import { shouldShowAiStudioPreviewBar } from '../utils/appointmentSync';
 import { AppointmentStatus } from '../types';
 import {
   BusinessOnboardingWizardWorkspace,
@@ -229,8 +230,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip flex flex-col bg-[#F3F6FC] text-[#061138]">
-      {/* نوار پیش‌نمایش سریع بخش‌های مختلف سامانه ویژه محیط AI Studio (فقط در حالت پیش‌نمایش بدون دیتابیس خارجی نمایش داده می‌شود) */}
-      {dataMode === 'mock' ? (
+      {/* نوار پیش‌نمایش سریع بخش‌های مختلف سامانه ویژه محیط AI Studio (هرگز روی دامنه اصلی نمایش داده یا فلش نمی‌شود) */}
+      {shouldShowAiStudioPreviewBar({
+        dataMode,
+        isLoadingInitialData,
+        hostname: typeof window !== 'undefined' ? window.location.hostname : '',
+      }) ? (
         <div className="bg-[#061138] text-white border-b border-[#0057FF]/50 px-3 sm:px-5 py-2 text-xs z-40">
           <div className="max-w-[1360px] mx-auto flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">

@@ -1,0 +1,23 @@
+[
+  {
+    "orderId": "ZBL-BK-TEST-1",
+    "trackId": "4918368429",
+    "purpose": "booking",
+    "businessId": "biz-ayra",
+    "businessSlug": "ayra",
+    "businessName": "مرکز لیزر آیرا",
+    "amountToman": 87200,
+    "customerPhone": "09381401916",
+    "customerName": "مشتری تست",
+    "bookingDraft": {
+      "serviceTitle": "لیزر فول‌بادی",
+      "servicePriceToman": 1500000,
+      "depositAmountToman": 87200,
+      "dateJalali": "۱۴۰۵/۰۹/۲۰",
+      "timeSlot": "۱۰:۳۰"
+    },
+    "createdAt": "2026-11-26T10:59:11.554Z",
+    "verifiedAt": "2026-11-26T10:59:11.560Z",
+    "refNumber": "REF-4918368429"
+  }
+]

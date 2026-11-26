@@ -1503,7 +1503,141 @@ const SHARED_PLATFORM_STATE_KEYS = {
   paymentConfig: 'platform_commission_config_v1',
   platformBusinessNotices: 'platform_business_notices_v1',
   paymentOrders: 'platform_payment_orders_v1',
+  zibalOrders: 'zibal_gateway_orders_v1',
+  appointmentPaymentMeta: 'appointment_payment_meta_v1',
 } as const;
+
+export interface AppointmentPaymentMetaRecord {
+  depositPaidToman?: number;
+  paymentMethod?: 'GATEWAY' | 'WALLET';
+  paymentTrackingCode?: string;
+  zibalTrackId?: string;
+  priceToman?: number;
+  updatedAt?: string;
+}
+
+export async function getZibalOrdersFromDb(
+  client: PoolClient | Pool
+): Promise<Array<Record<string, unknown>>> {
+  try {
+    const res = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = $1 LIMIT 1`,
+      [SHARED_PLATFORM_STATE_KEYS.zibalOrders]
+    );
+    return Array.isArray(res.rows[0]?.value_json)
+      ? (res.rows[0].value_json as Array<Record<string, unknown>>)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertZibalOrderInDb(
+  pool: Pool,
+  order: Record<string, unknown>
+): Promise<void> {
+  const orderId = String(order.orderId || '').trim();
+  const trackId = String(order.trackId || '').trim();
+  if (!orderId && !trackId) return;
+  const client = await pool.connect();
+  try {
+    await ensureExtendedMetaTables(client);
+    const existing = await getZibalOrdersFromDb(client);
+    const filtered = existing.filter((item) => {
+      const iOrder = String(item?.orderId || '').trim();
+      const iTrack = String(item?.trackId || '').trim();
+      if (orderId && iOrder === orderId) return false;
+      if (trackId && iTrack === trackId) return false;
+      return true;
+    });
+    const nextList = [...filtered, order].slice(-500);
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [SHARED_PLATFORM_STATE_KEYS.zibalOrders, JSON.stringify(nextList)]
+    );
+  } catch {
+    // ignore in minimal test DBs
+  } finally {
+    client.release();
+  }
+}
+
+export async function getAppointmentPaymentMetaMapInDb(
+  client: PoolClient | Pool
+): Promise<Record<string, AppointmentPaymentMetaRecord>> {
+  try {
+    const res = await client.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = $1 LIMIT 1`,
+      [SHARED_PLATFORM_STATE_KEYS.appointmentPaymentMeta]
+    );
+    const val = res.rows[0]?.value_json;
+    return val && typeof val === 'object' && !Array.isArray(val)
+      ? (val as Record<string, AppointmentPaymentMetaRecord>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveAppointmentPaymentMetaInDb(
+  poolOrClient: Pool | PoolClient,
+  keys: string[],
+  meta: AppointmentPaymentMetaRecord
+): Promise<void> {
+  const cleanKeys = Array.from(
+    new Set(keys.map((k) => String(k || '').trim()).filter(Boolean))
+  );
+  if (cleanKeys.length === 0) return;
+
+  const isPoolClient =
+    'release' in poolOrClient && typeof poolOrClient.release === 'function';
+  const client: PoolClient = isPoolClient
+    ? (poolOrClient as PoolClient)
+    : await (poolOrClient as Pool).connect();
+  try {
+    await ensureExtendedMetaTables(client);
+    const current = await getAppointmentPaymentMetaMapInDb(client);
+    const mergedMeta: AppointmentPaymentMetaRecord = {
+      ...(typeof meta.depositPaidToman === 'number' &&
+      Number.isFinite(meta.depositPaidToman)
+        ? { depositPaidToman: Math.max(0, Math.round(meta.depositPaidToman)) }
+        : {}),
+      ...(meta.paymentMethod ? { paymentMethod: meta.paymentMethod } : {}),
+      ...(meta.paymentTrackingCode
+        ? { paymentTrackingCode: String(meta.paymentTrackingCode).trim() }
+        : {}),
+      ...(meta.zibalTrackId
+        ? { zibalTrackId: String(meta.zibalTrackId).trim() }
+        : {}),
+      ...(typeof meta.priceToman === 'number' && Number.isFinite(meta.priceToman)
+        ? { priceToman: Math.max(0, Math.round(meta.priceToman)) }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    const nextMap = { ...current };
+    for (const k of cleanKeys) {
+      nextMap[k] = { ...(nextMap[k] || {}), ...mergedMeta };
+    }
+    await client.query(
+      `
+      INSERT INTO platform_kv_store (key, value_json, updated_at)
+      VALUES ($1, $2::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = NOW()
+      `,
+      [SHARED_PLATFORM_STATE_KEYS.appointmentPaymentMeta, JSON.stringify(nextMap)]
+    );
+  } catch {
+    // ignore in minimal test DBs
+  } finally {
+    if (!isPoolClient) {
+      client.release();
+    }
+  }
+}
 
 export async function getSharedPlatformState(
   client: PoolClient | Pool
@@ -1637,13 +1771,19 @@ export async function ensureAppointmentFromNotifyBookingInDb(
     ownerPhone?: string;
     customerName?: string;
     customerPhone?: string;
+    serviceId?: string;
     serviceTitle?: string;
+    specialistId?: string;
     priceToman?: number;
     durationMinutes?: number;
     dateJalali?: string;
     timeSlot?: string;
     referenceCode?: string;
     status?: string;
+    depositPaidToman?: number;
+    paymentMethod?: 'GATEWAY' | 'WALLET';
+    paymentTrackingCode?: string;
+    zibalTrackId?: string;
   }
 ): Promise<void> {
   const slugOrId = String(params.businessSlug || params.businessId || '').trim();
@@ -1702,16 +1842,21 @@ export async function ensureAppointmentFromNotifyBookingInDb(
       : cleanPhoneRaw.length === 10 && cleanPhoneRaw.startsWith('9')
         ? `0${cleanPhoneRaw}`
         : '09130000000';
+    const refParam = String(params.referenceCode || '').trim();
 
-    // بررسی وجود نوبت قبلی برای جلوگیری از درج تکراری
+    // بررسی وجود نوبت قبلی برای جلوگیری از درج تکراری (هم‌زمان ذخیره متادیتای پرداخت در صورت وجود)
     const dupCheck = await client.query(
       `
       SELECT 1 FROM appointments
       WHERE business_id = $1
         AND status IN ('PENDING', 'CONFIRMED', 'COMPLETED')
         AND (
-          (date_jalali = $2 AND (time_slot_label = $3 OR time_slot_label = $4))
-          OR ($5 <> '' AND reference_code = $5)
+          ($5 <> '' AND reference_code = $5)
+          OR (
+            date_jalali = $2
+            AND (time_slot_label = $3 OR time_slot_label = $4)
+            AND (customer_phone = $6 OR $6 = '09130000000')
+          )
         )
       LIMIT 1
       `,
@@ -1720,24 +1865,40 @@ export async function ensureAppointmentFromNotifyBookingInDb(
         dateJalaliRaw,
         timeSlotRaw,
         normalizedTimeLabel,
-        String(params.referenceCode || '').trim(),
+        refParam,
+        cleanPhone,
       ]
     );
     if (dupCheck.rowCount && dupCheck.rowCount > 0) {
+      if (
+        refParam &&
+        (typeof params.depositPaidToman === 'number' ||
+          params.paymentTrackingCode ||
+          params.zibalTrackId)
+      ) {
+        await saveAppointmentPaymentMetaInDb(client, [refParam], {
+          depositPaidToman: params.depositPaidToman,
+          paymentMethod: params.paymentMethod,
+          paymentTrackingCode: params.paymentTrackingCode,
+          zibalTrackId: params.zibalTrackId,
+          priceToman: params.priceToman,
+        });
+      }
       return;
     }
 
     const reqPrice = Math.max(0, Number(params.priceToman) || 0);
     const reqTitle = String(params.serviceTitle || '').trim();
+    const reqServiceId = String(params.serviceId || '').trim();
     const srvRes = await client.query(
       `
       SELECT id, title, duration_minutes, price_toman
       FROM services
       WHERE business_id = $1 AND is_active = TRUE
-      ORDER BY (title = $2) DESC, (price_toman = $3) DESC, created_at ASC
+      ORDER BY ($4 <> '' AND (id::text = $4 OR legacy_demo_id = $4)) DESC, (title = $2) DESC, (price_toman = $3) DESC, created_at ASC
       LIMIT 1
       `,
-      [biz.id, reqTitle, reqPrice]
+      [biz.id, reqTitle, reqPrice, reqServiceId]
     );
     let srv = srvRes.rows[0];
     if (!srv) {
@@ -1777,15 +1938,16 @@ export async function ensureAppointmentFromNotifyBookingInDb(
       srv = createdSrv.rows[0];
     }
 
+    const reqSpecialistId = String(params.specialistId || '').trim();
     const spcRes = await client.query(
       `
       SELECT id, full_name
       FROM specialists
       WHERE business_id = $1 AND is_active = TRUE
-      ORDER BY created_at ASC
+      ORDER BY ($2 <> '' AND (id::text = $2 OR legacy_demo_id = $2 OR slug = $2)) DESC, created_at ASC
       LIMIT 1
       `,
-      [biz.id]
+      [biz.id, reqSpecialistId]
     );
     let spc = spcRes.rows[0];
     if (!spc) {
@@ -1817,6 +1979,21 @@ export async function ensureAppointmentFromNotifyBookingInDb(
 
     if (!srv?.id || !spc?.id) return;
 
+    let customerUserId: string | null = null;
+    if (cleanPhone && cleanPhone !== '09130000000') {
+      try {
+        const custUserRes = await client.query(
+          `SELECT id FROM users WHERE phone = $1 LIMIT 1`,
+          [cleanPhone]
+        );
+        if (custUserRes.rowCount && custUserRes.rows[0]?.id) {
+          customerUserId = String(custUserRes.rows[0].id);
+        }
+      } catch {
+        // ignore in isolated mock test
+      }
+    }
+
     let startsAtDate: Date;
     try {
       startsAtDate = jalaliSlotToTimestamptz(dateJalaliRaw, timeSlotRaw);
@@ -1834,8 +2011,7 @@ export async function ensureAppointmentFromNotifyBookingInDb(
     const srvDbPrice = Number(srv.price_toman) || 0;
     const priceToman = reqPrice > 0 ? reqPrice : srvDbPrice || 400_000;
     const refCode =
-      String(params.referenceCode || '').trim() ||
-      `BH-${Math.floor(100000 + Math.random() * 899999)}`;
+      refParam || `BH-${Math.floor(100000 + Math.random() * 899999)}`;
     const customerName = String(params.customerName || 'مراجع تایم‌تو').trim() || 'مراجع تایم‌تو';
     const validStatus =
       params.status === 'CONFIRMED' ||
@@ -1852,14 +2028,14 @@ export async function ensureAppointmentFromNotifyBookingInDb(
         duration_minutes_snapshot, buffer_minutes_snapshot,
         specialist_name_snapshot, customer_name, customer_phone, customer_phone_masked,
         date_jalali, time_slot_label, service_starts_at, service_ends_at, occupied_until_at,
-        status, notes
+        status, notes, customer_user_id
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7::smallint, 0::smallint,
         $8, $9, $10, $11, $12, $13, $14::timestamptz,
         $14::timestamptz + ($7::smallint * INTERVAL '1 minute'),
         $14::timestamptz + ($7::smallint * INTERVAL '1 minute'),
-        $15, 'ثبت خودکار رزرو در پایگاه داده مرکزی'
+        $15, 'ثبت خودکار رزرو در پایگاه داده مرکزی', $16
       )
       `,
       [
@@ -1878,8 +2054,23 @@ export async function ensureAppointmentFromNotifyBookingInDb(
         normalizedTimeLabel.slice(0, 10),
         startsAtDate.toISOString(),
         validStatus,
+        customerUserId,
       ]
     );
+
+    if (
+      typeof params.depositPaidToman === 'number' ||
+      params.paymentTrackingCode ||
+      params.zibalTrackId
+    ) {
+      await saveAppointmentPaymentMetaInDb(client, [refCode], {
+        depositPaidToman: params.depositPaidToman,
+        paymentMethod: params.paymentMethod,
+        paymentTrackingCode: params.paymentTrackingCode,
+        zibalTrackId: params.zibalTrackId,
+        priceToman,
+      });
+    }
 
     try {
       await client.query(
@@ -4091,7 +4282,12 @@ export async function updateBusinessProfileInDb(
           ? patch.instagramHandle
           : current.instagram_handle,
         nextShortDesc,
-        (patch.aboutText ?? String(current.about_text)).trim(),
+        (patch.aboutText !== undefined
+          ? String(patch.aboutText)
+          : patch.shortDescription !== undefined
+            ? nextShortDesc
+            : String(current.about_text)
+        ).trim(),
         validCoords ? nextLat : null,
         validCoords ? nextLng : null,
         patch.subscriptionPlan ?? String(current.subscription_plan),
@@ -5010,6 +5206,95 @@ export async function createAppointmentInDb(
         ? Number(settingsRes.rows[0].buffer_minutes)
         : 15;
 
+    const trackingRefClean = String(input.paymentTrackingCode || '').trim();
+    if (trackingRefClean) {
+      const zibalRefCandidate = trackingRefClean.startsWith('ZB-')
+        ? trackingRefClean
+        : `ZB-${trackingRefClean}`;
+      const existingZibalRes = await client.query(
+        `
+        SELECT
+          id,
+          COALESCE(legacy_demo_id, id::text) AS external_id,
+          reference_code,
+          date_jalali,
+          time_slot_label,
+          service_title_snapshot,
+          service_price_toman_snapshot,
+          duration_minutes_snapshot,
+          specialist_name_snapshot,
+          customer_name,
+          customer_phone_masked,
+          status,
+          notes
+        FROM appointments
+        WHERE business_id = $1
+          AND (
+            reference_code = $2
+            OR (
+              reference_code LIKE 'ZB-%'
+              AND customer_phone = $3
+              AND date_jalali = $4
+              AND status IN ('PENDING', 'CONFIRMED', 'COMPLETED')
+            )
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [biz.id, zibalRefCandidate, normalizedPhone, dateJalaliRaw]
+      );
+      if (existingZibalRes.rowCount && existingZibalRes.rows[0]) {
+        const existingRow = existingZibalRes.rows[0];
+        await client.query('COMMIT');
+        const resolvedExistingDeposit =
+          typeof input.depositPaidToman === 'number' &&
+          Number.isFinite(input.depositPaidToman) &&
+          input.depositPaidToman >= 0
+            ? Math.round(input.depositPaidToman)
+            : 0;
+        await saveAppointmentPaymentMetaInDb(
+          client,
+          [String(existingRow.external_id), String(existingRow.reference_code)],
+          {
+            depositPaidToman: resolvedExistingDeposit,
+            paymentMethod: input.paymentMethod ?? 'GATEWAY',
+            paymentTrackingCode: trackingRefClean,
+            priceToman:
+              Number(existingRow.service_price_toman_snapshot) || priceToman,
+          }
+        );
+        return {
+          id: String(existingRow.external_id),
+          referenceCode: String(existingRow.reference_code),
+          businessId: biz.externalId,
+          businessSlug: biz.slug,
+          businessName: biz.name,
+          serviceId: String(srv.external_id),
+          serviceTitle: String(existingRow.service_title_snapshot || srv.title),
+          specialistId: String(spc.external_id),
+          specialistName: String(
+            existingRow.specialist_name_snapshot || spc.full_name
+          ),
+          customerName: String(existingRow.customer_name || customerName),
+          customerPhone: normalizedPhone,
+          customerPhoneMasked: String(
+            existingRow.customer_phone_masked || maskPhoneDisplay(normalizedPhone)
+          ),
+          dateJalali: String(existingRow.date_jalali || dateJalaliRaw),
+          timeSlot: String(existingRow.time_slot_label || timeSlotRaw),
+          durationMinutes:
+            Number(existingRow.duration_minutes_snapshot) || durationMinutes,
+          priceToman:
+            Number(existingRow.service_price_toman_snapshot) || priceToman,
+          depositPaidToman: resolvedExistingDeposit,
+          paymentMethod: input.paymentMethod ?? 'GATEWAY',
+          paymentTrackingCode: trackingRefClean,
+          status: existingRow.status as AppointmentStatus,
+          notes: existingRow.notes ? String(existingRow.notes) : undefined,
+        };
+      }
+    }
+
     // بررسی تداخل زمانی با نوبت‌های فعال همان متخصص درون تراکنش (علاوه بر قید EXCLUDE USING gist سطح PostgreSQL)
     const activeAptsRes = await client.query(
       `
@@ -5177,14 +5462,21 @@ export async function createAppointmentInDb(
     await client.query('COMMIT');
 
     let effectiveBizDepPct = 30;
+    let isDepositDisabled = false;
     try {
       const bizDepMeta = await client.query(
         `SELECT extra_json FROM business_meta_ext WHERE business_id = $1 LIMIT 1`,
         [biz.id]
       );
-      const depVal = Math.round(
-        Number((bizDepMeta.rows[0]?.extra_json as Record<string, unknown> | undefined)?.depositPercent)
-      );
+      const extraDepObj =
+        bizDepMeta.rows[0]?.extra_json &&
+        typeof bizDepMeta.rows[0].extra_json === 'object'
+          ? (bizDepMeta.rows[0].extra_json as Record<string, unknown>)
+          : {};
+      if (extraDepObj.depositEnabled === false) {
+        isDepositDisabled = true;
+      }
+      const depVal = Math.round(Number(extraDepObj.depositPercent));
       if (Number.isFinite(depVal) && depVal >= 1 && depVal <= 100) {
         effectiveBizDepPct = Math.min(100, Math.max(20, depVal));
       }
@@ -5192,10 +5484,33 @@ export async function createAppointmentInDb(
       // ignore in mock test
     }
 
-    const resolvedDepositPaidToman =
-      typeof input.depositPaidToman === 'number' && input.depositPaidToman > 0
-        ? Math.round(input.depositPaidToman)
+    const hasExplicitDeposit =
+      typeof input.depositPaidToman === 'number' &&
+      Number.isFinite(input.depositPaidToman) &&
+      input.depositPaidToman >= 0;
+
+    const resolvedDepositPaidToman = hasExplicitDeposit
+      ? Math.round(input.depositPaidToman as number)
+      : isDepositDisabled
+        ? 0
         : Math.max(0, Math.round((priceToman * effectiveBizDepPct) / 100));
+
+    if (
+      hasExplicitDeposit ||
+      input.paymentMethod ||
+      input.paymentTrackingCode
+    ) {
+      await saveAppointmentPaymentMetaInDb(
+        client,
+        [String(aptRow.external_id), String(aptRow.reference_code)],
+        {
+          depositPaidToman: resolvedDepositPaidToman,
+          paymentMethod: input.paymentMethod,
+          paymentTrackingCode: input.paymentTrackingCode,
+          priceToman,
+        }
+      );
+    }
 
     return {
       id: String(aptRow.external_id),
@@ -5258,7 +5573,7 @@ export async function updateAppointmentStatusInDb(
       `
       SELECT id, business_id, customer_user_id, customer_phone, status
       FROM appointments
-      WHERE id::text = $1 OR legacy_demo_id = $1
+      WHERE id::text = $1 OR legacy_demo_id = $1 OR reference_code = $1
       FOR UPDATE
       `,
       [appointmentIdOrLegacy]
@@ -6063,7 +6378,7 @@ export async function getCustomerPrivatePayloadInDb(
 ): Promise<CustomerPrivatePayload> {
   const client = await pool.connect();
   try {
-    const [aptRes, favRes] = await Promise.all([
+    const [aptRes, favRes, paymentMetaMap] = await Promise.all([
       client.query(
         `
         SELECT
@@ -6077,6 +6392,7 @@ export async function getCustomerPrivatePayloadInDb(
           COALESCE(sp.legacy_demo_id, sp.id::text) AS specialist_external_id,
           a.specialist_name_snapshot,
           a.customer_name,
+          a.customer_phone,
           a.customer_phone_masked,
           a.date_jalali,
           a.time_slot_label,
@@ -6106,23 +6422,33 @@ export async function getCustomerPrivatePayloadInDb(
         `,
         [actorUser.userId]
       ),
+      getAppointmentPaymentMetaMapInDb(client),
     ]);
 
     const appointments: AppointmentItem[] = aptRes.rows.map((r) => {
-      const rowPrice = Number(r.service_price_toman_snapshot) || 0;
-      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      const extId = String(r.external_id);
+      const refCode = String(r.reference_code);
+      const savedMeta = paymentMetaMap[extId] || paymentMetaMap[refCode] || {};
+      const rowPrice = Math.max(0, Number(r.service_price_toman_snapshot) || 0);
       const extraObj =
         r.business_extra_json && typeof r.business_extra_json === 'object'
           ? (r.business_extra_json as Record<string, unknown>)
           : {};
+      const isDepositDisabled = extraObj.depositEnabled === false;
       const rawDepPct = Number(extraObj.depositPercent);
       const depPct =
         Number.isFinite(rawDepPct) && rawDepPct >= 1 && rawDepPct <= 100
           ? Math.min(100, Math.max(20, Math.round(rawDepPct)))
           : 30;
+      const computedDeposit =
+        typeof savedMeta.depositPaidToman === 'number'
+          ? Math.max(0, Math.round(savedMeta.depositPaidToman))
+          : isDepositDisabled || rowPrice <= 0
+            ? 0
+            : Math.round((rowPrice * depPct) / 100);
       return {
-        id: String(r.external_id),
-        referenceCode: String(r.reference_code),
+        id: extId,
+        referenceCode: refCode,
         businessId: String(r.business_external_id),
         businessSlug: String(r.business_slug),
         businessName: String(r.business_name),
@@ -6131,15 +6457,17 @@ export async function getCustomerPrivatePayloadInDb(
         specialistId: String(r.specialist_external_id),
         specialistName: String(r.specialist_name_snapshot),
         customerName: String(r.customer_name),
+        customerPhone: r.customer_phone
+          ? toPersianDigitsServer(String(r.customer_phone))
+          : undefined,
         customerPhoneMasked: String(r.customer_phone_masked),
         dateJalali: String(r.date_jalali),
         timeSlot: String(r.time_slot_label),
         durationMinutes: Number(r.duration_minutes_snapshot),
         priceToman: rowPrice,
-        depositPaidToman: Math.max(
-          20_000,
-          Math.round((effectivePrice * depPct) / 100)
-        ),
+        depositPaidToman: computedDeposit,
+        paymentMethod: savedMeta.paymentMethod,
+        paymentTrackingCode: savedMeta.paymentTrackingCode,
         status: r.status as AppointmentStatus,
         notes: r.notes ? String(r.notes) : undefined,
       };
@@ -6490,17 +6818,27 @@ export async function getBusinessWorkspacePayloadInDb(
       startingPriceToman: Number(row.starting_price_toman),
     }));
 
+    const paymentMetaMap = await getAppointmentPaymentMetaMapInDb(client);
     const parsedBizDep = Math.round(Number(business?.depositPercent));
     const bizDepositPct =
       Number.isFinite(parsedBizDep) && parsedBizDep >= 1 && parsedBizDep <= 100
         ? Math.min(100, Math.max(20, parsedBizDep))
         : 30;
+    const isBizDepositDisabled = business?.depositEnabled === false;
     const appointments: AppointmentItem[] = aptRes.rows.map((row) => {
-      const rowPrice = Number(row.service_price_toman_snapshot) || 0;
-      const effectivePrice = rowPrice > 0 ? rowPrice : 350_000;
+      const extId = String(row.external_id);
+      const refCode = String(row.reference_code);
+      const savedMeta = paymentMetaMap[extId] || paymentMetaMap[refCode] || {};
+      const rowPrice = Math.max(0, Number(row.service_price_toman_snapshot) || 0);
+      const computedDeposit =
+        typeof savedMeta.depositPaidToman === 'number'
+          ? Math.max(0, Math.round(savedMeta.depositPaidToman))
+          : isBizDepositDisabled || rowPrice <= 0
+            ? 0
+            : Math.round((rowPrice * bizDepositPct) / 100);
       return {
-        id: String(row.external_id),
-        referenceCode: String(row.reference_code),
+        id: extId,
+        referenceCode: refCode,
         businessId: String(row.business_external_id),
         businessSlug: String(row.business_slug),
         businessName: String(row.business_name),
@@ -6509,6 +6847,9 @@ export async function getBusinessWorkspacePayloadInDb(
         specialistId: String(row.specialist_external_id),
         specialistName: String(row.specialist_name_snapshot),
         customerName: String(row.customer_name),
+        customerPhone: row.customer_phone
+          ? toPersianDigitsServer(String(row.customer_phone))
+          : undefined,
         customerPhoneMasked: toPersianDigitsServer(
           String(row.customer_phone || row.customer_phone_masked || '')
         ),
@@ -6516,10 +6857,9 @@ export async function getBusinessWorkspacePayloadInDb(
         timeSlot: String(row.time_slot_label),
         durationMinutes: Number(row.duration_minutes_snapshot),
         priceToman: rowPrice,
-        depositPaidToman: Math.max(
-          20_000,
-          Math.round((effectivePrice * bizDepositPct) / 100)
-        ),
+        depositPaidToman: computedDeposit,
+        paymentMethod: savedMeta.paymentMethod,
+        paymentTrackingCode: savedMeta.paymentTrackingCode,
         status: row.status as AppointmentStatus,
         notes: row.notes ? String(row.notes) : undefined,
       };
@@ -6867,8 +7207,12 @@ export async function getAdminOverviewPayloadInDb(
     const users: AdminUserRecord[] =
       combinedByPhone.size > 0 ? Array.from(combinedByPhone.values()) : directUsers;
 
+    const paymentMetaMap = await getAppointmentPaymentMetaMapInDb(client);
     const bizByIdMap = new Map(businesses.map((b) => [b.id, b]));
     const appointments: AppointmentItem[] = aptRes.rows.map((r) => {
+      const extId = String(r.external_id);
+      const refCode = String(r.reference_code);
+      const savedMeta = paymentMetaMap[extId] || paymentMetaMap[refCode] || {};
       const rowPrice = Math.max(0, Number(r.service_price_toman_snapshot) || 0);
       const matchedBiz = bizByIdMap.get(String(r.business_external_id));
       const parsedDep = Math.round(Number(matchedBiz?.depositPercent));
@@ -6877,12 +7221,14 @@ export async function getAdminOverviewPayloadInDb(
           ? Math.min(100, Math.max(20, parsedDep))
           : 30;
       const exactDeposit =
-        matchedBiz?.depositEnabled === false || rowPrice <= 0
-          ? 0
-          : Math.max(0, Math.round((rowPrice * depPct) / 100));
+        typeof savedMeta.depositPaidToman === 'number'
+          ? Math.max(0, Math.round(savedMeta.depositPaidToman))
+          : matchedBiz?.depositEnabled === false || rowPrice <= 0
+            ? 0
+            : Math.max(0, Math.round((rowPrice * depPct) / 100));
       return {
-        id: String(r.external_id),
-        referenceCode: String(r.reference_code),
+        id: extId,
+        referenceCode: refCode,
         businessId: String(r.business_external_id),
         businessSlug: String(r.business_slug),
         businessName: String(r.business_name),
@@ -6891,12 +7237,17 @@ export async function getAdminOverviewPayloadInDb(
         specialistId: String(r.specialist_external_id),
         specialistName: String(r.specialist_name_snapshot),
         customerName: String(r.customer_name),
+        customerPhone: r.customer_phone
+          ? toPersianDigitsServer(String(r.customer_phone))
+          : undefined,
         customerPhoneMasked: String(r.customer_phone_masked),
         dateJalali: String(r.date_jalali),
         timeSlot: String(r.time_slot_label),
         durationMinutes: Number(r.duration_minutes_snapshot),
         priceToman: rowPrice,
         depositPaidToman: exactDeposit,
+        paymentMethod: savedMeta.paymentMethod,
+        paymentTrackingCode: savedMeta.paymentTrackingCode,
         status: r.status as AppointmentStatus,
         notes: r.notes ? String(r.notes) : undefined,
       };
