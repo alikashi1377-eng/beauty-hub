@@ -19,8 +19,14 @@ import {
   AuthenticatedSessionUser,
   getSavedSessionToken,
   realApiClient,
+  saveSessionTokenToStorage,
 } from '../services/apiClient';
-import { resolveMergedAppointmentStatus } from '../utils/appointmentSync';
+import {
+  isUnauthorizedSessionError,
+  resolveBootstrapAppointmentsUpdate,
+  resolveMergedAppointmentStatus,
+  shouldCustomerBootstrapOverwriteAppointments,
+} from '../utils/appointmentSync';
 import {
   AdPackageItem,
   AdminNotificationItem,
@@ -1762,18 +1768,28 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const loadAuthenticatedRoleData = async (
     currentUser: AuthenticatedSessionUser
   ) => {
+    const canCustomerBootstrapOverwrite =
+      shouldCustomerBootstrapOverwriteAppointments(currentUser.roles);
     try {
       const meRes = await realApiClient.fetchCustomerBootstrap();
       setFavoriteBusinessIds(meRes.data.favoriteBusinessIds);
-      setAppointments((prev) => {
-        const merged = mergeSavedAppointments(
-          meRes.data.appointments.length > 0 ? meRes.data.appointments : prev,
-          undefined,
-          meRes.data.appointments.length > 0
-        );
-        persistSavedAppointments(merged);
-        return merged;
-      });
+      if (canCustomerBootstrapOverwrite || meRes.data.appointments.length > 0) {
+        setAppointments((prev) => {
+          const authoritativeCustomerOverwrite =
+            canCustomerBootstrapOverwrite && meRes.data.appointments.length > 0;
+          const merged = mergeSavedAppointments(
+            meRes.data.appointments.length > 0
+              ? canCustomerBootstrapOverwrite
+                ? meRes.data.appointments
+                : [...meRes.data.appointments, ...prev]
+              : prev,
+            undefined,
+            authoritativeCustomerOverwrite
+          );
+          persistSavedAppointments(merged);
+          return merged;
+        });
+      }
     } catch {
       // ادامه در صورت نبود داده مشتری
     }
@@ -1827,16 +1843,25 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         setGallery((prev) =>
           mergeSavedGallery([...wsRes.data.gallery, ...prev])
         );
-        setAppointments((prev) =>
-          mergeSavedAppointments(
+        setAppointments((prev) => {
+          const mergedWsApts = mergeSavedAppointments(
             [...wsRes.data.appointments, ...prev],
             freshBizPool,
-            true
-          )
-        );
+            !currentUser.roles.includes('PLATFORM_ADMIN')
+          );
+          persistSavedAppointments(mergedWsApts);
+          return mergedWsApts;
+        });
         setCustomers(mergeManualCustomers(wsRes.data.customers));
         setCampaigns(wsRes.data.campaigns);
-      } catch {
+      } catch (err) {
+        if (
+          isUnauthorizedSessionError(err) &&
+          !currentUser.roles.includes('PLATFORM_ADMIN')
+        ) {
+          saveSessionTokenToStorage(null);
+          setAuthUser(null);
+        }
         // در صورت عدم دسترسی یا نبود کسب‌وکار، مشتریان ثبت‌شده دستی حفظ می‌شوند
         setCustomers((prev) => mergeManualCustomers(prev));
       }
@@ -1897,8 +1922,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             return merged;
           });
         }
-      } catch {
-        // عدم دسترسی ادمین
+      } catch (err) {
+        if (isUnauthorizedSessionError(err)) {
+          saveSessionTokenToStorage(null);
+          setAuthUser(null);
+          showToast(
+            'نشست مدیر کل منقضی شده است؛ لطفاً مجدداً وارد شوید.',
+            'warning'
+          );
+        }
       }
     }
   };
@@ -2051,18 +2083,22 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setPlans(response.data.plans);
         }
 
-        const serverApts = Array.isArray(response.data.appointments)
-          ? response.data.appointments
-          : [];
-        setAppointments(() => {
-          const mergedApts = mergeSavedAppointments(
-            serverApts,
-            nextBusinesses,
-            true,
-            nextServices
-          );
-          persistSavedAppointments(mergedApts);
-          return mergedApts;
+        setAppointments((prev) => {
+          const resolved = resolveBootstrapAppointmentsUpdate({
+            bootstrapAppointments: response.data!.appointments,
+            previousAppointments: prev,
+            mergeAuthoritative: (serverApts) =>
+              mergeSavedAppointments(
+                serverApts,
+                nextBusinesses,
+                true,
+                nextServices
+              ),
+          });
+          if (resolved.shouldPersist) {
+            persistSavedAppointments(resolved.appointments);
+          }
+          return resolved.appointments;
         });
 
         const resolvedPaymentConfig =
@@ -2300,25 +2336,32 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           lastReferenceCode: undefined,
         }));
 
-        if (localPersistedUser) {
+        if (localPersistedUser || getSavedSessionToken()) {
           try {
             const sessionRes = await realApiClient.getCurrentUser();
             const effectiveUser =
+              localPersistedUser &&
               localPersistedUser.phone !== sessionRes.user.phone
-                ? localPersistedUser
+                ? sessionRes.user
                 : {
                     ...sessionRes.user,
                     fullName:
-                      localPersistedUser.fullName &&
+                      localPersistedUser?.fullName &&
                       localPersistedUser.fullName !== 'کاربر تایم تو'
                         ? localPersistedUser.fullName
                         : sessionRes.user.fullName,
-                    roles: localPersistedUser.roles.length
-                      ? localPersistedUser.roles
+                    roles: localPersistedUser?.roles?.length
+                      ? Array.from(
+                          new Set([
+                            ...sessionRes.user.roles,
+                            ...localPersistedUser.roles,
+                          ])
+                        )
                       : sessionRes.user.roles,
-                    isPlatformAdmin:
-                      localPersistedUser.isPlatformAdmin ||
-                      sessionRes.user.isPlatformAdmin,
+                    isPlatformAdmin: Boolean(
+                      sessionRes.user.isPlatformAdmin ||
+                        localPersistedUser?.isPlatformAdmin
+                    ),
                   };
             setAuthUser(effectiveUser);
             setBookingDraft((prev) => ({
@@ -2327,9 +2370,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               customerPhone: effectiveUser.phone || prev.customerPhone,
             }));
             await loadAuthenticatedRoleData(effectiveUser);
-          } catch {
-            setAuthUser(localPersistedUser);
-            await loadAuthenticatedRoleData(localPersistedUser);
+          } catch (err) {
+            if (isUnauthorizedSessionError(err) || !localPersistedUser) {
+              saveSessionTokenToStorage(null);
+              setAuthUser(null);
+            } else {
+              setAuthUser(localPersistedUser);
+              await loadAuthenticatedRoleData(localPersistedUser);
+            }
           }
         } else {
           setAuthUser(null);
@@ -2525,8 +2573,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
       setLastSyncedAtIso(new Date().toISOString());
-    } catch {
-      // ignore transient network errors during background sync
+    } catch (err) {
+      if (isUnauthorizedSessionError(err) && (authUser || getSavedSessionToken())) {
+        saveSessionTokenToStorage(null);
+        setAuthUser(null);
+        showToast(
+          'نشست کاربری شما روی سرور منقضی شده است؛ لطفاً مجدداً وارد شوید.',
+          'warning'
+        );
+      }
     }
   };
 
@@ -2723,80 +2778,46 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (dataMode === 'real') {
-      try {
-        const res = await realApiClient.loginWithPassword(
-          resolvedPhone,
-          password
-        );
-        const mergedUser: AuthenticatedSessionUser = memAccount
-          ? {
-              ...res.user,
-              fullName: memAccount.fullName || res.user.fullName,
-              roles:
-                memAccount.role === 'BUSINESS_OWNER' &&
-                !res.user.roles.includes('BUSINESS_OWNER')
-                  ? [...res.user.roles, 'BUSINESS_OWNER']
-                  : res.user.roles,
-            }
-          : res.user;
-        if (memAccount?.businessId) {
-          setOwnedBusinessId(memAccount.businessId);
-          try {
-            window.localStorage.setItem(
-              'timeto_owned_business_id_v1',
-              memAccount.businessId
-            );
-          } catch {
-            // ignore
+      const res = await realApiClient.loginWithPassword(
+        resolvedPhone,
+        password
+      );
+      const mergedUser: AuthenticatedSessionUser = memAccount
+        ? {
+            ...res.user,
+            fullName: memAccount.fullName || res.user.fullName,
+            roles:
+              memAccount.role === 'BUSINESS_OWNER' &&
+              !res.user.roles.includes('BUSINESS_OWNER')
+                ? [...res.user.roles, 'BUSINESS_OWNER']
+                : res.user.roles,
           }
-        }
-        setAuthUser(mergedUser);
-        saveVisitorRole(
-          mergedUser.roles.includes('BUSINESS_OWNER')
-            ? 'BUSINESS_OWNER'
-            : 'CUSTOMER'
-        );
-        setBookingDraft((prev) => ({
-          ...prev,
-          customerName: mergedUser.fullName || prev.customerName,
-          customerPhone: mergedUser.phone || prev.customerPhone,
-        }));
-        await loadAuthenticatedRoleData(mergedUser);
-        showToast(res.message, 'success');
-        return mergedUser;
-      } catch {
-        // اگر حساب فقط در مرورگر بود، نشست رسمی سرور را از طریق register-sync صادر کن
-        if (memAccount) {
-          try {
-            const syncRes = await realApiClient.syncRegisteredAccounts({
-              accounts: [
-                {
-                  phone: memAccount.phone,
-                  fullName: memAccount.fullName,
-                  city: memAccount.city || 'اصفهان',
-                  role:
-                    memAccount.role === 'BUSINESS_OWNER' ? 'owner' : 'customer',
-                  password: memAccount.password || password,
-                  businessId: memAccount.businessId,
-                  businessName: memAccount.businessName,
-                  businessType: memAccount.businessType,
-                  categorySlug: memAccount.categorySlug,
-                  typeLabel: memAccount.typeLabel,
-                  slug: memAccount.slug,
-                  neighborhood: memAccount.neighborhood,
-                  avatarUrl: memAccount.avatarUrl,
-                },
-              ],
-              issueSessionForPhone: resolvedPhone,
-            });
-            if (syncRes.user) {
-              setAuthUser(syncRes.user);
-            }
-          } catch {
-            // ignore
-          }
+        : res.user;
+      if (memAccount?.businessId) {
+        setOwnedBusinessId(memAccount.businessId);
+        try {
+          window.localStorage.setItem(
+            'timeto_owned_business_id_v1',
+            memAccount.businessId
+          );
+        } catch {
+          // ignore
         }
       }
+      setAuthUser(mergedUser);
+      saveVisitorRole(
+        mergedUser.roles.includes('BUSINESS_OWNER')
+          ? 'BUSINESS_OWNER'
+          : 'CUSTOMER'
+      );
+      setBookingDraft((prev) => ({
+        ...prev,
+        customerName: mergedUser.fullName || prev.customerName,
+        customerPhone: mergedUser.phone || prev.customerPhone,
+      }));
+      await loadAuthenticatedRoleData(mergedUser);
+      showToast(res.message, 'success');
+      return mergedUser;
     }
 
     const sessionUser = buildSessionUserFromMemory(resolvedPhone);
@@ -3269,6 +3290,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         // نادیده گرفتن خطا در صورت انقضای قبلی نشست
       }
     }
+    saveSessionTokenToStorage(null);
     setAuthUser(null);
     setOwnedBusinessId(null);
     try {

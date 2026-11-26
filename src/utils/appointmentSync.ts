@@ -1,4 +1,4 @@
-import { AppointmentStatus, BusinessItem } from '../types';
+import { AppointmentItem, AppointmentStatus, BusinessItem } from '../types';
 
 /**
  * تشخیص دقیق محیط پیش‌نمایش AI Studio یا اجرای محلی توسعه
@@ -66,3 +66,56 @@ export function resolveMergedAppointmentStatus(params: {
   }
   return params.localStatus || params.serverStatus;
 }
+
+/**
+ * گارد جلوگیری از صفر شدن نوبت‌ها در بارگذاری عمومی (/api/v1/bootstrap):
+ * مسیر عمومی bootstrap آرایه appointments را ارسال نمی‌کند (undefined است).
+ * هرگز نباید عدم ارسال این فیلد را به معنی «لیست خالی [] و پاکسازی کش» تلقی کرد.
+ */
+export function resolveBootstrapAppointmentsUpdate(params: {
+  bootstrapAppointments: AppointmentItem[] | undefined | null;
+  previousAppointments: AppointmentItem[];
+  mergeAuthoritative: (serverApts: AppointmentItem[]) => AppointmentItem[];
+}): { appointments: AppointmentItem[]; shouldPersist: boolean } {
+  if (!Array.isArray(params.bootstrapAppointments)) {
+    return {
+      appointments: params.previousAppointments,
+      shouldPersist: false,
+    };
+  }
+  return {
+    appointments: params.mergeAuthoritative(params.bootstrapAppointments),
+    shouldPersist: true,
+  };
+}
+
+/**
+ * مشخص می‌کند آیا پاسخ /me/bootstrap مجاز به بازنویسی قطعی نوبت‌ها هست یا خیر.
+ * برای مدیر کل پلتفرم یا صاحب سالن، /me/bootstrap فقط نوبت‌های شخصی فرد را برمی‌گرداند
+ * و هرگز نباید کل نوبت‌های سالن/پلتفرم را بازنویسی کند.
+ */
+export function shouldCustomerBootstrapOverwriteAppointments(
+  roles?: ReadonlyArray<string> | null
+): boolean {
+  if (!Array.isArray(roles)) return true;
+  if (roles.includes('PLATFORM_ADMIN') || roles.includes('BUSINESS_OWNER')) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * تشخیص خطای 401 یا ابطال نشست سمت سرور برای جلوگیری از نمایش داده‌های ۰ بدون احراز هویت واقعی.
+ */
+export function isUnauthorizedSessionError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const record = err as { status?: unknown; errorCode?: unknown };
+  if (record.status === 401) return true;
+  const code = String(record.errorCode || '').toUpperCase();
+  return (
+    code === 'AUTHENTICATION_REQUIRED' ||
+    code === 'SESSION_EXPIRED' ||
+    code === 'SESSION_REVOKED'
+  );
+}
+

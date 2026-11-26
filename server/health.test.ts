@@ -4046,4 +4046,86 @@ test('Zibal gateway integration: /request persists order in DB KV store, /verify
   }
 });
 
+test('ensureAppointmentFromNotifyBookingInDb persists appointment and upserts business_customers with valid schema columns (total_visits, total_spent_toman)', async () => {
+  const executedSql: string[] = [];
+  const spyPool = {
+    async connect() {
+      return {
+        async query(sql: string) {
+          executedSql.push(sql);
+          if (sql.includes('FROM businesses b')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'biz-ayra-uuid',
+                  name: 'مرکز لیزر آیرا',
+                  city: 'اصفهان',
+                  primary_category_id: 'cat-laser',
+                  extra_json: {},
+                },
+              ],
+            };
+          }
+          if (sql.includes('FROM appointments')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('FROM services')) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  id: 'srv-ayra-1',
+                  title: 'لیزر فول‌بادی',
+                  duration_minutes: 60,
+                  price_toman: 1500000,
+                },
+              ],
+            };
+          }
+          if (sql.includes('FROM specialists')) {
+            return {
+              rowCount: 1,
+              rows: [{ id: 'spc-ayra-1', full_name: 'متخصص آیرا' }],
+            };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release() {},
+      };
+    },
+  };
+
+  const { ensureAppointmentFromNotifyBookingInDb } = await import(
+    './repositories/beautyhubRepository'
+  );
+
+  await ensureAppointmentFromNotifyBookingInDb(spyPool as never, {
+    businessSlug: 'ayra-laser',
+    businessName: 'مرکز لیزر آیرا',
+    customerName: 'مریم رضایی',
+    customerPhone: '09381401916',
+    serviceTitle: 'لیزر فول‌بادی',
+    priceToman: 1500000,
+    depositPaidToman: 150000,
+    dateJalali: '1405/09/05',
+    timeSlot: '13:00',
+    referenceCode: 'ZB-4926693834',
+    paymentMethod: 'GATEWAY',
+    paymentTrackingCode: '4926693834',
+  });
+
+  const aptInsert = executedSql.find((q) => q.includes('INSERT INTO appointments'));
+  assert.ok(aptInsert);
+
+  const crmUpsert = executedSql.find((q) => q.includes('INSERT INTO business_customers'));
+  assert.ok(crmUpsert);
+  assert.equal(crmUpsert.includes('total_visits'), true);
+  assert.equal(crmUpsert.includes('total_spent_toman'), true);
+  assert.equal(crmUpsert.includes('phone_masked'), true);
+  assert.equal(crmUpsert.includes('visits_count'), false);
+  assert.equal(crmUpsert.includes('total_spend_toman'), false);
+});
+
+
 

@@ -162,19 +162,22 @@ const BusinessFinancialDossierTable: React.FC<{
     setIsManualSyncing(true);
     try {
       let recoveredCount = 0;
+      let sessionUnauthorized = false;
       const token = getSavedSessionToken();
-      if (dataMode === 'real' && token) {
+      if (dataMode === 'real') {
         try {
           const recRes = await fetch('/api/v1/payments/zibal/reconcile-pending', {
             method: 'POST',
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({}),
           });
-          if (recRes.ok) {
+          if (recRes.status === 401) {
+            sessionUnauthorized = true;
+          } else if (recRes.ok) {
             const recData = (await recRes.json()) as { recoveredCount?: number };
             recoveredCount = Number(recData?.recoveredCount || 0);
           }
@@ -183,11 +186,18 @@ const BusinessFinancialDossierTable: React.FC<{
         }
       }
       await syncAdminLiveNow();
-      showToast(
-        recoveredCount > 0
-          ? `${toPersianDigits(recoveredCount)} تراکنش معلق زیبال بازیابی و تمامی آمار مالی به‌صورت آنی همگام‌سازی شد ✓`
-          : 'تمامی آمار رزروها، بیعانه‌ها و تسویه‌ها به‌صورت آنی همگام‌سازی شد ✓'
-      );
+      if (sessionUnauthorized) {
+        showToast(
+          'برای دریافت داده‌های زنده و بازیابی تراکنش‌های زیبال، لطفاً مجدداً وارد حساب مدیریت شوید.',
+          'warning'
+        );
+      } else {
+        showToast(
+          recoveredCount > 0
+            ? `${toPersianDigits(recoveredCount)} تراکنش معلق زیبال بازیابی و تمامی آمار مالی به‌صورت آنی همگام‌سازی شد ✓`
+            : 'تمامی آمار رزروها، بیعانه‌ها و تسویه‌ها به‌صورت آنی همگام‌سازی شد ✓'
+        );
+      }
     } finally {
       setIsManualSyncing(false);
     }

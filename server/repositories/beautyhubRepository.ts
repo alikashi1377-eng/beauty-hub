@@ -2076,19 +2076,32 @@ export async function ensureAppointmentFromNotifyBookingInDb(
       await client.query(
         `
         INSERT INTO business_customers (
-          business_id, full_name, phone, visits_count, total_spend_toman,
-          last_visit_jalali, loyalty_tier, notes
+          business_id, user_id, full_name, phone, phone_masked, city,
+          total_visits, last_visit_jalali, total_spent_toman,
+          favorite_service_title, notes
         )
-        VALUES ($1, $2, $3, 1, $4, $5, 'REGULAR', 'ثبت خودکار از نوبت آنلاین')
+        VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, 'ثبت خودکار از نوبت آنلاین')
         ON CONFLICT (business_id, phone)
         DO UPDATE SET
+          user_id = COALESCE(business_customers.user_id, EXCLUDED.user_id),
           full_name = COALESCE(NULLIF(EXCLUDED.full_name, ''), business_customers.full_name),
-          visits_count = business_customers.visits_count + 1,
-          total_spend_toman = business_customers.total_spend_toman + EXCLUDED.total_spend_toman,
+          total_visits = business_customers.total_visits + 1,
+          total_spent_toman = business_customers.total_spent_toman + EXCLUDED.total_spent_toman,
           last_visit_jalali = EXCLUDED.last_visit_jalali,
+          favorite_service_title = COALESCE(NULLIF(EXCLUDED.favorite_service_title, ''), business_customers.favorite_service_title),
           updated_at = NOW()
         `,
-        [biz.id, customerName, cleanPhone, priceToman, dateJalaliRaw.slice(0, 10)]
+        [
+          biz.id,
+          customerUserId,
+          customerName,
+          cleanPhone,
+          maskPhoneDisplay(cleanPhone),
+          String(biz.city || 'اصفهان'),
+          dateJalaliRaw.slice(0, 10),
+          priceToman,
+          reqTitle || String(srv.title || 'خدمات زیبایی').trim(),
+        ]
       );
     } catch {
       // ignore
