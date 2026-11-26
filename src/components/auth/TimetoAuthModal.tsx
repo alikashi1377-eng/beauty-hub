@@ -29,9 +29,13 @@ import {
   AccountRoleChoice,
   applyOtpDigitChange,
   AuthFlowScreen,
+  createOtpSubmissionGuard,
   generateSuggestedPassword,
   getLastSavedCredential,
   getSavedMemoryAccounts,
+  OtpSubmissionGuardState,
+  releaseOtpSubmission,
+  tryAcquireOtpSubmission,
   validateRegistrationStep1,
   validateRegistrationStep3Profile,
 } from './timetoAuthFlow';
@@ -90,9 +94,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [phone, setPhone] = useState<string>(
     authUser?.phone || savedMemory?.phone || ''
   );
-  const [loginPassword, setLoginPassword] = useState<string>(
-    savedMemory?.password || ''
-  );
+  // هرگز رمز عبور قدیمی/موقت را از localStorage داخل فیلد ورود پر نکن تا باعث خطای رمز اشتباه نشود
+  const [loginPassword, setLoginPassword] = useState<string>('');
   const [showPasswordInputInLogin, setShowPasswordInputInLogin] =
     useState<boolean>(true);
   const [regPassword, setRegPassword] = useState<string>('');
@@ -106,7 +109,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const regPhoneInputRef = useRef<HTMLInputElement | null>(null);
   const regPasswordInputRef = useRef<HTMLInputElement | null>(null);
 
-  // فیلدهای ۶ خانه کد تایید (OTP)
+  // فیلدهای ۶ خانه کد تایید (OTP) + قفل همزمان برای جلوگیری از ارسال دوباره کد یک‌بارمصرف
   const [otpDigits, setOtpDigits] = useState<string[]>([
     '',
     '',
@@ -115,8 +118,15 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     '',
     '',
   ]);
+  const otpDigitsRef = useRef<string>('');
+  const otpGuardRef = useRef<OtpSubmissionGuardState>(createOtpSubmissionGuard());
   const [otpTimerSeconds, setOtpTimerSeconds] = useState<number>(110);
+  const [resetOtpSending, setResetOtpSending] = useState<boolean>(false);
   const otpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  useEffect(() => {
+    otpDigitsRef.current = otpDigits.join('');
+  }, [otpDigits]);
 
   const isLegacyPlaceholderName = (raw?: string | null): boolean => {
     const s = String(raw || '').trim();
@@ -213,6 +223,9 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     ) {
       return;
     }
+    // ریست قفل ارسال هنگام ورود به صفحه تایید کد
+    otpGuardRef.current = createOtpSubmissionGuard();
+
     const t = window.setTimeout(() => {
       otpInputsRef.current[0]?.focus();
     }, 80);
@@ -236,12 +249,13 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             .replace(/\D/g, '')
             .slice(0, 6);
           if (cleanCode.length === 6) {
+            otpDigitsRef.current = cleanCode;
             setOtpDigits(cleanCode.split(''));
             if (
               screen === 'REGISTER_STEP_2_OTP' ||
               screen === 'LOGIN_OTP_VERIFY'
             ) {
-              void handleVerifyOtpBoxes(cleanCode);
+              void handleVerifyOtpBoxes(cleanCode, { isAutoSubmit: true });
             }
           }
         })
@@ -250,18 +264,19 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         });
     }
 
-    // پایش مستقیم مقدار DOM ورودی کد پیامک و رمز عبور برای پشتیبانی ۱۰۰٪ از Autofill کیبورد iOS و اندروید
+    // پایش مقدار DOM برای Autofill کیبورد iOS و اندروید (با استفاده از ref تا هیچ‌گاه حلقه تکراری ایجاد نشود)
     const autofillSyncInterval = window.setInterval(() => {
+      if (otpGuardRef.current.inFlight) return;
       const otpEl = otpInputsRef.current[0];
       if (otpEl && otpEl.value) {
         const cleanDomOtp = toEnglishDigitsClient(otpEl.value)
           .replace(/\D/g, '')
           .slice(0, 6);
-        if (cleanDomOtp && cleanDomOtp !== otpDigits.join('')) {
+        if (cleanDomOtp && cleanDomOtp !== otpDigitsRef.current) {
           handleUnifiedOtpChange(cleanDomOtp);
         }
       }
-    }, 220);
+    }, 300);
 
     return () => {
       window.clearTimeout(t);
@@ -382,11 +397,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
 
     if (!showPasswordInputInLogin) {
-      const accounts = getSavedMemoryAccounts();
-      const mem = accounts[normalizedPhone];
-      if (mem?.password) {
-        setLoginPassword(mem.password);
-      }
       setShowPasswordInputInLogin(true);
       setError('');
       return;
@@ -431,6 +441,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     setIsSubmitting(true);
     try {
       await requestOtpLogin(normalizedPhone);
+      otpGuardRef.current = createOtpSubmissionGuard();
+      otpDigitsRef.current = '';
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
       setScreen('LOGIN_OTP_VERIFY');
@@ -499,6 +511,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       } catch {
         // ignore
       }
+      otpGuardRef.current = createOtpSubmissionGuard();
+      otpDigitsRef.current = '';
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
       setScreen('REGISTER_STEP_2_OTP');
@@ -511,31 +525,39 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
   };
 
-  // ۴. مدیریت ورود یکپارچه کد ۶ رقمی OTP (پشتیبانی کامل از Auto-fill پیامک روی کیبورد موبایل)
+  // ۴. مدیریت ورود یکپارچه کد ۶ رقمی OTP (پشتیبانی کامل از Auto-fill پیامک روی کیبورد موبایل بدون ارسال تکراری)
   const handleUnifiedOtpChange = (rawValue: string) => {
     setError('');
     const clean = toEnglishDigitsClient(rawValue)
       .replace(/\D/g, '')
       .slice(0, 6);
+    otpDigitsRef.current = clean;
     const nextDigits = Array.from({ length: 6 }, (_, i) => clean[i] || '');
     setOtpDigits(nextDigits);
+    if (clean.length < 6 && !otpGuardRef.current.inFlight) {
+      otpGuardRef.current = {
+        ...otpGuardRef.current,
+        lastAttemptedCode: null,
+      };
+    }
     if (
       clean.length === 6 &&
       (screen === 'REGISTER_STEP_2_OTP' || screen === 'LOGIN_OTP_VERIFY')
     ) {
-      void handleVerifyOtpBoxes(clean);
+      void handleVerifyOtpBoxes(clean, { isAutoSubmit: true });
     }
   };
 
   const handleOtpBoxChange = (index: number, rawValue: string) => {
     setError('');
     const result = applyOtpDigitChange(otpDigits, index, rawValue);
+    otpDigitsRef.current = result.digits.join('');
     setOtpDigits(result.digits);
     if (rawValue && result.nextFocusIndex !== index) {
       otpInputsRef.current[result.nextFocusIndex]?.focus();
     }
     if (result.completedCode) {
-      void handleVerifyOtpBoxes(result.completedCode);
+      void handleVerifyOtpBoxes(result.completedCode, { isAutoSubmit: true });
     }
   };
 
@@ -548,21 +570,39 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     }
   };
 
-  const handleVerifyOtpBoxes = async (explicitCode?: string) => {
-    const code = toEnglishDigitsClient(explicitCode || otpDigits.join(''))
+  const handleVerifyOtpBoxes = async (
+    explicitCode?: string,
+    options?: { isAutoSubmit?: boolean }
+  ) => {
+    const rawCandidate = explicitCode ?? otpDigitsRef.current ?? otpDigits.join('');
+    const cleanCandidate = toEnglishDigitsClient(rawCandidate)
       .replace(/\D/g, '')
       .slice(0, 6);
-    if (!/^\d{6}$/.test(code)) {
-      setError('لطفاً کد ۶ رقمی پیامک‌شده را کامل وارد کنید.');
+    if (!/^\d{6}$/.test(cleanCandidate)) {
+      if (!options?.isAutoSubmit) {
+        setError('لطفاً کد ۶ رقمی پیامک‌شده را کامل وارد کنید.');
+      }
       return;
     }
+
+    const acquired = tryAcquireOtpSubmission(otpGuardRef.current, cleanCandidate, {
+      isAutoSubmit: options?.isAutoSubmit,
+    });
+    if (!acquired.acquired) {
+      return;
+    }
+    otpGuardRef.current = acquired.nextGuard;
+    const code = acquired.cleanCode;
+
     setError('');
     setIsSubmitting(true);
+    let succeeded = false;
 
     try {
       const normalizedPhone = normalizeIranMobileInput(phone);
       // تایید واقعی کد پیامک‌شده در سرور برای هر دو حالت ثبت‌نام و ورود
       const user = await verifyOtpLogin(normalizedPhone, code);
+      succeeded = true;
 
       if (screen === 'LOGIN_OTP_VERIFY') {
         const accounts = getSavedMemoryAccounts();
@@ -601,7 +641,36 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         err instanceof Error ? err.message : 'کد واردشده صحیح نیست.'
       );
     } finally {
+      otpGuardRef.current = releaseOtpSubmission(
+        otpGuardRef.current,
+        code,
+        succeeded
+      );
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSendResetOtp = async (phoneOverride?: string) => {
+    const cleanPhone = normalizeIranMobileInput(phoneOverride ?? phone);
+    if (!isValidIranMobile(cleanPhone)) {
+      setError('لطفاً شماره موبایل ۱۱ رقمی معتبر وارد کنید (مثال: 09131234567).');
+      return;
+    }
+    setPhone(cleanPhone);
+    setError('');
+    setResetOtpSending(true);
+    try {
+      await requestOtpLogin(cleanPhone);
+      otpGuardRef.current = createOtpSubmissionGuard();
+      otpDigitsRef.current = '';
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpTimerSeconds(110);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'خطا در ارسال کد تأیید پیامکی.'
+      );
+    } finally {
+      setResetOtpSending(false);
     }
   };
 
@@ -908,16 +977,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     const norm = normalizeIranMobileInput(e.target.value);
                     setPhone(norm);
                     setError('');
-                    const accounts = getSavedMemoryAccounts();
-                    if (accounts[norm]?.password && !loginPassword) {
-                      setLoginPassword(accounts[norm].password);
-                    }
-                  }}
-                  onInput={(e) => {
-                    const norm = normalizeIranMobileInput(
-                      (e.target as HTMLInputElement).value
-                    );
-                    if (norm !== phone) setPhone(norm);
                   }}
                   placeholder="09xxxxxxxxx"
                   aria-label="شماره موبایل"
@@ -941,10 +1000,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                         setLoginPassword(e.target.value);
                         setError('');
                       }}
-                      onInput={(e) => {
-                        const val = (e.target as HTMLInputElement).value;
-                        if (val !== loginPassword) setLoginPassword(val);
-                      }}
                       placeholder="رمز عبور حساب شما (یا ورود با کد پیامک)"
                       aria-label="رمز عبور"
                       className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-10 text-center font-mono text-sm font-bold text-[#061138] placeholder:font-sans placeholder:text-xs placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
@@ -963,12 +1018,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       )}
                     </button>
                   </div>
-                  {savedMemory?.password &&
-                  loginPassword === savedMemory.password ? (
-                    <p className="text-center text-[11px] font-bold text-emerald-600">
-                      ✓ رمز عبور ذخیره‌شده شما به صورت خودکار بارگذاری شد
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -1002,12 +1051,17 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   type="button"
                   onClick={() => {
                     setError('');
-                    if (isValidIranMobile(normalizeIranMobileInput(phone))) {
-                      void requestOtpLogin(normalizeIranMobileInput(phone));
-                      setOtpDigits(['', '', '', '', '', '']);
-                      setOtpTimerSeconds(110);
-                    }
+                    const clean = normalizeIranMobileInput(
+                      loginPhoneInputRef.current?.value || phone
+                    );
+                    setOtpTimerSeconds(0);
+                    otpGuardRef.current = createOtpSubmissionGuard();
+                    otpDigitsRef.current = '';
+                    setOtpDigits(['', '', '', '', '', '']);
                     setScreen('RESET_PASSWORD');
+                    if (isValidIranMobile(clean)) {
+                      void handleSendResetOtp(clean);
+                    }
                   }}
                   className="block w-full font-bold text-slate-500 transition hover:text-[#061138] cursor-pointer"
                 >
@@ -1393,11 +1447,6 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   placeholder="• • • • • •"
                   aria-label="کد تایید ۶ رقمی پیامک"
                   onChange={(e) => handleUnifiedOtpChange(e.target.value)}
-                  onInput={(e) =>
-                    handleUnifiedOtpChange(
-                      (e.target as HTMLInputElement).value
-                    )
-                  }
                   onPaste={(e) => {
                     const pasted = e.clipboardData.getData('text');
                     if (pasted) {
@@ -1436,12 +1485,22 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const clean = normalizeIranMobileInput(phone);
-                      setOtpTimerSeconds(110);
-                      setOtpDigits(['', '', '', '', '', '']);
                       setError('');
-                      void requestOtpLogin(clean);
+                      otpGuardRef.current = createOtpSubmissionGuard();
+                      otpDigitsRef.current = '';
+                      setOtpDigits(['', '', '', '', '', '']);
+                      try {
+                        await requestOtpLogin(clean);
+                        setOtpTimerSeconds(110);
+                      } catch (err) {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : 'خطا در ارسال مجدد کد تأیید.'
+                        );
+                      }
                     }}
                     className="font-black text-[#0057FF] hover:underline cursor-pointer"
                   >
@@ -2017,9 +2076,25 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-right text-xs font-extrabold text-[#061138]">
-                  کد ۶ رقمی پیامک‌شده به شماره همراه شما
-                </label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-right text-xs font-extrabold text-[#061138]">
+                    کد ۶ رقمی پیامک‌شده به شماره همراه شما
+                  </label>
+                  {otpTimerSeconds > 0 ? (
+                    <span className="text-[11px] font-bold text-slate-500">
+                      ارسال مجدد ({toPersianDigits(otpTimerSeconds)} ثانیه)
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={resetOtpSending}
+                      onClick={() => void handleSendResetOtp()}
+                      className="text-[11px] font-black text-[#0057FF] hover:underline disabled:opacity-50 cursor-pointer"
+                    >
+                      {resetOtpSending ? 'در حال ارسال...' : 'ارسال کد تأیید'}
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -2030,11 +2105,13 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   maxLength={6}
                   value={otpDigits.join('')}
                   onChange={(e) => handleUnifiedOtpChange(e.target.value)}
-                  onInput={(e) =>
-                    handleUnifiedOtpChange(
-                      (e.target as HTMLInputElement).value
-                    )
-                  }
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData('text');
+                    if (pasted) {
+                      e.preventDefault();
+                      handleUnifiedOtpChange(pasted);
+                    }
+                  }}
                   placeholder="کد ۶ رقمی..."
                   className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 px-4 text-center font-mono text-lg font-black tracking-[0.35em] text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
                 />

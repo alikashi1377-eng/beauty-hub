@@ -4127,5 +4127,210 @@ test('ensureAppointmentFromNotifyBookingInDb persists appointment and upserts bu
   assert.equal(crmUpsert.includes('total_spend_toman'), false);
 });
 
+test('Auth Regression: password login distinguishes unset vs wrong password, supports scrypt & legacy sha256 upgrade, and OTP verify maps NO_ACTIVE_CHALLENGE & RATE_LIMIT_BLOCKED cleanly', async () => {
+  const { hashPasswordScrypt } = await import('./auth/passwordHash');
+  const phoneNoPwd = '09131110001';
+  const phoneScrypt = '09131110002';
+  const phoneLegacy = '09131110003';
+  const legacyHash = crypto
+    .createHash('sha256')
+    .update(`timeto-pwd-v1:${phoneLegacy}:OldPass#123`, 'utf8')
+    .digest('hex');
+
+  const userRows: Record<
+    string,
+    { id: string; phone: string; is_active: boolean; user_pwd_hash: string | null; admin_pwd_hash: string | null }
+  > = {
+    [phoneNoPwd]: {
+      id: '11111111-1111-4111-8111-000000000001',
+      phone: phoneNoPwd,
+      is_active: true,
+      user_pwd_hash: null,
+      admin_pwd_hash: 'scrypt$admin$admin',
+    },
+    [phoneScrypt]: {
+      id: '11111111-1111-4111-8111-000000000002',
+      phone: phoneScrypt,
+      is_active: true,
+      user_pwd_hash: hashPasswordScrypt('FreshPass#99'),
+      admin_pwd_hash: null,
+    },
+    [phoneLegacy]: {
+      id: '11111111-1111-4111-8111-000000000003',
+      phone: phoneLegacy,
+      is_active: true,
+      user_pwd_hash: legacyHash,
+      admin_pwd_hash: null,
+    },
+  };
+
+  const upgradedHashes: Array<{ userId: string; hash: string }> = [];
+  let otpOutcomeToReturn = 'NO_ACTIVE_CHALLENGE';
+
+  const authMockPool = {
+    async query(sql: string, params?: unknown[]) {
+      if (sql.includes('check_and_increment_auth_rate_limit')) {
+        return {
+          rowCount: 1,
+          rows: [{ allowed: true, retry_after_sec: 0, reason_code: 'OK' }],
+        };
+      }
+      if (sql.includes('CREATE TABLE IF NOT EXISTS user_passwords')) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (sql.includes('LEFT JOIN user_passwords up')) {
+        const phone = String(params?.[0] || '');
+        const found = userRows[phone];
+        return found
+          ? { rowCount: 1, rows: [found] }
+          : { rowCount: 0, rows: [] };
+      }
+      if (sql.includes('INSERT INTO user_passwords')) {
+        upgradedHashes.push({
+          userId: String(params?.[0] || ''),
+          hash: String(params?.[1] || ''),
+        });
+        return { rowCount: 1, rows: [] };
+      }
+      if (sql.includes('INSERT INTO user_sessions')) {
+        return {
+          rowCount: 1,
+          rows: [
+            {
+              id: '22222222-2222-4222-8222-000000000099',
+              expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+            },
+          ],
+        };
+      }
+      if (sql.includes('FROM users u') && sql.includes('WHERE u.id = $1')) {
+        const uid = String(params?.[0] || '');
+        const match = Object.values(userRows).find((u) => u.id === uid);
+        return match
+          ? {
+              rowCount: 1,
+              rows: [
+                {
+                  id: match.id,
+                  phone: match.phone,
+                  full_name: 'کاربر تست',
+                  default_city: 'اصفهان',
+                  is_active: true,
+                },
+              ],
+            }
+          : { rowCount: 0, rows: [] };
+      }
+      return { rowCount: 0, rows: [] };
+    },
+    async connect() {
+      return {
+        async query(sql: string) {
+          if (sql.includes('check_and_increment_auth_rate_limit')) {
+            if (otpOutcomeToReturn === 'RATE_LIMIT_BLOCKED') {
+              return {
+                rows: [{ allowed: false, retry_after_sec: 45, reason_code: 'RATE_LIMIT_BLOCKED' }],
+              };
+            }
+            return {
+              rows: [{ allowed: true, retry_after_sec: 0, reason_code: 'OK' }],
+            };
+          }
+          if (sql.includes('verify_otp_challenge_atomic')) {
+            return {
+              rows: [
+                {
+                  verified: false,
+                  outcome_code: otpOutcomeToReturn,
+                  remaining_attempts: 0,
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+        release() {},
+      };
+    },
+  } as unknown as Pool;
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+    },
+    authMockPool
+  );
+
+  try {
+    // 1. User without a real password gets PASSWORD_NOT_SET
+    const noPwdRes = await fetch(`${srv.baseUrl}/api/v1/auth/password/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneNoPwd, password: 'AnyPassword1' }),
+    });
+    assert.equal(noPwdRes.status, 401);
+    const noPwdJson = (await noPwdRes.json()) as { errorCode: string; message: string };
+    assert.equal(noPwdJson.errorCode, 'PASSWORD_NOT_SET');
+
+    // 2. Wrong password on user with real scrypt password gets INVALID_CREDENTIALS
+    const wrongRes = await fetch(`${srv.baseUrl}/api/v1/auth/password/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneScrypt, password: 'WrongPassword1' }),
+    });
+    assert.equal(wrongRes.status, 401);
+    const wrongJson = (await wrongRes.json()) as { errorCode: string };
+    assert.equal(wrongJson.errorCode, 'INVALID_CREDENTIALS');
+
+    // 3. Correct scrypt password succeeds
+    const okScryptRes = await fetch(`${srv.baseUrl}/api/v1/auth/password/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneScrypt, password: 'FreshPass#99' }),
+    });
+    assert.equal(okScryptRes.status, 200);
+
+    // 4. Correct legacy sha256 password succeeds and upgrades stored hash to scrypt
+    const okLegacyRes = await fetch(`${srv.baseUrl}/api/v1/auth/password/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneLegacy, password: 'OldPass#123' }),
+    });
+    assert.equal(okLegacyRes.status, 200);
+    assert.equal(upgradedHashes.length, 1);
+    assert.ok(upgradedHashes[0].hash.startsWith('scrypt$'));
+
+    // 5. OTP verify maps NO_ACTIVE_CHALLENGE to explicit Persian guidance
+    otpOutcomeToReturn = 'NO_ACTIVE_CHALLENGE';
+    const otpMissingRes = await fetch(`${srv.baseUrl}/api/v1/auth/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneScrypt, code: '123456' }),
+    });
+    assert.equal(otpMissingRes.status, 401);
+    const otpMissingJson = (await otpMissingRes.json()) as { errorCode: string; message: string };
+    assert.equal(otpMissingJson.errorCode, 'NO_ACTIVE_CHALLENGE');
+    assert.ok(otpMissingJson.message.includes('کد جدید درخواست کنید'));
+
+    // 6. OTP verify maps RATE_LIMIT_BLOCKED to HTTP 429
+    otpOutcomeToReturn = 'RATE_LIMIT_BLOCKED';
+    const otpRateRes = await fetch(`${srv.baseUrl}/api/v1/auth/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phoneScrypt, code: '123456' }),
+    });
+    assert.equal(otpRateRes.status, 429);
+    const otpRateJson = (await otpRateRes.json()) as { errorCode: string };
+    assert.equal(otpRateJson.errorCode, 'RATE_LIMIT_BLOCKED');
+  } finally {
+    await srv.close();
+  }
+});
+
+
 
 

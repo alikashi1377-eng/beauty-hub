@@ -2760,28 +2760,26 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     const accounts = getSavedMemoryAccounts();
     const memAccount = accounts[resolvedPhone];
 
-    try {
-      const storedRaw =
-        window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
-      const stored = JSON.parse(storedRaw);
-      const savedPass =
-        memAccount?.password || stored[resolvedPhone] || stored[trimmedInput];
-      if (savedPass && savedPass !== password) {
-        throw new Error(
-          'شماره موبایل / نام کاربری یا رمز عبور وارد شده صحیح نیست.'
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('صحیح نیست')) {
-        throw err;
-      }
-    }
-
     if (dataMode === 'real') {
       const res = await realApiClient.loginWithPassword(
         resolvedPhone,
         password
       );
+      try {
+        const storedRaw =
+          window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+        const stored = JSON.parse(storedRaw);
+        if (stored && typeof stored === 'object') {
+          delete stored[resolvedPhone];
+          delete stored[trimmedInput];
+          window.localStorage.setItem(
+            'timeto_local_passwords_v1',
+            JSON.stringify(stored)
+          );
+        }
+      } catch {
+        // ignore storage cleanup errors
+      }
       const mergedUser: AuthenticatedSessionUser = memAccount
         ? {
             ...res.user,
@@ -2818,6 +2816,24 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       await loadAuthenticatedRoleData(mergedUser);
       showToast(res.message, 'success');
       return mergedUser;
+    }
+
+    // در حالت دمو/آفلاین (mock) رمز محلی بررسی می‌شود؛ در حالت real فقط سرور مرجع است
+    try {
+      const storedRaw =
+        window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+      const stored = JSON.parse(storedRaw);
+      const savedPass =
+        memAccount?.password || stored[resolvedPhone] || stored[trimmedInput];
+      if (savedPass && savedPass !== password) {
+        throw new Error(
+          'شماره موبایل / نام کاربری یا رمز عبور وارد شده صحیح نیست.'
+        );
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('صحیح نیست')) {
+        throw err;
+      }
     }
 
     const sessionUser = buildSessionUserFromMemory(resolvedPhone);
@@ -3083,9 +3099,14 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         ? 'laser-hair-removal'
         : undefined);
 
+    const explicitPassword =
+      payload.password && payload.password.trim() !== 'Timeto@1234'
+        ? payload.password.trim()
+        : undefined;
+
     saveMemoryAccount({
       phone: payload.phone,
-      password: payload.password || 'Timeto@1234',
+      ...(explicitPassword ? { password: explicitPassword } : {}),
       firstName: payload.firstName || payload.fullName.split(' ')[0] || '',
       lastName:
         payload.lastName ||
@@ -3126,25 +3147,33 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     // ثبت دائمی کاربر جدید (مشتری یا صاحب سالن) در دیتابیس PostgreSQL و صدور نشست واقعی سرور
     if (dataMode === 'real') {
       try {
+        const cleanCurrentPhone = normalizeIranMobile(payload.phone);
         const allLocalAccounts = Object.values(getSavedMemoryAccounts()).map(
-          (acc) => ({
-            phone: acc.phone,
-            fullName: acc.fullName,
-            city: acc.city || 'اصفهان',
-            role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
-              | 'owner'
-              | 'customer',
-            password: acc.password,
-            businessId: acc.businessId,
-            businessName: acc.businessName,
-            businessType: acc.businessType,
-            categorySlug: acc.categorySlug,
-            typeLabel: acc.typeLabel,
-            slug: acc.slug,
-            approvalStatus: acc.approvalStatus,
-            neighborhood: acc.neighborhood,
-            avatarUrl: acc.avatarUrl,
-          })
+          (acc) => {
+            const accCleanPhone = normalizeIranMobile(acc.phone);
+            const isCurrentAccount = accCleanPhone === cleanCurrentPhone;
+            return {
+              phone: acc.phone,
+              fullName: acc.fullName,
+              city: acc.city || 'اصفهان',
+              role: (acc.role === 'BUSINESS_OWNER' ? 'owner' : 'customer') as
+                | 'owner'
+                | 'customer',
+              // هرگز رمز عبور سایر حساب‌های محلی را به سرور ارسال و بازنویسی نکن
+              ...(isCurrentAccount && explicitPassword
+                ? { password: explicitPassword }
+                : {}),
+              businessId: acc.businessId,
+              businessName: acc.businessName,
+              businessType: acc.businessType,
+              categorySlug: acc.categorySlug,
+              typeLabel: acc.typeLabel,
+              slug: acc.slug,
+              approvalStatus: acc.approvalStatus,
+              neighborhood: acc.neighborhood,
+              avatarUrl: acc.avatarUrl,
+            };
+          }
         );
         const syncRes = await realApiClient.syncRegisteredAccounts({
           accounts: allLocalAccounts.length
@@ -3155,7 +3184,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
                   fullName: payload.fullName,
                   city: payload.salonInfo?.city || 'اصفهان',
                   role: payload.role === 'BUSINESS_OWNER' ? 'owner' : 'customer',
-                  password: payload.password,
+                  ...(explicitPassword ? { password: explicitPassword } : {}),
                   businessId: createdBusinessId,
                   businessName: payload.salonInfo?.businessName,
                   businessType: payload.salonInfo?.businessType,
@@ -3192,7 +3221,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           setAuthUser(sessionUser);
         }
       } catch {
-        // ادامه با حساب محلی در صورت خطای شبکه
+        // در ادامه تلاش مستقیم برای ذخیره رمز با نشست فعال OTP انجام می‌شود
+      }
+
+      // تضمین ثبت قطعی رمز عبور در جدول user_passwords سرور با نشست فعال کاربر
+      if (explicitPassword && explicitPassword.length >= 4) {
+        try {
+          await realApiClient.setAccountPassword(explicitPassword);
+        } catch {
+          // اگر قبلاً از طریق syncRegisteredAccounts ثبت شده باشد مشکلی ایجاد نمی‌شود
+        }
       }
     }
 
@@ -3206,11 +3244,16 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     if (dataMode === 'real') {
       try {
-        const res = await realApiClient.setAccountPassword(password);
+        const res = await realApiClient.setAccountPassword(password.trim());
         showToast(res.message, 'success');
         return true;
-      } catch {
-        // ادامه با ذخیره در حافظه مرورگر
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'خطا در ذخیره رمز عبور روی سرور. لطفاً مجدداً وارد شوید و دوباره تلاش کنید.';
+        showToast(msg, 'danger');
+        return false;
       }
     }
 
@@ -3242,19 +3285,29 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
     if (dataMode === 'real') {
+      const res = await realApiClient.resetPasswordWithOtp(
+        phone,
+        code,
+        newPassword.trim()
+      );
+      setAuthUser(res.user);
       try {
-        const res = await realApiClient.resetPasswordWithOtp(
-          phone,
-          code,
-          newPassword
-        );
-        setAuthUser(res.user);
-        await loadAuthenticatedRoleData(res.user);
-        showToast(res.message, 'success');
-        return true;
+        const storedRaw =
+          window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+        const stored = JSON.parse(storedRaw);
+        if (stored && typeof stored === 'object') {
+          delete stored[phone];
+          window.localStorage.setItem(
+            'timeto_local_passwords_v1',
+            JSON.stringify(stored)
+          );
+        }
       } catch {
-        // ادامه با ذخیره در حافظه
+        // ignore
       }
+      await loadAuthenticatedRoleData(res.user);
+      showToast(res.message, 'success');
+      return true;
     }
 
     try {

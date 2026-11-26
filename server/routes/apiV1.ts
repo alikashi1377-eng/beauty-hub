@@ -12,6 +12,11 @@ import {
   revokeSessionInDb,
   setSessionCookie,
 } from '../auth/session';
+import {
+  hashPasswordScrypt,
+  isRealPasswordHash,
+  verifyPasswordAgainstHash,
+} from '../auth/passwordHash';
 import { loadServerEnv, ServerEnvConfig } from '../config/env';
 import {
   checkDatabaseHealth,
@@ -2282,6 +2287,7 @@ export function createApiV1Router(
     if (!pool) return;
 
     try {
+      const config = customEnv ?? loadServerEnv();
       const phone = String(req.body?.phone || '').trim();
       const code = String(req.body?.code || '').trim();
       const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
@@ -2292,22 +2298,29 @@ export function createApiV1Router(
         code,
         ip,
         ua,
-        customEnv?.sessionSecret ?? undefined
+        config.sessionSecret ?? undefined,
+        config.otpHmacSecret ?? undefined
       );
       if (!result.verified) {
-        res.status(401).json({
+        const isRateLimited =
+          result.outcomeCode === 'RATE_LIMIT_BLOCKED' ||
+          result.outcomeCode === 'TOO_MANY_VERIFY_ATTEMPTS_FROM_IP';
+        res.status(isRateLimited ? 429 : 401).json({
           ok: false,
           mode: 'real',
           errorCode: result.outcomeCode,
           remainingAttempts: result.remainingAttempts,
+          retryAfterSec: result.retryAfterSec,
           message:
             result.outcomeCode === 'OTP_LOCKED'
               ? 'کد تایید به دلیل تلاش‌های ناموفق متوالی قفل شد. لطفاً کد جدید درخواست کنید.'
               : result.outcomeCode === 'OTP_EXPIRED'
-                ? 'مهلت زمانی کد تایید به پایان رسیده است.'
-                : result.outcomeCode === 'TOO_MANY_VERIFY_ATTEMPTS_FROM_IP'
-                  ? 'تعداد تلاش‌های تایید کد از این آدرس IP بیش از حد مجاز است.'
-                  : 'کد واردشده صحیح نیست.',
+                ? 'مهلت زمانی کد تایید به پایان رسیده است. لطفاً کد جدید درخواست کنید.'
+                : result.outcomeCode === 'NO_ACTIVE_CHALLENGE'
+                  ? 'کد تایید فعالی برای این شماره وجود ندارد یا قبلاً مصرف/منقضی شده است. لطفاً کد جدید درخواست کنید.'
+                  : isRateLimited
+                    ? `تعداد تلاش‌های تایید کد بیش از حد مجاز است.${result.retryAfterSec ? ` لطفاً ${result.retryAfterSec} ثانیه دیگر تلاش کنید.` : ''}`
+                    : 'کد واردشده صحیح نیست.',
         });
         return;
       }
@@ -2406,6 +2419,30 @@ export function createApiV1Router(
         return;
       }
 
+      const safeLoginIp = String(
+        req.ip || req.socket.remoteAddress || '127.0.0.1'
+      ).slice(0, 45);
+      try {
+        const pwdRlRes = await pool.query(
+          `SELECT * FROM check_and_increment_auth_rate_limit($1, 600, 15, 0)`,
+          [`pwd_login:${rawPhone}:${safeLoginIp}`]
+        );
+        const pwdRl = pwdRlRes.rows[0];
+        if (pwdRl && pwdRl.allowed === false) {
+          const waitSec = Number(pwdRl.retry_after_sec || 60);
+          res.status(429).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'RATE_LIMIT_BLOCKED',
+            retryAfterSec: waitSec,
+            message: `تعداد تلاش‌های ورود با رمز بیش از حد مجاز است. لطفاً ${waitSec} ثانیه دیگر تلاش کنید یا با کد پیامکی وارد شوید.`,
+          });
+          return;
+        }
+      } catch {
+        // در محیط‌های تستی که تابع SQL محدودساز نرخ وجود ندارد ادامه می‌دهیم
+      }
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS user_passwords (
           user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -2413,11 +2450,6 @@ export function createApiV1Router(
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-
-      const candidateHash = crypto
-        .createHash('sha256')
-        .update(`timeto-pwd-v1:${rawPhone}:${password}`, 'utf8')
-        .digest('hex');
 
       const userLookup = await pool.query(
         `
@@ -2440,9 +2472,9 @@ export function createApiV1Router(
         res.status(401).json({
           ok: false,
           mode: 'real',
-          errorCode: 'INVALID_CREDENTIALS',
+          errorCode: 'USER_NOT_FOUND',
           message:
-            'کاربری با این شماره یافت نشد یا هنوز رمز عبوری تنظیم نکرده‌اید. لطفاً یک بار با «کد یک‌بارمصرف پیامکی» وارد شوید و رمز خود را تنظیم کنید.',
+            'حساب کاربری با این شماره ثبت نشده است. لطفاً با «ورود با کد» یا «ثبت نام» اقدام کنید.',
         });
         return;
       }
@@ -2458,46 +2490,65 @@ export function createApiV1Router(
         return;
       }
 
-      const storedHash = String(uRow.user_pwd_hash || uRow.admin_pwd_hash || '');
+      const userHashStr = String(uRow.user_pwd_hash || '').trim();
+      const adminHashStr = String(uRow.admin_pwd_hash || '').trim();
+      const hasUserHash = isRealPasswordHash(userHashStr);
+      const hasAdminHash = isRealPasswordHash(adminHashStr);
       const envAdminDefaultPwd = (process.env.ADMIN_DEFAULT_PASSWORD || '').trim();
       const ownerPhone = (
         process.env.INITIAL_ADMIN_PHONE || '09138201042'
       ).trim();
 
-      let matchesStored = storedHash === candidateHash;
-      if (!matchesStored && storedHash.startsWith('scrypt$')) {
-        const parts = storedHash.split('$');
-        if (parts.length === 3) {
-          const salt = parts[1];
-          const expectedHex = parts[2];
-          const derivedHex = crypto
-            .scryptSync(password, salt, 32)
-            .toString('hex');
-          matchesStored = derivedHex === expectedHex;
-        }
-      }
-      // اگر کاربر رمز عبور ثابت تنظیم نکرده باشد، ورود بدون رمز ممنوع است و باید ابتدا با کد پیامکی وارد شود
+      const userPwdCheck = hasUserHash
+        ? verifyPasswordAgainstHash(password, rawPhone, userHashStr)
+        : { matched: false, needsUpgradeToScrypt: false };
+      const adminPwdCheck =
+        !userPwdCheck.matched && hasAdminHash
+          ? verifyPasswordAgainstHash(password, rawPhone, adminHashStr)
+          : { matched: false, needsUpgradeToScrypt: false };
+
       const matchesEnvAdminPwd =
         rawPhone === ownerPhone &&
         envAdminDefaultPwd.length >= 8 &&
-        password === envAdminDefaultPwd;
+        password.length === envAdminDefaultPwd.length &&
+        crypto.timingSafeEqual(
+          Buffer.from(password, 'utf8'),
+          Buffer.from(envAdminDefaultPwd, 'utf8')
+        );
 
-      if (!matchesStored && !matchesEnvAdminPwd) {
+      if (!userPwdCheck.matched && !adminPwdCheck.matched && !matchesEnvAdminPwd) {
+        const hasAnyRealPassword = hasUserHash || hasAdminHash;
         res.status(401).json({
           ok: false,
           mode: 'real',
-          errorCode: 'INVALID_CREDENTIALS',
-          message:
-            'رمز عبور واردشده صحیح نیست (اگر قبلاً رمز عبور تنظیم نکرده‌اید، ابتدا یک بار با کد پیامکی وارد شوید و رمز عبور ثابت تعریف کنید).',
+          errorCode: hasAnyRealPassword
+            ? 'INVALID_CREDENTIALS'
+            : 'PASSWORD_NOT_SET',
+          message: hasAnyRealPassword
+            ? 'رمز عبور واردشده صحیح نیست. در صورت فراموشی، روی «رمز عبور را فراموش کردم» بزنید.'
+            : 'هنوز رمز عبور ثابتی برای این شماره ثبت نشده است. روی «ورود با کد» یا «رمز عبور را فراموش کردم» بزنید تا با کد پیامکی رمز تعیین کنید.',
         });
         return;
       }
 
       const userId = String(uRow.id);
-      const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1').slice(
-        0,
-        45
-      );
+      if (userPwdCheck.needsUpgradeToScrypt || adminPwdCheck.needsUpgradeToScrypt) {
+        try {
+          const upgradedHash = hashPasswordScrypt(password);
+          await pool.query(
+            `
+            INSERT INTO user_passwords (user_id, password_hash, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id)
+            DO UPDATE SET password_hash = EXCLUDED.password_hash, updated_at = NOW()
+            `,
+            [userId, upgradedHash]
+          );
+        } catch {
+          // ارتقای بی‌سروصدا در پس‌زمینه
+        }
+      }
+      const ip = safeLoginIp;
       const ua = String(req.headers['user-agent'] || 'web').slice(0, 500);
       const config = customEnv ?? loadServerEnv();
       const sessionSecret =
@@ -2547,6 +2598,7 @@ export function createApiV1Router(
 
       if (rawPhone === ownerPhone && (!authUser || !authUser.isPlatformAdmin)) {
         try {
+          const adminScryptHash = hashPasswordScrypt(password);
           await pool.query(
             `
             INSERT INTO platform_admins (user_id, password_hash, allowed_scopes, is_active, revoked_at)
@@ -2554,7 +2606,7 @@ export function createApiV1Router(
             ON CONFLICT (user_id)
             DO UPDATE SET is_active = TRUE, revoked_at = NULL, updated_at = NOW()
             `,
-            [userId, candidateHash]
+            [userId, adminScryptHash]
           );
           if (authUser) {
             authUser = {
@@ -2616,13 +2668,7 @@ export function createApiV1Router(
           )
         `);
 
-        const pwdHash = crypto
-          .createHash('sha256')
-          .update(
-            `timeto-pwd-v1:${req.authUser!.phone}:${password}`,
-            'utf8'
-          )
-          .digest('hex');
+        const pwdHash = hashPasswordScrypt(password);
 
         await pool.query(
           `
@@ -2674,6 +2720,7 @@ export function createApiV1Router(
           return;
         }
 
+        const config = customEnv ?? loadServerEnv();
         const ip = String(req.ip || req.socket.remoteAddress || '127.0.0.1');
         const ua = String(req.headers['user-agent'] || 'web');
         const verifyResult = await verifyOtpInDb(
@@ -2682,15 +2729,28 @@ export function createApiV1Router(
           code,
           ip,
           ua,
-          customEnv?.sessionSecret ?? undefined
+          config.sessionSecret ?? undefined,
+          config.otpHmacSecret ?? undefined
         );
 
         if (!verifyResult.verified || !verifyResult.userId) {
-          res.status(401).json({
+          const isRateLimited =
+            verifyResult.outcomeCode === 'RATE_LIMIT_BLOCKED' ||
+            verifyResult.outcomeCode === 'TOO_MANY_VERIFY_ATTEMPTS_FROM_IP';
+          res.status(isRateLimited ? 429 : 401).json({
             ok: false,
             mode: 'real',
             errorCode: verifyResult.outcomeCode || 'INVALID_OTP',
-            message: 'کد تایید پیامکی واردشده صحیح نیست یا منقضی شده است.',
+            message:
+              verifyResult.outcomeCode === 'OTP_LOCKED'
+                ? 'کد تایید به دلیل تلاش‌های ناموفق قفل شد. لطفاً کد جدید درخواست کنید.'
+                : verifyResult.outcomeCode === 'OTP_EXPIRED'
+                  ? 'مهلت زمانی کد تایید به پایان رسیده است. لطفاً کد جدید درخواست کنید.'
+                  : verifyResult.outcomeCode === 'NO_ACTIVE_CHALLENGE'
+                    ? 'کد تایید فعالی یافت نشد یا منقضی شده است. روی «ارسال مجدد کد» بزنید.'
+                    : isRateLimited
+                      ? 'تعداد تلاش‌های تایید کد بیش از حد مجاز است. کمی بعد مجدداً تلاش کنید.'
+                      : 'کد تایید پیامکی واردشده صحیح نیست.',
           });
           return;
         }
@@ -2703,10 +2763,7 @@ export function createApiV1Router(
           )
         `);
 
-        const pwdHash = crypto
-          .createHash('sha256')
-          .update(`timeto-pwd-v1:${phone}:${newPassword}`, 'utf8')
-          .digest('hex');
+        const pwdHash = hashPasswordScrypt(newPassword);
 
         await pool.query(
           `

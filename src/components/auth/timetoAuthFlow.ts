@@ -21,7 +21,7 @@ export type AuthFlowScreen =
 
 export interface SavedMemoryAccount {
   phone: string;
-  password: string;
+  password?: string;
   firstName: string;
   lastName: string;
   fullName: string;
@@ -221,6 +221,65 @@ export function applyOtpDigitChange(
   };
 }
 
+export interface OtpSubmissionGuardState {
+  inFlight: boolean;
+  lastAttemptedCode: string | null;
+  verifiedCode: string | null;
+}
+
+export function createOtpSubmissionGuard(): OtpSubmissionGuardState {
+  return {
+    inFlight: false,
+    lastAttemptedCode: null,
+    verifiedCode: null,
+  };
+}
+
+/**
+ * جلوگیری از ارسال همزمان یا تکراری یک کد ۶ رقمی OTP (مثلاً هنگام رویداد همزمان Autofill/onChange/کلیک دکمه)
+ * که باعث مصرف شدن کد در درخواست اول و خطای «کد اشتباه است» در درخواست دوم می‌شد.
+ */
+export function tryAcquireOtpSubmission(
+  guard: OtpSubmissionGuardState,
+  rawCode: string,
+  options?: { isAutoSubmit?: boolean }
+): { acquired: boolean; cleanCode: string; nextGuard: OtpSubmissionGuardState } {
+  const cleanCode = toEnglishDigitsClient(rawCode).replace(/\D/g, '').slice(0, 6);
+  if (!/^\d{6}$/.test(cleanCode)) {
+    return { acquired: false, cleanCode, nextGuard: guard };
+  }
+  if (guard.inFlight) {
+    return { acquired: false, cleanCode, nextGuard: guard };
+  }
+  if (guard.verifiedCode === cleanCode) {
+    return { acquired: false, cleanCode, nextGuard: guard };
+  }
+  if (options?.isAutoSubmit && guard.lastAttemptedCode === cleanCode) {
+    return { acquired: false, cleanCode, nextGuard: guard };
+  }
+  return {
+    acquired: true,
+    cleanCode,
+    nextGuard: {
+      inFlight: true,
+      lastAttemptedCode: cleanCode,
+      verifiedCode: guard.verifiedCode,
+    },
+  };
+}
+
+export function releaseOtpSubmission(
+  guard: OtpSubmissionGuardState,
+  code: string,
+  succeeded: boolean
+): OtpSubmissionGuardState {
+  return {
+    inFlight: false,
+    lastAttemptedCode: guard.lastAttemptedCode,
+    verifiedCode: succeeded ? code : guard.verifiedCode,
+  };
+}
+
 /** اعتبارسنجی گام ۳ ثبت‌نام (نام و نام خانوادگی در بخش پروفایل) */
 export function validateRegistrationStep3Profile(params: {
   firstName: string;
@@ -254,10 +313,15 @@ export function saveMemoryAccount(account: SavedMemoryAccount): void {
     if (!cleanPhone) return;
     const map = getSavedMemoryAccounts();
     const prev = map[cleanPhone];
+    const cleanPassword =
+      account.password && account.password.trim() !== 'Timeto@1234'
+        ? account.password.trim()
+        : undefined;
     const merged: SavedMemoryAccount = {
       ...prev,
       ...account,
       phone: cleanPhone,
+      password: cleanPassword ?? prev?.password,
       joinedJalali: account.joinedJalali || prev?.joinedJalali || 'امروز',
       updatedAt: Date.now(),
     };
@@ -270,19 +334,20 @@ export function saveMemoryAccount(account: SavedMemoryAccount): void {
       LAST_SAVED_CREDENTIAL_KEY,
       JSON.stringify({
         phone: cleanPhone,
-        password: merged.password,
         role: merged.role,
         fullName: merged.fullName,
       })
     );
-    const legacyRaw =
-      window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
-    const legacy = JSON.parse(legacyRaw);
-    legacy[cleanPhone] = merged.password;
-    window.localStorage.setItem(
-      'timeto_local_passwords_v1',
-      JSON.stringify(legacy)
-    );
+    if (cleanPassword) {
+      const legacyRaw =
+        window.localStorage.getItem('timeto_local_passwords_v1') || '{}';
+      const legacy = JSON.parse(legacyRaw);
+      legacy[cleanPhone] = cleanPassword;
+      window.localStorage.setItem(
+        'timeto_local_passwords_v1',
+        JSON.stringify(legacy)
+      );
+    }
   } catch {
     // ignore storage errors
   }

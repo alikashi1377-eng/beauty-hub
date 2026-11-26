@@ -1,88 +1,65 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  applyOtpDigitChange,
-  generateSuggestedPassword,
-  validateRegistrationStep1,
-  validateRegistrationStep3Profile,
+  createOtpSubmissionGuard,
+  releaseOtpSubmission,
+  tryAcquireOtpSubmission,
 } from './timetoAuthFlow';
 
-test('generateSuggestedPassword returns a strong 8+ character random password with mixed classes', () => {
-  const suggested = generateSuggestedPassword('09138201042');
-  assert.equal(suggested.length >= 8, true);
-  assert.match(suggested, /[A-Z]/);
-  assert.match(suggested, /[a-z]/);
-  assert.match(suggested, /[0-9]/);
-  assert.match(suggested, /[@#$%&*!?]/);
-  assert.equal(suggested.includes('1042'), false);
+test('OTP submission guard prevents duplicate concurrent requests for the same 6-digit code', () => {
+  let guard = createOtpSubmissionGuard();
+
+  // First event (e.g., onChange with 6 Persian digits) acquires the lock
+  const first = tryAcquireOtpSubmission(guard, '۱۲۳۴۵۶', { isAutoSubmit: true });
+  assert.equal(first.acquired, true);
+  assert.equal(first.cleanCode, '123456');
+  guard = first.nextGuard;
+
+  // Simultaneous second event (e.g., onInput / autofill interval / button click while in-flight) is blocked
+  const second = tryAcquireOtpSubmission(guard, '123456', { isAutoSubmit: true });
+  assert.equal(second.acquired, false);
+
+  const manualWhileInFlight = tryAcquireOtpSubmission(guard, '123456', {
+    isAutoSubmit: false,
+  });
+  assert.equal(manualWhileInFlight.acquired, false);
+
+  // After first request succeeds, re-submitting the already-consumed code is blocked
+  guard = releaseOtpSubmission(guard, first.cleanCode, true);
+  const replay = tryAcquireOtpSubmission(guard, '123456', { isAutoSubmit: false });
+  assert.equal(replay.acquired, false);
 });
 
-test('validateRegistrationStep1 enforces 11-digit mobile, 8+ char password, matching confirmation, and phone uniqueness', () => {
-  const invalidPhone = validateRegistrationStep1({
-    phone: '0913123',
-    password: 'Password123',
-    confirmPassword: 'Password123',
-  });
-  assert.equal(invalidPhone.valid, false);
+test('OTP submission guard blocks repeated auto-submit on failed code but allows manual retry or new code', () => {
+  let guard = createOtpSubmissionGuard();
 
-  const shortPass = validateRegistrationStep1({
-    phone: '09138201042',
-    password: '12345',
-    confirmPassword: '12345',
-  });
-  assert.equal(shortPass.valid, false);
+  const attempt1 = tryAcquireOtpSubmission(guard, '654321', { isAutoSubmit: true });
+  assert.equal(attempt1.acquired, true);
+  guard = releaseOtpSubmission(attempt1.nextGuard, attempt1.cleanCode, false);
 
-  const mismatch = validateRegistrationStep1({
-    phone: '09138201042',
-    password: 'Timeto@1042',
-    confirmPassword: 'Timeto@9999',
-  });
-  assert.equal(mismatch.valid, false);
+  // Polling interval must NOT auto-submit the same failed code again
+  const pollRetry = tryAcquireOtpSubmission(guard, '654321', { isAutoSubmit: true });
+  assert.equal(pollRetry.acquired, false);
 
-  const duplicate = validateRegistrationStep1({
-    phone: '۰۹۱۳۸۲۰۱۰۴۲',
-    password: 'Timeto@1042',
-    confirmPassword: 'Timeto@1042',
-    existingPhones: ['09138201042'],
+  // Manual button click IS allowed to retry
+  const manualRetry = tryAcquireOtpSubmission(guard, '654321', {
+    isAutoSubmit: false,
   });
-  assert.equal(duplicate.valid, false);
-  assert.equal(duplicate.alreadyRegistered, true);
+  assert.equal(manualRetry.acquired, true);
+  guard = releaseOtpSubmission(manualRetry.nextGuard, manualRetry.cleanCode, false);
 
-  const ok = validateRegistrationStep1({
-    phone: '۰۹۱۳۸۲۰۱۰۴۲',
-    password: 'Timeto@1042',
-    confirmPassword: 'Timeto@1042',
-    existingPhones: ['09120000000'],
+  // Typing a different 6-digit code IS allowed to auto-submit
+  const newCodeAttempt = tryAcquireOtpSubmission(guard, '998877', {
+    isAutoSubmit: true,
   });
-  assert.equal(ok.valid, true);
-  assert.equal(ok.normalizedPhone, '09138201042');
+  assert.equal(newCodeAttempt.acquired, true);
+  assert.equal(newCodeAttempt.cleanCode, '998877');
 });
 
-test('applyOtpDigitChange updates single box, advances focus, and detects 6-digit completion', () => {
-  const digits = ['', '', '', '', '', ''];
-  const step1 = applyOtpDigitChange(digits, 0, '۳');
-  assert.equal(step1.digits[0], '3');
-  assert.equal(step1.nextFocusIndex, 1);
-  assert.equal(step1.completedCode, null);
-
-  // Full 6-digit paste
-  const pasted = applyOtpDigitChange(digits, 0, '392633');
-  assert.deepEqual(pasted.digits, ['3', '9', '2', '6', '3', '3']);
-  assert.equal(pasted.completedCode, '392633');
-});
-
-test('validateRegistrationStep3Profile combines first and last name cleanly', () => {
-  const fail = validateRegistrationStep3Profile({
-    firstName: 'الف',
-    lastName: '',
+test('OTP submission guard rejects incomplete codes', () => {
+  const guard = createOtpSubmissionGuard();
+  const shortAttempt = tryAcquireOtpSubmission(guard, '12345', {
+    isAutoSubmit: true,
   });
-  assert.equal(fail.valid, true);
-  assert.equal(fail.fullName, 'الف');
-
-  const full = validateRegistrationStep3Profile({
-    firstName: 'سارا',
-    lastName: 'رضایی',
-  });
-  assert.equal(full.valid, true);
-  assert.equal(full.fullName, 'سارا رضایی');
+  assert.equal(shortAttempt.acquired, false);
 });

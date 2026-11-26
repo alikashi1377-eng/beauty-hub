@@ -8126,7 +8126,8 @@ export async function verifyOtpInDb(
   rawCode: string,
   requestIp: string,
   userAgent: string,
-  customSessionSecret?: string
+  customSessionSecret?: string,
+  customOtpHmacSecret?: string
 ): Promise<{
   verified: boolean;
   outcomeCode: string;
@@ -8148,7 +8149,7 @@ export async function verifyOtpInDb(
   }
 
   const safeIp = (requestIp || '127.0.0.1').trim().slice(0, 45);
-  const otpSecret = resolveOtpHmacSecret();
+  const otpSecret = customOtpHmacSecret ?? resolveOtpHmacSecret();
   const sessionSecret = customSessionSecret ?? resolveSessionSecret();
 
   const candidateHmac = crypto
@@ -8616,22 +8617,40 @@ export async function syncRegisteredAccountsInDb(
         }
       }
 
-      if (acc.password && acc.password.trim().length >= 4) {
+      const candidateRawPwd = acc.password ? acc.password.trim() : '';
+      if (
+        candidateRawPwd.length >= 4 &&
+        candidateRawPwd !== 'Timeto@1234' &&
+        (!targetSessionPhone || cleanPhone === targetSessionPhone)
+      ) {
         const salt = crypto.randomBytes(16).toString('hex');
         const derived = crypto
-          .scryptSync(acc.password.trim(), salt, 32)
+          .scryptSync(candidateRawPwd, salt, 32)
           .toString('hex');
         const pwdHash = `scrypt$${salt}$${derived}`;
-        await client.query(
-          `
-          INSERT INTO user_passwords (user_id, password_hash, updated_at)
-          VALUES ($1, $2, NOW())
-          ON CONFLICT (user_id) DO UPDATE SET
-            password_hash = EXCLUDED.password_hash,
-            updated_at = NOW()
-          `,
-          [userId, pwdHash]
-        );
+        // فقط برای حسابی که در حال ثبت‌نام است رمز را به‌روزرسانی می‌کنیم؛
+        // برای سایر رکوردها هرگز رمز قبلی موجود در دیتابیس را بازنویسی نمی‌کنیم.
+        if (targetSessionPhone && cleanPhone === targetSessionPhone) {
+          await client.query(
+            `
+            INSERT INTO user_passwords (user_id, password_hash, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+              password_hash = EXCLUDED.password_hash,
+              updated_at = NOW()
+            `,
+            [userId, pwdHash]
+          );
+        } else {
+          await client.query(
+            `
+            INSERT INTO user_passwords (user_id, password_hash, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            `,
+            [userId, pwdHash]
+          );
+        }
       }
 
       const existingIdx = registryList.findIndex(
