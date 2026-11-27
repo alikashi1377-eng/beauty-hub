@@ -1794,6 +1794,23 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       // ادامه در صورت نبود داده مشتری
     }
 
+    try {
+      const walletRes = await realApiClient.fetchMyWallet();
+      const serverPhone = normalizeCustomerPhoneKey(currentUser.phone);
+      if (serverPhone && Array.isArray(walletRes.data?.transactions)) {
+        setAllCustomerWalletTxs((prev) => {
+          const otherPhoneTxs = prev.filter(
+            (tx) => normalizeCustomerPhoneKey(tx.customerPhone) !== serverPhone
+          );
+          const next = [...walletRes.data.transactions, ...otherPhoneTxs];
+          persistCustomerWalletTxs(next);
+          return next;
+        });
+      }
+    } catch {
+      // در صورت خطای موقت شبکه، تراکنش‌های محلی فعلی حفظ می‌شوند
+    }
+
     let latestLoadedServices: ServiceItem[] = [];
     if (currentUser.roles.includes('BUSINESS_OWNER')) {
       try {
@@ -5037,6 +5054,34 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       persistCustomerWalletTxs(next);
       return next;
     });
+    if (dataMode === 'real' && getSavedSessionToken()) {
+      void realApiClient
+        .recordCustomerWalletTransaction({
+          type: 'TOPUP',
+          amountToman: tx.amountToman,
+          title: tx.title,
+          description: tx.description,
+          trackingCode: tx.trackingCode,
+          customerName: tx.customerName,
+          createdAtJalali: tx.createdAtJalali,
+        })
+        .then((res) => {
+          const serverPhone = normalizeCustomerPhoneKey(resolvedPhone);
+          if (Array.isArray(res.data?.transactions)) {
+            setAllCustomerWalletTxs((prev) => {
+              const otherPhoneTxs = prev.filter(
+                (item) => normalizeCustomerPhoneKey(item.customerPhone) !== serverPhone
+              );
+              const next = [...res.data.transactions, ...otherPhoneTxs];
+              persistCustomerWalletTxs(next);
+              return next;
+            });
+          }
+        })
+        .catch(() => {
+          // در حالت خطای شبکه نسخه محلی حفظ می‌شود
+        });
+    }
     showToast(
       `کیف پول شما به مبلغ ${formatPriceToman(amountToman)} با موفقیت شارژ شد ✓`
     );
@@ -5076,43 +5121,46 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       persistCustomerWalletTxs(next);
       return next;
     });
+    if (dataMode === 'real' && getSavedSessionToken()) {
+      void realApiClient
+        .recordCustomerWalletTransaction({
+          type: 'BOOKING_PAYMENT',
+          amountToman: tx.amountToman,
+          title: tx.title,
+          description: tx.description,
+          trackingCode: tx.trackingCode,
+          customerName: tx.customerName,
+          createdAtJalali: tx.createdAtJalali,
+        })
+        .then((res) => {
+          const serverPhone = normalizeCustomerPhoneKey(activeCustomerPhone);
+          if (Array.isArray(res.data?.transactions)) {
+            setAllCustomerWalletTxs((prev) => {
+              const otherPhoneTxs = prev.filter(
+                (item) => normalizeCustomerPhoneKey(item.customerPhone) !== serverPhone
+              );
+              const next = [...res.data.transactions, ...otherPhoneTxs];
+              persistCustomerWalletTxs(next);
+              return next;
+            });
+          }
+        })
+        .catch(() => {
+          // ignore
+        });
+    }
     return { ok: true, trackingCode: code };
   };
 
   const requestCustomerWalletWithdrawal = (
-    amountToman: number,
-    bankCardOrSheba: string
+    _amountToman: number,
+    _bankCardOrSheba: string
   ): CustomerWalletTransactionItem | null => {
-    const cleanAmt = Math.max(0, Math.round(amountToman));
-    if (cleanAmt <= 0 || cleanAmt > customerWalletBalanceToman) {
-      showToast('مبلغ درخواستی معتبر نیست یا بیش از موجودی کیف پول است.', 'warning');
-      return null;
-    }
-    const todayJalali = getUpcomingJalaliDays(1)[0]?.dateJalali || 'امروز';
-    const tx: CustomerWalletTransactionItem = {
-      id: makeUniqueId('cwtx'),
-      customerPhone: activeCustomerPhone,
-      customerName:
-        authUser?.fullName || bookingDraft.customerName || 'کاربر تایم تو',
-      type: 'WITHDRAWAL_REQUEST',
-      amountToman: cleanAmt,
-      title: 'درخواست تسویه و واریز به کارت / شبا',
-      description: `واریز به حساب مقصد: ${bankCardOrSheba}`,
-      trackingCode: `WD-${Math.floor(10000000 + Math.random() * 90000000)}`,
-      bankCardOrSheba,
-      withdrawalStatus: 'PENDING',
-      createdAtJalali: todayJalali,
-      createdAtMs: Date.now(),
-    };
-    setAllCustomerWalletTxs((prev) => {
-      const next = [tx, ...prev];
-      persistCustomerWalletTxs(next);
-      return next;
-    });
     showToast(
-      `درخواست برداشت ${formatPriceToman(cleanAmt)} به حساب بانکی شما ثبت شد و در سیکل پایا واریز می‌گردد ✓`
+      'اعتبار کیف پول برای رزروهای بعدی در تمام سالن‌های تایم‌تو قابل استفاده است. در موارد خاص برای پیگیری استرداد بانکی با پشتیبانی در ارتباط باشید.',
+      'info'
     );
-    return tx;
+    return null;
   };
 
   const updateAppointmentStatus = (
@@ -5149,6 +5197,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (refundedAmount > 0) {
         const rawAptPhone = (
+          targetApt.customerPhone ||
           targetApt.customerPhoneMasked ||
           authUser?.phone ||
           'guest'
@@ -5166,8 +5215,8 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           type: 'REFUND_CANCEL',
           amountToman: refundedAmount,
           title: `بازگشت بیعانه لغو نوبت (${targetApt.businessName})`,
-          description: `استرداد آنی بیعانه خدمت «${targetApt.serviceTitle}» کد پیگیری ${targetApt.referenceCode}`,
-          trackingCode: `RF-${Math.floor(10000000 + Math.random() * 90000000)}`,
+          description: `استرداد بیعانه خدمت «${targetApt.serviceTitle}» کد پیگیری ${targetApt.referenceCode} به اعتبار کیف پول`,
+          trackingCode: `RF-${targetApt.referenceCode || Math.floor(10000000 + Math.random() * 90000000)}`,
           createdAtJalali: todayJalali,
           createdAtMs: Date.now(),
         };
@@ -5176,6 +5225,41 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           persistCustomerWalletTxs(next);
           return next;
         });
+
+        // ذخیره دائمی اعتبار استرداد بیعانه در دیتابیس PostgreSQL تا روی همه دستگاه‌ها حفظ شود
+        if (dataMode === 'real' && getSavedSessionToken()) {
+          void realApiClient
+            .recordCustomerWalletTransaction({
+              type: 'REFUND_CANCEL',
+              amountToman: refundTx.amountToman,
+              title: refundTx.title,
+              description: refundTx.description,
+              trackingCode: refundTx.trackingCode,
+              appointmentReferenceCode: targetApt.referenceCode,
+              targetCustomerPhone: resolvedPhone,
+              customerName: refundTx.customerName,
+              createdAtJalali: refundTx.createdAtJalali,
+            })
+            .then((res) => {
+              const serverPhone = normalizeCustomerPhoneKey(resolvedPhone);
+              if (
+                serverPhone === activeCustomerPhone &&
+                Array.isArray(res.data?.transactions)
+              ) {
+                setAllCustomerWalletTxs((prev) => {
+                  const otherPhoneTxs = prev.filter(
+                    (item) => normalizeCustomerPhoneKey(item.customerPhone) !== serverPhone
+                  );
+                  const next = [...res.data.transactions, ...otherPhoneTxs];
+                  persistCustomerWalletTxs(next);
+                  return next;
+                });
+              }
+            })
+            .catch(() => {
+              // ignore
+            });
+        }
 
         // کسر مبلغ بیعانه برگشتی از کیف پول سالن
         if (targetBiz && (targetBiz.walletBalanceToman ?? 0) > 0) {

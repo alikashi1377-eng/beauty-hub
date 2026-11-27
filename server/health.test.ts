@@ -4331,6 +4331,211 @@ test('Auth Regression: password login distinguishes unset vs wrong password, sup
   }
 });
 
+test('Customer Wallet Ledger API: requires auth, blocks bank withdrawals, persists/deduplicates refunds, and enforces balance on booking payment', async () => {
+  const walletRows: Array<Record<string, unknown>> = [];
+  const state: MockDbState = {
+    sessions: new Map(),
+    users: new Map([
+      [
+        'user-wallet-1',
+        {
+          id: 'user-wallet-1',
+          phone: '09137778899',
+          full_name: 'نگار کریمی',
+          default_city: 'اصفهان',
+          is_active: true,
+        },
+      ],
+    ]),
+    admins: new Map(),
+    memberships: [],
+    businesses: new Map(),
+    services: new Map(),
+    appointments: new Map(),
+  };
+
+  const token = issueTestSession(state, {
+    sessionId: '44444444-4444-4444-8444-444444444444',
+    userId: 'user-wallet-1',
+    expiresInMs: 60_000,
+  });
+
+  const basePool = createSecurityTestPool(state);
+  const walletPool = {
+    async query(sql: string, params?: unknown[]) {
+      if (sql.includes('CREATE TABLE IF NOT EXISTS customer_wallet_transactions')) {
+        return { rowCount: 0, rows: [] };
+      }
+      if (sql.includes('FROM customer_wallet_transactions')) {
+        const phone = String(params?.[0] || '');
+        const rows = walletRows.filter((r) => r.customer_phone === phone);
+        return { rowCount: rows.length, rows };
+      }
+      return (basePool as unknown as { query: (s: string, p?: unknown[]) => Promise<unknown> }).query(sql, params);
+    },
+    async connect() {
+      return {
+        async query(sql: string, params?: unknown[]) {
+          if (
+            sql.includes('BEGIN') ||
+            sql.includes('COMMIT') ||
+            sql.includes('ROLLBACK') ||
+            sql.includes('CREATE TABLE IF NOT EXISTS customer_wallet_transactions') ||
+            sql.includes('pg_advisory_xact_lock')
+          ) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('FROM customer_wallet_transactions')) {
+            const phone = String(params?.[0] || '');
+            const rows = walletRows.filter((r) => r.customer_phone === phone);
+            return { rowCount: rows.length, rows };
+          }
+          if (sql.includes('INSERT INTO customer_wallet_transactions')) {
+            const row = {
+              id: params?.[0],
+              customer_phone: params?.[1],
+              customer_name: params?.[2],
+              tx_type: params?.[3],
+              amount_toman: params?.[4],
+              title: params?.[5],
+              description: params?.[6],
+              tracking_code: params?.[7],
+              appointment_ref_code: params?.[8],
+              created_at_jalali: params?.[9],
+              created_at_ms: params?.[10],
+            };
+            walletRows.unshift(row);
+            return { rowCount: 1, rows: [row] };
+          }
+          return { rowCount: 0, rows: [] };
+        },
+        release() {},
+      };
+    },
+  } as unknown as Pool;
+
+  const srv = await startEphemeralServer(
+    {
+      NODE_ENV: 'test',
+      DATA_MODE: 'real',
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/beautyhub',
+      SESSION_SECRET: TEST_SESSION_SECRET,
+      OTP_HMAC_SECRET: TEST_OTP_SECRET,
+    },
+    walletPool
+  );
+
+  try {
+    // 1. Unauthenticated caller gets 401
+    const unauth = await fetch(`${srv.baseUrl}/api/v1/me/wallet`);
+    assert.equal(unauth.status, 401);
+
+    // 2. Bank withdrawal request is explicitly blocked (400 BANK_WITHDRAWAL_DISABLED)
+    const withdrawRes = await fetch(`${srv.baseUrl}/api/v1/me/wallet/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        type: 'WITHDRAWAL_REQUEST',
+        amountToman: 100_000,
+        title: 'برداشت به کارت',
+      }),
+    });
+    assert.equal(withdrawRes.status, 400);
+    const withdrawJson = (await withdrawRes.json()) as { errorCode: string };
+    assert.equal(withdrawJson.errorCode, 'BANK_WITHDRAWAL_DISABLED');
+
+    // 3. Cancellation refund is persisted on server and deduplicated on replay
+    const refundPayload = {
+      type: 'REFUND_CANCEL',
+      amountToman: 180_000,
+      title: 'بازگشت بیعانه لغو نوبت',
+      description: 'لغو نوبت در مهلت مجاز',
+      trackingCode: 'RF-TT-5001',
+      appointmentReferenceCode: 'TT-5001',
+      createdAtJalali: '1405/09/06',
+    };
+    const refund1 = await fetch(`${srv.baseUrl}/api/v1/me/wallet/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(refundPayload),
+    });
+    assert.equal(refund1.status, 201);
+    const refund1Json = (await refund1.json()) as { data: { balanceToman: number } };
+    assert.equal(refund1Json.data.balanceToman, 180_000);
+
+    const refund2 = await fetch(`${srv.baseUrl}/api/v1/me/wallet/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(refundPayload),
+    });
+    assert.equal(refund2.status, 200);
+    const refund2Json = (await refund2.json()) as {
+      alreadyRecorded: boolean;
+      data: { balanceToman: number };
+    };
+    assert.equal(refund2Json.alreadyRecorded, true);
+    assert.equal(refund2Json.data.balanceToman, 180_000);
+
+    // 4. Booking payment exceeding balance is rejected (400 INSUFFICIENT_WALLET_BALANCE)
+    const overPay = await fetch(`${srv.baseUrl}/api/v1/me/wallet/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        type: 'BOOKING_PAYMENT',
+        amountToman: 250_000,
+        title: 'پرداخت بیعانه رزرو جدید',
+        description: 'رزرو رنگ مو',
+      }),
+    });
+    assert.equal(overPay.status, 400);
+    const overPayJson = (await overPay.json()) as { errorCode: string };
+    assert.equal(overPayJson.errorCode, 'INSUFFICIENT_WALLET_BALANCE');
+
+    // 5. Booking payment within balance succeeds and updates persisted server balance
+    const okPay = await fetch(`${srv.baseUrl}/api/v1/me/wallet/transactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        type: 'BOOKING_PAYMENT',
+        amountToman: 100_000,
+        title: 'پرداخت بیعانه رزرو جدید',
+        description: 'رزرو رنگ مو',
+        trackingCode: 'WL-99001122',
+      }),
+    });
+    assert.equal(okPay.status, 201);
+
+    // 6. GET /api/v1/me/wallet returns persistent server balance (80,000 Toman) and 2 transactions
+    const getWallet = await fetch(`${srv.baseUrl}/api/v1/me/wallet`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(getWallet.status, 200);
+    const getWalletJson = (await getWallet.json()) as {
+      data: { balanceToman: number; transactions: unknown[] };
+    };
+    assert.equal(getWalletJson.data.balanceToman, 80_000);
+    assert.equal(getWalletJson.data.transactions.length, 2);
+  } finally {
+    await srv.close();
+  }
+});
+
+
 
 
 

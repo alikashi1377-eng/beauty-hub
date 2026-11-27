@@ -15,6 +15,12 @@ import {
   SmsSenderFn,
 } from '../services/smsGateway';
 import {
+  computeWalletBalanceToman,
+  normalizeWalletPhone,
+  ServerCustomerWalletTx,
+  ValidatedWalletTxInput,
+} from '../services/customerWalletLedger';
+import {
   AdminUserRecord,
   AppointmentItem,
   AppointmentStatus,
@@ -8947,4 +8953,294 @@ export async function deleteAdminUserInDb(
     client.release();
   }
 }
+
+async function ensureCustomerWalletTable(
+  queryable: Pick<Pool, 'query'> | Pick<PoolClient, 'query'>
+): Promise<void> {
+  await queryable.query(`
+    CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+      id TEXT PRIMARY KEY,
+      customer_phone TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT 'کاربر تایم تو',
+      tx_type TEXT NOT NULL,
+      amount_toman INTEGER NOT NULL CHECK (amount_toman > 0),
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      tracking_code TEXT NOT NULL DEFAULT '',
+      appointment_ref_code TEXT,
+      created_at_jalali TEXT NOT NULL DEFAULT 'امروز',
+      created_at_ms BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_wallet_phone_created
+      ON customer_wallet_transactions (customer_phone, created_at_ms DESC);
+  `);
+}
+
+function mapCustomerWalletRow(
+  row: Record<string, unknown>
+): ServerCustomerWalletTx {
+  return {
+    id: String(row.id),
+    customerPhone: String(row.customer_phone),
+    customerName: String(row.customer_name || 'کاربر تایم تو'),
+    type: String(row.tx_type) as ServerCustomerWalletTx['type'],
+    amountToman: Math.max(0, Math.round(Number(row.amount_toman) || 0)),
+    title: String(row.title || ''),
+    description: String(row.description || ''),
+    trackingCode: row.tracking_code ? String(row.tracking_code) : undefined,
+    appointmentReferenceCode: row.appointment_ref_code
+      ? String(row.appointment_ref_code)
+      : undefined,
+    createdAtJalali: String(row.created_at_jalali || 'امروز'),
+    createdAtMs: Number(row.created_at_ms) || Date.now(),
+  };
+}
+
+/**
+ * دریافت تراکنش‌ها و موجودی واقعی کیف پول مشتری از PostgreSQL بر اساس شماره موبایل کاربر احرازهویت‌شده
+ */
+export async function getCustomerWalletTransactionsInDb(
+  pool: Pool,
+  rawPhone: string
+): Promise<{
+  balanceToman: number;
+  transactions: ServerCustomerWalletTx[];
+}> {
+  const cleanPhone = normalizeWalletPhone(rawPhone);
+  if (!/^09\d{9}$/.test(cleanPhone)) {
+    return { balanceToman: 0, transactions: [] };
+  }
+
+  await ensureCustomerWalletTable(pool);
+  const res = await pool.query(
+    `
+    SELECT
+      id,
+      customer_phone,
+      customer_name,
+      tx_type,
+      amount_toman,
+      title,
+      description,
+      tracking_code,
+      appointment_ref_code,
+      created_at_jalali,
+      created_at_ms
+    FROM customer_wallet_transactions
+    WHERE customer_phone = $1
+    ORDER BY created_at_ms DESC, created_at DESC
+    LIMIT 200
+    `,
+    [cleanPhone]
+  );
+
+  const transactions = res.rows.map((r) =>
+    mapCustomerWalletRow(r as Record<string, unknown>)
+  );
+  return {
+    balanceToman: computeWalletBalanceToman(transactions),
+    transactions,
+  };
+}
+
+/**
+ * ثبت اتمیک و امن تراکنش کیف پول مشتری (شارژ، پرداخت رزرو یا استرداد بیعانه لغو نوبت) در PostgreSQL
+ * با بررسی مالکیت، جلوگیری از ثبت تکراری و کنترل موجودی کافی در هنگام پرداخت رزرو
+ */
+export async function recordCustomerWalletTransactionInDb(
+  pool: Pool,
+  actorUser: AuthenticatedUser,
+  input: ValidatedWalletTxInput
+): Promise<{
+  transaction: ServerCustomerWalletTx;
+  balanceToman: number;
+  transactions: ServerCustomerWalletTx[];
+  alreadyRecorded: boolean;
+}> {
+  const actorPhone = normalizeWalletPhone(actorUser.phone);
+  if (!/^09\d{9}$/.test(actorPhone)) {
+    throw new Error('INVALID_IRAN_MOBILE_PHONE');
+  }
+
+  let targetPhone = actorPhone;
+  if (
+    input.type === 'REFUND_CANCEL' &&
+    input.targetCustomerPhone &&
+    input.targetCustomerPhone !== actorPhone
+  ) {
+    // فقط مدیر کل یا صاحب کسب‌وکارِ مالکِ نوبت می‌تواند اعتبار لغو را به کیف پول مشتری دیگری واریز کند
+    if (actorUser.isPlatformAdmin) {
+      targetPhone = input.targetCustomerPhone;
+    } else if (actorUser.businessMemberships.length > 0 && input.appointmentReferenceCode) {
+      const ownedBizUuids = actorUser.businessMemberships.map(
+        (m) => m.businessUuid
+      );
+      const aptCheck = await pool.query(
+        `
+        SELECT a.id
+        FROM appointments a
+        WHERE a.reference_code = $1
+          AND a.business_id::text = ANY($2::text[])
+        LIMIT 1
+        `,
+        [input.appointmentReferenceCode, ownedBizUuids]
+      );
+      if (!aptCheck.rowCount) {
+        throw new Error('FORBIDDEN_WALLET_TARGET');
+      }
+      targetPhone = input.targetCustomerPhone;
+    } else {
+      throw new Error('FORBIDDEN_WALLET_TARGET');
+    }
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await ensureCustomerWalletTable(client);
+    await client.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      [`customer_wallet:${targetPhone}`]
+    );
+
+    const existingRowsRes = await client.query(
+      `
+      SELECT
+        id,
+        customer_phone,
+        customer_name,
+        tx_type,
+        amount_toman,
+        title,
+        description,
+        tracking_code,
+        appointment_ref_code,
+        created_at_jalali,
+        created_at_ms
+      FROM customer_wallet_transactions
+      WHERE customer_phone = $1
+      ORDER BY created_at_ms DESC, created_at DESC
+      LIMIT 200
+      `,
+      [targetPhone]
+    );
+    const existingTxs = existingRowsRes.rows.map((r) =>
+      mapCustomerWalletRow(r as Record<string, unknown>)
+    );
+
+    // جلوگیری از ثبت مضاعف با کد پیگیری یا کد نوبت لغوشده یکسان
+    const duplicate = existingTxs.find((item) => {
+      if (
+        input.trackingCode &&
+        item.trackingCode &&
+        item.type === input.type &&
+        item.trackingCode === input.trackingCode
+      ) {
+        return true;
+      }
+      if (
+        input.type === 'REFUND_CANCEL' &&
+        input.appointmentReferenceCode &&
+        item.type === 'REFUND_CANCEL' &&
+        item.appointmentReferenceCode === input.appointmentReferenceCode
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    if (duplicate) {
+      await client.query('COMMIT');
+      return {
+        transaction: duplicate,
+        balanceToman: computeWalletBalanceToman(existingTxs),
+        transactions: existingTxs,
+        alreadyRecorded: true,
+      };
+    }
+
+    const currentBalance = computeWalletBalanceToman(existingTxs);
+    if (input.type === 'BOOKING_PAYMENT' && currentBalance < input.amountToman) {
+      await client.query('ROLLBACK');
+      throw new Error('INSUFFICIENT_WALLET_BALANCE');
+    }
+
+    const txId = `cwtx-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    const createdAtMs = Date.now();
+    const cleanTracking =
+      input.trackingCode ||
+      `${input.type === 'TOPUP' ? 'ZP' : input.type === 'REFUND_CANCEL' ? 'RF' : 'WL'}-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const customerName =
+      targetPhone === actorPhone
+        ? input.customerName || actorUser.fullName || 'کاربر تایم تو'
+        : input.customerName || 'کاربر تایم تو';
+
+    const insertedRes = await client.query(
+      `
+      INSERT INTO customer_wallet_transactions (
+        id,
+        customer_phone,
+        customer_name,
+        tx_type,
+        amount_toman,
+        title,
+        description,
+        tracking_code,
+        appointment_ref_code,
+        created_at_jalali,
+        created_at_ms
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING
+        id,
+        customer_phone,
+        customer_name,
+        tx_type,
+        amount_toman,
+        title,
+        description,
+        tracking_code,
+        appointment_ref_code,
+        created_at_jalali,
+        created_at_ms
+      `,
+      [
+        txId,
+        targetPhone,
+        customerName,
+        input.type,
+        input.amountToman,
+        input.title,
+        input.description,
+        cleanTracking,
+        input.appointmentReferenceCode ?? null,
+        input.createdAtJalali,
+        createdAtMs,
+      ]
+    );
+
+    const insertedTx = mapCustomerWalletRow(
+      insertedRes.rows[0] as Record<string, unknown>
+    );
+    const nextTxs = [insertedTx, ...existingTxs];
+    await client.query('COMMIT');
+    return {
+      transaction: insertedTx,
+      balanceToman: computeWalletBalanceToman(nextTxs),
+      transactions: nextTxs,
+      alreadyRecorded: false,
+    };
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback error
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 

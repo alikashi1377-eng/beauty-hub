@@ -14,6 +14,7 @@ import {
   BusinessItem,
   CategoryItem,
   CustomerRecord,
+  CustomerWalletTransactionItem,
   GalleryItem,
   MarketingCampaignItem,
   OnboardingDraft,
@@ -322,6 +323,53 @@ export const realApiClient = {
     }>('/api/v1/me/profile', {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    });
+  },
+
+  async fetchMyWallet(): Promise<{
+    data: {
+      balanceToman: number;
+      transactions: CustomerWalletTransactionItem[];
+    };
+  }> {
+    return requestJson<{
+      ok: boolean;
+      data: {
+        balanceToman: number;
+        transactions: CustomerWalletTransactionItem[];
+      };
+    }>('/api/v1/me/wallet');
+  },
+
+  async recordCustomerWalletTransaction(payload: {
+    type: 'TOPUP' | 'BOOKING_PAYMENT' | 'REFUND_CANCEL';
+    amountToman: number;
+    title: string;
+    description: string;
+    trackingCode?: string;
+    appointmentReferenceCode?: string;
+    targetCustomerPhone?: string;
+    customerName?: string;
+    createdAtJalali?: string;
+  }): Promise<{
+    alreadyRecorded?: boolean;
+    data: {
+      transaction: CustomerWalletTransactionItem;
+      balanceToman: number;
+      transactions: CustomerWalletTransactionItem[];
+    };
+  }> {
+    return requestJson<{
+      ok: boolean;
+      alreadyRecorded?: boolean;
+      data: {
+        transaction: CustomerWalletTransactionItem;
+        balanceToman: number;
+        transactions: CustomerWalletTransactionItem[];
+      };
+    }>('/api/v1/me/wallet/transactions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 

@@ -27,7 +27,6 @@ import {
   CreditCard,
   Lock,
   Plus,
-  RotateCcw,
   ExternalLink,
   Info,
 } from 'lucide-react';
@@ -2820,7 +2819,6 @@ export const CustomerOverviewPage: React.FC = () => {
     customerWalletBalanceToman,
     customerWalletTransactions,
     topUpCustomerWallet,
-    requestCustomerWalletWithdrawal,
   } = usePrototypeData();
 
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
@@ -2831,11 +2829,6 @@ export const CustomerOverviewPage: React.FC = () => {
     trackId: string;
     amountToman: number;
   } | null>(null);
-  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState(100000);
-  const [withdrawDestination, setWithdrawDestination] = useState(
-    'IR820540102680020817909002'
-  );
   const [walletNotice, setWalletNotice] = useState('');
   const [walletError, setWalletError] = useState('');
 
@@ -3143,19 +3136,19 @@ export const CustomerOverviewPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* بخش کیف پول اختصاصی مشتری (شارژ، پرداخت رزرو، بازگشت بیعانه کنسلی و برداشت به شبا/کارت) */}
+      {/* بخش کیف پول اختصاصی مشتری (شارژ، پرداخت رزرو و ذخیره اعتبار بازگشت بیعانه لغو نوبت) */}
       <Card className="rounded-[28px] p-5 sm:p-6 border border-[#CBD5E1] bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] text-white space-y-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00E5FF]">
               <Wallet className="w-4 h-4" />
-              <span>کیف پول اختصاصی شما در تایم تو</span>
+              <span>کیف پول و اعتبار رزرو شما در تایم تو</span>
             </span>
             <p className="text-2xl sm:text-3xl font-black text-white tabular-nums">
               {formatPriceToman(customerWalletBalanceToman)}
             </p>
             <p className="text-xs text-slate-200 leading-relaxed">
-              قابل استفاده برای پرداخت آنی بیعانه رزرو نوبت‌ها · در صورت لغو نوبت در مهلت مجاز، بیعانه به این کیف پول واریز شده و قابل برداشت به حساب بانکی است.
+              قابل استفاده برای پرداخت آنی بیعانه رزروهای بعدی در تمام سالن‌های تایم تو · در صورت لغو نوبت مطابق قوانین سالن، بیعانه به صورت خودکار به عنوان اعتبار دائمی در این کیف پول ذخیره می‌شود.
             </p>
           </div>
 
@@ -3171,19 +3164,19 @@ export const CustomerOverviewPage: React.FC = () => {
               <Plus className="w-4 h-4" />
               <span>شارژ کیف پول (زیبال)</span>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setWalletError('');
-                setWithdrawAmount(Math.min(customerWalletBalanceToman, 200000) || 100000);
-                setIsWithdrawModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>برداشت به کارت / شبا</span>
-            </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/10 border border-white/15 px-3.5 py-2.5 text-[11px] text-slate-200">
+          <span>
+            موجودی کیف پول روی شماره موبایل شما ذخیره می‌شود و بدون تاریخ انقضا برای رزروهای بعدی قابل استفاده است. در موارد خاص جهت پیگیری استرداد بانکی با پشتیبانی در ارتباط باشید.
+          </span>
+          <Link
+            to="/help"
+            className="font-extrabold text-[#00E5FF] hover:underline shrink-0"
+          >
+            تماس با پشتیبانی
+          </Link>
         </div>
 
         {walletNotice ? (
@@ -3234,30 +3227,34 @@ export const CustomerOverviewPage: React.FC = () => {
               گردش حساب و تراکنش‌های اخیر کیف پول:
             </span>
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-              {customerWalletTransactions.slice(0, 6).map((tx) => (
-                <div
-                  key={tx.id}
-                  className="p-3 rounded-2xl bg-white/10 border border-white/15 flex flex-wrap items-center justify-between gap-2 text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-white">{tx.description}</p>
-                    <p className="text-[11px] text-slate-300 tabular-nums">
-                      {tx.createdAtJalali}
-                      {tx.trackingCode ? ` · کد پیگیری: ${tx.trackingCode}` : ''}
-                    </p>
-                  </div>
-                  <span
-                    className={`font-black tabular-nums px-2.5 py-1 rounded-xl ${
-                      tx.amountToman >= 0
-                        ? 'bg-[#10B981]/25 text-[#6EE7B7]'
-                        : 'bg-white/15 text-amber-200'
-                    }`}
+              {customerWalletTransactions.slice(0, 8).map((tx) => {
+                const isCredit =
+                  tx.type === 'TOPUP' || tx.type === 'REFUND_CANCEL';
+                return (
+                  <div
+                    key={tx.id}
+                    className="p-3 rounded-2xl bg-white/10 border border-white/15 flex flex-wrap items-center justify-between gap-2 text-xs"
                   >
-                    {tx.amountToman >= 0 ? '+' : ''}
-                    {formatPriceToman(Math.abs(tx.amountToman))}
-                  </span>
-                </div>
-              ))}
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-white">{tx.description}</p>
+                      <p className="text-[11px] text-slate-300 tabular-nums">
+                        {tx.createdAtJalali}
+                        {tx.trackingCode ? ` · کد پیگیری: ${tx.trackingCode}` : ''}
+                      </p>
+                    </div>
+                    <span
+                      className={`font-black tabular-nums px-2.5 py-1 rounded-xl ${
+                        isCredit
+                          ? 'bg-[#10B981]/25 text-[#6EE7B7]'
+                          : 'bg-white/15 text-amber-200'
+                      }`}
+                    >
+                      {isCredit ? '+' : '-'}
+                      {formatPriceToman(Math.abs(tx.amountToman))}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -3483,85 +3480,6 @@ export const CustomerOverviewPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* مودال برداشت وجه از کیف پول به کارت یا شبا */}
-      <Modal
-        isOpen={isWithdrawModalOpen}
-        onClose={() => setIsWithdrawModalOpen(false)}
-        title="درخواست تسویه و برداشت موجودی کیف پول به کارت / شبا"
-      >
-        <div className="space-y-4 text-xs">
-          <div className="p-3 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex items-center justify-between">
-            <span className="font-bold text-[#061138]">موجودی قابل برداشت:</span>
-            <span className="font-black text-sm text-[#0057FF] tabular-nums">
-              {formatPriceToman(customerWalletBalanceToman)}
-            </span>
-          </div>
-
-          {walletError ? (
-            <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] font-bold">
-              {walletError}
-            </div>
-          ) : null}
-
-          <FormField id="withdraw-amt" label="مبلغ برداشت (تومان)" required>
-            <Input
-              id="withdraw-amt"
-              dir="ltr"
-              type="number"
-              value={String(withdrawAmount)}
-              onChange={(e) =>
-                setWithdrawAmount(Math.max(0, Number(e.target.value) || 0))
-              }
-            />
-          </FormField>
-
-          <FormField
-            id="withdraw-dest"
-            label="شماره شبا (IR) یا شماره کارت ۱۶ رقمی مقصد"
-            required
-          >
-            <Input
-              id="withdraw-dest"
-              dir="ltr"
-              value={withdrawDestination}
-              onChange={(e) => setWithdrawDestination(e.target.value)}
-              placeholder="IR820540102680020817909002"
-            />
-          </FormField>
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-[#CBD5E1]">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsWithdrawModalOpen(false)}
-            >
-              انصراف
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => {
-                const res = requestCustomerWalletWithdrawal(
-                  withdrawAmount,
-                  withdrawDestination
-                );
-                if (!res) {
-                  setWalletError(
-                    'مبلغ واردشده معتبر نیست یا از موجودی کیف پول بیشتر است، و یا شماره شبا/کارت کامل وارد نشده است.'
-                  );
-                  return;
-                }
-                setWalletNotice(
-                  `درخواست واریز مبلغ ${formatPriceToman(withdrawAmount)} به حساب «${withdrawDestination}» ثبت شد و طی چرخه پایا به حساب شما واریز می‌گردد.`
-                );
-                setIsWithdrawModalOpen(false);
-              }}
-            >
-              ثبت درخواست واریز به حساب بانکی
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };
@@ -3635,7 +3553,7 @@ export const CustomerAppointmentsPage: React.FC = () => {
           </div>
           <Link to="/me">
             <Button variant="primary" size="sm">
-              مشاهده کیف پول و برداشت وجه
+              مشاهده اعتبار کیف پول
             </Button>
           </Link>
         </div>
@@ -3833,7 +3751,7 @@ export const CustomerAppointmentsPage: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between pt-2 border-t border-[#CBD5E1]">
                       <span className="font-extrabold text-[#059669]">
-                        مبلغ بازگشتی به کیف پول شما:
+                        مبلغ بازگشتی به اعتبار کیف پول (برای رزروهای بعدی):
                       </span>
                       <span className="text-sm font-black text-[#059669] tabular-nums">
                         {formatPriceToman(calculatedRefund)}

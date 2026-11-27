@@ -42,9 +42,11 @@ import {
   getBusinessAvailabilityInDb,
   getBusinessWorkspacePayloadInDb,
   getCustomerPrivatePayloadInDb,
+  getCustomerWalletTransactionsInDb,
   getSharedPlatformState,
   getZibalOrdersFromDb,
   onboardBusinessInDb,
+  recordCustomerWalletTransactionInDb,
   replyToReviewInDb,
   reportReviewInDb,
   requestOtpInDb,
@@ -66,6 +68,7 @@ import {
   upsertZibalOrderInDb,
   verifyOtpInDb,
 } from '../repositories/beautyhubRepository';
+import { validateCustomerWalletTxInput } from '../services/customerWalletLedger';
 import {
   resolveEffectiveSmsConfig,
   sendCancellationNoticeSmsViaGateway,
@@ -474,6 +477,92 @@ export function createApiV1Router(
           message: 'اطلاعات پروفایل کاربری در پایگاه داده بروزرسانی شد.',
         });
       } catch (err) {
+        handleRealModeRouteError(res, err);
+      }
+    }
+  );
+
+  /**
+   * ۱-الف-۳. دریافت موجودی و تاریخچه کیف پول مشتری احرازهویت‌شده از دیتابیس PostgreSQL
+   * GET /api/v1/me/wallet
+   */
+  router.get('/me/wallet', requireAuth, async (req: Request, res: Response) => {
+    const { pool } = await resolvePoolOrFail(res);
+    if (!pool) return;
+
+    try {
+      const data = await getCustomerWalletTransactionsInDb(
+        pool,
+        req.authUser!.phone
+      );
+      res.status(200).json({
+        ok: true,
+        mode: 'real',
+        data,
+      });
+    } catch (err) {
+      handleRealModeRouteError(res, err);
+    }
+  });
+
+  /**
+   * ۱-الف-۴. ثبت تراکنش معتبر کیف پول مشتری (شارژ، پرداخت رزرو یا استرداد بیعانه لغو نوبت) در دیتابیس
+   * برداشت بانکی مستقیم فعلاً غیرفعال است و درخواست WITHDRAWAL_REQUEST با 400 رد می‌شود.
+   * POST /api/v1/me/wallet/transactions
+   */
+  router.post(
+    '/me/wallet/transactions',
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const { pool } = await resolvePoolOrFail(res);
+      if (!pool) return;
+
+      const validated = validateCustomerWalletTxInput(req.body);
+      if (!validated.ok) {
+        res.status(400).json({
+          ok: false,
+          mode: 'real',
+          errorCode: validated.errorCode,
+          message: validated.message,
+        });
+        return;
+      }
+
+      try {
+        const result = await recordCustomerWalletTransactionInDb(
+          pool,
+          req.authUser!,
+          validated.value
+        );
+        res.status(result.alreadyRecorded ? 200 : 201).json({
+          ok: true,
+          mode: 'real',
+          alreadyRecorded: result.alreadyRecorded,
+          data: {
+            transaction: result.transaction,
+            balanceToman: result.balanceToman,
+            transactions: result.transactions,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message === 'INSUFFICIENT_WALLET_BALANCE') {
+          res.status(400).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'INSUFFICIENT_WALLET_BALANCE',
+            message: 'موجودی کیف پول برای انجام این پرداخت کافی نیست.',
+          });
+          return;
+        }
+        if (err instanceof Error && err.message === 'FORBIDDEN_WALLET_TARGET') {
+          res.status(403).json({
+            ok: false,
+            mode: 'real',
+            errorCode: 'FORBIDDEN_WALLET_TARGET',
+            message: 'شما مجاز به ثبت تراکنش برای کیف پول این کاربر نیستید.',
+          });
+          return;
+        }
         handleRealModeRouteError(res, err);
       }
     }
