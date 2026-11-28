@@ -24,15 +24,20 @@ import {
   SpecialistItem,
 } from '../../types';
 import {
+  formatCompactPriceToman,
   formatDurationMinutes,
   formatPriceToman,
   formatServicePriceDisplay,
   formatServicePriceShort,
-  formatStartingTariff,
   getAppointmentStatusMeta,
   resolveAdjacentTabBySwipe,
   toPersianDigits,
 } from '../../utils/formatters';
+import {
+  getMeaningfulServiceDescription,
+  makeServiceAddonKey,
+  shouldShowServiceDetailsTrigger,
+} from '../../utils/servicePresentation';
 import { Button } from './Button';
 import { Card } from './Card';
 import { Modal } from './Modal';
@@ -253,18 +258,11 @@ export const BusinessCard: React.FC<{
     toggleFavoriteBusiness,
   } = usePrototypeData();
 
-  const pricedServices = services
-    .filter(
-      (s) =>
-        s.isActive !== false &&
-        Number(s.priceToman) > 0 &&
-        (s.businessId === business.id || s.businessId === business.slug)
-    )
-    .map((s) => Number(s.priceToman));
-  const effectiveStartingPriceToman =
-    pricedServices.length > 0
-      ? Math.min(...pricedServices)
-      : Number(business.startingPriceToman) || 0;
+  const activeServiceCount = services.filter(
+    (s) =>
+      s.isActive !== false &&
+      (s.businessId === business.id || s.businessId === business.slug)
+  ).length;
 
   const resolvedFavorite =
     typeof isFavorite === 'boolean'
@@ -422,10 +420,11 @@ export const BusinessCard: React.FC<{
 
         {/* نوار تمام‌عرض پایین کارت برای جلوگیری کامل از بیرون‌زدگی دکمه رزرو در موبایل */}
         <div className="pt-2.5 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs tabular-nums min-w-0">
-            <span className="text-[10px] text-[#64748B] ml-1">شروع از:</span>
-            <span className="font-extrabold text-[#061138]">
-              {formatStartingTariff(effectiveStartingPriceToman)}
+          <div className="text-xs tabular-nums min-w-0 text-[#475569]">
+            <span className="font-bold text-[#061138]">
+              {activeServiceCount > 0
+                ? `${toPersianDigits(activeServiceCount)} خدمت فعال`
+                : 'رزرو آنلاین آنی'}
             </span>
           </div>
 
@@ -586,9 +585,13 @@ export const BusinessCard: React.FC<{
 
         <div className="pt-3 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-[#334155] tabular-nums min-w-0">
-            <span className="text-[10px] text-[#475569] font-semibold block">شروع تعرفه از</span>
-            <span className="font-extrabold text-[#061138] text-sm">
-              {formatStartingTariff(effectiveStartingPriceToman)}
+            <span className="text-[10px] text-[#475569] font-semibold block">
+              رزرو آنلاین ۲۴ ساعته
+            </span>
+            <span className="font-extrabold text-[#061138] text-xs sm:text-sm">
+              {activeServiceCount > 0
+                ? `${toPersianDigits(activeServiceCount)} خدمت و تعرفه`
+                : 'مشاهده خدمات و تعرفه‌ها'}
             </span>
           </div>
 
@@ -855,6 +858,8 @@ export const ServiceCard: React.FC<{
   isPopularBadge?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (service: ServiceItem) => void;
+  selectedAddonKeys?: string[];
+  onToggleAddon?: (serviceId: string, addonId: string) => void;
 }> = ({
   service,
   actionLabel = 'رزرو نوبت',
@@ -863,16 +868,18 @@ export const ServiceCard: React.FC<{
   isPopularBadge = false,
   isSelected = false,
   onToggleSelect,
+  selectedAddonKeys = [],
+  onToggleAddon,
 }) => {
   const { authUser, openAuthModal } = usePrototypeData();
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const showPopular = Boolean(service.isPopular || isPopularBadge);
-  const cleanDescription = (service.description ?? '').trim();
+  const cleanDescription = getMeaningfulServiceDescription(service);
   const packageItems = (service.packageIncludes ?? []).filter(Boolean);
-  const hasRichDetails =
-    Boolean(cleanDescription) ||
-    packageItems.length > 0 ||
-    service.title.length > 26;
+  const showDetailsTrigger = shouldShowServiceDetailsTrigger(service);
+  const availableAddons = (service.addons ?? []).filter(
+    (ad) => Boolean(ad && ad.title && ad.title.trim())
+  );
 
   return (
     <div
@@ -885,18 +892,19 @@ export const ServiceCard: React.FC<{
         onToggleSelect ? 'cursor-pointer select-none' : ''
       } ${
         isSelected
-          ? 'border-[#8B5CF6] bg-[#F5F3FF] ring-2 ring-[#8B5CF6]/15 shadow-xs'
-          : 'border-[#E6E0F5] bg-white hover:border-[#C4B5FD] hover:bg-[#FAF8FF]'
+          ? 'border-[#0057FF] bg-[#EFF6FF] ring-2 ring-[#0057FF]/15 shadow-xs'
+          : 'border-[#E6E0F5] bg-white hover:border-[#BFDBFE] hover:bg-[#F8FAFF]'
       }`}
     >
-      {/* بخش بالایی: عنوان کامل خدمت، دسته‌بندی، مدت‌زمان، خلاصه یک‌خطی و دکمه توضیحات */}
+      {/* بخش بالایی: عنوان کامل خدمت، دسته‌بندی، مدت‌زمان، خلاصه یک‌خطی و دکمه توضیحات (فقط در صورت وجود توضیحات واقعی یا اقلام پکیج) */}
       <div className="flex items-start gap-2.5">
         {onToggleSelect ? (
           <span
+            aria-hidden="true"
             className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
               isSelected
-                ? 'bg-[#8B5CF6] border-[#8B5CF6] text-white'
-                : 'bg-white border-[#C4B5FD] text-transparent'
+                ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                : 'bg-white border-[#94A3B8] text-transparent'
             }`}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -913,92 +921,72 @@ export const ServiceCard: React.FC<{
               {service.title}
             </h3>
             {showPopular ? (
-              <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
+              <span className="text-[11px] font-extrabold text-[#B45309] shrink-0">
                 ★ پرطرفدار
               </span>
             ) : null}
           </div>
 
-          {/* خلاصه کوتاه توضیحات یا اقلام در حالت بسته برای خوانایی بهتر موبایل */}
-          {!isDetailsOpen && (cleanDescription || packageItems.length > 0) ? (
-            <p className="text-[11px] text-[#6B6480] line-clamp-1 leading-relaxed">
-              {cleanDescription || `شامل: ${packageItems.join('، ')}`}
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#6B6480] pt-0.5">
-            <span className="px-2 py-0.5 rounded-md bg-[#F3EEFF] font-bold text-[#7C3AED]">
-              {service.category}
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] pt-0.5">
+            <span className="font-bold text-[#334155]">{service.category}</span>
+            <span aria-hidden="true" className="text-[#CBD5E1]">
+              ·
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E6E0F5] tabular-nums font-bold text-[#4B445E]">
-              <Clock className="w-3 h-3 text-[#8B5CF6]" />
+            <span className="inline-flex items-center gap-1 tabular-nums font-bold text-[#475569]">
+              <Clock className="w-3 h-3 text-[#0057FF]" />
               {formatDurationMinutes(service.durationMinutes)}
             </span>
 
-            {/* دکمه کلیک‌تریگر توضیحات کامل و موارد شامل خدمت / پکیج */}
-            <button
-              type="button"
-              aria-expanded={isDetailsOpen}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsDetailsOpen((prev) => !prev);
-              }}
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
-                isDetailsOpen
-                  ? 'bg-[#8B5CF6] text-white'
-                  : hasRichDetails
-                    ? 'bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE]'
-                    : 'bg-[#F8FAFC] text-[#6B6480] border border-[#E6E0F5] hover:bg-[#EDE9FE]'
-              }`}
-            >
-              <Info className="w-3 h-3 shrink-0" />
-              <span>
-                {isDetailsOpen
-                  ? 'بستن جزئیات ▴'
-                  : packageItems.length > 0
-                    ? `شامل ${toPersianDigits(packageItems.length)} مورد ▾`
-                    : 'توضیحات خدمت ▾'}
-              </span>
-            </button>
+            {showDetailsTrigger ? (
+              <button
+                type="button"
+                aria-expanded={isDetailsOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDetailsOpen((prev) => !prev);
+                }}
+                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold transition-colors cursor-pointer ${
+                  isDetailsOpen
+                    ? 'bg-[#0057FF] text-white'
+                    : 'bg-[#EFF6FF] text-[#0057FF] hover:bg-[#DBEAFE]'
+                }`}
+              >
+                <Info className="w-3 h-3 shrink-0" />
+                <span>
+                  {isDetailsOpen
+                    ? 'بستن جزئیات ▴'
+                    : packageItems.length > 0
+                      ? `شامل ${toPersianDigits(packageItems.length)} مورد ▾`
+                      : 'توضیحات ▾'}
+                </span>
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
       {/* کشوی بازشوی توضیحات کامل خدمت و اقلام شامل پکیج */}
-      {isDetailsOpen ? (
+      {isDetailsOpen && showDetailsTrigger ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="mt-2.5 rounded-xl bg-[#FAF8FF] border border-[#E6E0F5] p-3 space-y-2 text-xs cursor-default"
+          className="mt-2.5 rounded-xl bg-white border border-[#CBD5E1] p-3 space-y-2 text-xs cursor-default"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-extrabold text-[#1E1B2E] leading-relaxed">
-              {service.title}
-            </span>
-            <span className="text-[11px] font-bold text-[#7C3AED] tabular-nums">
-              مدت‌زمان: {formatDurationMinutes(service.durationMinutes)}
-            </span>
-          </div>
-
           {cleanDescription ? (
-            <p className="text-[#4B445E] leading-relaxed whitespace-pre-line">
+            <p className="text-[#334155] leading-relaxed whitespace-pre-line">
               {cleanDescription}
-            </p>
-          ) : packageItems.length === 0 ? (
-            <p className="text-[#6B6480] leading-relaxed">
-              ارائه خدمت تخصصی «{service.title}» در لاین {service.category}.
             </p>
           ) : null}
 
           {packageItems.length > 0 ? (
             <div className="space-y-1.5 pt-0.5">
-              <span className="text-[11px] font-extrabold text-[#6D28D9] block">
-                این خدمت / پکیج شامل موارد زیر است:
+              <span className="text-[11px] font-extrabold text-[#0057FF] block">
+                این پکیج شامل موارد زیر است:
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {packageItems.map((item, idx) => (
                   <span
                     key={`${service.id}-inc-${idx}`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-[#DDD6FE] text-[#1E1B2E] text-[11px] font-bold shadow-2xs"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-[#061138] text-[11px] font-bold"
                   >
                     <CheckCircle2 className="w-3 h-3 text-[#10B981] shrink-0" />
                     <span>{item}</span>
@@ -1010,25 +998,78 @@ export const ServiceCard: React.FC<{
         </div>
       ) : null}
 
-      {/* نوار پایینی اختصاصی: نمایش شفاف تعرفه (ثابت / بازه‌ای / پایه از...) در سمت راست و دکمه رزرو خوش‌دست در سمت چپ */}
-      <div className="mt-3 pt-2.5 border-t border-[#E6E0F5] flex items-center justify-between gap-2">
+      {/* پیشنهاد هوشمند خدمات جانبی (افزودنی‌ها) بلافاصله زیر خدمت انتخاب‌شده */}
+      {isSelected && availableAddons.length > 0 && onToggleAddon ? (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="mt-2.5 rounded-xl bg-white border border-[#BFDBFE] p-2.5 space-y-2 cursor-default"
+        >
+          <p className="text-[11px] font-extrabold text-[#061138]">
+            موارد پیشنهادی همراه این خدمت (اختیاری):
+          </p>
+          <div className="space-y-1.5">
+            {availableAddons.map((addon) => {
+              const addonKey = makeServiceAddonKey(service.id, addon.id);
+              const isAddonChecked = selectedAddonKeys.includes(addonKey);
+              return (
+                <button
+                  key={addon.id}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isAddonChecked}
+                  onClick={() => onToggleAddon(service.id, addon.id)}
+                  className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border text-xs transition-colors cursor-pointer ${
+                    isAddonChecked
+                      ? 'bg-[#EFF6FF] border-[#0057FF] text-[#061138]'
+                      : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#334155] hover:border-[#93C5FD]'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-2 min-w-0">
+                    <span
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                        isAddonChecked
+                          ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                          : 'bg-white border-[#94A3B8] text-transparent'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                    </span>
+                    <span className="font-bold truncate">{addon.title}</span>
+                    {addon.durationMinutes ? (
+                      <span className="text-[10px] text-[#64748B] tabular-nums shrink-0">
+                        +{toPersianDigits(addon.durationMinutes)} دقیقه
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="font-extrabold text-[#0057FF] tabular-nums shrink-0">
+                    +{formatCompactPriceToman(addon.priceToman)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* نوار پایینی: نمایش شفاف تعرفه در راست و دکمه اقدام در چپ (بدون برچسب تکراری «انتخاب شد») */}
+      <div className="mt-3 pt-2.5 border-t border-[#E2E8F0] flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
             {service.pricingType === 'RANGE' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] text-[10px] font-extrabold">
+              <span className="text-[10px] font-extrabold text-[#B45309]">
                 تعرفه بازه‌ای (متغیر)
               </span>
             ) : service.pricingType === 'STARTING_FROM' ? (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F0F9FF] border border-[#BAE6FD] text-[#0369A1] text-[10px] font-extrabold">
-                قیمت پایه (شروع از)
+              <span className="text-[10px] font-extrabold text-[#0369A1]">
+                قیمت پایه
               </span>
             ) : (
-              <span className="text-[10px] font-bold text-[#6B6480]">
+              <span className="text-[10px] font-bold text-[#64748B]">
                 تعرفه خدمت:
               </span>
             )}
           </div>
-          <span className="text-xs sm:text-sm font-black text-[#1E1B2E] tabular-nums block leading-snug">
+          <span className="text-xs sm:text-sm font-black text-[#061138] tabular-nums block leading-snug">
             {formatServicePriceDisplay(service)}
           </span>
         </div>
@@ -1048,7 +1089,7 @@ export const ServiceCard: React.FC<{
                 });
               }
             }}
-            className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+            className="px-4 py-2 rounded-xl bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors shadow-2xs shrink-0"
           >
             <span>{actionLabel}</span>
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -1060,20 +1101,14 @@ export const ServiceCard: React.FC<{
               e.stopPropagation();
               onSelect(service);
             }}
-            className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-[0_4px_12px_-3px_rgba(139,92,246,0.4)] shrink-0"
+            className="px-4 py-2 rounded-xl bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs shrink-0"
           >
             <span>{actionLabel}</span>
             <ArrowLeft className="w-3.5 h-3.5" />
           </button>
-        ) : onToggleSelect ? (
-          <span
-            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 ${
-              isSelected
-                ? 'bg-[#8B5CF6] text-white'
-                : 'bg-[#F3EEFF] text-[#6D28D9] hover:bg-[#EDE9FE]'
-            }`}
-          >
-            {isSelected ? 'انتخاب شد ✓' : '+ انتخاب خدمت'}
+        ) : onToggleSelect && !isSelected ? (
+          <span className="px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 bg-[#F1F5F9] text-[#061138] hover:bg-[#E0E7FF] hover:text-[#0057FF]">
+            + انتخاب خدمت
           </span>
         ) : null}
       </div>

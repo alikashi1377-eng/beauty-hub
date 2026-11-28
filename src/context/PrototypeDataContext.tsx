@@ -82,12 +82,14 @@ import {
   AccountRoleChoice,
   AuthFlowScreen,
   getSavedMemoryAccounts,
+  LAST_SAVED_CREDENTIAL_KEY,
   PERSISTED_SESSION_USER_KEY,
   removeMemoryAccount,
   saveMemoryAccount,
   updateMemoryAccountPhoneOrProfile,
 } from '../components/auth/timetoAuthFlow';
 import { saveVisitorRole } from '../components/home/timetoHomeData';
+import { resolveCurrentUserBusiness } from '../utils/businessResolution';
 
 let uniqueIdCounter = 0;
 function makeUniqueId(prefix: string): string {
@@ -158,6 +160,7 @@ interface PrototypeDataContextValue {
     fullName?: string;
     phone?: string;
     defaultCity?: string;
+    avatarUrl?: string | null;
   }) => Promise<boolean>;
   updateAdminUserRecord: (
     phone: string,
@@ -187,7 +190,7 @@ interface PrototypeDataContextValue {
   updateBusinessWorkingHours: (
     businessId: string,
     hours: WorkingHourItem[]
-  ) => void;
+  ) => Promise<boolean>;
   updateBusinessApproval: (businessId: string, status: ApprovalStatus) => void;
   adminReviewedBizIds: string[];
   grantBusinessPlanOrAdByAdmin: (input: {
@@ -411,8 +414,8 @@ const INITIAL_ONBOARDING_DRAFT: OnboardingDraft = {
   instagramHandle: '',
   avatarUrl: '',
   city: 'اصفهان',
-  neighborhood: 'چهارباغ بالا',
-  address: 'اصفهان، چهارباغ بالا',
+  neighborhood: '',
+  address: '',
   mapLat: 32.6288,
   mapLng: 51.6621,
   shortDescription: '',
@@ -989,6 +992,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
               ? override.maxPriceToman ?? srv.maxPriceToman
               : undefined,
           packageIncludes: override.packageIncludes ?? srv.packageIncludes,
+          addons: override.addons ?? srv.addons,
         });
       }
       for (const created of createdServices) {
@@ -1699,70 +1703,12 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [toast?.id]);
 
   const currentBusiness: BusinessItem | null = React.useMemo(() => {
-    if (ownedBusinessId) {
-      const foundOwned = businesses.find((b) => b.id === ownedBusinessId);
-      if (foundOwned && !foundOwned.isSampleShowcase) return foundOwned;
-    }
-    const firstMembership = authUser?.businessMemberships?.[0];
-    if (firstMembership) {
-      const foundMemberBiz = businesses.find(
-        (b) =>
-          b.id === firstMembership.businessId ||
-          b.slug === firstMembership.businessSlug ||
-          b.id === firstMembership.businessUuid
-      );
-      if (foundMemberBiz && !foundMemberBiz.isSampleShowcase)
-        return foundMemberBiz;
-    }
-    const nonSampleBiz = businesses.find(
-      (b) => !b.isSampleShowcase && !/^biz-[1-8]$/.test(b.id)
-    );
-    if (nonSampleBiz) return nonSampleBiz;
-
-    let overrides: Record<string, Partial<BusinessItem>> = {};
-    try {
-      const overridesRaw = window.localStorage.getItem('timeto_biz_overrides_v2');
-      if (overridesRaw) overrides = JSON.parse(overridesRaw);
-    } catch {
-      // ignore
-    }
-
-    const zeroBiz: BusinessItem = {
-      id: 'biz-owner-zero',
-      slug: 'my-salon-workspace',
-      name: authUser?.fullName
-        ? `سالن زیبایی ${authUser.fullName}`
-        : 'سالن زیبایی من',
-      type: BusinessType.WomenSalon,
-      typeLabel: 'سالن زیبایی زنانه',
-      categorySlug: 'hair-color',
-      city: authUser?.defaultCity || 'اصفهان',
-      neighborhood: '',
-      address: '',
-      phoneDisplay: authUser?.phone || '',
-      ownerName: authUser?.fullName || 'مدیر سالن',
-      ownerPhone: authUser?.phone || '',
-      createdAtJalali: 'امروز',
-      rating: 5.0,
-      reviewCount: 0,
-      startingPriceToman: 0,
-      shortDescription: '',
-      aboutText: '',
-      verifiedBadge: true,
-      approvalStatus: 'APPROVED',
-      subscriptionPlan: 'شروع رایگان',
-      subscriptionStatus: SubscriptionStatus.Trial,
-      trialDaysRemaining: 30,
-      extraSmsBalance: 0,
-      smsSentCount: 0,
-      workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
-      workingHoursConfigured: false,
-      visualTheme: 'violet',
-      featured: false,
-      isSampleShowcase: false,
-      ...(overrides['biz-owner-zero'] || {}),
-    };
-    return zeroBiz;
+    return resolveCurrentUserBusiness({
+      authUser,
+      ownedBusinessId,
+      businesses,
+      fallbackWorkingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+    });
   }, [ownedBusinessId, authUser, businesses]);
 
   const loadAuthenticatedRoleData = async (
@@ -2953,7 +2899,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           payload.salonInfo?.businessType ?? BusinessType.WomenSalon;
         const salonCity = payload.salonInfo?.city?.trim() || 'اصفهان';
         const salonNeighborhood =
-          payload.salonInfo?.neighborhood?.trim() || 'چهارباغ بالا';
+          payload.salonInfo?.neighborhood?.trim() || '';
         const isLaserCenter =
           payload.salonInfo?.categorySlug === 'laser-hair-removal' ||
           salonName.includes('لیزر') ||
@@ -2982,7 +2928,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           targetGender: isLaserCenter ? 'BOTH' : undefined,
           city: salonCity,
           neighborhood: salonNeighborhood,
-          address: `${salonCity}، ${salonNeighborhood}`,
+          address: '',
           phoneDisplay: payload.phone,
           ownerName: payload.fullName,
           ownerPhone: payload.phone,
@@ -2990,7 +2936,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           rating: 5.0,
           reviewCount: 0,
           startingPriceToman: 0,
-          shortDescription: `${isLaserCenter ? 'مرکز تخصصی لیزر' : 'مرکز تخصصی زیبایی'} ${salonName} در ${salonCity}`,
+          shortDescription: '',
           aboutText: '',
           verifiedBadge: false,
           approvalStatus: 'PENDING_REVIEW',
@@ -2999,7 +2945,9 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           trialDaysRemaining: 30,
           extraSmsBalance: 0,
           smsSentCount: 0,
-          workingHours: INITIAL_ONBOARDING_DRAFT.workingHours,
+          workingHours: INITIAL_ONBOARDING_DRAFT.workingHours.map((h) => ({
+            ...h,
+          })),
           workingHoursConfigured: false,
           contractAccepted: false,
           visualTheme: 'violet',
@@ -3221,14 +3169,48 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           Array.isArray(syncRes.businesses) &&
           syncRes.businesses.length > 0
         ) {
-          setBusinesses(
-            mergeBusinessOverrides(syncRes.businesses, syncRes.registeredUsers, true)
+          const syncedList = mergeBusinessOverrides(
+            syncRes.businesses,
+            syncRes.registeredUsers,
+            true
           );
+          setBusinesses(syncedList);
+          if (payload.role === 'BUSINESS_OWNER') {
+            const matchedServerBiz = syncedList.find((b) => {
+              if (b.isSampleShowcase || /^biz-[1-8]$/.test(b.id)) return false;
+              const bPhone = toEnglishDigitsClient(
+                String(b.ownerPhone || b.phoneDisplay || '')
+              ).replace(/\D/g, '');
+              return (
+                (syncRes.user?.businessMemberships || []).some(
+                  (m) =>
+                    m.businessId === b.id ||
+                    m.businessSlug === b.slug ||
+                    m.businessUuid === b.id
+                ) ||
+                (cleanCurrentPhone && bPhone === cleanCurrentPhone) ||
+                (createdBusinessId && b.id === createdBusinessId) ||
+                (createdBusinessSlug && b.slug === createdBusinessSlug)
+              );
+            });
+            if (matchedServerBiz) {
+              setOwnedBusinessId(matchedServerBiz.id);
+              try {
+                window.localStorage.setItem(
+                  'timeto_owned_business_id_v1',
+                  matchedServerBiz.id
+                );
+              } catch {
+                // ignore
+              }
+            }
+          }
         }
         if (syncRes.user) {
           sessionUser = {
             ...syncRes.user,
             fullName: payload.fullName || syncRes.user.fullName,
+            avatarUrl: payload.avatarUrl || syncRes.user.avatarUrl,
             roles:
               payload.role === 'BUSINESS_OWNER' &&
               !syncRes.user.roles.includes('BUSINESS_OWNER')
@@ -3237,6 +3219,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           };
           setAuthUser(sessionUser);
         }
+        setOnboardingDraft(INITIAL_ONBOARDING_DRAFT);
       } catch {
         // در ادامه تلاش مستقیم برای ذخیره رمز با نشست فعال OTP انجام می‌شود
       }
@@ -3363,9 +3346,11 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     saveSessionTokenToStorage(null);
     setAuthUser(null);
     setOwnedBusinessId(null);
+    setOnboardingDraft(INITIAL_ONBOARDING_DRAFT);
     try {
       window.localStorage.removeItem(PERSISTED_SESSION_USER_KEY);
       window.localStorage.removeItem('timeto_owned_business_id_v1');
+      window.localStorage.removeItem(LAST_SAVED_CREDENTIAL_KEY);
     } catch {
       // ignore
     }
@@ -3376,6 +3361,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     fullName?: string;
     phone?: string;
     defaultCity?: string;
+    avatarUrl?: string | null;
   }): Promise<boolean> => {
     const currentPhone = authUser?.phone || '';
     const requestedPhone = patch.phone
@@ -3390,11 +3376,21 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
+    const resolvedAvatarValue =
+      patch.avatarUrl === undefined
+        ? authUser?.avatarUrl
+        : patch.avatarUrl && patch.avatarUrl.trim()
+          ? patch.avatarUrl.trim()
+          : undefined;
+
     if (currentPhone) {
       const memUpdate = updateMemoryAccountPhoneOrProfile(currentPhone, {
         newPhone: requestedPhone || currentPhone,
         fullName: patch.fullName,
         city: patch.defaultCity,
+        ...(patch.avatarUrl !== undefined
+          ? { avatarUrl: resolvedAvatarValue ?? '' }
+          : {}),
       });
       if (!memUpdate.ok) {
         showToast(
@@ -3449,12 +3445,17 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         const res = await realApiClient.updateMyProfile({
           fullName: patch.fullName,
           defaultCity: patch.defaultCity,
+          ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
         });
         const updatedUser: AuthenticatedSessionUser = {
           ...res.user,
           fullName: patch.fullName?.trim() || res.user.fullName,
           phone: requestedPhone || res.user.phone,
           defaultCity: patch.defaultCity?.trim() || res.user.defaultCity,
+          avatarUrl:
+            patch.avatarUrl !== undefined
+              ? resolvedAvatarValue
+              : res.user.avatarUrl ?? authUser?.avatarUrl,
         };
         setAuthUser(updatedUser);
         setBookingDraft((prev) => ({
@@ -3463,7 +3464,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
           customerPhone: updatedUser.phone || prev.customerPhone,
         }));
         setAccountsRevision((r) => r + 1);
-        showToast('مشخصات کاربری و شماره همراه بروزرسانی شد.', 'success');
+        showToast('مشخصات کاربری با موفقیت بروزرسانی شد.', 'success');
         return true;
       } catch {
         // در صورت خطای شبکه یا حساب محلی، تغییرات روی نشست و حافظه اعمال شود
@@ -3476,6 +3477,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
         fullName: patch.fullName?.trim() || authUser.fullName,
         phone: requestedPhone || authUser.phone,
         defaultCity: patch.defaultCity?.trim() || authUser.defaultCity,
+        avatarUrl: resolvedAvatarValue,
       };
       setAuthUser(updatedSession);
       setBookingDraft((prev) => ({
@@ -3485,7 +3487,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }));
     }
     setAccountsRevision((r) => r + 1);
-    showToast('تغییرات پروفایل و شماره همراه ذخیره شد.');
+    showToast('تغییرات پروفایل کاربری ذخیره شد.');
     return true;
   };
 
@@ -3916,10 +3918,33 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const updateBusinessWorkingHours = (
+  const updateBusinessWorkingHours = async (
     businessId: string,
     hours: WorkingHourItem[]
-  ) => {
+  ): Promise<boolean> => {
+    const applyHoursToBusinessesState = (savedHours: WorkingHourItem[]) => {
+      setBusinesses((prev) => {
+        const matchesTarget = (b: BusinessItem) =>
+          b.id === businessId ||
+          b.slug === businessId ||
+          (currentBusiness && b.id === currentBusiness.id);
+        const exists = prev.some(matchesTarget);
+        const baseList =
+          !exists && currentBusiness && currentBusiness.id === businessId
+            ? [currentBusiness, ...prev]
+            : prev;
+        return baseList.map((b) =>
+          matchesTarget(b)
+            ? {
+                ...b,
+                workingHours: savedHours,
+                workingHoursConfigured: true,
+              }
+            : b
+        );
+      });
+    };
+
     const persistHoursOverride = (savedHours: WorkingHourItem[]) => {
       try {
         const overridesRaw =
@@ -3939,47 +3964,39 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     };
 
+    // بروزرسانی همزمان و فوری در state تا مراحل ویزارد هرگز دوباره به ساعات کاری برنگردند
+    applyHoursToBusinessesState(hours);
+    persistHoursOverride(hours);
+
     if (dataMode === 'real') {
-      void realApiClient
-        .updateBusinessWorkingHours(businessId, hours)
-        .then((res) => {
-          persistHoursOverride(res.workingHours);
-          setBusinesses((prev) =>
-            prev.map((b) =>
-              b.id === businessId
-                ? {
-                    ...b,
-                    workingHours: res.workingHours,
-                    workingHoursConfigured: true,
-                  }
-                : b
-            )
-          );
-          showToast('ساعات کاری هفتگی در پایگاه داده ذخیره و در پیشرفت پروفایل لحاظ شد.');
-        })
-        .catch(() => {
-          persistHoursOverride(hours);
-          setBusinesses((prev) =>
-            prev.map((b) =>
-              b.id === businessId
-                ? { ...b, workingHours: hours, workingHoursConfigured: true }
-                : b
-            )
-          );
-          showToast('ساعات کاری هفتگی ذخیره و در پیشرفت پروفایل شما ثبت شد.');
-        });
-      return;
+      try {
+        const res = await realApiClient.updateBusinessWorkingHours(
+          businessId,
+          hours
+        );
+        persistHoursOverride(res.workingHours);
+        applyHoursToBusinessesState(res.workingHours);
+        showToast(
+          'ساعات کاری هفتگی در پایگاه داده ذخیره و در پیشرفت پروفایل لحاظ شد.'
+        );
+        return true;
+      } catch {
+        // تلاش پشتیبان از طریق پروفایل تا workingHoursConfigured در سرور هم قطعی ثبت شود
+        try {
+          await realApiClient.updateBusinessProfile(businessId, {
+            workingHours: hours,
+            workingHoursConfigured: true,
+          });
+        } catch {
+          // وضعیت محلی قبلاً اعمال شده است
+        }
+        showToast('ساعات کاری هفتگی ذخیره و در پیشرفت پروفایل شما ثبت شد.');
+        return true;
+      }
     }
 
-    persistHoursOverride(hours);
-    setBusinesses((prev) =>
-      prev.map((b) =>
-        b.id === businessId
-          ? { ...b, workingHours: hours, workingHoursConfigured: true }
-          : b
-      )
-    );
     showToast('ساعات کاری هفتگی ذخیره و در پیشرفت پروفایل ثبت شد.');
+    return true;
   };
 
   const updateBusinessApproval = (
@@ -4588,6 +4605,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             pricingType: item.pricingType ?? res.item.pricingType ?? 'FIXED',
             maxPriceToman: item.maxPriceToman ?? res.item.maxPriceToman,
             packageIncludes: item.packageIncludes ?? res.item.packageIncludes,
+            addons: item.addons ?? res.item.addons,
           };
           applyAddLocal(mergedItem);
           const syncToken = getSavedSessionToken();
@@ -4677,12 +4695,15 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             mergedPatch.packageIncludes !== undefined
               ? mergedPatch.packageIncludes
               : s.packageIncludes;
+          const nextAddons =
+            mergedPatch.addons !== undefined ? mergedPatch.addons : s.addons;
           return {
             ...s,
             ...mergedPatch,
             pricingType: nextPricingType,
             maxPriceToman: nextMaxPriceToman,
             packageIncludes: nextPackageIncludes,
+            addons: nextAddons,
           };
         });
         persistLocalServices(next);
@@ -4726,6 +4747,7 @@ export const PrototypeDataProvider: React.FC<{ children: React.ReactNode }> = ({
             ...(patch.packageIncludes !== undefined
               ? { packageIncludes: patch.packageIncludes }
               : {}),
+            ...(patch.addons !== undefined ? { addons: patch.addons } : {}),
           });
           showToast('ویرایش خدمت ذخیره شد.');
         })

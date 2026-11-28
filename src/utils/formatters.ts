@@ -465,10 +465,16 @@ export function formatDurationMinutes(minutes: number): string {
 export function computeSelectedServicesSummary(
   availableServices: ServiceItem[],
   selectedIds?: string[],
-  fallbackServiceId?: string
+  fallbackServiceId?: string,
+  selectedAddonKeys?: string[]
 ): {
   selectedServices: ServiceItem[];
   services: ServiceItem[];
+  selectedAddons: Array<{
+    key: string;
+    serviceId: string;
+    addon: NonNullable<ServiceItem['addons']>[number];
+  }>;
   combinedTitle: string;
   totalDurationMinutes: number;
   totalPriceToman: number;
@@ -487,22 +493,44 @@ export function computeSelectedServicesSummary(
       ? [availableServices[0]]
       : [];
 
+  const addonKeySet = new Set(selectedAddonKeys ?? []);
+  const selectedAddons: Array<{
+    key: string;
+    serviceId: string;
+    addon: NonNullable<ServiceItem['addons']>[number];
+  }> = [];
+  if (addonKeySet.size > 0) {
+    for (const srv of selectedServices) {
+      for (const addon of srv.addons ?? []) {
+        const key = `${srv.id}::${addon.id}`;
+        if (addonKeySet.has(key)) {
+          selectedAddons.push({ key, serviceId: srv.id, addon });
+        }
+      }
+    }
+  }
+
+  const titleParts = [
+    ...selectedServices.map((s) => s.title),
+    ...selectedAddons.map((item) => item.addon.title),
+  ];
+
   const combinedTitle =
-    selectedServices.length > 0
-      ? selectedServices.map((s) => s.title).join(' + ')
-      : 'خدمت زیبایی';
-  const totalDurationMinutes = selectedServices.reduce(
-    (sum, s) => sum + (s.durationMinutes || 0),
-    0
-  );
-  const totalPriceToman = selectedServices.reduce(
-    (sum, s) => sum + (s.priceToman || 0),
-    0
-  );
+    titleParts.length > 0 ? titleParts.join(' + ') : 'خدمت زیبایی';
+  const totalDurationMinutes =
+    selectedServices.reduce((sum, s) => sum + (s.durationMinutes || 0), 0) +
+    selectedAddons.reduce(
+      (sum, item) => sum + (item.addon.durationMinutes || 0),
+      0
+    );
+  const totalPriceToman =
+    selectedServices.reduce((sum, s) => sum + (s.priceToman || 0), 0) +
+    selectedAddons.reduce((sum, item) => sum + (item.addon.priceToman || 0), 0);
 
   return {
     selectedServices,
     services: selectedServices,
+    selectedAddons,
     combinedTitle,
     totalDurationMinutes: totalDurationMinutes || 60,
     totalPriceToman: totalPriceToman || 0,

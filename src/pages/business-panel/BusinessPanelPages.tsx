@@ -35,9 +35,14 @@ import {
   AppointmentStatus,
   BusinessItem,
   CustomerRecord,
+  ServiceAddonItem,
   ServiceItem,
   SpecialistItem,
 } from '../../types';
+import {
+  getMeaningfulServiceDescription,
+  sanitizeServiceAddons,
+} from '../../utils/servicePresentation';
 import {
   CATEGORY_PACKAGE_STAGE_CHECKLISTS,
   FACIAL_SERVICE_PRESETS,
@@ -401,7 +406,7 @@ export const BusinessDashboardPage: React.FC = () => {
     settleAppointmentInPerson,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const [settlingApt, setSettlingApt] = useState<AppointmentItem | null>(null);
 
   const bizServicesList = currentBiz
@@ -1012,7 +1017,7 @@ export const BusinessDashboardPage: React.FC = () => {
 
       <InPersonSettlementModal
         appointment={settlingApt}
-        business={currentBiz}
+        business={currentBiz ?? undefined}
         matchedService={bizServicesList.find(
           (s) =>
             s.id === settlingApt?.serviceId ||
@@ -1244,7 +1249,7 @@ export const BusinessCalendarPage: React.FC = () => {
     settleAppointmentInPerson,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
@@ -2161,7 +2166,7 @@ export const BusinessCalendarPage: React.FC = () => {
 
       <InPersonSettlementModal
         appointment={settlingApt}
-        business={currentBiz}
+        business={currentBiz ?? undefined}
         matchedService={bizServicesList.find(
           (s) =>
             s.id === settlingApt?.serviceId ||
@@ -2187,7 +2192,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
     updateAppointmentStatus,
     settleAppointmentInPerson,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | 'ALL'>(
     'ALL'
   );
@@ -2629,7 +2634,7 @@ export const BusinessAppointmentsPage: React.FC = () => {
 
       <InPersonSettlementModal
         appointment={settlingApt}
-        business={currentBiz}
+        business={currentBiz ?? undefined}
         matchedService={bizServicesList.find(
           (s) =>
             s.id === settlingApt?.serviceId ||
@@ -2660,7 +2665,7 @@ export const BusinessServicesPage: React.FC = () => {
     updateBusinessProfile,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
 
   // تشخیص دقیق حوزه تخصصی کسب‌وکار تا فقط کیت مربوط به همان حوزه نمایش داده شود
   const detectedPrimaryCategory = React.useMemo(() => {
@@ -2762,6 +2767,10 @@ export const BusinessServicesPage: React.FC = () => {
     []
   );
   const [customStageInput, setCustomStageInput] = useState('');
+  const [serviceAddons, setServiceAddons] = useState<ServiceAddonItem[]>([]);
+  const [addonTitleInput, setAddonTitleInput] = useState('');
+  const [addonPriceInput, setAddonPriceInput] = useState('');
+  const [addonDurationInput, setAddonDurationInput] = useState('');
   const [description, setDescription] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [stagesPickerOpen, setStagesPickerOpen] = useState(false);
@@ -3080,6 +3089,10 @@ export const BusinessServicesPage: React.FC = () => {
     setMaxPriceToman(formatNumericInputWithCommas('980000'));
     setSelectedPackageStages([]);
     setCustomStageInput('');
+    setServiceAddons([]);
+    setAddonTitleInput('');
+    setAddonPriceInput('');
+    setAddonDurationInput('');
     setDescription('');
     setFormErrors({});
     setStagesPickerOpen(false);
@@ -3107,7 +3120,11 @@ export const BusinessServicesPage: React.FC = () => {
     );
     setSelectedPackageStages(stages);
     setCustomStageInput('');
-    setDescription(srv.description);
+    setServiceAddons(srv.addons ? [...srv.addons] : []);
+    setAddonTitleInput('');
+    setAddonPriceInput('');
+    setAddonDurationInput('');
+    setDescription(getMeaningfulServiceDescription(srv));
     setFormErrors({});
     setStagesPickerOpen(false);
     setNotesPickerOpen(false);
@@ -3131,6 +3148,34 @@ export const BusinessServicesPage: React.FC = () => {
       setSelectedPackageStages((prev) => [...prev, clean]);
     }
     setCustomStageInput('');
+  };
+
+  const handleAddAddonInModal = () => {
+    const cleanTitle = addonTitleInput.trim();
+    const numericAddonPrice = parseNumericInput(addonPriceInput);
+    const numericAddonDuration = parseNumericInput(addonDurationInput);
+    if (!cleanTitle) {
+      showToast('لطفاً عنوان خدمت جانبی (مثلاً شست‌وشوی سر یا وکس) را وارد کنید.', 'warning');
+      return;
+    }
+    setServiceAddons((prev) => [
+      ...prev,
+      {
+        id: `addon-${Date.now()}-${prev.length + 1}`,
+        title: cleanTitle,
+        priceToman: Math.max(0, numericAddonPrice),
+        ...(numericAddonDuration > 0
+          ? { durationMinutes: Math.min(240, numericAddonDuration) }
+          : {}),
+      },
+    ]);
+    setAddonTitleInput('');
+    setAddonPriceInput('');
+    setAddonDurationInput('');
+  };
+
+  const handleRemoveAddonInModal = (addonId: string) => {
+    setServiceAddons((prev) => prev.filter((ad) => ad.id !== addonId));
   };
 
   const handleSaveService = (e: React.FormEvent) => {
@@ -3204,6 +3249,12 @@ export const BusinessServicesPage: React.FC = () => {
           )
         : undefined;
 
+    const finalAddons =
+      serviceMode === 'SINGLE'
+        ? sanitizeServiceAddons(serviceAddons)
+        : undefined;
+    const cleanOptionalDesc = description.trim();
+
     if (editingService) {
       updateService(editingService.id, {
         categorySlug: resolvedCategorySlug,
@@ -3214,7 +3265,8 @@ export const BusinessServicesPage: React.FC = () => {
         priceToman: numericPrice,
         maxPriceToman: resolvedMaxPrice,
         packageIncludes: finalStages.length > 0 ? finalStages : undefined,
-        description: description.trim() || 'خدمت تخصصی زیبایی',
+        addons: finalAddons,
+        description: cleanOptionalDesc,
       });
     } else {
       const createdSrv: ServiceItem = {
@@ -3228,7 +3280,8 @@ export const BusinessServicesPage: React.FC = () => {
         priceToman: numericPrice,
         maxPriceToman: resolvedMaxPrice,
         packageIncludes: finalStages.length > 0 ? finalStages : undefined,
-        description: description.trim() || 'خدمت تخصصی سالن زیبایی',
+        addons: finalAddons,
+        description: cleanOptionalDesc,
         isActive: true,
       };
       addService({
@@ -3241,6 +3294,7 @@ export const BusinessServicesPage: React.FC = () => {
         priceToman: createdSrv.priceToman,
         maxPriceToman: createdSrv.maxPriceToman,
         packageIncludes: createdSrv.packageIncludes,
+        addons: createdSrv.addons,
         description: createdSrv.description,
         isActive: true,
       });
@@ -4159,9 +4213,11 @@ export const BusinessServicesPage: React.FC = () => {
                           ) : null}
                         </div>
 
-                        <p className="text-xs text-[#6B6480] leading-relaxed">
-                          {s.description}
-                        </p>
+                        {getMeaningfulServiceDescription(s) ? (
+                          <p className="text-xs text-[#6B6480] leading-relaxed">
+                            {getMeaningfulServiceDescription(s)}
+                          </p>
+                        ) : null}
 
                         {s.packageIncludes && s.packageIncludes.length > 0 ? (
                           <div className="flex flex-wrap gap-1 pt-0.5">
@@ -4171,6 +4227,22 @@ export const BusinessServicesPage: React.FC = () => {
                                 className="px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[10px] font-semibold text-[#475569]"
                               >
                                 • {inc}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        {s.addons && s.addons.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            <span className="text-[10px] font-extrabold text-[#0057FF]">
+                              افزودنی‌های پیشنهادی:
+                            </span>
+                            {s.addons.map((ad) => (
+                              <span
+                                key={ad.id}
+                                className="px-2 py-0.5 rounded-md bg-[#EFF6FF] border border-[#BFDBFE] text-[10px] font-bold text-[#061138] tabular-nums"
+                              >
+                                +{ad.title} ({formatPriceToman(ad.priceToman)})
                               </span>
                             ))}
                           </div>
@@ -4744,23 +4816,115 @@ export const BusinessServicesPage: React.FC = () => {
                     </div>
                   ) : null}
                 </div>
-              ) : null}
+              ) : (
+                /* ۴.۵. افزودنی‌های پیشنهادی همراه این خدمت (فقط در حالت خدمت تکی — اختیاری) */
+                <div className="rounded-2xl bg-[#EFF6FF]/60 border border-[#BFDBFE] p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-extrabold text-[#061138] block">
+                        خدمات جانبی پیشنهادی (افزودنی‌ها — اختیاری)
+                      </span>
+                      <span className="text-[10px] text-[#475569] block">
+                        هنگام انتخاب این خدمت توسط مشتری، این موارد با مبلغشان زیر آن پیشنهاد می‌شوند تا در صورت تمایل اضافه کند.
+                      </span>
+                    </div>
+                    {serviceAddons.length > 0 ? (
+                      <span className="px-2 py-0.5 rounded-full bg-[#0057FF] text-white text-[10px] font-black tabular-nums whitespace-nowrap shrink-0">
+                        {toPersianDigits(serviceAddons.length)} مورد
+                      </span>
+                    ) : null}
+                  </div>
 
-              {/* ۵. توضیحات کوتاه (اختیاری + تگ‌های آماده بازشو) */}
+                  {serviceAddons.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {serviceAddons.map((ad) => (
+                        <div
+                          key={ad.id}
+                          className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-white border border-[#BFDBFE] text-xs"
+                        >
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="font-bold text-[#061138] truncate">
+                              {ad.title}
+                            </span>
+                            <span className="text-[11px] font-extrabold text-[#0057FF] tabular-nums shrink-0">
+                              +{formatPriceToman(ad.priceToman)}
+                            </span>
+                            {ad.durationMinutes ? (
+                              <span className="text-[10px] text-[#64748B] tabular-nums shrink-0">
+                                ({toPersianDigits(ad.durationMinutes)} دقیقه)
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAddonInModal(ad.id)}
+                            aria-label={`حذف افزودنی ${ad.title}`}
+                            className="text-rose-500 hover:text-rose-700 font-black cursor-pointer shrink-0 px-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-1.5 items-center">
+                    <input
+                      type="text"
+                      value={addonTitleInput}
+                      onChange={(e) => setAddonTitleInput(e.target.value)}
+                      placeholder="عنوان (مثلاً: شست‌وشوی سر، وکس)"
+                      className="sm:col-span-5 h-8 rounded-xl border border-[#BFDBFE] bg-white px-2.5 text-xs font-bold text-[#061138] focus:border-[#0057FF] focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      dir="ltr"
+                      inputMode="numeric"
+                      value={addonPriceInput}
+                      onChange={(e) =>
+                        setAddonPriceInput(
+                          formatNumericInputWithCommas(e.target.value)
+                        )
+                      }
+                      placeholder="مبلغ (تومان)"
+                      className="sm:col-span-3 h-8 rounded-xl border border-[#BFDBFE] bg-white px-2.5 text-xs font-bold text-[#061138] tabular-nums focus:border-[#0057FF] focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      dir="ltr"
+                      value={addonDurationInput}
+                      onChange={(e) => setAddonDurationInput(e.target.value)}
+                      placeholder="دقیقه (اختیاری)"
+                      className="sm:col-span-2 h-8 rounded-xl border border-[#BFDBFE] bg-white px-2 text-xs font-bold text-[#061138] tabular-nums focus:border-[#0057FF] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddAddonInModal}
+                      className="sm:col-span-2 h-8 px-2.5 rounded-xl bg-[#0057FF] text-white text-xs font-extrabold hover:bg-[#0044CC] cursor-pointer whitespace-nowrap"
+                    >
+                      + افزودن
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ۵. توضیحات کوتاه (کاملاً اختیاری — اگر خالی بماند دکمه توضیحات به مشتری نمایش داده نمی‌شود) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label
                     htmlFor="srv-form-desc"
                     className="text-xs font-extrabold text-[#1E1B2E]"
                   >
-                    توضیحات کوتاه{' '}
-                    <span className="font-normal text-[#94A3B8]">(اختیاری)</span>
+                    توضیحات خدمت{' '}
+                    <span className="font-normal text-[#64748B]">
+                      (اختیاری — در صورت خالی بودن به مشتری نمایش داده نمی‌شود)
+                    </span>
                   </label>
                   {currentChecklist.materialsAndNotes.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => setNotesPickerOpen((v) => !v)}
-                      className="text-[11px] font-bold text-[#0057FF] hover:underline cursor-pointer"
+                      className="text-[11px] font-bold text-[#0057FF] hover:underline cursor-pointer shrink-0"
                     >
                       {notesPickerOpen ? 'بستن تگ‌ها ▴' : '+ تگ آماده'}
                     </button>
@@ -4770,7 +4934,7 @@ export const BusinessServicesPage: React.FC = () => {
                   id="srv-form-desc"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="برند مواد، دستگاه یا نکات مهم برای مشتری..."
+                  placeholder="فقط در صورت نیاز (مثلاً برند مواد، دستگاه یا نکات مهم) بنویسید..."
                 />
                 {notesPickerOpen ? (
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -4829,7 +4993,7 @@ export const BusinessStaffPage: React.FC = () => {
     updateSpecialist,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<SpecialistItem | null>(null);
   const [fullName, setFullName] = useState('');
@@ -4870,10 +5034,10 @@ export const BusinessStaffPage: React.FC = () => {
     setEditingStaff(null);
     setFullName('');
     setRoleTitle('');
-    setSpecialtiesText('کوتاهی ژورنالی، براشینگ');
-    setStaffAvatarUrl(currentBiz?.avatarUrl || '');
-    setStaffBio('عضو تیم تخصصی مجموعه.');
-    setStaffExperienceYears('4');
+    setSpecialtiesText('');
+    setStaffAvatarUrl('');
+    setStaffBio('');
+    setStaffExperienceYears('');
     setModalOpen(true);
   };
 
@@ -5251,7 +5415,7 @@ export const BusinessCustomersPage: React.FC = () => {
     showToast,
   } = usePrototypeData();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
 
   const bizServices = React.useMemo(() => {
     const list = currentBiz
@@ -6441,7 +6605,7 @@ export const BusinessGalleryPage: React.FC = () => {
     deleteBusinessStory,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const [title, setTitle] = useState('');
   const [categoryLabel, setCategoryLabel] = useState('پوست و فیشیال');
   const [galleryImageUrl, setGalleryImageUrl] = useState('');
@@ -6902,7 +7066,7 @@ export const BusinessProfileEditPage: React.FC = () => {
     updateOnboardingDraft,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
 
   const [name, setName] = useState(currentBiz?.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(currentBiz?.avatarUrl ?? '');
@@ -6915,7 +7079,7 @@ export const BusinessProfileEditPage: React.FC = () => {
   );
   const [address, setAddress] = useState(currentBiz?.address ?? '');
   const [neighborhood, setNeighborhood] = useState(
-    currentBiz?.neighborhood ?? 'چهارباغ بالا'
+    currentBiz?.neighborhood ?? ''
   );
   const [mapLat, setMapLat] = useState<number>(currentBiz?.mapLat ?? 32.6288);
   const [mapLng, setMapLng] = useState<number>(currentBiz?.mapLng ?? 51.6621);
@@ -6942,12 +7106,16 @@ export const BusinessProfileEditPage: React.FC = () => {
     setTargetGender(currentBiz.targetGender ?? 'FEMALE');
     setInstagramHandle(currentBiz.instagramHandle ?? '');
     setAddress(currentBiz.address ?? '');
-    setNeighborhood(currentBiz.neighborhood ?? 'چهارباغ بالا');
+    setNeighborhood(currentBiz.neighborhood ?? '');
     setMapLat(currentBiz.mapLat ?? 32.6288);
     setMapLng(currentBiz.mapLng ?? 51.6621);
     setShortDesc(currentBiz.shortDescription || currentBiz.aboutText || '');
   }, [
     currentBiz?.id,
+    currentBiz?.name,
+    currentBiz?.address,
+    currentBiz?.neighborhood,
+    currentBiz?.avatarUrl,
     currentBiz?.shortDescription,
     currentBiz?.aboutText,
   ]);
@@ -7270,8 +7438,34 @@ export const BusinessWorkingHoursPage: React.FC = () => {
     updateBusinessWorkingHours,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
-  const [hours, setHours] = useState(currentBiz?.workingHours ?? []);
+  const currentBiz = currentBusiness;
+  const FALLBACK_DEFAULT_HOURS = useMemo<BusinessItem['workingHours']>(
+    () => [
+      { dayName: 'شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'یکشنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'دوشنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'سه‌شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'چهارشنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'پنج‌شنبه', isOpen: true, openTime: '۱۰:۰۰', closeTime: '۲۰:۰۰' },
+      { dayName: 'جمعه', isOpen: false, openTime: '۱۱:۰۰', closeTime: '۱۸:۰۰' },
+    ],
+    []
+  );
+
+  const [hours, setHours] = useState<BusinessItem['workingHours']>(() =>
+    currentBiz?.workingHours && currentBiz.workingHours.length > 0
+      ? currentBiz.workingHours
+      : FALLBACK_DEFAULT_HOURS
+  );
+  const [isSavingHours, setIsSavingHours] = useState(false);
+
+  useEffect(() => {
+    if (currentBiz?.workingHours && currentBiz.workingHours.length > 0) {
+      setHours(currentBiz.workingHours);
+    } else {
+      setHours(FALLBACK_DEFAULT_HOURS);
+    }
+  }, [currentBiz?.id, currentBiz?.workingHours, FALLBACK_DEFAULT_HOURS]);
 
   const handleToggleDay = (index: number) => {
     setHours((prev) =>
@@ -7503,8 +7697,9 @@ export const BusinessWorkingHoursPage: React.FC = () => {
           <div className="pt-4 border-t border-[#E6E0F5] flex flex-wrap items-center justify-between gap-3">
             <Button
               variant="primary"
-              disabled={!currentBiz}
-              onClick={() => {
+              disabled={!currentBiz || isSavingHours}
+              isLoading={isSavingHours}
+              onClick={async () => {
                 if (!currentBiz) return;
                 if (openDaysCount === 0) {
                   showToast(
@@ -7547,28 +7742,33 @@ export const BusinessWorkingHoursPage: React.FC = () => {
                   }
                 }
 
-                updateBusinessWorkingHours(currentBiz.id, hours);
+                setIsSavingHours(true);
+                try {
+                  await updateBusinessWorkingHours(currentBiz.id, hours);
 
-                const updatedBizSnapshot = {
-                  ...currentBiz,
-                  workingHours: hours,
-                  workingHoursConfigured: true,
-                };
-                const nextTarget = resolveNextOnboardingStepHref({
-                  business: updatedBizSnapshot,
-                  services,
-                  specialists,
-                  currentStepId: 'working_hours',
-                });
+                  const updatedBizSnapshot = {
+                    ...currentBiz,
+                    workingHours: hours,
+                    workingHoursConfigured: true,
+                  };
+                  const nextTarget = resolveNextOnboardingStepHref({
+                    business: updatedBizSnapshot,
+                    services,
+                    specialists,
+                    currentStepId: 'working_hours',
+                  });
 
-                if (!nextTarget.isAllCompleted) {
-                  showToast(
-                    `گام ۳ (ساعات کاری) ذخیره شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
-                  );
-                  setTimeout(() => navigate(nextTarget.nextHref), 350);
-                } else {
-                  showToast('ساعات کاری هفتگی سالن با موفقیت ذخیره شد ✓');
-                  setTimeout(() => navigate('/app'), 350);
+                  if (!nextTarget.isAllCompleted) {
+                    showToast(
+                      `گام ۳ (ساعات کاری) ذخیره شد ✓ انتقال خودکار به مرحله بعد (${nextTarget.nextTitle})`
+                    );
+                    setTimeout(() => navigate(nextTarget.nextHref), 250);
+                  } else {
+                    showToast('ساعات کاری هفتگی با موفقیت ذخیره شد ✓');
+                    setTimeout(() => navigate('/app'), 250);
+                  }
+                } finally {
+                  setIsSavingHours(false);
                 }
               }}
             >
@@ -7612,7 +7812,7 @@ export const BusinessMarketingPage: React.FC = () => {
     sendAppointmentReminders,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
 
   const [title, setTitle] = useState('');
   const [discount, setDiscount] = useState('15');
@@ -8664,7 +8864,7 @@ export const BusinessAnalyticsPage: React.FC = () => {
     requestWalletSettlement,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const isFreePlan = isFreeSubscriptionPlan(
     activePlanId,
     currentBiz?.subscriptionPlan
@@ -9710,7 +9910,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
     updateBusinessProfile,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
 
   const [bankCardNumber, setBankCardNumber] = useState(
     currentBiz?.bankCardNumber ?? ''
@@ -9719,7 +9919,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
     currentBiz?.bankShebaNumber ?? ''
   );
   const [bankAccountHolder, setBankAccountHolder] = useState(
-    currentBiz?.bankAccountHolder ?? currentBiz?.ownerName ?? ''
+    currentBiz?.bankAccountHolder ?? ''
   );
   const [depositPercentRule, setDepositPercentRule] = useState<number>(() =>
     normalizeDepositPercent(currentBiz?.depositPercent)
@@ -9740,9 +9940,7 @@ export const BusinessSubscriptionPage: React.FC = () => {
     if (!currentBiz) return;
     setBankCardNumber(currentBiz.bankCardNumber ?? '');
     setBankShebaNumber(currentBiz.bankShebaNumber ?? '');
-    setBankAccountHolder(
-      currentBiz.bankAccountHolder ?? currentBiz.ownerName ?? ''
-    );
+    setBankAccountHolder(currentBiz.bankAccountHolder ?? '');
     setDepositPercentRule(normalizeDepositPercent(currentBiz.depositPercent));
     setCancellationDeadlineHours(currentBiz.cancellationDeadlineHours ?? 24);
     setLateCancellationPenaltyPercent(
@@ -10339,7 +10537,7 @@ export const BusinessSettingsPage: React.FC = () => {
     resetPasswordWithOtp,
     showToast,
   } = usePrototypeData();
-  const currentBiz = currentBusiness ?? businesses[0];
+  const currentBiz = currentBusiness;
   const currentPlan =
     plans.find((p) => p.id === activePlanId) ?? plans[1] ?? plans[0];
   const totalSmsQuota =

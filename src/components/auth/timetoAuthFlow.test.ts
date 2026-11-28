@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createOtpSubmissionGuard,
+  popAuthScreenHistory,
+  pushAuthScreenHistory,
   releaseOtpSubmission,
+  shouldShowAvatarUploadInRegistration,
   tryAcquireOtpSubmission,
 } from './timetoAuthFlow';
 
@@ -62,4 +65,45 @@ test('OTP submission guard rejects incomplete codes', () => {
     isAutoSubmit: true,
   });
   assert.equal(shortAttempt.acquired, false);
+});
+
+test('shouldShowAvatarUploadInRegistration hides avatar upload for business/specialist and shows only for customers', () => {
+  assert.equal(shouldShowAvatarUploadInRegistration('CUSTOMER'), true);
+  assert.equal(shouldShowAvatarUploadInRegistration('BUSINESS_OWNER'), false);
+});
+
+test('auth screen history steps back one registration screen at a time without exiting prematurely', () => {
+  let stack = pushAuthScreenHistory([], 'LOGIN', 'ROLE_PICKER');
+  stack = pushAuthScreenHistory(stack, 'ROLE_PICKER', 'REGISTER_STEP_1_PHONE');
+  stack = pushAuthScreenHistory(stack, 'REGISTER_STEP_1_PHONE', 'REGISTER_STEP_2_OTP');
+  stack = pushAuthScreenHistory(stack, 'REGISTER_STEP_2_OTP', 'REGISTER_STEP_3_PROFILE');
+  stack = pushAuthScreenHistory(stack, 'REGISTER_STEP_3_PROFILE', 'REGISTER_STEP_4_SALON');
+
+  const back1 = popAuthScreenHistory(stack, 'REGISTER_STEP_4_SALON');
+  assert.equal(back1.prevScreen, 'REGISTER_STEP_3_PROFILE');
+
+  const back2 = popAuthScreenHistory(back1.nextStack, 'REGISTER_STEP_3_PROFILE');
+  assert.equal(back2.prevScreen, 'REGISTER_STEP_2_OTP');
+
+  const back3 = popAuthScreenHistory(back2.nextStack, 'REGISTER_STEP_2_OTP');
+  assert.equal(back3.prevScreen, 'REGISTER_STEP_1_PHONE');
+
+  const back4 = popAuthScreenHistory(back3.nextStack, 'REGISTER_STEP_1_PHONE');
+  assert.equal(back4.prevScreen, 'ROLE_PICKER');
+
+  const back5 = popAuthScreenHistory(back4.nextStack, 'ROLE_PICKER');
+  assert.equal(back5.prevScreen, 'LOGIN');
+
+  const back6 = popAuthScreenHistory(back5.nextStack, 'LOGIN');
+  assert.equal(back6.prevScreen, null);
+});
+
+test('auth screen history fallback works even when entering step 1 directly (e.g. /business/register)', () => {
+  const backFromStep1 = popAuthScreenHistory([], 'REGISTER_STEP_1_PHONE');
+  assert.equal(backFromStep1.prevScreen, 'ROLE_PICKER');
+
+  const backFromUpgrade = popAuthScreenHistory([], 'REGISTER_STEP_4_SALON', {
+    isAlreadyLoggedInUpgrade: true,
+  });
+  assert.equal(backFromUpgrade.prevScreen, null);
 });

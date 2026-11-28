@@ -503,23 +503,17 @@ export const HomePage: React.FC = () => {
                 </Link>
                 {homeBannerPrimary ? (
                   <span className="text-xs font-bold text-slate-200 tabular-nums">
-                    شروع تعرفه از:{' '}
-                    {formatStartingTariff(
-                      (() => {
-                        const prices = services
-                          .filter(
-                            (s) =>
-                              s.isActive !== false &&
-                              Number(s.priceToman) > 0 &&
-                              (s.businessId === homeBannerPrimary.id ||
-                                s.businessId === homeBannerPrimary.slug)
-                          )
-                          .map((s) => Number(s.priceToman));
-                        return prices.length > 0
-                          ? Math.min(...prices)
-                          : homeBannerPrimary.startingPriceToman;
-                      })()
-                    )}
+                    {(() => {
+                      const count = services.filter(
+                        (s) =>
+                          s.isActive !== false &&
+                          (s.businessId === homeBannerPrimary.id ||
+                            s.businessId === homeBannerPrimary.slug)
+                      ).length;
+                      return count > 0
+                        ? `${toPersianDigits(count)} خدمت قابل رزرو آنلاین`
+                        : 'رزرو آنلاین ۲۴ ساعته';
+                    })()}
                   </span>
                 ) : null}
               </div>
@@ -578,25 +572,20 @@ export const HomePage: React.FC = () => {
               <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between">
                 <div>
                   <span className="text-[11px] text-[#475569] font-semibold block">
-                    شروع تعرفه خدمات
+                    خدمات و تعرفه‌ها
                   </span>
                   <span className="text-sm font-extrabold text-[#0057FF] tabular-nums">
-                    {formatStartingTariff(
-                      (() => {
-                        const prices = services
-                          .filter(
-                            (s) =>
-                              s.isActive !== false &&
-                              Number(s.priceToman) > 0 &&
-                              (s.businessId === homeBannerSecondary.id ||
-                                s.businessId === homeBannerSecondary.slug)
-                          )
-                          .map((s) => Number(s.priceToman));
-                        return prices.length > 0
-                          ? Math.min(...prices)
-                          : homeBannerSecondary.startingPriceToman;
-                      })()
-                    )}
+                    {(() => {
+                      const count = services.filter(
+                        (s) =>
+                          s.isActive !== false &&
+                          (s.businessId === homeBannerSecondary.id ||
+                            s.businessId === homeBannerSecondary.slug)
+                      ).length;
+                      return count > 0
+                        ? `${toPersianDigits(count)} خدمت فعال`
+                        : 'رزرو آنلاین آنی';
+                    })()}
                   </span>
                 </div>
                 <Link

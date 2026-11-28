@@ -45,6 +45,13 @@ export interface RouteItem {
   description: string;
 }
 
+export interface ServiceAddonItem {
+  id: string;
+  title: string;
+  priceToman: number;
+  durationMinutes?: number;
+}
+
 export interface ServiceItem {
   id: string;
   businessId: string;
@@ -56,6 +63,7 @@ export interface ServiceItem {
   pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
   maxPriceToman?: number;
   packageIncludes?: string[];
+  addons?: ServiceAddonItem[];
   description: string;
   isPopular?: boolean;
   isActive?: boolean;
@@ -472,6 +480,7 @@ export interface BookingDraft {
   businessSlug: string;
   serviceId: string;
   serviceIds?: string[];
+  selectedAddonKeys?: string[];
   specialistId: string;
   dateJalali: string;
   timeSlot: string;

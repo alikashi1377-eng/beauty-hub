@@ -105,3 +105,55 @@ test('computeBusinessProfileCompletion returns only incomplete steps including f
   assert.equal(complete.incompleteSteps.length, 0);
   assert.equal(complete.nextIncompleteStep, null);
 });
+
+test('independent specialist completing step 5 (financial_info) after working_hours routes to /app with no loop', async () => {
+  const { resolveNextOnboardingStepHref } = await import(
+    './BusinessProfileCompletionWidget'
+  );
+  const specialistBusiness: BusinessItem = {
+    ...baseBusiness,
+    id: 'biz-spec-1',
+    type: BusinessType.IndependentSpecialist,
+    workingHoursConfigured: true,
+    bankCardNumber: '6037997112345678',
+    bankAccountHolder: 'زهرا کریمی',
+    contractAccepted: true,
+  };
+
+  const next = resolveNextOnboardingStepHref({
+    business: specialistBusiness,
+    services: [
+      {
+        id: 'srv-spec-1',
+        businessId: 'biz-spec-1',
+        categorySlug: 'nail-services',
+        title: 'کاشت ناخن ژل',
+        category: 'ناخن',
+        durationMinutes: 60,
+        priceToman: 450000,
+        description: '',
+        isActive: true,
+      },
+    ],
+    specialists: [
+      {
+        id: 'sp-spec-1',
+        businessId: 'biz-spec-1',
+        slug: 'sp-spec-1',
+        fullName: 'زهرا کریمی',
+        roleTitle: 'متخصص ناخن',
+        experienceYears: 4,
+        rating: 5,
+        reviewCount: 0,
+        specialties: ['کاشت ناخن'],
+        bio: '',
+        isIndependent: true,
+        isActive: true,
+      },
+    ],
+    currentStepId: 'financial_info',
+  });
+
+  assert.equal(next.isAllCompleted, true);
+  assert.equal(next.nextHref, '/app');
+});

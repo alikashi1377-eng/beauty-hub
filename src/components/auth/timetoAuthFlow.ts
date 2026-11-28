@@ -19,6 +19,73 @@ export type AuthFlowScreen =
   | 'RESET_PASSWORD'
   | 'WELCOME';
 
+/**
+ * صاحب سالن یا متخصص مستقل در مراحل اولیه ثبت‌نام نیازی به انتخاب عکس پروفایل ندارد
+ * و عکس پروفایل خود را پس از ورود در گام اول پیشخوان (/app/profile) انتخاب می‌کند.
+ */
+export function shouldShowAvatarUploadInRegistration(
+  roleChoice: AccountRoleChoice
+): boolean {
+  return roleChoice === 'CUSTOMER';
+}
+
+/**
+ * تعیین گام قبلی در روند ثبت‌نام/ورود برای جلوگیری از خروج ناگهانی هنگام زدن دکمه بازگشت (Back).
+ */
+export function getFallbackPreviousAuthScreen(
+  screen: AuthFlowScreen,
+  options?: { isAlreadyLoggedInUpgrade?: boolean }
+): AuthFlowScreen | null {
+  switch (screen) {
+    case 'REGISTER_STEP_4_SALON':
+      return options?.isAlreadyLoggedInUpgrade
+        ? null
+        : 'REGISTER_STEP_3_PROFILE';
+    case 'REGISTER_STEP_3_PROFILE':
+      return 'REGISTER_STEP_1_PHONE';
+    case 'REGISTER_STEP_2_OTP':
+      return 'REGISTER_STEP_1_PHONE';
+    case 'REGISTER_STEP_1_PHONE':
+      return 'ROLE_PICKER';
+    case 'ROLE_PICKER':
+    case 'LOGIN_OTP_VERIFY':
+    case 'RESET_PASSWORD':
+    case 'LOGIN_PASSWORD_PROMPT':
+      return 'LOGIN';
+    case 'LOGIN':
+    case 'WELCOME':
+    default:
+      return null;
+  }
+}
+
+export function pushAuthScreenHistory(
+  stack: AuthFlowScreen[],
+  current: AuthFlowScreen,
+  next: AuthFlowScreen
+): AuthFlowScreen[] {
+  if (current === next || next === 'WELCOME') return stack;
+  if (next === 'LOGIN') return [];
+  return [...stack, current];
+}
+
+export function popAuthScreenHistory(
+  stack: AuthFlowScreen[],
+  current: AuthFlowScreen,
+  options?: { isAlreadyLoggedInUpgrade?: boolean }
+): { prevScreen: AuthFlowScreen | null; nextStack: AuthFlowScreen[] } {
+  if (current === 'WELCOME') {
+    return { prevScreen: null, nextStack: [] };
+  }
+  if (stack.length > 0) {
+    const nextStack = stack.slice(0, -1);
+    const prevScreen = stack[stack.length - 1];
+    return { prevScreen, nextStack };
+  }
+  const fallback = getFallbackPreviousAuthScreen(current, options);
+  return { prevScreen: fallback, nextStack: [] };
+}
+
 export interface SavedMemoryAccount {
   phone: string;
   password?: string;

@@ -184,14 +184,13 @@ export const BusinessAvatarProfileMenu: React.FC = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const { authUser, currentBusiness, businesses, logoutUser } =
-    usePrototypeData();
+  const { authUser, currentBusiness, logoutUser } = usePrototypeData();
 
-  const biz = currentBusiness ?? businesses[0];
-  const salonName = biz?.name || 'سالن زیبایی شما';
-  const ownerName = authUser?.fullName || biz?.ownerName || 'مدیر سالن';
+  const biz = currentBusiness;
+  const salonName = biz?.name || 'کسب‌وکار شما';
+  const ownerName = authUser?.fullName || biz?.ownerName || 'مدیر کسب‌وکار';
   const avatarUrl = biz?.avatarUrl;
-  const businessSlug = biz?.slug || 'royal-golzar';
+  const businessSlug = biz?.slug || '';
   const planName = biz?.subscriptionPlan || 'شروع رایگان (پایه)';
 
   useEffect(() => {

@@ -37,6 +37,7 @@ export interface AuthenticatedSessionUser {
   fullName: string;
   gender?: 'FEMALE' | 'MALE';
   defaultCity: string | null;
+  avatarUrl?: string;
   roles: Array<'CUSTOMER' | 'BUSINESS_OWNER' | 'PLATFORM_ADMIN'>;
   isPlatformAdmin: boolean;
   businessMemberships: Array<{
@@ -312,6 +313,7 @@ export const realApiClient = {
   async updateMyProfile(patch: {
     fullName?: string;
     defaultCity?: string;
+    avatarUrl?: string | null;
   }): Promise<{
     user: AuthenticatedSessionUser;
     message: string;

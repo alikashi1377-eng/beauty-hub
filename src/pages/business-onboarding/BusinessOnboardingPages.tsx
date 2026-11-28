@@ -51,7 +51,6 @@ import { IncompleteFormState } from '../../components/ui/StateViews';
 import { VisualMediaIllustration } from '../../components/ui/VisualMediaIllustration';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { LocationMapPicker } from '../../components/ui/LocationMapPicker';
-import { ProfilePhotoUploader } from '../../components/ui/ProfilePhotoUploader';
 import { EasyCheckoutModal } from '../../components/ui/EasyCheckoutModal';
 import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 
@@ -61,7 +60,7 @@ const OnboardingProgressHeader: React.FC<{
   stepTitle: string;
 }> = ({ currentStep, stepTitle }) => {
   const steps = [
-    { num: 1, title: 'مشخصات و عکس', href: '/business/register' },
+    { num: 1, title: 'مشخصات پایه', href: '/business/register' },
     { num: 2, title: 'خدمات و ساعت کاری', href: '/business/onboarding' },
     { num: 3, title: 'پیش‌نمایش', href: '/business/preview' },
     { num: 4, title: 'تکمیل پرونده', href: '/business/verification' },
@@ -251,7 +250,7 @@ export const BusinessRegisterPage: React.FC = () => {
       return;
     }
     setErrors({});
-    showToast('مشخصات سالن و عکس پروفایل ذخیره شد.');
+    showToast('مشخصات پایه کسب‌وکار ذخیره شد.');
     navigate('/business/onboarding');
   };
 
@@ -409,26 +408,10 @@ export const BusinessRegisterPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* ۲. عکس پروفایل با ابعاد استاندارد ۱:۱ */}
-              <div className="pt-4 border-t border-[#CBD5E1]">
-                <ProfilePhotoUploader
-                  value={onboardingDraft.avatarUrl}
-                  businessName={onboardingDraft.businessName}
-                  label="۲. انتخاب عکس پروفایل سالن / متخصص (با ابعاد استاندارد ۱:۱)"
-                  onChange={(newUrl) => {
-                    updateOnboardingDraft({ avatarUrl: newUrl });
-                    showToast(
-                      'تصویر پروفایل با ابعاد استاندارد تنظیم و ذخیره شد.',
-                      'info'
-                    );
-                  }}
-                />
-              </div>
-
-              {/* ۳. مشخصات هویتی و تماس */}
+              {/* ۲. مشخصات هویتی و تماس (عکس پروفایل پس از ورود در گام اول پیشخوان انتخاب می‌شود) */}
               <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
                 <h2 className="text-sm font-extrabold text-[#061138]">
-                  ۳. نام سالن و اطلاعات تماس
+                  ۲. نام سالن و اطلاعات تماس
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
@@ -505,6 +488,7 @@ export const BusinessRegisterPage: React.FC = () => {
                     <Input
                       id="reg-owner-name"
                       value={onboardingDraft.ownerName}
+                      placeholder="مثلاً سارا احمدی"
                       hasError={Boolean(errors.ownerName)}
                       onChange={(e) =>
                         updateOnboardingDraft({ ownerName: e.target.value })
@@ -565,11 +549,11 @@ export const BusinessRegisterPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* ۴. ثبت دستی محله و نشانی دقیق سالن (مسیریابی روی نقشه به صورت خودکار در پروفایل برای مشتریان نمایش داده می‌شود) */}
+              {/* ۳. ثبت دستی محله و نشانی دقیق سالن */}
               <div className="pt-4 border-t border-[#CBD5E1] space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-extrabold text-[#061138]">
-                    ۴. ثبت دستی شهر، محله و نشانی دقیق کسب‌وکار
+                    ۳. ثبت دستی شهر، محله و نشانی دقیق کسب‌وکار
                   </h2>
                 </div>
 
@@ -691,6 +675,7 @@ export const BusinessRegisterPage: React.FC = () => {
                   <Textarea
                     id="reg-desc"
                     rows={2}
+                    placeholder="مثلاً ارائه خدمات تخصصی رنگ، لایت و فیشیال با وقت قبلی"
                     value={onboardingDraft.shortDescription}
                     onChange={(e) =>
                       updateOnboardingDraft({
@@ -715,7 +700,7 @@ export const BusinessRegisterPage: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4">
-          <OnboardingDraftSummarySidebar stepHint="عکس پروفایل، نام سالن و لینک اختصاصی شما بلافاصله در ویترین آنلاین تایم تو (Timeto) قابل مشاهده خواهد بود." />
+          <OnboardingDraftSummarySidebar stepHint="پس از ورود به پیشخوان، می‌توانید عکس پروفایل، بنر، خدمات و اطلاعات بانکی کسب‌وکار خود را به‌راحتی تکمیل کنید." />
         </div>
       </div>
     </div>

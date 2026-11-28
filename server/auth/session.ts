@@ -21,6 +21,7 @@ export interface AuthenticatedUser {
   phone: string;
   fullName: string;
   defaultCity: string | null;
+  avatarUrl?: string;
   roles: PlatformRole[];
   isPlatformAdmin: boolean;
   businessMemberships: BusinessMembership[];
@@ -243,12 +244,30 @@ export async function loadUserPermissionsByUserId(
     roles.push('PLATFORM_ADMIN');
   }
 
+  let avatarUrl: string | undefined;
+  try {
+    const avatarRes = await clientOrPool.query(
+      `SELECT value_json FROM platform_kv_store WHERE key = 'customer_profile_avatars_v1' LIMIT 1`
+    );
+    const avatarMap = avatarRes.rows[0]?.value_json;
+    if (avatarMap && typeof avatarMap === 'object' && !Array.isArray(avatarMap)) {
+      const cleanPhone = String(uRow.phone || '').replace(/\D/g, '');
+      const rawUrl = (avatarMap as Record<string, unknown>)[cleanPhone];
+      if (typeof rawUrl === 'string' && rawUrl.trim()) {
+        avatarUrl = rawUrl.trim();
+      }
+    }
+  } catch {
+    // ignore if platform_kv_store does not exist yet or in minimal unit test mocks
+  }
+
   return {
     sessionId,
     userId: String(uRow.id),
     phone: String(uRow.phone),
     fullName: String(uRow.full_name),
     defaultCity: uRow.default_city ? String(uRow.default_city) : null,
+    ...(avatarUrl ? { avatarUrl } : {}),
     roles,
     isPlatformAdmin,
     businessMemberships,

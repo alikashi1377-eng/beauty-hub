@@ -21,6 +21,7 @@ export interface BusinessQrCodeCardProps {
   city?: string;
   neighborhood?: string;
   compact?: boolean;
+  showPosterDownload?: boolean;
 }
 
 export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
@@ -29,6 +30,7 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
   city = 'اصفهان',
   neighborhood,
   compact = false,
+  showPosterDownload = true,
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -819,18 +821,20 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
       <div className="space-y-2 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-extrabold text-[#061138] truncate">
-            لینک مستقیم پروفایل کسب‌وکار:
+            {compact ? 'لینک مستقیم صفحه:' : 'لینک مستقیم پروفایل کسب‌وکار:'}
           </span>
-          <Link
-            to={shortLink.shortPath}
-            className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
-          >
-            <span>مشاهده پروفایل</span>
-            <ExternalLink className="w-3 h-3" />
-          </Link>
+          {!compact ? (
+            <Link
+              to={shortLink.shortPath}
+              className="inline-flex items-center gap-1 text-[11px] font-extrabold text-[#0057FF] hover:underline shrink-0"
+            >
+              <span>مشاهده پروفایل</span>
+              <ExternalLink className="w-3 h-3" />
+            </Link>
+          ) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] min-w-0 overflow-hidden">
           <Link
             to={shortLink.shortPath}
             title={profileUrl}
@@ -846,47 +850,50 @@ export const BusinessQrCodeCard: React.FC<BusinessQrCodeCardProps> = ({
               {shortLink.displayShortUrl}
             </span>
           </Link>
+          <button
+            type="button"
+            onClick={() => void handleCopyLink()}
+            aria-label={copied ? 'لینک کپی شد' : 'کپی لینک پروفایل'}
+            title={copied ? 'لینک کپی شد' : 'کپی لینک پروفایل'}
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+              copied
+                ? 'bg-[#ECFDF5] border-[#10B981] text-[#10B981]'
+                : 'bg-white border-[#CBD5E1] text-[#334155] hover:border-[#0057FF] hover:text-[#0057FF]'
+            }`}
+          >
+            {copied ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Copy className="w-4 h-4" />
+            )}
+          </button>
         </div>
+        {copied ? (
+          <p className="text-[11px] font-bold text-[#10B981]">
+            لینک پروفایل کپی شد
+          </p>
+        ) : null}
       </div>
 
-      {/* دو دکمه اصلی: دانلود پوستر اختصاصی (کیفیت چاپ A5/A4 - 4K) و کپی لینک */}
-      <div className="grid grid-cols-2 gap-2.5 w-full">
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          fullWidth
-          disabled={!qrDataUrl || isDownloading}
-          onClick={() => void handleDownloadPrintableStand()}
-        >
-          <Download className="w-4 h-4 shrink-0" />
-          <span className="truncate">
-            {isDownloading
-              ? 'در حال آماده‌سازی کیفیت چاپ...'
-              : 'دانلود پوستر (کیفیت چاپ A5)'}
-          </span>
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          fullWidth
-          onClick={() => void handleCopyLink()}
-        >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4 text-[#10B981] shrink-0" />
-              <span className="text-[#10B981] truncate">لینک کپی شد ✓</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-4 h-4 shrink-0" />
-              <span className="truncate">کپی لینک</span>
-            </>
-          )}
-        </Button>
-      </div>
+      {showPosterDownload ? (
+        <div className="w-full">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            fullWidth
+            disabled={!qrDataUrl || isDownloading}
+            onClick={() => void handleDownloadPrintableStand()}
+          >
+            <Download className="w-4 h-4 shrink-0" />
+            <span className="truncate">
+              {isDownloading
+                ? 'در حال آماده‌سازی کیفیت چاپ...'
+                : 'دانلود پوستر (کیفیت چاپ A5)'}
+            </span>
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 };

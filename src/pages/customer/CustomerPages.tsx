@@ -29,6 +29,9 @@ import {
   Plus,
   ExternalLink,
   Info,
+  Camera,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import {
   AppointmentItem,
@@ -55,6 +58,12 @@ import {
   calculateBookingFinancialBreakdown,
   normalizeDepositPercent,
 } from '../../utils/financialEngine';
+import {
+  getMeaningfulServiceDescription,
+  makeServiceAddonKey,
+  pruneOrphanAddonKeys,
+  shouldShowServiceDetailsTrigger,
+} from '../../utils/servicePresentation';
 import { usePrototypeData } from '../../context/PrototypeDataContext';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -78,6 +87,7 @@ import {
 } from '../../components/ui/MarketplaceComponents';
 import { TimetoUnifiedAuthCard } from '../../components/auth/TimetoAuthModal';
 import { PWAProfileInstallRow } from '../../components/ui/PWAInstallPrompt';
+import { resizeImageFileToDataUrl } from '../../components/ui/ProfilePhotoUploader';
 
 /** تشخیص دقیق تعلق نوبت به مشتری فعلی با تضمین ایزولاسیون بین حساب‌های کاربری مختلف */
 const isAppointmentOwnedByCustomer = (
@@ -402,6 +412,7 @@ export const BookingStepPage: React.FC = () => {
     if (!business) return;
     const srvParam = searchParams.get('service');
     const srvsParam = searchParams.get('services');
+    const addonsParam = searchParams.get('addons');
     const spcParam = searchParams.get('specialist');
     const stepParam = searchParams.get('step');
 
@@ -433,6 +444,14 @@ export const BookingStepPage: React.FC = () => {
               ? [defaultSrv]
               : [];
 
+    const parsedAddonKeys = addonsParam
+      ? addonsParam
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : (bookingDraft.selectedAddonKeys ?? []);
+    const nextAddonKeys = pruneOrphanAddonKeys(nextServiceIds, parsedAddonKeys);
+
     const defaultSpc =
       spcParam && bizSpecialists.some((sp) => sp.id === spcParam)
         ? spcParam
@@ -450,6 +469,7 @@ export const BookingStepPage: React.FC = () => {
       businessSlug: business.slug,
       serviceId: defaultSrv,
       serviceIds: nextServiceIds,
+      selectedAddonKeys: nextAddonKeys,
       specialistId: defaultSpc,
       dateJalali: validDate,
     });
@@ -463,9 +483,11 @@ export const BookingStepPage: React.FC = () => {
   const selectedServicesSummary = computeSelectedServicesSummary(
     bizServices,
     bookingDraft.serviceIds,
-    bookingDraft.serviceId
+    bookingDraft.serviceId,
+    bookingDraft.selectedAddonKeys
   );
   const selectedServiceIds = selectedServicesSummary.services.map((s) => s.id);
+  const selectedAddonKeys = bookingDraft.selectedAddonKeys ?? [];
   const primarySelectedService =
     selectedServicesSummary.services[0] ?? bizServices[0];
 
@@ -487,6 +509,17 @@ export const BookingStepPage: React.FC = () => {
     updateBookingDraft({
       serviceIds: nextIds,
       serviceId: nextIds[0] ?? serviceId,
+      selectedAddonKeys: pruneOrphanAddonKeys(nextIds, selectedAddonKeys),
+    });
+  };
+
+  const handleToggleAddon = (serviceId: string, addonId: string) => {
+    const key = makeServiceAddonKey(serviceId, addonId);
+    const nextAddons = selectedAddonKeys.includes(key)
+      ? selectedAddonKeys.filter((item) => item !== key)
+      : [...selectedAddonKeys, key];
+    updateBookingDraft({
+      selectedAddonKeys: nextAddons,
     });
   };
 
@@ -882,11 +915,13 @@ export const BookingStepPage: React.FC = () => {
             {visibleServices.map((srv) => {
               const isSelected = selectedServiceIds.includes(srv.id);
               const stages = (srv.packageIncludes ?? []).filter(Boolean);
-              const cleanDesc = (srv.description ?? '').trim();
+              const cleanDesc = getMeaningfulServiceDescription(srv);
               const isPop = popularServiceIdSet.has(srv.id);
               const isDetailsExpanded = expandedServiceIds.includes(srv.id);
-              const hasRichDetails =
-                Boolean(cleanDesc) || stages.length > 0 || srv.title.length > 26;
+              const showDetailsTrigger = shouldShowServiceDetailsTrigger(srv);
+              const availableAddons = (srv.addons ?? []).filter(
+                (ad) => Boolean(ad && ad.title && ad.title.trim())
+              );
 
               return (
                 <div
@@ -907,9 +942,10 @@ export const BookingStepPage: React.FC = () => {
                       : 'border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] hover:border-[#94A3B8]'
                   }`}
                 >
-                  {/* ردیف بالا: چک‌باکس، عنوان ۲ خطی خوانا، خلاصه کوتاه، دسته‌بندی، زمان و دکمه توضیحات */}
+                  {/* ردیف بالا: چک‌باکس، عنوان، خلاصه کوتاه، دسته‌بندی، زمان و دکمه توضیحات (فقط در صورت وجود توضیحات واقعی) */}
                   <div className="flex items-start gap-2.5">
                     <span
+                      aria-hidden="true"
                       className={`mt-0.5 w-5 h-5 rounded-lg border-2 inline-flex items-center justify-center shrink-0 transition-colors ${
                         isSelected
                           ? 'bg-[#0057FF] border-[#0057FF] text-white'
@@ -929,78 +965,65 @@ export const BookingStepPage: React.FC = () => {
                           {srv.title}
                         </p>
                         {isPop ? (
-                          <span className="px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309] text-[10px] font-extrabold shrink-0">
+                          <span className="text-[10px] font-extrabold text-[#B45309] shrink-0">
                             ★ پرطرفدار
                           </span>
                         ) : null}
                       </div>
 
-                      {!isDetailsExpanded && (cleanDesc || stages.length > 0) ? (
-                        <p className="text-[11px] text-[#475569] line-clamp-1 leading-relaxed">
-                          {cleanDesc || `شامل: ${stages.join('، ')}`}
-                        </p>
-                      ) : null}
-
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#475569] tabular-nums">
-                        <span className="px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#334155] font-bold">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#475569] tabular-nums">
+                        <span className="font-bold text-[#334155]">
                           {srv.category}
                         </span>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] font-bold">
+                        <span aria-hidden="true" className="text-[#CBD5E1]">
+                          ·
+                        </span>
+                        <span className="inline-flex items-center gap-1 font-bold">
                           <Clock className="w-3 h-3 text-[#0057FF]" />
                           {formatDurationMinutes(srv.durationMinutes)}
                         </span>
 
-                        {/* دکمه کلیک‌تریگر توضیحات و محتویات خدمت / پکیج */}
-                        <button
-                          type="button"
-                          aria-expanded={isDetailsExpanded}
-                          onClick={(e) => handleToggleServiceDetails(e, srv.id)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer ${
-                            isDetailsExpanded
-                              ? 'bg-[#0057FF] text-white'
-                              : hasRichDetails
-                                ? 'bg-[#E0E7FF] text-[#0057FF] hover:bg-[#C7D2FE]'
-                                : 'bg-[#F8FAFC] text-[#475569] border border-[#CBD5E1] hover:bg-[#E2E8F0]'
-                          }`}
-                        >
-                          <Info className="w-3 h-3 shrink-0" />
-                          <span>
-                            {isDetailsExpanded
-                              ? 'بستن جزئیات ▴'
-                              : stages.length > 0
-                                ? `شامل ${toPersianDigits(stages.length)} مورد ▾`
-                                : 'توضیحات ▾'}
-                          </span>
-                        </button>
+                        {showDetailsTrigger ? (
+                          <button
+                            type="button"
+                            aria-expanded={isDetailsExpanded}
+                            onClick={(e) => handleToggleServiceDetails(e, srv.id)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold transition-colors cursor-pointer ${
+                              isDetailsExpanded
+                                ? 'bg-[#0057FF] text-white'
+                                : 'bg-[#EFF6FF] text-[#0057FF] hover:bg-[#DBEAFE]'
+                            }`}
+                          >
+                            <Info className="w-3 h-3 shrink-0" />
+                            <span>
+                              {isDetailsExpanded
+                                ? 'بستن جزئیات ▴'
+                                : stages.length > 0
+                                  ? `شامل ${toPersianDigits(stages.length)} مورد ▾`
+                                  : 'توضیحات ▾'}
+                            </span>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
 
-                  {/* کشوی توضیحات کامل خدمت، نام کامل و اقلام شامل پکیج */}
-                  {isDetailsExpanded ? (
+                  {/* کشوی توضیحات کامل خدمت و اقلام شامل پکیج */}
+                  {isDetailsExpanded && showDetailsTrigger ? (
                     <div
                       onClick={(e) => e.stopPropagation()}
                       className="mt-2.5 rounded-xl bg-white border border-[#CBD5E1] p-2.5 space-y-1.5 text-xs cursor-default"
                     >
-                      <p className="font-extrabold text-[#061138] leading-relaxed">
-                        {srv.title}
-                      </p>
-
                       {cleanDesc ? (
                         <p className="text-[#334155] leading-relaxed whitespace-pre-line">
                           {cleanDesc}
-                        </p>
-                      ) : stages.length === 0 ? (
-                        <p className="text-[#475569] leading-relaxed">
-                          خدمت تخصصی «{srv.title}» در لاین {srv.category} (مدت‌زمان:{' '}
-                          {formatDurationMinutes(srv.durationMinutes)}).
                         </p>
                       ) : null}
 
                       {stages.length > 0 ? (
                         <div className="space-y-1 pt-0.5">
                           <span className="text-[11px] font-extrabold text-[#0057FF] block">
-                            موارد شامل این خدمت / پکیج:
+                            موارد شامل این پکیج:
                           </span>
                           <div className="flex flex-wrap gap-1.5">
                             {stages.map((item, idx) => (
@@ -1018,17 +1041,73 @@ export const BookingStepPage: React.FC = () => {
                     </div>
                   ) : null}
 
-                  {/* ردیف پایین اختصاصی: نمایش کامل قیمت (قطعی / بازه‌ای از...تا... / پایه شروع از...) در راست و دکمه انتخاب در چپ */}
+                  {/* افزودنی‌های پیشنهادی زیر خدمت انتخاب‌شده */}
+                  {isSelected && availableAddons.length > 0 ? (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-2.5 rounded-xl bg-white border border-[#BFDBFE] p-2.5 space-y-2 cursor-default"
+                    >
+                      <p className="text-[11px] font-extrabold text-[#061138]">
+                        موارد پیشنهادی همراه این خدمت (اختیاری):
+                      </p>
+                      <div className="space-y-1.5">
+                        {availableAddons.map((addon) => {
+                          const addonKey = makeServiceAddonKey(srv.id, addon.id);
+                          const isAddonChecked =
+                            selectedAddonKeys.includes(addonKey);
+                          return (
+                            <button
+                              key={addon.id}
+                              type="button"
+                              role="checkbox"
+                              aria-checked={isAddonChecked}
+                              onClick={() => handleToggleAddon(srv.id, addon.id)}
+                              className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border text-xs transition-colors cursor-pointer ${
+                                isAddonChecked
+                                  ? 'bg-[#EFF6FF] border-[#0057FF] text-[#061138]'
+                                  : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#334155] hover:border-[#93C5FD]'
+                              }`}
+                            >
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                                    isAddonChecked
+                                      ? 'bg-[#0057FF] border-[#0057FF] text-white'
+                                      : 'bg-white border-[#94A3B8] text-transparent'
+                                  }`}
+                                >
+                                  <Check className="w-3 h-3" />
+                                </span>
+                                <span className="font-bold truncate">
+                                  {addon.title}
+                                </span>
+                                {addon.durationMinutes ? (
+                                  <span className="text-[10px] text-[#64748B] tabular-nums shrink-0">
+                                    +{toPersianDigits(addon.durationMinutes)} دقیقه
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="font-extrabold text-[#0057FF] tabular-nums shrink-0">
+                                +{formatCompactPriceToman(addon.priceToman)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* ردیف پایین اختصاصی: نمایش کامل قیمت (بدون برچسب تکراری «انتخاب شد») */}
                   <div className="mt-3 pt-2.5 border-t border-[#CBD5E1]/70 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1 mb-0.5">
                         {srv.pricingType === 'RANGE' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#FFFBEB] border border-[#FDE68A] text-[#B45309] text-[10px] font-extrabold">
+                          <span className="text-[10px] font-extrabold text-[#B45309]">
                             تعرفه بازه‌ای (متغیر)
                           </span>
                         ) : srv.pricingType === 'STARTING_FROM' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F0F9FF] border border-[#BAE6FD] text-[#0369A1] text-[10px] font-extrabold">
-                            قیمت پایه (شروع از)
+                          <span className="text-[10px] font-extrabold text-[#0369A1]">
+                            قیمت پایه
                           </span>
                         ) : (
                           <span className="text-[10px] font-bold text-[#64748B]">
@@ -1041,26 +1120,26 @@ export const BookingStepPage: React.FC = () => {
                       </span>
                     </div>
 
-                    <span
-                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 ${
-                        isSelected
-                          ? 'bg-[#0057FF] text-white shadow-2xs'
-                          : 'bg-[#F1F5F9] text-[#061138] hover:bg-[#E0E7FF] hover:text-[#0057FF]'
-                      }`}
-                    >
-                      {isSelected ? 'انتخاب شد ✓' : '+ انتخاب خدمت'}
-                    </span>
+                    {!isSelected ? (
+                      <span className="px-3 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0 bg-[#F1F5F9] text-[#061138] hover:bg-[#E0E7FF] hover:text-[#0057FF]">
+                        + انتخاب خدمت
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* نوار پایین گام ۱: در موبایل چسبان (sticky) به پایین صفحه و هنگام رسیدن به انتهای لیست در جایگاه اصلی کارت قفل می‌شود تا با منوی پایین صفحه تداخل نداشته باشد */}
+          {/* نوار پایین گام ۱: مجموع خدمات + افزودنی‌های انتخاب‌شده */}
           <div className="max-lg:sticky max-lg:bottom-0 max-lg:z-30 max-sm:-mx-5 max-sm:-mb-5 sm:max-lg:-mx-6 sm:max-lg:-mb-6 max-lg:px-3.5 max-lg:py-2.5 max-lg:bg-white/95 max-lg:backdrop-blur-md max-lg:border-t max-lg:border-[#CBD5E1] max-lg:rounded-b-3xl max-lg:shadow-[0_-10px_24px_-8px_rgba(6,17,56,0.14)] lg:pt-3 lg:border-t lg:border-[#CBD5E1] flex items-center justify-between gap-2">
             <div className="text-xs flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5 min-w-0">
               <span className="text-[10px] sm:text-xs text-[#64748B] font-semibold">
-                مجموع ({toPersianDigits(selectedServiceIds.length)} خدمت):
+                مجموع ({toPersianDigits(selectedServiceIds.length)} خدمت
+                {selectedServicesSummary.selectedAddons.length > 0
+                  ? ` + ${toPersianDigits(selectedServicesSummary.selectedAddons.length)} جانبی`
+                  : ''}
+                ):
               </span>
               <strong className="text-xs sm:text-sm font-black text-[#0057FF] tabular-nums whitespace-nowrap">
                 {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
@@ -1551,7 +1630,8 @@ export const BookingConfirmPage: React.FC = () => {
   const selectedServicesSummary = computeSelectedServicesSummary(
     bizServices.length > 0 ? bizServices : services,
     bookingDraft.serviceIds,
-    bookingDraft.serviceId
+    bookingDraft.serviceId,
+    bookingDraft.selectedAddonKeys
   );
   const service =
     selectedServicesSummary.services[0] ??
@@ -2213,13 +2293,15 @@ export const BookingConfirmPage: React.FC = () => {
           </div>
         ) : null}
 
-        {/* کارت خلاصه نوبت و مبلغ بیعانه — جمع‌وجور و بدون توضیحات اضافی */}
+        {/* کارت خلاصه و جمع‌بندی نوبت — چیدمان خوانا، خلوت و با کنتراست آرامش‌بخش */}
         <Card
           variant="dark"
-          className="rounded-3xl space-y-3 bg-gradient-to-br from-[#061138] via-[#0B1E5B] to-[#0057FF] border border-[#00E5FF]/30 shadow-[0_16px_40px_-16px_rgba(6,17,56,0.5)]"
+          padding="none"
+          className="rounded-3xl bg-gradient-to-b from-[#0E1B3D] to-[#081026] border border-white/10 shadow-[0_18px_40px_-20px_rgba(6,17,56,0.45)] p-5 sm:p-6 space-y-5"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/15 pb-3">
-            <div className="flex items-center gap-2.5">
+          {/* ۱. سربرگ نوبت: سالن، تاریخ، ساعت و متخصص */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <img
                 src={
                   business.avatarUrl && business.avatarUrl.trim()
@@ -2227,73 +2309,133 @@ export const BookingConfirmPage: React.FC = () => {
                     : getBeautyPhotoUrl(business.name, business.typeLabel)
                 }
                 alt={business.name}
-                className="w-10 h-10 rounded-2xl object-cover border border-white/25 shrink-0"
+                className="w-11 h-11 rounded-2xl object-cover ring-1 ring-white/15 shrink-0"
               />
-              <div>
-                <h2 className="text-sm sm:text-base font-black text-white">
-                  {business.name} ({business.neighborhood})
+              <div className="min-w-0 space-y-1">
+                <h2 className="text-sm sm:text-base font-extrabold text-white leading-snug">
+                  {business.name}
+                  {business.neighborhood ? (
+                    <span className="text-xs font-medium text-slate-400 mr-1.5 whitespace-nowrap">
+                      ({business.neighborhood})
+                    </span>
+                  ) : null}
                 </h2>
-                <span className="text-[11px] font-bold text-[#00E5FF] tabular-nums block">
-                  {bookingDraft.dateJalali} · ساعت {bookingDraft.timeSlot} ·{' '}
-                  {specialist.fullName}
-                </span>
+                <p className="text-xs text-slate-300 tabular-nums leading-relaxed">
+                  <span>{bookingDraft.dateJalali}</span>
+                  <span aria-hidden="true" className="mx-1.5 text-white/30">
+                    ·
+                  </span>
+                  <span>ساعت {bookingDraft.timeSlot}</span>
+                  <span aria-hidden="true" className="mx-1.5 text-white/30">
+                    ·
+                  </span>
+                  <span className="text-slate-100 font-semibold">
+                    {specialist.fullName}
+                  </span>
+                </p>
               </div>
             </div>
+
             <Link
               to={`/booking/${business.slug}?step=1`}
-              className="px-2.5 py-1 rounded-xl bg-white/15 hover:bg-white/25 text-white text-[11px] font-extrabold transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-slate-200 hover:text-white text-xs font-bold transition-colors whitespace-nowrap shrink-0"
             >
               ویرایش
             </Link>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex flex-wrap gap-1.5">
+          {/* ۲. ریز خدمات انتخاب‌شده و محاسبه شفاف فاکتور (بدون قرص و کادر تودرتو) */}
+          <div className="pt-4 border-t border-white/10 space-y-3">
+            <ul className="space-y-2">
               {selectedServicesSummary.services.map((s) => (
-                <span
+                <li
                   key={s.id}
-                  className="px-2.5 py-1 rounded-xl bg-white/12 border border-white/20 text-xs font-extrabold text-white"
+                  className="flex items-baseline justify-between gap-3 text-xs sm:text-[13px]"
                 >
-                  {s.title} ({formatServicePriceShort(s)})
-                </span>
+                  <span className="font-semibold text-white/95 leading-relaxed">
+                    {s.title}
+                  </span>
+                  <span className="font-bold text-slate-200 tabular-nums whitespace-nowrap shrink-0">
+                    {formatServicePriceShort(s)}
+                  </span>
+                </li>
               ))}
+              {selectedServicesSummary.selectedAddons.map((ad) => (
+                <li
+                  key={ad.key}
+                  className="flex items-baseline justify-between gap-3 text-xs text-slate-300 pr-3"
+                >
+                  <span className="font-medium">+ {ad.addon.title}</span>
+                  <span className="font-semibold tabular-nums whitespace-nowrap shrink-0">
+                    +{formatCompactPriceToman(ad.addon.priceToman)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="pt-3 border-t border-dashed border-white/12 space-y-2 text-xs">
+              {selectedServicesSummary.services.length +
+                selectedServicesSummary.selectedAddons.length >
+              1 ? (
+                <div className="flex items-center justify-between gap-2 text-slate-300">
+                  <span>جمع کل خدمات</span>
+                  <span className="font-bold text-slate-100 tabular-nums">
+                    {formatCompactPriceToman(
+                      selectedServicesSummary.totalPriceToman
+                    )}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between gap-2 text-slate-300">
+                <span>بیعانه رزرو ({toPersianDigits(depositPercent)}٪)</span>
+                <span className="font-bold text-slate-100 tabular-nums">
+                  {formatPriceToman(depositAmountToman)}
+                </span>
+              </div>
+              {customerGatewayAndTaxFeeToman > 0 ? (
+                <div className="flex items-center justify-between gap-2 text-slate-400">
+                  <span>کارمزد درگاه بانکی</span>
+                  <span className="font-semibold text-slate-200 tabular-nums">
+                    {formatPriceToman(customerGatewayAndTaxFeeToman)}
+                  </span>
+                </div>
+              ) : null}
             </div>
-            <span className="text-xs font-bold text-slate-200 tabular-nums">
-              جمع کل خدمات:{' '}
-              <strong className="text-[#00E5FF] font-black">
-                {formatCompactPriceToman(selectedServicesSummary.totalPriceToman)}
-              </strong>
-            </span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-white/10 border border-white/20 space-y-1.5 text-xs">
-            <div className="flex items-center justify-between gap-2 text-slate-200">
-              <span>
-                بیعانه رزرو ({toPersianDigits(depositPercent)}٪) + کارمزد درگاه شاپرک:
+          {/* ۳. نقطه کانونی واحد: مبلغ پرداختی الان + مانده تسویه در سالن */}
+          <div className="rounded-2xl bg-white/[0.06] px-4 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <span className="text-[11px] font-semibold text-sky-300 block mb-0.5">
+                مبلغ قابل پرداخت آنلاین
               </span>
-              <span className="font-bold text-white tabular-nums">
-                {formatPriceToman(depositAmountToman)} +{' '}
-                {formatPriceToman(customerGatewayAndTaxFeeToman)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/15">
-              <span className="font-extrabold text-[#00E5FF]">
-                مبلغ قابل پرداخت آنلاین الان:
-              </span>
-              <span className="font-black text-white text-sm sm:text-base tabular-nums">
+              <span className="text-xl sm:text-2xl font-black text-white tabular-nums tracking-tight">
                 {formatPriceToman(totalOnlinePayableToman)}
               </span>
             </div>
-            <div className="flex items-center justify-between gap-2 text-slate-300 text-[11px]">
-              <span>مانده تسویه حضوری در سالن:</span>
-              <strong className="tabular-nums text-white">
+
+            <div className="flex items-center justify-between sm:block sm:text-left pt-2.5 sm:pt-0 border-t sm:border-t-0 sm:border-r border-white/10 sm:pr-5">
+              <span className="text-[11px] font-medium text-slate-400 sm:block sm:mb-0.5">
+                مانده تسویه در سالن
+              </span>
+              <strong className="text-sm font-extrabold text-slate-200 tabular-nums">
                 {formatCompactPriceToman(remainingInSalonToman)}
               </strong>
             </div>
-            <p className="text-[11px] text-[#00E5FF]/90 pt-1 border-t border-white/10">
-              ⚖️ لغو رایگان تا{' '}
-              <strong>{toPersianDigits(cancellationDeadlineHours)} ساعت قبل از نوبت</strong>{' '}
-              با بازگشت اصل بیعانه به کیف پول
+          </div>
+
+          {/* ۴. قانون لغو با لحن آرام و خوانایی بالا */}
+          <div className="flex items-start gap-2 text-[11px] text-slate-300/85 leading-relaxed">
+            <ShieldCheck
+              className="w-4 h-4 text-slate-400 shrink-0 mt-0.5"
+              aria-hidden="true"
+            />
+            <p>
+              لغو رایگان تا{' '}
+              <strong className="text-slate-100 font-bold">
+                {toPersianDigits(cancellationDeadlineHours)} ساعت قبل از نوبت
+              </strong>{' '}
+              با بازگشت کامل بیعانه به کیف پول
               {latePenaltyPercent > 0
                 ? ` (کمتر از آن: ${toPersianDigits(latePenaltyPercent)}٪ جریمه)`
                 : ''}
@@ -3068,7 +3210,13 @@ export const CustomerOverviewPage: React.FC = () => {
       <Card className="rounded-[28px] p-5 sm:p-7 border border-[#CBD5E1] bg-white">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
           <div className="lg:col-span-7 flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-right gap-4">
-            <Avatar name={displayName} size="xl" tone="rose" showPhoto={false} />
+            <Avatar
+              name={displayName}
+              imageUrl={authUser?.avatarUrl || undefined}
+              showPhoto={Boolean(authUser?.avatarUrl)}
+              size="xl"
+              tone="rose"
+            />
             <div className="space-y-1.5">
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E0ECFF] text-[#0057FF] text-[11px] font-bold">
                 <Award className="w-3.5 h-3.5 text-[#0057FF]" />
@@ -3969,10 +4117,14 @@ export const CustomerProfilePage: React.FC = () => {
     logoutUser,
     updateCustomerProfile,
     setAccountPassword,
+    showToast,
   } = usePrototypeData();
   const [name, setName] = useState(authUser?.fullName ?? '');
   const [phone, setPhone] = useState(authUser?.phone ?? '');
   const [city, setCity] = useState(authUser?.defaultCity ?? 'اصفهان');
+  const [avatarUrl, setAvatarUrl] = useState(authUser?.avatarUrl ?? '');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = React.useRef<HTMLInputElement | null>(null);
   const [smsReminder, setSmsReminder] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [fixedPassword, setFixedPassword] = useState('');
@@ -3983,8 +4135,45 @@ export const CustomerProfilePage: React.FC = () => {
       setName(authUser.fullName);
       setPhone(authUser.phone);
       setCity(authUser.defaultCity || 'اصفهان');
+      setAvatarUrl(authUser.avatarUrl ?? '');
     }
   }, [authUser]);
+
+  const handleAvatarFileSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    try {
+      const optimizedUrl = await resizeImageFileToDataUrl(file, 512, 0.85);
+      setAvatarUrl(optimizedUrl);
+      await updateCustomerProfile({
+        fullName: name.trim() || authUser?.fullName || 'کاربر تایم تو',
+        phone: phone.trim() || authUser?.phone || '',
+        defaultCity: city.trim() || 'اصفهان',
+        avatarUrl: optimizedUrl,
+      });
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'خطا در پردازش تصویر پروفایل.',
+        'warning'
+      );
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarUrl('');
+    await updateCustomerProfile({
+      fullName: name.trim() || authUser?.fullName || 'کاربر تایم تو',
+      phone: phone.trim() || authUser?.phone || '',
+      defaultCity: city.trim() || 'اصفهان',
+      avatarUrl: null,
+    });
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3994,6 +4183,7 @@ export const CustomerProfilePage: React.FC = () => {
         fullName: name.trim(),
         phone: phone.trim(),
         defaultCity: city.trim(),
+        avatarUrl: avatarUrl || null,
       });
     } finally {
       setIsSaving(false);
@@ -4017,8 +4207,8 @@ export const CustomerProfilePage: React.FC = () => {
     <div className="space-y-5">
       <PageHeader
         kicker="حساب کاربری"
-        title="ویرایش مشخصات و امنیت"
-        subtitle="ویرایش نام، شماره موبایل و رمز عبور حساب کاربری"
+        title="ویرایش مشخصات، عکس پروفایل و امنیت"
+        subtitle="انتخاب عکس پروفایل، ویرایش نام، شماره موبایل و رمز عبور حساب کاربری"
         breadcrumbs={[
           { label: 'حساب من', href: '/me' },
           { label: 'اطلاعات کاربری' },
@@ -4029,6 +4219,73 @@ export const CustomerProfilePage: React.FC = () => {
         <div className="lg:col-span-7 space-y-5">
           <Card padding="lg" className="rounded-3xl">
             <form onSubmit={handleSave} className="space-y-4">
+              {/* انتخاب و تغییر عکس پروفایل مشتری */}
+              <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#CBD5E1] flex flex-col sm:flex-row items-center gap-4">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarFileSelect}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  aria-label="انتخاب یا تغییر عکس پروفایل"
+                  className="relative group shrink-0 cursor-pointer rounded-full focus:outline-none focus:ring-4 focus:ring-[#0057FF]/20"
+                >
+                  <Avatar
+                    name={name || 'کاربر'}
+                    imageUrl={avatarUrl || undefined}
+                    showPhoto={Boolean(avatarUrl)}
+                    size="xl"
+                    tone="rose"
+                  />
+                  <span className="absolute -bottom-1 -left-1 w-7 h-7 rounded-full bg-[#0057FF] text-white border-2 border-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                    <Camera className="w-3.5 h-3.5" />
+                  </span>
+                </button>
+
+                <div className="flex-1 text-center sm:text-right space-y-2">
+                  <div>
+                    <p className="text-sm font-extrabold text-[#061138]">
+                      تصویر پروفایل کاربری شما
+                    </p>
+                    <p className="text-xs text-[#64748B] mt-0.5">
+                      می‌توانید تصویر دلخواه خود را برای نمایش در حساب کاربری انتخاب یا تغییر دهید.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <button
+                      type="button"
+                      disabled={isUploadingAvatar}
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0057FF] hover:bg-[#0046CC] text-white text-xs font-extrabold transition-colors disabled:opacity-60 cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>
+                        {isUploadingAvatar
+                          ? 'در حال ذخیره تصویر...'
+                          : avatarUrl
+                            ? 'تغییر عکس پروفایل'
+                            : 'انتخاب عکس پروفایل'}
+                      </span>
+                    </button>
+                    {avatarUrl ? (
+                      <button
+                        type="button"
+                        disabled={isUploadingAvatar}
+                        onClick={() => void handleRemoveAvatar()}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white hover:bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA] text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف عکس</span>
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
               <FormField id="cust-name" label="نام و نام خانوادگی" required>
                 <Input
                   id="cust-name"
@@ -4121,7 +4378,13 @@ export const CustomerProfilePage: React.FC = () => {
 
           <Card variant="muted" className="rounded-3xl space-y-4">
             <div className="flex items-center gap-3">
-              <Avatar name={name || 'کاربر'} size="lg" tone="rose" />
+              <Avatar
+                name={name || 'کاربر'}
+                imageUrl={avatarUrl || undefined}
+                showPhoto={Boolean(avatarUrl)}
+                size="lg"
+                tone="rose"
+              />
               <div className="min-w-0 flex-1">
                 <h2 className="text-base font-extrabold text-[#061138] truncate">
                   {name || 'کاربر Timeto'}

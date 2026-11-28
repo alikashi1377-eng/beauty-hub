@@ -1179,6 +1179,12 @@ export function createApiV1Router(
               pricingType?: 'FIXED' | 'RANGE' | 'STARTING_FROM';
               maxPriceToman?: number;
               packageIncludes?: string[];
+              addons?: Array<{
+                id: string;
+                title: string;
+                priceToman: number;
+                durationMinutes?: number;
+              }>;
             } = {};
             if (req.body?.pricingType !== undefined) {
               metaPatch.pricingType = req.body.pricingType;
@@ -1189,6 +1195,11 @@ export function createApiV1Router(
             if (req.body?.packageIncludes !== undefined) {
               metaPatch.packageIncludes = Array.isArray(req.body.packageIncludes)
                 ? req.body.packageIncludes
+                : undefined;
+            }
+            if (req.body?.addons !== undefined) {
+              metaPatch.addons = Array.isArray(req.body.addons)
+                ? req.body.addons
                 : undefined;
             }
             if (Object.keys(metaPatch).length > 0) {
@@ -1265,6 +1276,9 @@ export function createApiV1Router(
                       : undefined,
                   packageIncludes: Array.isArray(req.body?.packageIncludes)
                     ? req.body.packageIncludes
+                    : undefined,
+                  addons: Array.isArray(req.body?.addons)
+                    ? req.body.addons
                     : undefined,
                 });
               }

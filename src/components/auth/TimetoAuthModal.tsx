@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowRight,
   Camera,
   Check,
   Eye,
@@ -31,10 +32,12 @@ import {
   AuthFlowScreen,
   createOtpSubmissionGuard,
   generateSuggestedPassword,
-  getLastSavedCredential,
   getSavedMemoryAccounts,
   OtpSubmissionGuardState,
+  popAuthScreenHistory,
+  pushAuthScreenHistory,
   releaseOtpSubmission,
+  shouldShowAvatarUploadInRegistration,
   tryAcquireOtpSubmission,
   validateRegistrationStep1,
   validateRegistrationStep3Profile,
@@ -52,6 +55,7 @@ export interface TimetoUnifiedAuthCardProps {
   isModal?: boolean;
   onClose?: () => void;
   onSuccess?: () => void;
+  stepBackHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
@@ -62,6 +66,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   isModal = false,
   onClose,
   onSuccess,
+  stepBackHandlerRef,
 }) => {
   const navigate = useNavigate();
   const {
@@ -76,23 +81,27 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     showToast,
   } = usePrototypeData();
 
-  const savedMemory = getLastSavedCredential();
-
-  const resolvedInitialScreen: AuthFlowScreen =
+  const isAlreadyLoggedInUpgrade = Boolean(
     authUser &&
-    defaultRole === 'BUSINESS_OWNER' &&
-    (initialScreen === 'REGISTER_STEP_1_PHONE' ||
-      initialScreen === 'ROLE_PICKER' ||
-      initialScreen === 'REGISTER_STEP_4_SALON')
-      ? 'REGISTER_STEP_4_SALON'
-      : initialScreen;
+      defaultRole === 'BUSINESS_OWNER' &&
+      (initialScreen === 'REGISTER_STEP_1_PHONE' ||
+        initialScreen === 'ROLE_PICKER' ||
+        initialScreen === 'REGISTER_STEP_4_SALON')
+  );
+
+  const resolvedInitialScreen: AuthFlowScreen = isAlreadyLoggedInUpgrade
+    ? 'REGISTER_STEP_4_SALON'
+    : initialScreen;
 
   const [screen, setScreen] = useState<AuthFlowScreen>(resolvedInitialScreen);
+  const screenRef = useRef<AuthFlowScreen>(resolvedInitialScreen);
+  screenRef.current = screen;
+  const screenHistoryRef = useRef<AuthFlowScreen[]>([]);
   const [roleChoice, setRoleChoice] = useState<AccountRoleChoice>(defaultRole);
 
-  // فیلدهای شماره و رمز عبور (همیشه فعال در صفحه ورود برای کارکرد ۱۰۰٪ Autofill مرورگر موبایل)
+  // هرگز اطلاعات کاربر قبلی را به عنوان مقدار پیش‌فرض در فرم‌های ثبت‌نام/ورود پر نکن
   const [phone, setPhone] = useState<string>(
-    authUser?.phone || savedMemory?.phone || ''
+    isAlreadyLoggedInUpgrade && authUser?.phone ? authUser.phone : ''
   );
   // هرگز رمز عبور قدیمی/موقت را از localStorage داخل فیلد ورود پر نکن تا باعث خطای رمز اشتباه نشود
   const [loginPassword, setLoginPassword] = useState<string>('');
@@ -141,10 +150,12 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
     );
   };
 
-  // فیلدهای گام ۳ (پروفایل: عکس اختیاری + نام + نام خانوادگی)
+  // فیلدهای گام ۳ (پروفایل: عکس اختیاری فقط برای مشتری عادی + نام + نام خانوادگی)
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [firstName, setFirstName] = useState<string>(
-    authUser?.fullName && !isLegacyPlaceholderName(authUser.fullName)
+    isAlreadyLoggedInUpgrade &&
+      authUser?.fullName &&
+      !isLegacyPlaceholderName(authUser.fullName)
       ? authUser.fullName
       : ''
   );
@@ -169,30 +180,120 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
   const [isLaserCenterSelected, setIsLaserCenterSelected] =
     useState<boolean>(false);
   const [salonCity, setSalonCity] = useState<string>('اصفهان');
-  const [salonNeighborhood, setSalonNeighborhood] =
-    useState<string>('چهارباغ بالا');
+  const [salonNeighborhood, setSalonNeighborhood] = useState<string>('');
 
   // وضعیت خطا و بارگذاری
   const [error, setError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  useEffect(() => {
+  const resetRegistrationFields = () => {
+    setPhone('');
+    setLoginPassword('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setPasswordSavedInMemoryBadge(false);
+    setOtpDigits(['', '', '', '', '', '']);
+    otpDigitsRef.current = '';
+    otpGuardRef.current = createOtpSubmissionGuard();
+    setAvatarUrl('');
+    setFirstName('');
+    setLastName('');
+    setSalonName('');
+    setSalonNeighborhood('');
+    setError('');
+  };
+
+  const navigateToScreen = (nextScreen: AuthFlowScreen) => {
+    const currentScreen = screenRef.current;
+    if (currentScreen === nextScreen) return;
+    screenHistoryRef.current = pushAuthScreenHistory(
+      screenHistoryRef.current,
+      currentScreen,
+      nextScreen
+    );
+    screenRef.current = nextScreen;
+    setError('');
+    setScreen(nextScreen);
     if (
-      authUser &&
-      defaultRole === 'BUSINESS_OWNER' &&
-      (initialScreen === 'REGISTER_STEP_1_PHONE' ||
-        initialScreen === 'ROLE_PICKER' ||
-        initialScreen === 'REGISTER_STEP_4_SALON')
+      typeof window !== 'undefined' &&
+      !isModal &&
+      nextScreen !== 'LOGIN' &&
+      nextScreen !== 'WELCOME'
     ) {
+      try {
+        window.history.pushState({ timetoAuthStep: nextScreen }, '');
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const handleGoBackStep = (): boolean => {
+    const { prevScreen, nextStack } = popAuthScreenHistory(
+      screenHistoryRef.current,
+      screenRef.current,
+      { isAlreadyLoggedInUpgrade }
+    );
+    if (!prevScreen) {
+      return false;
+    }
+    screenHistoryRef.current = nextStack;
+    screenRef.current = prevScreen;
+    setError('');
+    setScreen(prevScreen);
+    return true;
+  };
+
+  useEffect(() => {
+    if (!stepBackHandlerRef) return;
+    stepBackHandlerRef.current = handleGoBackStep;
+    return () => {
+      stepBackHandlerRef.current = null;
+    };
+  });
+
+  // جلوگیری از خروج ناگهانی هنگام زدن دکمه Back مرورگر/موبایل در حالت صفحه مستقل ثبت‌نام
+  useEffect(() => {
+    if (isModal || typeof window === 'undefined') return;
+    const handleStandalonePopState = () => {
+      if (
+        screenRef.current !== 'LOGIN' &&
+        screenRef.current !== 'WELCOME' &&
+        !(isAlreadyLoggedInUpgrade && screenRef.current === 'REGISTER_STEP_4_SALON')
+      ) {
+        const steppedBack = handleGoBackStep();
+        if (steppedBack) {
+          try {
+            window.history.pushState(
+              { timetoAuthStep: screenRef.current },
+              ''
+            );
+          } catch {
+            // ignore
+          }
+        }
+      }
+    };
+    window.addEventListener('popstate', handleStandalonePopState);
+    return () =>
+      window.removeEventListener('popstate', handleStandalonePopState);
+  }, [isModal, isAlreadyLoggedInUpgrade]);
+
+  useEffect(() => {
+    if (isAlreadyLoggedInUpgrade && authUser) {
       setPhone(authUser.phone || '');
       if (authUser.fullName && !isLegacyPlaceholderName(authUser.fullName)) {
         setFirstName(authUser.fullName);
       }
+      screenHistoryRef.current = [];
+      screenRef.current = 'REGISTER_STEP_4_SALON';
       setScreen('REGISTER_STEP_4_SALON');
       return;
     }
+    screenHistoryRef.current = [];
+    screenRef.current = initialScreen;
     setScreen(initialScreen);
-  }, [initialScreen, authUser, defaultRole]);
+  }, [initialScreen, authUser, defaultRole, isAlreadyLoggedInUpgrade]);
 
   useEffect(() => {
     setRoleChoice(defaultRole);
@@ -445,7 +546,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       otpDigitsRef.current = '';
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
-      setScreen('LOGIN_OTP_VERIFY');
+      navigateToScreen('LOGIN_OTP_VERIFY');
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'خطا در ارسال کد تأیید پیامکی.'
@@ -515,7 +616,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       otpDigitsRef.current = '';
       setOtpDigits(['', '', '', '', '', '']);
       setOtpTimerSeconds(110);
-      setScreen('REGISTER_STEP_2_OTP');
+      navigateToScreen('REGISTER_STEP_2_OTP');
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'خطا در ارسال کد تأیید.'
@@ -613,17 +714,17 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
           Boolean(user.fullName && !isLegacyPlaceholderName(user.fullName));
 
         if (!hasRealProfileName && !isSuperAdmin) {
-          setScreen('REGISTER_STEP_3_PROFILE');
+          navigateToScreen('REGISTER_STEP_3_PROFILE');
           return;
         }
 
         // اگر کاربر از صفحه ثبت کسب‌وکار آمده ولی هنوز کسب‌وکاری ثبت نکرده، مستقیم به گام ۴ ثبت سالن/متخصص هدایت شود
         const isBiz = user.roles.includes('BUSINESS_OWNER');
         if (roleChoice === 'BUSINESS_OWNER' && !isBiz && !isSuperAdmin) {
-          if (user.fullName && user.fullName !== 'کاربر تایم تو') {
+          if (user.fullName && !isLegacyPlaceholderName(user.fullName)) {
             setFirstName(user.fullName);
           }
-          setScreen('REGISTER_STEP_4_SALON');
+          navigateToScreen('REGISTER_STEP_4_SALON');
           return;
         }
 
@@ -634,8 +735,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
         return;
       }
 
-      // در حالت ثبت‌نام جدید پس از تایید واقعی کد پیامک‌شده، رفتن به گام ۳ (پروفایل: عکس + نام و نام خانوادگی)
-      setScreen('REGISTER_STEP_3_PROFILE');
+      // در حالت ثبت‌نام جدید پس از تایید واقعی کد پیامک‌شده، رفتن به گام ۳ (پروفایل: نام و نام خانوادگی)
+      navigateToScreen('REGISTER_STEP_3_PROFILE');
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'کد واردشده صحیح نیست.'
@@ -702,22 +803,10 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
       if (providerSubType === 'SPECIALIST') {
         setSalonType(BusinessType.IndependentSpecialist);
         setIsLaserCenterSelected(false);
-        if (!salonName.trim()) {
-          setSalonName(check.fullName);
-        }
-      } else {
-        if (!salonName.trim()) {
-          setSalonName(
-            userGender === 'MALE'
-              ? `پیرایش مردانه ${check.fullName}`
-              : `سالن زیبایی ${check.fullName}`
-          );
-        }
-        if (userGender === 'MALE') {
-          setSalonType(BusinessType.MenBarbershop);
-        }
+      } else if (userGender === 'MALE') {
+        setSalonType(BusinessType.MenBarbershop);
       }
-      setScreen('REGISTER_STEP_4_SALON');
+      navigateToScreen('REGISTER_STEP_4_SALON');
       return;
     }
 
@@ -775,7 +864,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
           (isIndependentSpec ? 'متخصص زیبایی' : 'مدیر سالن'),
         gender: userGender,
         role: 'BUSINESS_OWNER',
-        avatarUrl: avatarUrl || undefined,
+        // عکس پروفایل سالن‌دار/متخصص در گام اول پیشخوان (/app/profile) انتخاب می‌شود
+        avatarUrl: undefined,
         salonInfo: {
           businessName: salonName.trim(),
           businessType: isIndependentSpec
@@ -794,7 +884,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
               ? 'مرکز لیزر موهای زائد'
               : undefined,
           city: salonCity,
-          neighborhood: salonNeighborhood.trim() || 'چهارباغ بالا',
+          neighborhood: salonNeighborhood.trim(),
         },
       });
       finishWithWelcomeRedirect('/app/profile?setup=1');
@@ -1058,7 +1148,7 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     otpGuardRef.current = createOtpSubmissionGuard();
                     otpDigitsRef.current = '';
                     setOtpDigits(['', '', '', '', '', '']);
-                    setScreen('RESET_PASSWORD');
+                    navigateToScreen('RESET_PASSWORD');
                     if (isValidIranMobile(clean)) {
                       void handleSendResetOtp(clean);
                     }
@@ -1073,8 +1163,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setError('');
-                      setScreen('ROLE_PICKER');
+                      resetRegistrationFields();
+                      navigateToScreen('ROLE_PICKER');
                     }}
                     className="font-black text-[#0057FF] hover:underline cursor-pointer"
                   >
@@ -1215,25 +1305,36 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 type="button"
                 onClick={() => {
                   setError('');
-                  setScreen('REGISTER_STEP_1_PHONE');
+                  navigateToScreen('REGISTER_STEP_1_PHONE');
                 }}
                 className="w-full rounded-2xl bg-[#0057FF] py-3.5 px-5 text-sm font-black text-white shadow-[0_12px_26px_-8px_rgba(0,87,255,0.55)] transition hover:bg-[#0046CC] cursor-pointer"
               >
                 ادامه ←
               </button>
 
-              <div className="text-center text-xs font-semibold text-slate-500">
-                <span>قبلاً ثبت‌نام کرده‌اید؟ </span>
+              <div className="flex items-center justify-between pt-1 text-xs font-semibold text-slate-500">
                 <button
                   type="button"
                   onClick={() => {
-                    setError('');
-                    setScreen('LOGIN');
+                    handleGoBackStep();
                   }}
-                  className="font-black text-[#0057FF] hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1 font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
                 >
-                  ورود
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  <span>بازگشت</span>
                 </button>
+                <div>
+                  <span>قبلاً ثبت‌نام کرده‌اید؟ </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigateToScreen('LOGIN');
+                    }}
+                    className="font-black text-[#0057FF] hover:underline cursor-pointer"
+                  >
+                    ورود
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -1373,18 +1474,22 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setError('');
-                    setScreen('ROLE_PICKER');
+                    if (!handleGoBackStep()) {
+                      navigateToScreen('ROLE_PICKER');
+                    }
                   }}
-                  className="text-xs font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
                 >
-                  → تغییر نوع حساب (
-                  {roleChoice === 'BUSINESS_OWNER'
-                    ? providerSubType === 'SPECIALIST'
-                      ? 'متخصص زیبایی'
-                      : 'سالن‌دار'
-                    : 'مشتری'}
-                  )
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  <span>
+                    بازگشت به مرحله قبل / تغییر نوع حساب (
+                    {roleChoice === 'BUSINESS_OWNER'
+                      ? providerSubType === 'SPECIALIST'
+                        ? 'متخصص زیبایی'
+                        : 'سالن‌دار'
+                      : 'مشتری'}
+                    )
+                  </span>
                 </button>
               </div>
             </form>
@@ -1406,16 +1511,11 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setError('');
-                    setScreen(
-                      screen === 'LOGIN_OTP_VERIFY'
-                        ? 'LOGIN'
-                        : 'REGISTER_STEP_1_PHONE'
-                    );
+                    handleGoBackStep();
                   }}
                   className="text-xs font-extrabold text-[#0057FF] hover:underline cursor-pointer"
                 >
-                  تغییر
+                  تغییر شماره
                 </button>
               </div>
 
@@ -1520,35 +1620,37 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
             >
               {renderRegistrationStepper(3)}
 
-              {/* دایره نقطه‌چین انتخاب تصویر پروفایل (اختیاری) */}
-              <div className="flex flex-col items-center gap-2 py-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="انتخاب تصویر پروفایل (اختیاری)"
-                  className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 transition hover:border-[#0057FF] hover:bg-[#EFF6FF] hover:text-[#0057FF] cursor-pointer"
-                >
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt="تصویر پروفایل"
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <Camera className="h-7 w-7 transition-transform group-hover:scale-110" />
-                  )}
-                </button>
-                <span className="text-xs font-bold text-slate-500">
-                  تصویر پروفایل (اختیاری)
-                </span>
-              </div>
+              {/* دایره انتخاب تصویر پروفایل فقط برای مشتری عادی؛ صاحب سالن/متخصص در گام اول پیشخوان عکس خود را می‌گذارد */}
+              {shouldShowAvatarUploadInRegistration(roleChoice) ? (
+                <div className="flex flex-col items-center gap-2 py-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="انتخاب تصویر پروفایل (اختیاری)"
+                    className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 transition hover:border-[#0057FF] hover:bg-[#EFF6FF] hover:text-[#0057FF] cursor-pointer"
+                  >
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt="تصویر پروفایل"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Camera className="h-7 w-7 transition-transform group-hover:scale-110" />
+                    )}
+                  </button>
+                  <span className="text-xs font-bold text-slate-500">
+                    تصویر پروفایل (اختیاری — بعداً از پروفایل هم قابل تغییر است)
+                  </span>
+                </div>
+              ) : null}
 
               <div className="space-y-1.5">
                 <label className="block text-right text-xs font-extrabold text-[#061138]">
@@ -1562,7 +1664,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setFirstName(e.target.value);
                       setError('');
                     }}
-                    className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                    placeholder="مثلاً سارا"
+                    className="w-full rounded-2xl border-2 border-[#0057FF]/30 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   <User className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-slate-500" />
                 </div>
@@ -1580,7 +1683,8 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                       setLastName(e.target.value);
                       setError('');
                     }}
-                    className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] focus:border-[#0057FF] focus:bg-white focus:outline-none"
+                    placeholder="مثلاً احمدی"
+                    className="w-full rounded-2xl border border-slate-300 bg-[#F8FAFC] py-3 pr-10 pl-4 text-right text-sm font-bold text-[#061138] placeholder:text-slate-400 focus:border-[#0057FF] focus:bg-white focus:outline-none"
                   />
                   <User className="pointer-events-none absolute top-1/2 right-3.5 h-4.5 w-4.5 -translate-y-1/2 text-slate-500" />
                 </div>
@@ -1707,6 +1811,19 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                     : 'ادامه به ثبت مشخصات سالن ←'
                   : 'تکمیل ثبت‌نام و ورود'}
               </button>
+
+              <div className="pt-1 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleGoBackStep();
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  <span>بازگشت به مرحله قبل</span>
+                </button>
+              </div>
             </form>
           ) : null}
 
@@ -2048,6 +2165,21 @@ export const TimetoUnifiedAuthCard: React.FC<TimetoUnifiedAuthCardProps> = ({
                   ? 'ثبت پروفایل متخصص و ورود به پنل مدیریت'
                   : 'ثبت سالن و ورود به پنل مدیریت'}
               </button>
+
+              {!isAlreadyLoggedInUpgrade ? (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleGoBackStep();
+                    }}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-[#061138] cursor-pointer"
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    <span>بازگشت به مرحله قبل</span>
+                  </button>
+                </div>
+              ) : null}
             </form>
           ) : null}
 
@@ -2188,6 +2320,7 @@ export const TimetoAuthModal: React.FC = () => {
   const { isAuthModalOpen, authModalOptions, closeAuthModal } =
     usePrototypeData();
   const pushedHistoryRef = useRef<boolean>(false);
+  const stepBackHandlerRef = useRef<(() => boolean) | null>(null);
   const closeRef = useRef(closeAuthModal);
   closeRef.current = closeAuthModal;
 
@@ -2218,6 +2351,16 @@ export const TimetoAuthModal: React.FC = () => {
     }
 
     const handlePopState = () => {
+      // اگر کاربر در یکی از مراحل داخلی ثبت‌نام/ورود است، فقط یک مرحله به عقب برگردد و مودال بسته نشود
+      if (stepBackHandlerRef.current && stepBackHandlerRef.current()) {
+        try {
+          window.history.pushState({ timetoOverlay: 'auth-modal' }, '');
+          pushedHistoryRef.current = true;
+        } catch {
+          // ignore
+        }
+        return;
+      }
       if (pushedHistoryRef.current) {
         pushedHistoryRef.current = false;
         closeRef.current();
@@ -2259,6 +2402,7 @@ export const TimetoAuthModal: React.FC = () => {
         redirectTo={authModalOptions.redirectTo}
         promptReason={authModalOptions.promptReason}
         onClose={closeAuthModal}
+        stepBackHandlerRef={stepBackHandlerRef}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   MapPin,
@@ -6,11 +6,12 @@ import {
   Calendar,
   Heart,
   ShieldCheck,
-  Phone,
   Clock,
   CheckCircle2,
   ArrowLeft,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Instagram,
   Info,
   Share2,
@@ -28,12 +29,17 @@ import { usePrototypeData } from '../../context/PrototypeDataContext';
 import {
   formatCompactPriceToman,
   formatCustomerWorkingHourMinimal,
-  formatPriceToman,
-  formatStartingTariff,
   getUpcomingJalaliDays,
   normalizeIranMobileInput,
   toPersianDigits,
 } from '../../utils/formatters';
+import {
+  canDownloadBusinessPoster,
+  makeServiceAddonKey,
+  normalizeInstagramProfileUrl,
+  pruneOrphanAddonKeys,
+  resolveSelectedAddonsForServices,
+} from '../../utils/servicePresentation';
 import { resolveDisplayBusinessDescription } from '../../utils/appointmentSync';
 import { validateReviewContent } from '../../utils/reviewModeration';
 import { Button } from '../../components/ui/Button';
@@ -94,6 +100,13 @@ export const BusinessPublicProfileView: React.FC<{
   const [selectedProfileServiceIds, setSelectedProfileServiceIds] = useState<
     string[]
   >([]);
+  const [selectedProfileAddonKeys, setSelectedProfileAddonKeys] = useState<
+    string[]
+  >([]);
+  const [lightboxPhotoIndex, setLightboxPhotoIndex] = useState<number | null>(
+    null
+  );
+  const portfolioSliderRef = useRef<HTMLDivElement | null>(null);
   const [showFullWeeklyHours, setShowFullWeeklyHours] =
     useState<boolean>(false);
   const [reviewRating, setReviewRating] = useState<number>(0);
@@ -139,13 +152,6 @@ export const BusinessPublicProfileView: React.FC<{
   const bizServices = services.filter(
     (s) => s.businessId === business.id && s.isActive !== false
   );
-  const pricedServiceValues = bizServices
-    .map((s) => Number(s.priceToman) || 0)
-    .filter((p) => p > 0);
-  const effectiveStartingPriceToman =
-    pricedServiceValues.length > 0
-      ? Math.min(...pricedServiceValues)
-      : Number(business.startingPriceToman) || 0;
   const popularServices = bizServices.filter((s) => s.isPopular).length > 0
     ? bizServices.filter((s) => s.isPopular)
     : bizServices.slice(0, Math.min(3, bizServices.length));
@@ -170,13 +176,38 @@ export const BusinessPublicProfileView: React.FC<{
   });
 
   const handleToggleProfileService = (srvId: string) => {
-    setSelectedProfileServiceIds((prev) =>
-      prev.includes(srvId) ? prev.filter((id) => id !== srvId) : [...prev, srvId]
+    setSelectedProfileServiceIds((prev) => {
+      const nextIds = prev.includes(srvId)
+        ? prev.filter((id) => id !== srvId)
+        : [...prev, srvId];
+      setSelectedProfileAddonKeys((prevAddons) =>
+        pruneOrphanAddonKeys(nextIds, prevAddons)
+      );
+      return nextIds;
+    });
+  };
+  const handleToggleProfileAddon = (serviceId: string, addonId: string) => {
+    const key = makeServiceAddonKey(serviceId, addonId);
+    setSelectedProfileAddonKeys((prev) =>
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
     );
   };
-  const selectedProfileServicesTotal = bizServices
-    .filter((s) => selectedProfileServiceIds.includes(s.id))
-    .reduce((acc, s) => acc + (Number(s.priceToman) || 0), 0);
+  const selectedProfileServices = bizServices.filter((s) =>
+    selectedProfileServiceIds.includes(s.id)
+  );
+  const selectedProfileAddons = resolveSelectedAddonsForServices(
+    selectedProfileServices,
+    selectedProfileAddonKeys
+  );
+  const selectedProfileServicesTotal =
+    selectedProfileServices.reduce(
+      (acc, s) => acc + (Number(s.priceToman) || 0),
+      0
+    ) +
+    selectedProfileAddons.reduce(
+      (acc, item) => acc + (Number(item.addon.priceToman) || 0),
+      0
+    );
 
   const todayJalaliDayName = getUpcomingJalaliDays(1)[0]?.dayName || 'شنبه';
   const todayWorkingHour =
@@ -312,16 +343,19 @@ export const BusinessPublicProfileView: React.FC<{
         getBeautyPhotoUrl(business.name, business.typeLabel);
 
   const [activeActionModal, setActiveActionModal] = useState<
-    'INSTAGRAM' | 'CONSULTATION' | 'MAP' | 'QR_SHARE' | null
+    'CONSULTATION' | 'MAP' | 'QR_SHARE' | null
   >(null);
   const [consultQuestion, setConsultQuestion] = useState('');
   const [consultPhone, setConsultPhone] = useState(authUser?.phone || '');
   const [consultSubmitted, setConsultSubmitted] = useState(false);
 
-  const cleanInstaHandle = (business.instagramHandle || '@timeto.beauty')
-    .trim()
-    .replace(/^@/, '');
-  const instagramUrl = `https://www.instagram.com/${cleanInstaHandle}`;
+  const isCurrentSalonOwner = canDownloadBusinessPoster({
+    authUser,
+    ownedBusinessId,
+    business,
+  });
+
+  const instagramInfo = normalizeInstagramProfileUrl(business.instagramHandle);
   const fullManualAddressQuery = [
     business.city || 'اصفهان',
     business.neighborhood,
@@ -335,23 +369,48 @@ export const BusinessPublicProfileView: React.FC<{
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullManualAddressQuery)}`
       : `https://www.google.com/maps?q=${business.mapLat ?? 32.6362},${business.mapLng ?? 51.665}`;
 
-  const quickActions = [
+  const quickActions: Array<
+    | {
+        kind: 'link';
+        label: string;
+        title: string;
+        href: string;
+        icon: React.ReactNode;
+      }
+    | {
+        kind: 'button';
+        label: string;
+        title: string;
+        onClick: () => void;
+        icon: React.ReactNode;
+      }
+  > = [
+    ...(instagramInfo
+      ? [
+          {
+            kind: 'link' as const,
+            label: 'اینستاگرام',
+            title: `اینستاگرام @${instagramInfo.handle}`,
+            href: instagramInfo.url,
+            icon: <Instagram className="w-5 h-5 text-[#0057FF]" />,
+          },
+        ]
+      : []),
     {
-      label: 'اینستاگرام',
-      icon: <Instagram className="w-5 h-5 text-[#8B5CF6]" />,
-      onClick: () => setActiveActionModal('INSTAGRAM'),
-    },
-    {
+      kind: 'button',
       label: 'مشاوره',
-      icon: <MessageCircle className="w-5 h-5 text-[#8B5CF6]" />,
+      title: 'درخواست مشاوره',
+      icon: <MessageCircle className="w-5 h-5 text-[#0057FF]" />,
       onClick: () => {
         setConsultSubmitted(false);
         setActiveActionModal('CONSULTATION');
       },
     },
     {
+      kind: 'button',
       label: 'مسیریابی',
-      icon: <MapPin className="w-5 h-5 text-[#8B5CF6]" />,
+      title: 'مسیریابی و نشانی',
+      icon: <MapPin className="w-5 h-5 text-[#0057FF]" />,
       onClick: () => {
         setActiveActionModal('MAP');
         const mapEl = document.getElementById('salon-map-section');
@@ -361,8 +420,10 @@ export const BusinessPublicProfileView: React.FC<{
       },
     },
     {
+      kind: 'button',
       label: 'اشتراک‌گذاری',
-      icon: <Share2 className="w-5 h-5 text-[#8B5CF6]" />,
+      title: 'اشتراک‌گذاری پروفایل',
+      icon: <Share2 className="w-5 h-5 text-[#0057FF]" />,
       onClick: () => setActiveActionModal('QR_SHARE'),
     },
   ];
@@ -547,33 +608,48 @@ export const BusinessPublicProfileView: React.FC<{
               </div>
             </div>
 
-            {/* ۴ دکمه دایره‌ای دسترسی سریع (اینستاگرام، مشاوره، مسیریابی، کیوآرکد) — شماره تماس پس از ثبت نوبت نمایش داده می‌شود */}
+            {/* دکمه‌های آیکونی مینیمال دسترسی سریع (بدون برچسب متنی زیر آیکون؛ اینستاگرام لینک مستقیم) */}
             <div className="lg:col-span-5 flex flex-col items-center lg:items-end justify-between gap-4 border-t lg:border-t-0 pt-4 lg:pt-0 border-[#E6E0F5]">
-              <div className="grid grid-cols-4 gap-2.5 sm:gap-3.5 w-full max-w-sm">
-                {quickActions.map((act) => (
-                  <button
-                    key={act.label}
-                    type="button"
-                    onClick={act.onClick}
-                    className="flex flex-col items-center gap-1.5 group cursor-pointer"
-                  >
-                    <span className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border border-[#E6E0F5] bg-[#FAF8FF] group-hover:bg-[#8B5CF6] group-hover:border-[#8B5CF6] flex items-center justify-center transition-colors shadow-2xs">
+              <div className="flex items-center justify-center lg:justify-end gap-3 w-full max-w-sm">
+                {quickActions.map((act) =>
+                  act.kind === 'link' ? (
+                    <a
+                      key={act.label}
+                      href={act.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={act.label}
+                      title={act.title}
+                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border border-[#CBD5E1] bg-[#F8FAFF] hover:bg-[#0057FF] hover:border-[#0057FF] flex items-center justify-center transition-colors shadow-2xs group"
+                    >
                       <span className="group-hover:[&_svg]:!text-white transition-colors">
                         {act.icon}
                       </span>
-                    </span>
-                    <span className="text-[10px] sm:text-[11px] font-bold text-[#6B6480] group-hover:text-[#1E1B2E] whitespace-nowrap">
-                      {act.label}
-                    </span>
-                  </button>
-                ))}
+                    </a>
+                  ) : (
+                    <button
+                      key={act.label}
+                      type="button"
+                      onClick={act.onClick}
+                      aria-label={act.label}
+                      title={act.title}
+                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border border-[#CBD5E1] bg-[#F8FAFF] hover:bg-[#0057FF] hover:border-[#0057FF] flex items-center justify-center transition-colors shadow-2xs group cursor-pointer"
+                    >
+                      <span className="group-hover:[&_svg]:!text-white transition-colors">
+                        {act.icon}
+                      </span>
+                    </button>
+                  )
+                )}
               </div>
 
               <div className="w-full max-w-sm flex items-center justify-between gap-3 pt-2 border-t border-[#E6E0F5]">
                 <div className="text-xs">
-                  <span className="text-[#6B6480] block">شروع تعرفه خدمات</span>
-                  <strong className="text-sm font-extrabold text-[#8B5CF6] tabular-nums">
-                    {formatStartingTariff(effectiveStartingPriceToman)}
+                  <span className="text-[#475569] block">رزرو آنلاین آنی</span>
+                  <strong className="text-sm font-extrabold text-[#061138] tabular-nums">
+                    {bizServices.length > 0
+                      ? `${toPersianDigits(bizServices.length)} خدمت فعال`
+                      : 'تقویم ۲۴ ساعته'}
                   </strong>
                 </div>
                 {business.isSampleShowcase ? (
@@ -595,7 +671,7 @@ export const BusinessPublicProfileView: React.FC<{
                     onClick={(e) =>
                       handleRequireAuthForBooking(e, `/booking/${business.slug}`)
                     }
-                    className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)] transition-colors"
+                    className="px-6 py-2.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shadow-[0_8px_20px_-6px_rgba(0,87,255,0.45)] transition-colors"
                   >
                     <Calendar className="w-4 h-4" />
                     <span>رزرو آنلاین نوبت</span>
@@ -805,6 +881,91 @@ export const BusinessPublicProfileView: React.FC<{
         );
       })()}
 
+      {/* ۱.۷. اسلایدر گالری نمونه‌کارها بلافاصله زیر کارت اصلی پروفایل و قبل از تعرفه‌ها — در صورت نبود نمونه‌کار به کاربر عادی نمایش داده نمی‌شود */}
+      {portfolioPhotos.length > 0 ? (
+        <section
+          aria-label="گالری نمونه‌کارها"
+          className="rounded-3xl bg-white border border-[#E2E8F0] p-4 sm:p-5 space-y-3.5 shadow-2xs"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <ImageIcon className="w-4 h-4 text-[#0057FF] shrink-0" />
+              <h2 className="text-sm sm:text-base font-extrabold text-[#061138] truncate">
+                نمونه‌کارهای {business.name}
+              </h2>
+              <span className="text-xs font-semibold text-[#64748B] tabular-nums shrink-0">
+                · {toPersianDigits(portfolioPhotos.length)} تصویر
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {isCurrentSalonOwner ? (
+                <Link
+                  to="/app/gallery"
+                  className="text-[11px] font-extrabold text-[#0057FF] hover:underline ml-2"
+                >
+                  + مدیریت گالری
+                </Link>
+              ) : null}
+              <button
+                type="button"
+                aria-label="نمونه‌کار قبلی"
+                onClick={() => {
+                  portfolioSliderRef.current?.scrollBy({
+                    left: 300,
+                    behavior: 'smooth',
+                  });
+                }}
+                className="hidden sm:inline-flex w-8 h-8 rounded-full border border-[#CBD5E1] bg-white hover:border-[#0057FF] hover:text-[#0057FF] items-center justify-center text-[#334155] transition-colors cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="نمونه‌کار بعدی"
+                onClick={() => {
+                  portfolioSliderRef.current?.scrollBy({
+                    left: -300,
+                    behavior: 'smooth',
+                  });
+                }}
+                className="hidden sm:inline-flex w-8 h-8 rounded-full border border-[#CBD5E1] bg-white hover:border-[#0057FF] hover:text-[#0057FF] items-center justify-center text-[#334155] transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={portfolioSliderRef}
+            className="flex items-stretch gap-3 overflow-x-auto snap-x snap-mandatory pb-1 no-scrollbar"
+          >
+            {portfolioPhotos.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setLightboxPhotoIndex(idx)}
+                className="group relative w-52 sm:w-64 aspect-[4/3] shrink-0 snap-start rounded-2xl overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] text-right cursor-pointer"
+              >
+                <img
+                  src={item.url}
+                  alt={item.title}
+                  loading="lazy"
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#061138]/80 via-transparent to-transparent" />
+                <div className="absolute bottom-2.5 inset-x-3 text-white">
+                  <span className="text-[10px] font-semibold text-white/80 block truncate">
+                    {item.categoryLabel}
+                  </span>
+                  <p className="text-xs font-extrabold truncate">{item.title}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {/* ۲. چیدمان دو ستونی: تب‌های کپسولی آیکون‌دار (با ادغام خدمات پرطرفدار و دسته‌بندی مستقیم داخل تعرفه‌ها) + ماژول چسبان رزرو */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
         <div className="lg:col-span-8 space-y-5">
@@ -818,12 +979,16 @@ export const BusinessPublicProfileView: React.FC<{
                 count: bizServices.length,
                 icon: <Scissors className="w-3.5 h-3.5" />,
               },
-              {
-                id: 'gallery',
-                label: 'گالری نمونه‌کارها',
-                count: portfolioPhotos.length,
-                icon: <ImageIcon className="w-3.5 h-3.5" />,
-              },
+              ...(portfolioPhotos.length > 0 || isCurrentSalonOwner
+                ? [
+                    {
+                      id: 'gallery',
+                      label: 'گالری نمونه‌کارها',
+                      count: portfolioPhotos.length,
+                      icon: <ImageIcon className="w-3.5 h-3.5" />,
+                    },
+                  ]
+                : []),
               {
                 id: 'staff',
                 label: 'متخصصان سالن',
@@ -953,6 +1118,8 @@ export const BusinessPublicProfileView: React.FC<{
                         isPopularBadge={popularServiceIdSet.has(srv.id)}
                         isSelected={selectedProfileServiceIds.includes(srv.id)}
                         onToggleSelect={(s) => handleToggleProfileService(s.id)}
+                        selectedAddonKeys={selectedProfileAddonKeys}
+                        onToggleAddon={handleToggleProfileAddon}
                         bookingHref={`/booking/${business.slug}?service=${srv.id}`}
                       />
                     ))}
@@ -963,7 +1130,7 @@ export const BusinessPublicProfileView: React.FC<{
                       <button
                         type="button"
                         onClick={() => setShowAllPublicServices((p) => !p)}
-                        className="px-4 py-2 rounded-full bg-[#F5F3FF] hover:bg-[#EDE9FE] text-[#8B5CF6] text-xs font-extrabold border border-[#DDD6FE] cursor-pointer transition-colors"
+                        className="px-4 py-2 rounded-full bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#0057FF] text-xs font-extrabold border border-[#BFDBFE] cursor-pointer transition-colors"
                       >
                         {showAllPublicServices
                           ? 'نمایش خلاصه خدمات'
@@ -972,29 +1139,32 @@ export const BusinessPublicProfileView: React.FC<{
                     </div>
                   ) : null}
 
-                  {/* نوار جمع‌وجور رزرو گروهی در صورت انتخاب یک یا چند خدمت از روی کارت‌ها */}
+                  {/* نوار جمع‌وجور رزرو گروهی در صورت انتخاب یک یا چند خدمت (همراه با افزودنی‌های انتخاب‌شده) */}
                   {selectedProfileServiceIds.length > 0 &&
                   !business.isSampleShowcase ? (
-                    <div className="p-3 rounded-2xl bg-[#1E1B2E] text-white flex flex-wrap items-center justify-between gap-2.5 shadow-md">
+                    <div className="p-3 rounded-2xl bg-[#061138] text-white flex flex-wrap items-center justify-between gap-2.5 shadow-md">
                       <div className="text-xs">
-                        <span className="text-[#C4B5FD] font-semibold">
+                        <span className="text-[#93C5FD] font-semibold">
                           انتخاب شما:{' '}
                         </span>
                         <strong className="font-extrabold tabular-nums">
                           {toPersianDigits(selectedProfileServiceIds.length)}{' '}
-                          خدمت ·{' '}
-                          {formatCompactPriceToman(selectedProfileServicesTotal)}
+                          خدمت
+                          {selectedProfileAddons.length > 0
+                            ? ` + ${toPersianDigits(selectedProfileAddons.length)} مورد جانبی`
+                            : ''}{' '}
+                          · {formatCompactPriceToman(selectedProfileServicesTotal)}
                         </strong>
                       </div>
                       <Link
-                        to={`/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`}
+                        to={`/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}${selectedProfileAddonKeys.length > 0 ? `&addons=${encodeURIComponent(selectedProfileAddonKeys.join(','))}` : ''}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`}
                         onClick={(e) =>
                           handleRequireAuthForBooking(
                             e,
-                            `/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`
+                            `/booking/${business.slug}?service=${encodeURIComponent(selectedProfileServiceIds[0])}&services=${encodeURIComponent(selectedProfileServiceIds.join(','))}${selectedProfileAddonKeys.length > 0 ? `&addons=${encodeURIComponent(selectedProfileAddonKeys.join(','))}` : ''}&step=${bizSpecialists.length <= 1 ? '3' : '2'}`
                           )
                         }
-                        className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
+                        className="px-4 py-2 rounded-xl bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-1.5 transition-colors"
                       >
                         <span>ادامه و انتخاب زمان</span>
                         <ArrowLeft className="w-3.5 h-3.5" />
@@ -1650,15 +1820,15 @@ export const BusinessPublicProfileView: React.FC<{
 
             <div className="space-y-2 text-xs text-[#EDE9FE]/90 border-y border-white/10 py-3">
               <div className="flex items-center justify-between">
-                <span>شروع تعرفه خدمات:</span>
-                <span className="font-bold text-white tabular-nums">
-                  {formatStartingTariff(effectiveStartingPriceToman)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
                 <span>خدمات قابل رزرو:</span>
                 <span className="font-bold text-white tabular-nums">
                   {toPersianDigits(bizServices.length)} خدمت فعال
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>محدوده فعالیت:</span>
+                <span className="font-bold text-white">
+                  {business.city}، {business.neighborhood}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-[#10B981] pt-1">
@@ -1687,38 +1857,39 @@ export const BusinessPublicProfileView: React.FC<{
             )}
           </Card>
 
-          {/* ویترین ۳ ستونی نمونه‌کارها در ستون کناری — مطابق Capture1.PNG و Capture4.PNG */}
-          <Card className="rounded-3xl space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-[#1E1B2E]">
-                ویترین نمونه‌کارها
-              </h3>
-              <button
-                type="button"
-                onClick={() => setActiveTab('gallery')}
-                className="text-xs font-bold text-[#8B5CF6] hover:underline cursor-pointer"
-              >
-                مشاهده همه ({toPersianDigits(portfolioPhotos.length)})
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {portfolioPhotos.slice(0, 6).map((item) => (
+          {portfolioPhotos.length > 0 ? (
+            <Card className="rounded-3xl space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-extrabold text-[#1E1B2E]">
+                  ویترین نمونه‌کارها
+                </h3>
                 <button
-                  key={item.id}
                   type="button"
                   onClick={() => setActiveTab('gallery')}
-                  className="aspect-square rounded-xl overflow-hidden bg-[#EDE9FE] border border-[#E6E0F5] cursor-pointer group"
+                  className="text-xs font-bold text-[#0057FF] hover:underline cursor-pointer"
                 >
-                  <img
-                    src={item.url}
-                    alt={item.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
+                  مشاهده همه ({toPersianDigits(portfolioPhotos.length)})
                 </button>
-              ))}
-            </div>
-          </Card>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {portfolioPhotos.slice(0, 6).map((item, idx) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setLightboxPhotoIndex(idx)}
+                    className="aspect-square rounded-xl overflow-hidden bg-[#F1F5F9] border border-[#E2E8F0] cursor-pointer group"
+                  >
+                    <img
+                      src={item.url}
+                      alt={item.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
+                  </button>
+                ))}
+              </div>
+            </Card>
+          ) : null}
 
           <Card className="rounded-3xl space-y-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -1796,48 +1967,58 @@ export const BusinessPublicProfileView: React.FC<{
         </div>
       </div>
 
-      {/* مودال‌های عملیاتی دکمه‌های ۵گانه پروفایل سالن (اینستاگرام، مشاوره، تماس، مسیریابی) */}
-      <Modal
-        isOpen={activeActionModal === 'INSTAGRAM'}
-        onClose={() => setActiveActionModal(null)}
-        title={`صفحه اینستاگرام ${business.name}`}
-      >
-        <div className="space-y-4 text-xs">
-          <div className="p-4 rounded-2xl bg-[#FAF8FF] border border-[#E6E0F5] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <Instagram className="w-5 h-5 text-[#8B5CF6]" />
-              <span className="font-bold text-[#1E1B2E]">آیدی اینستاگرام سالن:</span>
+      {/* مودال نمایش بزرگ نمونه‌کار (لایت‌باکس) */}
+      {lightboxPhotoIndex !== null && portfolioPhotos[lightboxPhotoIndex] ? (
+        <Modal
+          isOpen
+          onClose={() => setLightboxPhotoIndex(null)}
+          title={portfolioPhotos[lightboxPhotoIndex].title}
+        >
+          <div className="space-y-3">
+            <div className="relative rounded-2xl overflow-hidden bg-[#061138] aspect-[4/3]">
+              <img
+                src={portfolioPhotos[lightboxPhotoIndex].url}
+                alt={portfolioPhotos[lightboxPhotoIndex].title}
+                className="w-full h-full object-contain"
+              />
             </div>
-            <span dir="ltr" className="font-mono text-sm font-black text-[#8B5CF6]">
-              @{cleanInstaHandle}
-            </span>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="font-bold text-[#475569]">
+                {portfolioPhotos[lightboxPhotoIndex].categoryLabel}
+              </span>
+              {portfolioPhotos.length > 1 ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setLightboxPhotoIndex(
+                        (lightboxPhotoIndex - 1 + portfolioPhotos.length) %
+                          portfolioPhotos.length
+                      )
+                    }
+                  >
+                    قبلی
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setLightboxPhotoIndex(
+                        (lightboxPhotoIndex + 1) % portfolioPhotos.length
+                      )
+                    }
+                  >
+                    بعدی
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <a
-              href={instagramUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="py-2.5 px-4 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-extrabold text-center transition-colors"
-            >
-              مشاهده صفحه در اینستاگرام ↗
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  void navigator.clipboard.writeText(`@${cleanInstaHandle}`);
-                } catch {
-                  // ignore
-                }
-                showToast('آیدی اینستاگرام کپی شد.', 'success');
-              }}
-              className="py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-[#1E1B2E] font-bold text-center cursor-pointer transition-colors"
-            >
-              کپی آیدی اینستاگرام
-            </button>
-          </div>
-        </div>
-      </Modal>
+        </Modal>
+      ) : null}
 
       <Modal
         isOpen={activeActionModal === 'MAP'}
@@ -1935,17 +2116,20 @@ export const BusinessPublicProfileView: React.FC<{
           city={business.city}
           neighborhood={business.neighborhood}
           compact
+          showPosterDownload={isCurrentSalonOwner}
         />
       </Modal>
 
-      {/* نوار چسبان پایین موبایل برای رزرو سریع — مطابق دکمه کپسولی تیره Capture4.PNG */}
-      <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E6E0F5] px-4 py-3 flex items-center justify-between gap-3 shadow-[0_-4px_20px_-4px_rgba(30,27,46,0.10)]">
+      {/* نوار چسبان پایین موبایل برای رزرو سریع */}
+      <div className="lg:hidden fixed bottom-16 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-[#E2E8F0] px-4 py-3 flex items-center justify-between gap-3 shadow-[0_-4px_20px_-4px_rgba(6,17,56,0.10)]">
         <div className="min-w-0">
-          <p className="text-xs font-extrabold text-[#1E1B2E] truncate">
+          <p className="text-xs font-extrabold text-[#061138] truncate">
             {business.name}
           </p>
-          <p className="text-[11px] text-[#6B6480] tabular-nums">
-            شروع از {formatStartingTariff(effectiveStartingPriceToman)}
+          <p className="text-[11px] text-[#475569] tabular-nums">
+            {bizServices.length > 0
+              ? `${toPersianDigits(bizServices.length)} خدمت فعال · رزرو آنی`
+              : 'رزرو آنلاین ۲۴ ساعته'}
           </p>
         </div>
         {business.isSampleShowcase ? (
@@ -1958,7 +2142,7 @@ export const BusinessPublicProfileView: React.FC<{
             onClick={(e) =>
               handleRequireAuthForBooking(e, `/booking/${business.slug}`)
             }
-            className="px-6 py-2.5 rounded-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-xs font-extrabold inline-flex items-center gap-2 shrink-0 shadow-[0_8px_20px_-6px_rgba(139,92,246,0.45)]"
+            className="px-6 py-2.5 rounded-full bg-[#0057FF] hover:bg-[#0044CC] text-white text-xs font-extrabold inline-flex items-center gap-2 shrink-0 shadow-[0_8px_20px_-6px_rgba(0,87,255,0.45)]"
           >
             <span>رزرو آنلاین نوبت</span>
             <ArrowLeft className="w-4 h-4" />
